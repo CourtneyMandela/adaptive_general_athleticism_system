@@ -1,0 +1,64 @@
+# Safety Policy
+
+## Boundary
+
+AGAS is a training-planning product for generally healthy adults. It is not a diagnostic, rehabilitation, medical-triage, or injury-prediction system and must not promise injury prevention.
+
+## Deterministic precedence
+
+Safety validation executes before LLM discretion and ordinary planning. The LLM cannot override a hard safety outcome.
+
+## Policy classes
+
+### Escalation
+
+Concerning or unexplained symptoms must be able to interrupt ordinary programming and advise
+appropriate professional evaluation. In Milestone 5B, a governed upstream workflow supplies only
+preclassified escalation signals. The gate records `STOP_AND_ESCALATE`; it does not infer severity,
+diagnose a condition, or generate medical advice from raw text. Concrete signal tags and
+user-facing language remain unseeded pending qualified review.
+
+### Modification
+
+Preclassified safety input, limited readiness, unusual soreness, major sleep disruption, or a
+schedule constraint may require an explicit versioned modification set. The gate never silently
+rewrites the prescription. A `MODIFY` decision can authorize logging only when the execution
+acknowledges every required modification exactly. `NOT_READY` produces `HOLD`; hold and escalation
+outcomes cannot authorize ordinary session execution.
+
+The current exercise resolver can enforce explicit, preclassified contraindication tags and upper
+bounds for skill, impact, stability, fatigue, soreness, noise, space, and outdoor access. It does
+not infer diagnoses, classify raw symptom text, or manufacture medical thresholds. When a hard
+constraint cannot be satisfied, the resolver returns an infeasible result instead of silently
+relaxing it.
+
+The weekly scheduler can enforce explicit daily session limits, high-fatigue daily limits,
+and a configured recovery interval. Those policy values are provisional constraints supplied by a
+governed workflow, not medical or physiological thresholds inferred by the scheduler.
+
+The current safety gate applies fixed precedence: escalation, not-ready hold, explicit
+modification, then proceed. Pre- and post-session reports remain immutable observations with
+provenance. A post-session decision references the completed execution and informs later review; it
+does not alter history or automatically modify the next session.
+
+Block review may preserve post-session safety decisions as context, but it does not reinterpret
+their signal tags, infer a condition, or diagnose why a response occurred. Safety history and
+measurement uncertainty remain visible for a later governed state-update decision.
+
+### Exposure progression
+
+Running, high-speed running, jumping, landing, change of direction, and high-impact plyometrics require separate exposure histories. Cardiovascular readiness must not be treated as tissue readiness. Large unearned jumps in novel loading or impact must fail validation.
+
+The current validator derives entries only from actual workout-result observations and applies
+configurable initial, relative, and absolute caps. Rejected targets hold progression; no universal
+“10% rule” or cardiovascular proxy is used.
+
+### Re-entry
+
+Illness, injury, prolonged interruption, or major detraining can place an athlete in a re-entry state. Prior prescriptions must not resume automatically at full dose.
+
+## Deferred detail
+
+This milestone implements the policy boundary without inventing medical thresholds. Versioned
+signal categories, user guidance, escalation review, and production exposure policies still require
+qualified review and evidence provenance before production policies are seeded.
