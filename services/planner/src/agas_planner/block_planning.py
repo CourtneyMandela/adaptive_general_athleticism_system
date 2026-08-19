@@ -414,11 +414,21 @@ class WeeklyScheduler:
                 raise BlockPlanningError("prescription belongs to a different athlete or block")
             if prescription.adaptation_id != allocation.adaptation_id:
                 raise BlockPlanningError("prescription adaptation differs from its allocation")
-            if prescription.exercise_resolution_id != allocation.exercise_resolution_id:
-                raise BlockPlanningError("prescription resolution differs from its allocation")
             resolution = resolution_by_id.get(prescription.exercise_resolution_id)
             if resolution is None or resolution.selected_exercise_id != prescription.exercise_id:
                 raise BlockPlanningError("prescription must use the resolution's selected exercise")
+            if resolution.stimulus_requirement_id != allocation.stimulus_requirement_id:
+                raise BlockPlanningError("prescription resolution targets another stimulus")
+            if (
+                prescription.exercise_resolution_id != allocation.exercise_resolution_id
+                and resolution.status is ResolutionStatus.PARTIAL
+                and not policy.allow_partial_exercise_resolution
+            ):
+                raise BlockPlanningError(
+                    "partial exercise re-resolution is disabled by weekly scheduling policy"
+                )
+            if resolution.status is ResolutionStatus.INFEASIBLE:
+                raise BlockPlanningError("prescription cannot use an infeasible resolution")
             if (
                 prescription.planned_duration_minutes * allocation.sessions_per_week
                 != allocation.allocated_weekly_minutes

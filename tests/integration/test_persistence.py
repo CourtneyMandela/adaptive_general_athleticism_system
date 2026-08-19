@@ -206,8 +206,8 @@ def test_ontology_relationships_are_referential_and_round_trip(session: Session)
     strength = Adaptation(
         name="Maximal strength",
         domain=CapabilityDomain.MAXIMUM_STRENGTH,
-        preferred_stimuli=("high force",),
-        valid_modalities=("external resistance",),
+        preferred_stimuli=("high_force",),
+        valid_modalities=("resistance",),
         dose_dimensions=("load", "sets", "repetitions"),
         evidence_claim_ids=(claim.id,),
     )
@@ -215,7 +215,7 @@ def test_ontology_relationships_are_referential_and_round_trip(session: Session)
     power = Adaptation(
         name="Explosive power",
         domain=CapabilityDomain.EXPLOSIVE_POWER,
-        preferred_stimuli=("high intent velocity",),
+        preferred_stimuli=("explosive",),
         relationships=(
             AdaptationRelationship(
                 target_adaptation_id=strength.id,
@@ -237,16 +237,17 @@ def test_ontology_relationships_are_referential_and_round_trip(session: Session)
     repository.add_equipment(barbell)
     exercise = Exercise(
         name="Example loaded movement",
-        movement_patterns=("hinge", "bilateral"),
+        movement_patterns=("hip_hinge",),
         primary_adaptation_ids=(strength.id,),
         secondary_adaptation_ids=(power.id,),
         joint_demands=("hip",),
         equipment_requirement_ids=(barbell.id,),
-        loading_type="external",
+        loading_type="external_load",
+        laterality="bilateral",
         loadability=Loadability.HIGH,
         skill_complexity=CostLevel.MODERATE,
         impact_level=ImpactLevel.LOW,
-        velocity_characteristics=("intent-dependent",),
+        velocity_characteristics=("controlled",),
         stability_demand=CostLevel.MODERATE,
         fatigue_cost=CostLevel.MODERATE,
         soreness_cost=CostLevel.MODERATE,
@@ -265,9 +266,10 @@ def test_ontology_rejects_dangling_references(session: Session) -> None:
     repository = DomainRepository(session)
     exercise = Exercise(
         name="Dangling exercise",
-        movement_patterns=("squat",),
+        movement_patterns=("knee_dominant",),
         primary_adaptation_ids=(UUID("00000000-0000-0000-0000-000000000001"),),
         loading_type="bodyweight",
+        laterality="bilateral",
         loadability=Loadability.LIMITED,
         skill_complexity=CostLevel.LOW,
         impact_level=ImpactLevel.LOW,

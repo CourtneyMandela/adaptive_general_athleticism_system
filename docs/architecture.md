@@ -2,11 +2,11 @@
 
 ## Current scope
 
-The current foundation corrects the provisional exercise-as-session shape before extending the
-closed loop. Explicit `SessionTemplate` containers are scheduled as real workouts, safety remains
-session-scoped, and execution, adherence, and progression retain prescription-item identity. Typed
-intensity targets replace free text. Existing immutable `TrainingResponse` and deterministic
-`BlockReview` behavior remains in place; capability updates and next-block generation are deferred.
+The current foundation adds controlled exercise/adaptation vocabulary and a deliberately small,
+validated seed boundary. A tested full-gym/travel/return scenario re-resolves exercises against the
+current environment without changing the athlete, strategy, block, adaptation, or stimulus.
+Existing immutable session, execution, response, and block-review behavior remains in place;
+automatic workout generation, capability updates, and next-block generation are deferred.
 
 ## Shape
 
@@ -91,9 +91,18 @@ level. They are derived resolver inputs, not a replacement for availability hist
 
 ### Exercise and adaptation ontologies
 
-Exercises and adaptations are separate versioned entities. Exercise records carry structured movement, loading, skill, impact, velocity, stability, fatigue, progression, regression, and equipment metadata. Adaptations can carry typed relationships with confidence and evidence references. This milestone defines the structures without inventing scientific relationships or bulk seed data.
+Exercises and adaptations are separate versioned entities. Movement pattern, loading type,
+velocity characteristic, joint region, laterality, preferred stimulus, training modality, and dose
+dimension use controlled enums. Exercise records also retain loadability, skill, impact, stability,
+fatigue, progression, regression, and exact equipment requirements. Adaptations can carry typed
+relationships with confidence and evidence references; the seed contains no speculative
+relationships.
 
-Ontology identity links are relational: exercise adaptation roles, equipment requirements, exercise progression/regression edges, adaptation evidence, and adaptation relationship evidence all use foreign keys. Flexible descriptive metadata remains JSONB. The repository rejects dangling ontology references before persistence.
+Ontology identity links are relational: exercise adaptation roles, equipment requirements,
+exercise progression/regression edges, adaptation evidence, and adaptation relationship evidence
+all use foreign keys. Flexible descriptive metadata remains JSONB. `agas_seed_data` validates IDs,
+relationships, scenario references, and evidence links atomically before persistence. The initial
+catalog is 14 exercises, 8 adaptations, and 8 equipment types—not a complete production library.
 
 ### Stimulus and exercise resolution
 
@@ -106,12 +115,15 @@ repetitions, duration, or schedule.
 The deterministic resolver first applies hard feasibility constraints: exact equipment
 availability, contraindication tags, skill, impact, stability, fatigue, soreness, outdoor access,
 space, and noise. Remaining exercises receive a policy-versioned weighted score for adaptation
-role, movement coverage, loading type, loadability, and velocity coverage. A result is `FULL` only
+role, movement coverage, loading type, loadability, velocity coverage, and laterality. A result is `FULL` only
 when every fidelity component is complete; `PARTIAL` results enumerate every unresolved mismatch;
 and `INFEASIBLE` results select nothing and retain explicit reasons. The score ranks candidates—it
 does not claim two exercises are scientifically equivalent.
 
-Equipment identity matching is intentionally exact in this milestone. Category- or
+Equipment identity matching is intentionally exact in this milestone. A weekly prescription may
+use a newer resolution than its block allocation only for the same stimulus and adaptation. A
+partial re-resolution must be enabled by the weekly policy, and its unresolved limitations remain
+attached to the resolution; the planning-time allocation is not overwritten. Category- or
 capability-based substitutions require a future reviewed compatibility policy rather than hidden
 resolver inference. The repository includes no fabricated exercise catalog or scientific
 equivalence claims.
@@ -204,7 +216,10 @@ historical estimate, prescription, or future plan.
 
 ### Evidence claims
 
-Evidence claims are reviewed, versioned interpretations linked to source identifiers. Evidence strength and athlete applicability are separate. The repository contains no fabricated scientific seed claims.
+Evidence claims are reviewed, versioned interpretations linked to source identifiers. Evidence
+strength and athlete applicability are separate. Three broad claims have source-checked PMID and
+DOI identifiers and an explicit `secondary_ai_verified` catalog status. They remain pending owner
+or qualified-domain approval and do not authorize dose, progression, or equivalence rules.
 
 ### Decision records
 

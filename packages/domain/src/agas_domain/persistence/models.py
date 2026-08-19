@@ -153,6 +153,7 @@ class ExerciseRecord(VersionedRecordMixin, Base):
     movement_patterns: Mapped[list[str]] = mapped_column(JsonType, nullable=False)
     joint_demands: Mapped[list[str]] = mapped_column(JsonType, nullable=False)
     loading_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    laterality: Mapped[str] = mapped_column(String(40), nullable=False)
     loadability: Mapped[str] = mapped_column(String(40), nullable=False)
     skill_complexity: Mapped[str] = mapped_column(String(40), nullable=False)
     impact_level: Mapped[str] = mapped_column(String(40), nullable=False)
@@ -591,6 +592,7 @@ class StimulusRequirementRecord(VersionedRecordMixin, Base):
     priority_state: Mapped[str] = mapped_column(String(40), nullable=False)
     movement_patterns: Mapped[list[str]] = mapped_column(JsonType, nullable=False)
     allowed_loading_types: Mapped[list[str]] = mapped_column(JsonType, nullable=False)
+    allowed_lateralities: Mapped[list[str]] = mapped_column(JsonType, nullable=False)
     minimum_loadability: Mapped[str] = mapped_column(String(40), nullable=False)
     required_velocity_characteristics: Mapped[list[str]] = mapped_column(JsonType, nullable=False)
     maximum_skill_complexity: Mapped[str] = mapped_column(String(40), nullable=False)
@@ -655,6 +657,7 @@ class ExerciseResolverPolicyRecord(VersionedRecordMixin, Base):
     loading_type_weight: Mapped[float] = mapped_column(Float(), nullable=False)
     loadability_weight: Mapped[float] = mapped_column(Float(), nullable=False)
     velocity_weight: Mapped[float] = mapped_column(Float(), nullable=False)
+    laterality_weight: Mapped[float] = mapped_column(Float(), nullable=False)
     secondary_adaptation_credit: Mapped[float] = mapped_column(Float(), nullable=False)
     partial_match_threshold: Mapped[float] = mapped_column(Float(), nullable=False)
     full_match_threshold: Mapped[float] = mapped_column(Float(), nullable=False)
@@ -1132,6 +1135,7 @@ class WeeklySchedulingPolicyRecord(VersionedRecordMixin, Base):
     minimum_high_fatigue_recovery_hours: Mapped[int] = mapped_column(Integer(), nullable=False)
     maximum_sessions_per_day: Mapped[int] = mapped_column(Integer(), nullable=False)
     maximum_high_fatigue_sessions_per_day: Mapped[int] = mapped_column(Integer(), nullable=False)
+    allow_partial_exercise_resolution: Mapped[bool] = mapped_column(Boolean(), nullable=False)
     policy_version: Mapped[str] = mapped_column(String(80), nullable=False)
 
 

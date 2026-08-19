@@ -310,13 +310,14 @@ class DomainRepository:
             schema_version=exercise.schema_version,
             created_at=exercise.created_at,
             name=exercise.name,
-            movement_patterns=list(exercise.movement_patterns),
-            joint_demands=list(exercise.joint_demands),
-            loading_type=exercise.loading_type,
+            movement_patterns=[item.value for item in exercise.movement_patterns],
+            joint_demands=[item.value for item in exercise.joint_demands],
+            loading_type=exercise.loading_type.value,
+            laterality=exercise.laterality.value,
             loadability=exercise.loadability.value,
             skill_complexity=exercise.skill_complexity.value,
             impact_level=exercise.impact_level.value,
-            velocity_characteristics=list(exercise.velocity_characteristics),
+            velocity_characteristics=[item.value for item in exercise.velocity_characteristics],
             stability_demand=exercise.stability_demand.value,
             fatigue_cost=exercise.fatigue_cost.value,
             soreness_cost=exercise.soreness_cost.value,
@@ -386,9 +387,9 @@ class DomainRepository:
             created_at=adaptation.created_at,
             name=adaptation.name,
             domain=adaptation.domain.value,
-            preferred_stimuli=list(adaptation.preferred_stimuli),
-            valid_modalities=list(adaptation.valid_modalities),
-            dose_dimensions=list(adaptation.dose_dimensions),
+            preferred_stimuli=[item.value for item in adaptation.preferred_stimuli],
+            valid_modalities=[item.value for item in adaptation.valid_modalities],
+            dose_dimensions=[item.value for item in adaptation.dose_dimensions],
             fatigue_characteristics=adaptation.fatigue_characteristics,
             typical_measurement_methods=list(adaptation.typical_measurement_methods),
             maintenance_requirements=adaptation.maintenance_requirements,
@@ -764,10 +765,13 @@ class DomainRepository:
             adaptation_priority_id=requirement.adaptation_priority_id,
             adaptation_id=requirement.adaptation_id,
             priority_state=requirement.priority_state.value,
-            movement_patterns=list(requirement.movement_patterns),
-            allowed_loading_types=list(requirement.allowed_loading_types),
+            movement_patterns=[item.value for item in requirement.movement_patterns],
+            allowed_loading_types=[item.value for item in requirement.allowed_loading_types],
+            allowed_lateralities=[item.value for item in requirement.allowed_lateralities],
             minimum_loadability=requirement.minimum_loadability.value,
-            required_velocity_characteristics=list(requirement.required_velocity_characteristics),
+            required_velocity_characteristics=[
+                item.value for item in requirement.required_velocity_characteristics
+            ],
             maximum_skill_complexity=requirement.maximum_skill_complexity.value,
             maximum_impact_level=requirement.maximum_impact_level.value,
             maximum_stability_demand=requirement.maximum_stability_demand.value,
@@ -809,6 +813,7 @@ class DomainRepository:
                 loading_type_weight=policy.loading_type_weight,
                 loadability_weight=policy.loadability_weight,
                 velocity_weight=policy.velocity_weight,
+                laterality_weight=policy.laterality_weight,
                 secondary_adaptation_credit=policy.secondary_adaptation_credit,
                 partial_match_threshold=policy.partial_match_threshold,
                 full_match_threshold=policy.full_match_threshold,
@@ -907,6 +912,7 @@ class DomainRepository:
             priority_state=record.priority_state,
             movement_patterns=tuple(record.movement_patterns),
             allowed_loading_types=tuple(record.allowed_loading_types),
+            allowed_lateralities=tuple(record.allowed_lateralities),
             minimum_loadability=record.minimum_loadability,
             required_velocity_characteristics=tuple(record.required_velocity_characteristics),
             maximum_skill_complexity=record.maximum_skill_complexity,
@@ -937,6 +943,7 @@ class DomainRepository:
             loading_type_weight=record.loading_type_weight,
             loadability_weight=record.loadability_weight,
             velocity_weight=record.velocity_weight,
+            laterality_weight=record.laterality_weight,
             secondary_adaptation_credit=record.secondary_adaptation_credit,
             partial_match_threshold=record.partial_match_threshold,
             full_match_threshold=record.full_match_threshold,
@@ -1271,14 +1278,15 @@ class DomainRepository:
         )
         if allocation is None or allocation.block_plan_id != block.id:
             raise DomainIntegrityError("prescription allocation does not belong to its block")
-        if (
-            allocation.adaptation_id != prescription.adaptation_id
-            or allocation.exercise_resolution_id != prescription.exercise_resolution_id
-        ):
-            raise DomainIntegrityError("prescription differs from its block allocation")
+        if allocation.adaptation_id != prescription.adaptation_id:
+            raise DomainIntegrityError("prescription adaptation differs from its block allocation")
         resolution = self.session.get(ExerciseResolutionRecord, prescription.exercise_resolution_id)
         if resolution is None or resolution.selected_exercise_id != prescription.exercise_id:
             raise DomainIntegrityError("prescription does not use the selected exercise")
+        if resolution.stimulus_requirement_id != allocation.stimulus_requirement_id:
+            raise DomainIntegrityError("prescription resolution targets another stimulus")
+        if resolution.status == "infeasible":
+            raise DomainIntegrityError("prescription cannot use an infeasible resolution")
         observations = self._observations_by_id(prescription.source_observation_ids)
         if {item.id for item in observations} != set(prescription.source_observation_ids):
             raise DomainIntegrityError("one or more prescription observations do not exist")
@@ -1572,6 +1580,7 @@ class DomainRepository:
                 maximum_high_fatigue_sessions_per_day=(
                     policy.maximum_high_fatigue_sessions_per_day
                 ),
+                allow_partial_exercise_resolution=(policy.allow_partial_exercise_resolution),
                 policy_version=policy.policy_version,
             )
         )
@@ -1587,6 +1596,7 @@ class DomainRepository:
             minimum_high_fatigue_recovery_hours=(record.minimum_high_fatigue_recovery_hours),
             maximum_sessions_per_day=record.maximum_sessions_per_day,
             maximum_high_fatigue_sessions_per_day=(record.maximum_high_fatigue_sessions_per_day),
+            allow_partial_exercise_resolution=(record.allow_partial_exercise_resolution),
             policy_version=record.policy_version,
         )
 
@@ -3030,6 +3040,7 @@ class DomainRepository:
             joint_demands=tuple(record.joint_demands),
             equipment_requirement_ids=tuple(link.equipment_id for link in record.equipment_links),
             loading_type=record.loading_type,
+            laterality=record.laterality,
             loadability=record.loadability,
             skill_complexity=record.skill_complexity,
             impact_level=record.impact_level,

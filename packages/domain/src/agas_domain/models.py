@@ -22,11 +22,16 @@ from agas_domain.enums import (
     CompetencyStatus,
     Confidence,
     CostLevel,
+    DoseDimension,
     EvidenceStrength,
     ExposureType,
     ExposureValidationOutcome,
     ImpactLevel,
+    JointRegion,
+    Laterality,
     Loadability,
+    LoadingType,
+    MovementPattern,
     ObservationSource,
     PlanningReason,
     PrescriptionModification,
@@ -41,7 +46,10 @@ from agas_domain.enums import (
     SchedulingIssueCode,
     SessionExecutionStatus,
     SessionSection,
+    StimulusType,
+    TrainingModality,
     TrainingPriorityState,
+    VelocityCharacteristic,
     WeeklyPlanStatus,
 )
 
@@ -183,16 +191,17 @@ class EquipmentAvailability(VersionedRecord):
 
 class Exercise(VersionedRecord):
     name: Annotated[str, Field(min_length=1, max_length=180)]
-    movement_patterns: Annotated[tuple[NonEmptyText, ...], Field(min_length=1)]
+    movement_patterns: Annotated[tuple[MovementPattern, ...], Field(min_length=1)]
     primary_adaptation_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
     secondary_adaptation_ids: tuple[UUID, ...] = ()
-    joint_demands: tuple[NonEmptyText, ...] = ()
+    joint_demands: tuple[JointRegion, ...] = ()
     equipment_requirement_ids: tuple[UUID, ...] = ()
-    loading_type: NonEmptyText
+    loading_type: LoadingType
+    laterality: Laterality
     loadability: Loadability
     skill_complexity: CostLevel
     impact_level: ImpactLevel
-    velocity_characteristics: tuple[NonEmptyText, ...] = ()
+    velocity_characteristics: tuple[VelocityCharacteristic, ...] = ()
     stability_demand: CostLevel
     fatigue_cost: CostLevel
     soreness_cost: CostLevel
@@ -242,9 +251,9 @@ class AdaptationRelationship(VersionedRecord):
 class Adaptation(VersionedRecord):
     name: Annotated[str, Field(min_length=1, max_length=180)]
     domain: CapabilityDomain
-    preferred_stimuli: tuple[NonEmptyText, ...] = ()
-    valid_modalities: tuple[NonEmptyText, ...] = ()
-    dose_dimensions: tuple[NonEmptyText, ...] = ()
+    preferred_stimuli: tuple[StimulusType, ...] = ()
+    valid_modalities: tuple[TrainingModality, ...] = ()
+    dose_dimensions: tuple[DoseDimension, ...] = ()
     fatigue_characteristics: dict[str, JsonValue] = Field(default_factory=dict)
     typical_measurement_methods: tuple[NonEmptyText, ...] = ()
     maintenance_requirements: dict[str, JsonValue] = Field(default_factory=dict)
@@ -668,10 +677,11 @@ class EnvironmentSnapshot(DomainModel):
 
 
 class StimulusSpecification(DomainModel):
-    movement_patterns: Annotated[tuple[NonEmptyText, ...], Field(min_length=1)]
-    allowed_loading_types: Annotated[tuple[NonEmptyText, ...], Field(min_length=1)]
+    movement_patterns: Annotated[tuple[MovementPattern, ...], Field(min_length=1)]
+    allowed_loading_types: Annotated[tuple[LoadingType, ...], Field(min_length=1)]
+    allowed_lateralities: Annotated[tuple[Laterality, ...], Field(min_length=1)]
     minimum_loadability: Loadability
-    required_velocity_characteristics: tuple[NonEmptyText, ...] = ()
+    required_velocity_characteristics: tuple[VelocityCharacteristic, ...] = ()
     maximum_skill_complexity: CostLevel
     maximum_impact_level: ImpactLevel
     maximum_stability_demand: CostLevel
@@ -689,6 +699,7 @@ class StimulusSpecification(DomainModel):
         for field_name in (
             "movement_patterns",
             "allowed_loading_types",
+            "allowed_lateralities",
             "required_velocity_characteristics",
             "contraindication_tags",
             "source_observation_ids",
@@ -706,10 +717,11 @@ class StimulusRequirement(VersionedRecord):
     adaptation_priority_id: UUID
     adaptation_id: UUID
     priority_state: TrainingPriorityState
-    movement_patterns: Annotated[tuple[NonEmptyText, ...], Field(min_length=1)]
-    allowed_loading_types: Annotated[tuple[NonEmptyText, ...], Field(min_length=1)]
+    movement_patterns: Annotated[tuple[MovementPattern, ...], Field(min_length=1)]
+    allowed_loading_types: Annotated[tuple[LoadingType, ...], Field(min_length=1)]
+    allowed_lateralities: Annotated[tuple[Laterality, ...], Field(min_length=1)]
     minimum_loadability: Loadability
-    required_velocity_characteristics: tuple[NonEmptyText, ...] = ()
+    required_velocity_characteristics: tuple[VelocityCharacteristic, ...] = ()
     maximum_skill_complexity: CostLevel
     maximum_impact_level: ImpactLevel
     maximum_stability_demand: CostLevel
@@ -738,6 +750,7 @@ class StimulusRequirement(VersionedRecord):
         for field_name in (
             "movement_patterns",
             "allowed_loading_types",
+            "allowed_lateralities",
             "required_velocity_characteristics",
             "contraindication_tags",
             "source_observation_ids",
@@ -755,6 +768,7 @@ class ExerciseResolverPolicy(VersionedRecord):
     loading_type_weight: float = Field(ge=0)
     loadability_weight: float = Field(ge=0)
     velocity_weight: float = Field(ge=0)
+    laterality_weight: float = Field(ge=0)
     secondary_adaptation_credit: UnitInterval
     partial_match_threshold: UnitInterval
     full_match_threshold: UnitInterval
@@ -769,6 +783,7 @@ class ExerciseResolverPolicy(VersionedRecord):
             + self.loading_type_weight
             + self.loadability_weight
             + self.velocity_weight
+            + self.laterality_weight
             <= 0
         ):
             raise ValueError("at least one resolver weight must be positive")
@@ -1246,6 +1261,7 @@ class WeeklySchedulingPolicy(VersionedRecord):
     minimum_high_fatigue_recovery_hours: int = Field(ge=0)
     maximum_sessions_per_day: int = Field(ge=1)
     maximum_high_fatigue_sessions_per_day: int = Field(ge=1)
+    allow_partial_exercise_resolution: bool
     policy_version: NonEmptyText
 
 

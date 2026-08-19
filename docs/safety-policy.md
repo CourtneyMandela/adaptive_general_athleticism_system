@@ -36,6 +36,11 @@ The weekly scheduler can enforce explicit daily session limits, high-fatigue dai
 and a configured recovery interval. Those policy values are provisional constraints supplied by a
 governed workflow, not medical or physiological thresholds inferred by the scheduler.
 
+A temporary environment may trigger a newer exercise resolution for the same block stimulus.
+Partial fidelity is allowed only by an explicit weekly policy and must retain every unresolved
+mismatch. Re-resolution cannot bypass contraindication, skill, impact, space, noise, fatigue, or
+other hard constraints, and an infeasible resolution can never authorize a prescription.
+
 The current safety gate applies fixed precedence: escalation, not-ready hold, explicit
 modification, then proceed. Pre- and post-session reports remain immutable observations with
 provenance. A post-session decision references the completed execution and informs later review; it

@@ -1,0 +1,47 @@
+{
+  "scenario_version": "0.1.0",
+  "athlete": {
+    "id": "d0000000-0000-4000-8000-000000000001",
+    "schema_version": "1.0.0",
+    "created_at": "2026-08-19T14:00:00Z",
+    "display_name": "Synthetic four-day traveler",
+    "goals": ["Develop general strength", "Develop aerobic base"]
+  },
+  "available_weekdays": [0, 2, 4, 6],
+  "target_adaptation_ids": [
+    "a0000000-0000-4000-8000-000000000001",
+    "a0000000-0000-4000-8000-000000000002"
+  ],
+  "home": {
+    "name": "Full gym",
+    "equipment_ids": [
+      "e0000000-0000-4000-8000-000000000001",
+      "e0000000-0000-4000-8000-000000000002",
+      "e0000000-0000-4000-8000-000000000003",
+      "e0000000-0000-4000-8000-000000000004",
+      "e0000000-0000-4000-8000-000000000005",
+      "e0000000-0000-4000-8000-000000000006",
+      "e0000000-0000-4000-8000-000000000007",
+      "e0000000-0000-4000-8000-000000000008"
+    ],
+    "floor_area_m2": 40,
+    "max_noise_level": "high",
+    "outdoor_access": true
+  },
+  "travel": {
+    "name": "Hotel gym",
+    "equipment_ids": [
+      "e0000000-0000-4000-8000-000000000004",
+      "e0000000-0000-4000-8000-000000000005",
+      "e0000000-0000-4000-8000-000000000008"
+    ],
+    "floor_area_m2": 10,
+    "max_noise_level": "moderate",
+    "outdoor_access": false
+  },
+  "notes": [
+    "The athlete identity and adaptation targets remain constant across environments.",
+    "The strength exercise changes during travel and retains an explicit loadability limitation.",
+    "The aerobic modality remains available in both environments."
+  ]
+}

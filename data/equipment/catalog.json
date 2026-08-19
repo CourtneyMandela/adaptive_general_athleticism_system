@@ -1,0 +1,10 @@
+[
+  {"id":"e0000000-0000-4000-8000-000000000001","schema_version":"1.0.0","created_at":"2026-08-19T14:00:00Z","name":"Olympic barbell","category":"external_load","capabilities":{"plate_loaded":true}},
+  {"id":"e0000000-0000-4000-8000-000000000002","schema_version":"1.0.0","created_at":"2026-08-19T14:00:00Z","name":"Squat rack","category":"support","capabilities":{"adjustable_hooks":true}},
+  {"id":"e0000000-0000-4000-8000-000000000003","schema_version":"1.0.0","created_at":"2026-08-19T14:00:00Z","name":"Weight plates","category":"external_load","capabilities":{"incremental_loading":true}},
+  {"id":"e0000000-0000-4000-8000-000000000004","schema_version":"1.0.0","created_at":"2026-08-19T14:00:00Z","name":"Adjustable dumbbells","category":"external_load","capabilities":{"adjustable_load":true}},
+  {"id":"e0000000-0000-4000-8000-000000000005","schema_version":"1.0.0","created_at":"2026-08-19T14:00:00Z","name":"Treadmill","category":"cyclic","capabilities":{"adjustable_speed":true,"adjustable_incline":true}},
+  {"id":"e0000000-0000-4000-8000-000000000006","schema_version":"1.0.0","created_at":"2026-08-19T14:00:00Z","name":"Stationary bicycle","category":"cyclic","capabilities":{"adjustable_resistance":true}},
+  {"id":"e0000000-0000-4000-8000-000000000007","schema_version":"1.0.0","created_at":"2026-08-19T14:00:00Z","name":"Rowing ergometer","category":"cyclic","capabilities":{"adjustable_resistance":true}},
+  {"id":"e0000000-0000-4000-8000-000000000008","schema_version":"1.0.0","created_at":"2026-08-19T14:00:00Z","name":"Open floor area","category":"space","capabilities":{"bodyweight_training":true}}
+]

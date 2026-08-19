@@ -337,6 +337,7 @@ def scheduling_policy() -> WeeklySchedulingPolicy:
         minimum_high_fatigue_recovery_hours=24,
         maximum_sessions_per_day=1,
         maximum_high_fatigue_sessions_per_day=1,
+        allow_partial_exercise_resolution=True,
         policy_version="fixture@1.0.0",
     )
 
@@ -504,6 +505,7 @@ def test_configured_high_fatigue_recovery_can_make_week_infeasible() -> None:
         minimum_high_fatigue_recovery_hours=48,
         maximum_sessions_per_day=1,
         maximum_high_fatigue_sessions_per_day=1,
+        allow_partial_exercise_resolution=True,
         policy_version="strict-recovery-fixture@1.0.0",
     )
 

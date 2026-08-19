@@ -101,7 +101,8 @@ def test_stimulus_requirement_binds_to_existing_non_deferred_priority() -> None:
     )
     specification = StimulusSpecification(
         movement_patterns=("knee_dominant",),
-        allowed_loading_types=("external",),
+        allowed_loading_types=("external_load",),
+        allowed_lateralities=("bilateral", "unilateral"),
         minimum_loadability=Loadability.HIGH,
         maximum_skill_complexity=CostLevel.MODERATE,
         maximum_impact_level=ImpactLevel.LOW,

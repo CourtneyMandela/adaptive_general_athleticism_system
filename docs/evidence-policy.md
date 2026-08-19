@@ -25,7 +25,8 @@ Evidence strength and athlete applicability must be assessed separately. A stron
 - Store uncertainty and limitations explicitly.
 - Do not silently edit a material scientific rule. Create a new version and preserve the prior record.
 - Re-review claims when stronger evidence appears, existing evidence is contradicted, or athlete applicability changes.
-- No scientific seed claims are included until their source metadata and interpretation have been verified.
+- Seed claims require checked source metadata and interpretation. Secondary-AI verification must
+  remain distinguishable from production approval in the catalog manifest and reviewer field.
 
 ## Planning thresholds
 
@@ -42,7 +43,8 @@ match means the configured structural requirements are satisfied; a partial matc
 its mismatches, and an infeasible result must remain infeasible. Claims about transfer,
 interchangeability, dose equivalence, or adaptation magnitude require reviewed evidence and a
 versioned applicability judgment before they can become operational rules. No scientific exercise
-claims or production exercise catalog are seeded in this milestone.
+claims. The small exercise catalog is provisional ontology annotation, not a production-approved
+equivalence or prescription library.
 
 ## Dose and scheduling
 

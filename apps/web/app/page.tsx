@@ -7,8 +7,8 @@ export default function Home() {
         <p className="eyebrow">Adaptive General Athleticism System</p>
         <h1 id="product-title">Build capability. Preserve the why.</h1>
         <p className="lede">
-          AGAS now schedules a real workout as an ordered set of prescription items, applies one
-          safety decision to the session, and preserves performance and progression per item.
+          AGAS now validates a small controlled exercise and adaptation catalog, then resolves the
+          same training stimulus against full-gym or travel equipment without hiding fidelity loss.
           Automatic session generation and production training rules remain deliberately deferred.
         </p>
         <dl className="status-card">

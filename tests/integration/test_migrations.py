@@ -32,6 +32,16 @@ def test_baseline_migration_matches_current_metadata(
             column["name"] for column in inspector.get_columns("planned_sessions")
         }
         assert "session_item_executions" in actual_tables
+        assert "laterality" in {column["name"] for column in inspector.get_columns("exercises")}
+        assert "allowed_lateralities" in {
+            column["name"] for column in inspector.get_columns("stimulus_requirements")
+        }
+        assert "laterality_weight" in {
+            column["name"] for column in inspector.get_columns("exercise_resolver_policies")
+        }
+        assert "allow_partial_exercise_resolution" in {
+            column["name"] for column in inspector.get_columns("weekly_scheduling_policies")
+        }
 
         command.downgrade(config, "base")
         assert set(inspect(engine).get_table_names()) == {"alembic_version"}

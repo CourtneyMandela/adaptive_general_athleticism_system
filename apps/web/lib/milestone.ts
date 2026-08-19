@@ -1,5 +1,5 @@
 export const milestone = {
-  name: "Session container and typed intensity foundation",
-  available: "Multi-item sessions with session-level safety and item-level progression",
-  deferred: "Controlled ontology vocabularies, verified seed data, travel scenarios, and training UI",
+  name: "Controlled ontology and travel-resolution foundation",
+  available: "Validated small seed catalog with explicit full, partial, and infeasible resolution",
+  deferred: "Production-approved training rules, automatic workout generation, and training UI",
 } as const;

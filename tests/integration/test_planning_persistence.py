@@ -324,7 +324,8 @@ def build_and_persist_resolution_chain(
         movement_patterns=("knee_dominant",),
         primary_adaptation_ids=(adaptation.id,),
         equipment_requirement_ids=(dumbbell.id,),
-        loading_type="external",
+        loading_type="external_load",
+        laterality="unilateral",
         loadability=Loadability.MODERATE,
         skill_complexity=CostLevel.MODERATE,
         impact_level=ImpactLevel.LOW,
@@ -340,7 +341,8 @@ def build_and_persist_resolution_chain(
     repository.add_exercise(exercise)
     specification = StimulusSpecification(
         movement_patterns=("knee_dominant",),
-        allowed_loading_types=("external",),
+        allowed_loading_types=("external_load",),
+        allowed_lateralities=("bilateral", "unilateral"),
         minimum_loadability=Loadability.HIGH,
         required_velocity_characteristics=("controlled",),
         maximum_skill_complexity=CostLevel.MODERATE,
@@ -365,6 +367,7 @@ def build_and_persist_resolution_chain(
         loading_type_weight=1,
         loadability_weight=3,
         velocity_weight=1,
+        laterality_weight=1,
         secondary_adaptation_credit=0.5,
         partial_match_threshold=0.7,
         full_match_threshold=0.95,
@@ -562,6 +565,7 @@ def build_and_persist_weekly_chain(
         minimum_high_fatigue_recovery_hours=24,
         maximum_sessions_per_day=1,
         maximum_high_fatigue_sessions_per_day=1,
+        allow_partial_exercise_resolution=True,
         policy_version="fixture@1.0.0",
     )
     weekly_plan = WeeklyScheduler().schedule(

@@ -1,0 +1,42 @@
+[
+  {
+    "id":"a0000000-0000-4000-8000-000000000001","schema_version":"1.0.0","created_at":"2026-08-19T14:00:00Z","name":"Maximal strength","domain":"maximum_strength",
+    "preferred_stimuli":["high_force"],"valid_modalities":["resistance"],"dose_dimensions":["load","repetitions","sets","frequency"],
+    "typical_measurement_methods":["external load performance"],"evidence_claim_ids":["c0000000-0000-4000-8000-000000000001"]
+  },
+  {
+    "id":"a0000000-0000-4000-8000-000000000002","schema_version":"1.0.0","created_at":"2026-08-19T14:00:00Z","name":"Aerobic base","domain":"aerobic_capacity",
+    "preferred_stimuli":["steady_state_aerobic"],"valid_modalities":["running","cycling","rowing"],"dose_dimensions":["duration","distance","frequency"],
+    "typical_measurement_methods":["time trial","submaximal heart-rate response"]
+  },
+  {
+    "id":"a0000000-0000-4000-8000-000000000003","schema_version":"1.0.0","created_at":"2026-08-19T14:00:00Z","name":"Explosive power","domain":"explosive_power",
+    "preferred_stimuli":["explosive"],"valid_modalities":["plyometric","resistance"],"dose_dimensions":["load","repetitions","sets","speed"],
+    "typical_measurement_methods":["jump performance","velocity measurement"]
+  },
+  {
+    "id":"a0000000-0000-4000-8000-000000000004","schema_version":"1.0.0","created_at":"2026-08-19T14:00:00Z","name":"Muscular endurance","domain":"muscular_endurance",
+    "preferred_stimuli":["repeated_effort"],"valid_modalities":["resistance","calisthenic"],"dose_dimensions":["repetitions","sets","duration","density"],
+    "typical_measurement_methods":["standardized repeated-effort test"],"evidence_claim_ids":["c0000000-0000-4000-8000-000000000001"]
+  },
+  {
+    "id":"a0000000-0000-4000-8000-000000000005","schema_version":"1.0.0","created_at":"2026-08-19T14:00:00Z","name":"Loaded locomotion","domain":"loaded_locomotion",
+    "preferred_stimuli":["loaded_locomotion"],"valid_modalities":["carry"],"dose_dimensions":["load","distance","duration","frequency"],
+    "typical_measurement_methods":["standardized loaded carry"]
+  },
+  {
+    "id":"a0000000-0000-4000-8000-000000000006","schema_version":"1.0.0","created_at":"2026-08-19T14:00:00Z","name":"Landing and deceleration capacity","domain":"deceleration",
+    "preferred_stimuli":["deceleration","impact_exposure"],"valid_modalities":["plyometric"],"dose_dimensions":["repetitions","sets","impact_contacts"],
+    "typical_measurement_methods":["observed landing task"]
+  },
+  {
+    "id":"a0000000-0000-4000-8000-000000000007","schema_version":"1.0.0","created_at":"2026-08-19T14:00:00Z","name":"Movement control","domain":"movement_control",
+    "preferred_stimuli":["motor_control"],"valid_modalities":["mobility_control","calisthenic"],"dose_dimensions":["repetitions","duration","frequency"],
+    "typical_measurement_methods":["standardized movement task"]
+  },
+  {
+    "id":"a0000000-0000-4000-8000-000000000008","schema_version":"1.0.0","created_at":"2026-08-19T14:00:00Z","name":"High-speed running exposure","domain":"high_speed_running",
+    "preferred_stimuli":["high_speed"],"valid_modalities":["running"],"dose_dimensions":["distance","duration","speed","frequency"],
+    "typical_measurement_methods":["timed sprint","measured peak speed"]
+  }
+]

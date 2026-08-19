@@ -2,12 +2,11 @@
 
 AGAS is an evidence-grounded, adaptive system for developing broad general athleticism. This repository is intentionally building the inspectable domain and feedback loop before workout generation or polished product features.
 
-The current foundation schedules explicit multi-item session templates, records one session-level
-safety decision with ordered item-level performance, and derives adherence and progression per
-prescription item. Prescription intensity is structured as typed load, effort, pace, heart-rate,
-bodyweight, or technique targets instead of free text. The previously implemented immutable
-training-response and block-review chain remains intact; it still does not silently update athlete
-state or create the next plan.
+The current foundation includes controlled ontology vocabulary, a cross-reference-validated small
+seed catalog, and a tested home/travel/return counterfactual. Temporary equipment changes can
+select a newer exercise resolution without changing athlete identity or adaptation intent; partial
+fidelity remains explicit and policy-gated. Session templates, safety decisions, execution,
+adherence, training response, and block review remain immutable and provenance-preserving.
 
 ## Architecture at a glance
 
@@ -19,6 +18,7 @@ state or create the next plan.
 - `packages/exercise_ontology`: exercise ontology boundary
 - `packages/adaptation_models`: adaptation ontology boundary
 - `packages/safety`: deterministic safety-policy boundary
+- `packages/seed_data`: validated loader for the small versioned repository seed catalog
 - `packages/evaluation`: counterfactual and anti-sludge evaluation boundary
 - `tests`: domain and persistence tests
 - `docs`: product specification, policies, architecture, and decision records
@@ -60,8 +60,14 @@ Apply the database migration:
 alembic upgrade head
 ```
 
-The checked-in baseline is for a new pre-production database. Once shared seed or athlete data
-exists, schema changes must use new incremental revisions rather than rewriting this baseline.
+The checked-in baseline is frozen. Controlled ontology fields are added through the next
+incremental revision; future schema changes must continue to append revisions.
+
+Validate the repository seed catalog without loading it into an athlete database:
+
+```bash
+python -c "from agas_seed_data import load_seed_catalog; print(load_seed_catalog().manifest)"
+```
 
 ## Run the backend
 

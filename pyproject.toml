@@ -31,7 +31,13 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-where = ["packages/domain/src", "packages/safety/src", "services/api/src", "services/planner/src"]
+where = [
+  "packages/domain/src",
+  "packages/safety/src",
+  "packages/seed_data/src",
+  "services/api/src",
+  "services/planner/src",
+]
 namespaces = false
 
 [tool.pytest.ini_options]
