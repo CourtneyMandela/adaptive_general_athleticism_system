@@ -3,7 +3,9 @@ from uuid import uuid4
 
 import pytest
 from agas_domain import (
+    AbsoluteLoadTarget,
     CostLevel,
+    EffortRpeTarget,
     ExposureDefinition,
     ExposureProgressionPolicy,
     ExposureTarget,
@@ -18,6 +20,7 @@ from agas_domain import (
     SessionAdherence,
     SessionExecution,
     SessionExecutionStatus,
+    SessionItemExecution,
     SessionPrescription,
     SessionSafetyDecision,
     SetPerformance,
@@ -45,7 +48,10 @@ def chain() -> tuple[SessionPrescription, SessionExecution, SessionAdherence]:
         reason_for_inclusion="fixture",
         sets=3,
         repetitions_per_set=5,
-        intensity_target="fixture effort",
+        intensity_targets=(
+            AbsoluteLoadTarget(value=100, unit="kg"),
+            EffortRpeTarget(minimum=6, maximum=8),
+        ),
         rest_seconds=120,
         progression_rule_reference="fixture-progression@1.0.0",
         substitution_class="fixture",
@@ -61,21 +67,28 @@ def chain() -> tuple[SessionPrescription, SessionExecution, SessionAdherence]:
         athlete_id=athlete_id,
         weekly_plan_id=plan_id,
         planned_session_id=planned_id,
-        prescription_id=prescription.id,
+        session_template_id=uuid4(),
         pre_session_safety_decision_id=uuid4(),
         status=SessionExecutionStatus.COMPLETED,
         started_at=NOW,
         ended_at=NOW + timedelta(minutes=30),
-        performances=tuple(
-            SetPerformance(
-                set_index=index,
-                performed=True,
-                target_completed=True,
-                actual_repetitions=5,
-                effort_rpe=7,
-                technique_constraint_met=True,
-            )
-            for index in range(1, 4)
+        items=(
+            SessionItemExecution(
+                prescription_id=prescription.id,
+                status=SessionExecutionStatus.COMPLETED,
+                performances=tuple(
+                    SetPerformance(
+                        set_index=index,
+                        performed=True,
+                        target_completed=True,
+                        actual_repetitions=5,
+                        effort_rpe=7,
+                        technique_constraint_met=True,
+                    )
+                    for index in range(1, 4)
+                ),
+                item_rpe=7,
+            ),
         ),
         session_rpe=7,
         performance_observation_id=observation_id,
@@ -253,3 +266,48 @@ def test_approved_decision_creates_new_immutable_prescription() -> None:
             policy=policy,
             prescribed_at=NOW + timedelta(days=1),
         )
+
+
+def test_load_progression_updates_the_typed_absolute_load_target() -> None:
+    prescription, execution, adherence = chain()
+    policy = ProgressionPolicy(
+        reference=prescription.progression_rule_reference,
+        minimum_set_completion_ratio=1,
+        minimum_dose_completion_ratio=1,
+        maximum_session_rpe=8,
+        adjustment=PrescriptionAdjustment(
+            dimension=ProgressionDimension.LOAD,
+            amount=2.5,
+            unit="kg",
+            description="add 2.5 kilograms",
+        ),
+        evidence_claim_ids=(uuid4(),),
+        rationale="software fixture",
+        policy_version="fixture@1.0.0",
+    )
+    decision = ProgressionEngine().decide(
+        prescription=prescription,
+        execution=execution,
+        adherence=adherence,
+        policy=policy,
+        decided_at=NOW + timedelta(minutes=35),
+    )
+
+    revised = PrescriptionProgressionApplicator().apply(
+        prescription=prescription,
+        decision=decision,
+        policy=policy,
+        prescribed_at=NOW + timedelta(days=1),
+    )
+
+    original_load = next(
+        target
+        for target in prescription.intensity_targets
+        if isinstance(target, AbsoluteLoadTarget)
+    )
+    revised_load = next(
+        target for target in revised.intensity_targets if isinstance(target, AbsoluteLoadTarget)
+    )
+    assert original_load.value == 100
+    assert revised_load.value == 102.5
+    assert revised_load.unit == "kg"

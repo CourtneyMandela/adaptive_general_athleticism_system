@@ -53,6 +53,10 @@ progression rules require reviewed evidence, scoped applicability, and explicit 
 current allocator and scheduler preserve these values and test feasibility; they do not establish
 that a fixture value is effective or optimal.
 
+Typed intensity targets make units and target semantics inspectable; they do not make a prescribed
+load, RPE range, heart-rate zone, pace, or technique constraint evidence-based. Session-template
+composition and frequency are likewise governed inputs until a reviewed generation policy exists.
+
 ## Safety and execution
 
 A `SessionSafetyPolicy` must link to reviewed evidence claims before it is persisted. The policy's

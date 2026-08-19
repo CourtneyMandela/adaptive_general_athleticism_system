@@ -52,9 +52,12 @@ from agas_domain.models import (
     SchedulingIssue,
     SessionAdherence,
     SessionExecution,
+    SessionItemExecution,
     SessionPrescription,
     SessionSafetyDecision,
     SessionSafetyPolicy,
+    SessionTemplate,
+    SessionTemplateItem,
     SetPerformance,
     StimulusRequirement,
     TrainingResponse,
@@ -129,6 +132,7 @@ from agas_domain.persistence.models import (
     SessionAdherenceObservationRecord,
     SessionAdherenceRecord,
     SessionExecutionRecord,
+    SessionItemExecutionRecord,
     SessionPrescriptionEvidenceClaimRecord,
     SessionPrescriptionObservationRecord,
     SessionPrescriptionRecord,
@@ -137,6 +141,10 @@ from agas_domain.persistence.models import (
     SessionSafetyDecisionRecord,
     SessionSafetyPolicyEvidenceClaimRecord,
     SessionSafetyPolicyRecord,
+    SessionTemplateEvidenceRecord,
+    SessionTemplateItemRecord,
+    SessionTemplateObservationRecord,
+    SessionTemplateRecord,
     SetPerformanceRecord,
     StimulusRequirementEvidenceClaimRecord,
     StimulusRequirementObservationRecord,
@@ -1306,7 +1314,9 @@ class DomainRepository:
             sets=prescription.sets,
             repetitions_per_set=prescription.repetitions_per_set,
             duration_seconds=prescription.duration_seconds,
-            intensity_target=prescription.intensity_target,
+            intensity_targets=[
+                item.model_dump(mode="json") for item in prescription.intensity_targets
+            ],
             rest_seconds=prescription.rest_seconds,
             progression_rule_reference=prescription.progression_rule_reference,
             substitution_class=prescription.substitution_class,
@@ -1364,7 +1374,7 @@ class DomainRepository:
             sets=record.sets,
             repetitions_per_set=record.repetitions_per_set,
             duration_seconds=record.duration_seconds,
-            intensity_target=record.intensity_target,
+            intensity_targets=tuple(record.intensity_targets),
             rest_seconds=record.rest_seconds,
             progression_rule_reference=record.progression_rule_reference,
             substitution_class=record.substitution_class,
@@ -1376,6 +1386,104 @@ class DomainRepository:
             rule_version=record.rule_version,
             supersedes_prescription_id=(revision.superseded_prescription_id if revision else None),
             progression_decision_id=(revision.progression_decision_id if revision else None),
+        )
+
+    def add_session_template(self, template: SessionTemplate) -> None:
+        block = self.session.get(BlockPlanRecord, template.block_plan_id)
+        if block is None or block.athlete_id != template.athlete_id:
+            raise DomainIntegrityError("session template block belongs to another athlete")
+        prescriptions = list(
+            self.session.scalars(
+                select(SessionPrescriptionRecord).where(
+                    SessionPrescriptionRecord.id.in_(
+                        tuple(item.prescription_id for item in template.items)
+                    )
+                )
+            )
+        )
+        if {item.id for item in prescriptions} != {item.prescription_id for item in template.items}:
+            raise DomainIntegrityError("session template references an unknown prescription")
+        if any(
+            item.athlete_id != template.athlete_id or item.block_plan_id != block.id
+            for item in prescriptions
+        ):
+            raise DomainIntegrityError("session template prescription belongs elsewhere")
+        observations = self._observations_by_id(template.source_observation_ids)
+        if {item.id for item in observations} != set(template.source_observation_ids):
+            raise DomainIntegrityError("one or more session template observations do not exist")
+        if any(item.athlete_id != template.athlete_id for item in observations):
+            raise DomainIntegrityError("session template observations belong to another athlete")
+        self._require_ids_exist(
+            EvidenceClaimRecord.id,
+            template.evidence_claim_ids,
+            "session template evidence claims",
+        )
+        record = SessionTemplateRecord(
+            id=template.id,
+            schema_version=template.schema_version,
+            created_at=template.created_at,
+            athlete_id=template.athlete_id,
+            block_plan_id=template.block_plan_id,
+            name=template.name,
+            sessions_per_week=template.sessions_per_week,
+            planned_duration_minutes=template.planned_duration_minutes,
+            fatigue_cost=template.fatigue_cost.value,
+            created_for_block_at=template.created_for_block_at,
+            rule_version=template.rule_version,
+        )
+        record.items = [
+            SessionTemplateItemRecord(
+                session_template_id=template.id,
+                prescription_id=item.prescription_id,
+                order_index=item.order_index,
+                section=item.section.value,
+            )
+            for item in template.items
+        ]
+        record.observation_links = [
+            SessionTemplateObservationRecord(
+                session_template_id=template.id,
+                observation_id=item_id,
+                position=position,
+            )
+            for position, item_id in enumerate(template.source_observation_ids)
+        ]
+        record.evidence_links = [
+            SessionTemplateEvidenceRecord(
+                session_template_id=template.id,
+                evidence_claim_id=item_id,
+                position=position,
+            )
+            for position, item_id in enumerate(template.evidence_claim_ids)
+        ]
+        self.session.add(record)
+
+    def get_session_template(self, template_id: UUID) -> SessionTemplate | None:
+        record = self.session.get(SessionTemplateRecord, template_id)
+        if record is None:
+            return None
+        return SessionTemplate(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            athlete_id=record.athlete_id,
+            block_plan_id=record.block_plan_id,
+            name=record.name,
+            items=tuple(
+                SessionTemplateItem(
+                    prescription_id=item.prescription_id,
+                    order_index=item.order_index,
+                    section=item.section,
+                )
+                for item in record.items
+            ),
+            sessions_per_week=record.sessions_per_week,
+            planned_duration_minutes=record.planned_duration_minutes,
+            fatigue_cost=record.fatigue_cost,
+            source_observation_ids=tuple(item.observation_id for item in record.observation_links),
+            evidence_claim_ids=tuple(item.evidence_claim_id for item in record.evidence_links),
+            created_for_block_at=record.created_for_block_at,
+            rule_version=record.rule_version,
         )
 
     def add_weekly_availability(self, availability: WeeklyAvailability) -> None:
@@ -1496,17 +1604,14 @@ class DomainRepository:
             raise DomainIntegrityError("weekly scheduling policy does not exist")
         window_by_id = {item.id: item for item in availability.windows}
         for session in plan.sessions:
-            prescription = self.session.get(SessionPrescriptionRecord, session.prescription_id)
-            allocation = self.session.get(
-                BlockResourceAllocationRecord, session.resource_allocation_id
-            )
+            template = self.session.get(SessionTemplateRecord, session.session_template_id)
             window = window_by_id.get(session.availability_window_id)
-            if prescription is None or prescription.block_plan_id != block.id:
-                raise DomainIntegrityError("planned session prescription belongs to another block")
-            if allocation is None or allocation.block_plan_id != block.id:
-                raise DomainIntegrityError("planned session allocation belongs to another block")
-            if prescription.resource_allocation_id != allocation.id:
-                raise DomainIntegrityError("planned session prescription and allocation differ")
+            if template is None or template.block_plan_id != block.id:
+                raise DomainIntegrityError("planned session template belongs to another block")
+            if template.athlete_id != plan.athlete_id:
+                raise DomainIntegrityError("planned session template belongs to another athlete")
+            if session.planned_duration_minutes != template.planned_duration_minutes:
+                raise DomainIntegrityError("planned session duration differs from its template")
             if window is None or window.environment_id != session.environment_id:
                 raise DomainIntegrityError("planned session availability window is invalid")
             if session.starts_at < window.starts_at or session.ends_at > window.ends_at:
@@ -1532,8 +1637,7 @@ class DomainRepository:
                 schema_version=item.schema_version,
                 created_at=item.created_at,
                 weekly_plan_id=plan.id,
-                prescription_id=item.prescription_id,
-                resource_allocation_id=item.resource_allocation_id,
+                session_template_id=item.session_template_id,
                 occurrence_index=item.occurrence_index,
                 availability_window_id=item.availability_window_id,
                 environment_id=item.environment_id,
@@ -1567,8 +1671,7 @@ class DomainRepository:
                     id=item.id,
                     schema_version=item.schema_version,
                     created_at=item.created_at,
-                    prescription_id=item.prescription_id,
-                    resource_allocation_id=item.resource_allocation_id,
+                    session_template_id=item.session_template_id,
                     occurrence_index=item.occurrence_index,
                     availability_window_id=item.availability_window_id,
                     environment_id=item.environment_id,
@@ -1745,7 +1848,7 @@ class DomainRepository:
         self._require_athlete(execution.athlete_id)
         plan = self.session.get(WeeklyPlanRecord, execution.weekly_plan_id)
         planned_session = self.session.get(PlannedSessionRecord, execution.planned_session_id)
-        prescription = self.session.get(SessionPrescriptionRecord, execution.prescription_id)
+        template = self.session.get(SessionTemplateRecord, execution.session_template_id)
         safety_decision = self.session.get(
             SessionSafetyDecisionRecord, execution.pre_session_safety_decision_id
         )
@@ -1754,11 +1857,14 @@ class DomainRepository:
         if planned_session is None or planned_session.weekly_plan_id != plan.id:
             raise DomainIntegrityError("executed session does not belong to its weekly plan")
         if (
-            prescription is None
-            or prescription.id != planned_session.prescription_id
-            or prescription.athlete_id != execution.athlete_id
+            template is None
+            or template.id != planned_session.session_template_id
+            or template.athlete_id != execution.athlete_id
         ):
-            raise DomainIntegrityError("session execution prescription does not match its plan")
+            raise DomainIntegrityError("session execution template does not match its plan")
+        expected_prescription_ids = tuple(item.prescription_id for item in template.items)
+        if tuple(item.prescription_id for item in execution.items) != expected_prescription_ids:
+            raise DomainIntegrityError("execution items do not match the ordered template")
         if safety_decision is None:
             raise DomainIntegrityError("pre-session safety decision does not exist")
         if (
@@ -1787,7 +1893,7 @@ class DomainRepository:
         expected_context = {
             "weekly_plan_id": str(execution.weekly_plan_id),
             "planned_session_id": str(execution.planned_session_id),
-            "prescription_id": str(execution.prescription_id),
+            "session_template_id": str(execution.session_template_id),
             "pre_session_safety_decision_id": str(execution.pre_session_safety_decision_id),
         }
         if any(observation.context.get(key) != value for key, value in expected_context.items()):
@@ -1802,7 +1908,7 @@ class DomainRepository:
             athlete_id=execution.athlete_id,
             weekly_plan_id=execution.weekly_plan_id,
             planned_session_id=execution.planned_session_id,
-            prescription_id=execution.prescription_id,
+            session_template_id=execution.session_template_id,
             pre_session_safety_decision_id=execution.pre_session_safety_decision_id,
             status=execution.status.value,
             started_at=execution.started_at,
@@ -1814,24 +1920,38 @@ class DomainRepository:
             logged_at=execution.logged_at,
             rule_version=execution.rule_version,
         )
-        record.performances = [
-            SetPerformanceRecord(
+        record.items = []
+        for position, item in enumerate(execution.items):
+            item_record = SessionItemExecutionRecord(
                 id=item.id,
                 schema_version=item.schema_version,
                 created_at=item.created_at,
                 session_execution_id=execution.id,
-                set_index=item.set_index,
-                performed=item.performed,
-                target_completed=item.target_completed,
-                actual_repetitions=item.actual_repetitions,
-                actual_duration_seconds=item.actual_duration_seconds,
-                load_value=item.load_value,
-                load_unit=item.load_unit,
-                effort_rpe=item.effort_rpe,
-                technique_constraint_met=item.technique_constraint_met,
+                prescription_id=item.prescription_id,
+                status=item.status.value,
+                item_rpe=item.item_rpe,
+                note=item.note,
+                position=position,
             )
-            for item in execution.performances
-        ]
+            item_record.performances = [
+                SetPerformanceRecord(
+                    id=performance.id,
+                    schema_version=performance.schema_version,
+                    created_at=performance.created_at,
+                    session_item_execution_id=item.id,
+                    set_index=performance.set_index,
+                    performed=performance.performed,
+                    target_completed=performance.target_completed,
+                    actual_repetitions=performance.actual_repetitions,
+                    actual_duration_seconds=performance.actual_duration_seconds,
+                    load_value=performance.load_value,
+                    load_unit=performance.load_unit,
+                    effort_rpe=performance.effort_rpe,
+                    technique_constraint_met=performance.technique_constraint_met,
+                )
+                for performance in item.performances
+            ]
+            record.items.append(item_record)
         self.session.add(record)
 
     def get_session_execution(self, execution_id: UUID) -> SessionExecution | None:
@@ -1845,27 +1965,39 @@ class DomainRepository:
             athlete_id=record.athlete_id,
             weekly_plan_id=record.weekly_plan_id,
             planned_session_id=record.planned_session_id,
-            prescription_id=record.prescription_id,
+            session_template_id=record.session_template_id,
             pre_session_safety_decision_id=record.pre_session_safety_decision_id,
             status=record.status,
             started_at=record.started_at,
             ended_at=record.ended_at,
-            performances=tuple(
-                SetPerformance(
+            items=tuple(
+                SessionItemExecution(
                     id=item.id,
                     schema_version=item.schema_version,
                     created_at=item.created_at,
-                    set_index=item.set_index,
-                    performed=item.performed,
-                    target_completed=item.target_completed,
-                    actual_repetitions=item.actual_repetitions,
-                    actual_duration_seconds=item.actual_duration_seconds,
-                    load_value=item.load_value,
-                    load_unit=item.load_unit,
-                    effort_rpe=item.effort_rpe,
-                    technique_constraint_met=item.technique_constraint_met,
+                    prescription_id=item.prescription_id,
+                    status=item.status,
+                    performances=tuple(
+                        SetPerformance(
+                            id=performance.id,
+                            schema_version=performance.schema_version,
+                            created_at=performance.created_at,
+                            set_index=performance.set_index,
+                            performed=performance.performed,
+                            target_completed=performance.target_completed,
+                            actual_repetitions=performance.actual_repetitions,
+                            actual_duration_seconds=performance.actual_duration_seconds,
+                            load_value=performance.load_value,
+                            load_unit=performance.load_unit,
+                            effort_rpe=performance.effort_rpe,
+                            technique_constraint_met=performance.technique_constraint_met,
+                        )
+                        for performance in item.performances
+                    ),
+                    item_rpe=item.item_rpe,
+                    note=item.note,
                 )
-                for item in record.performances
+                for item in record.items
             ),
             applied_modifications=tuple(record.applied_modifications),
             session_rpe=record.session_rpe,
@@ -1883,8 +2015,9 @@ class DomainRepository:
         if (
             planned_session is None
             or planned_session.id != execution.planned_session_id
-            or adherence.prescription_id != execution.prescription_id
-            or adherence.prescription_id != planned_session.prescription_id
+            or not any(
+                item.prescription_id == adherence.prescription_id for item in execution.items
+            )
         ):
             raise DomainIntegrityError("adherence does not match the executed prescription")
         observations = self._observations_by_id(adherence.source_observation_ids)
@@ -2050,7 +2183,7 @@ class DomainRepository:
             raise DomainIntegrityError("exposure entry execution is missing or belongs elsewhere")
         if (
             definition is None
-            or execution.prescription_id != entry.prescription_id
+            or not any(item.prescription_id == entry.prescription_id for item in execution.items)
             or execution.planned_session_id != entry.planned_session_id
             or definition.exposure_type != entry.exposure_type.value
             or definition.dose_unit != entry.dose_unit
@@ -2181,8 +2314,9 @@ class DomainRepository:
             execution is None
             or adherence is None
             or execution.athlete_id != decision.athlete_id
-            or execution.prescription_id != decision.prescription_id
+            or not any(item.prescription_id == decision.prescription_id for item in execution.items)
             or adherence.session_execution_id != execution.id
+            or adherence.prescription_id != decision.prescription_id
         ):
             raise DomainIntegrityError("progression decision execution chain is invalid")
         if self.session.get(ProgressionPolicyRecord, decision.progression_policy_id) is None:

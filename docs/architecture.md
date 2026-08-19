@@ -2,9 +2,11 @@
 
 ## Current scope
 
-Milestone 6A establishes immutable delivered-dose `TrainingResponse` records and deterministic
-`BlockReview` outcomes on top of compatible capability reassessments, prescriptions, executions,
-adherence, and safety history. It does not update capability state or generate the next block.
+The current foundation corrects the provisional exercise-as-session shape before extending the
+closed loop. Explicit `SessionTemplate` containers are scheduled as real workouts, safety remains
+session-scoped, and execution, adherence, and progression retain prescription-item identity. Typed
+intensity targets replace free text. Existing immutable `TrainingResponse` and deterministic
+`BlockReview` behavior remains in place; capability updates and next-block generation are deferred.
 
 ## Shape
 
@@ -130,14 +132,22 @@ Target shortfalls and permitted partial exercise resolutions remain visible as p
 issues. Long-range development allocation scales development weight but is never treated as a
 literal dose.
 
-A `SessionPrescription` stores an explicit exercise, adaptation, reason, sets, repetitions or
-duration, intensity, rest, progression-rule reference, substitution class, planned duration,
-fatigue class, observations, evidence, and rule version. These are supplied inputs in Milestone 5A;
-the scheduler never manufactures them and does not execute the progression reference.
+A `SessionPrescription` stores one explicit exercise and adaptation with its reason, sets,
+repetitions or duration, typed intensity targets, rest, progression-rule reference, substitution
+class, planned duration, fatigue class, observations, evidence, and rule version. Supported target
+types distinguish absolute load, relative load, bodyweight, effort RPE, repetitions-in-reserve,
+heart-rate zone, pace, and technique constraints. Prescriptions remain independently versioned so
+one item can progress without rewriting a completed session.
+
+A versioned `SessionTemplate` is the workout container. It gives ordered prescription items a
+section, owns an explicit weekly frequency, and declares duration and maximum item fatigue. V1
+accepts templates as governed input and validates that their aggregate frequencies exactly match
+block allocations; it does not invent grouping rules.
 
 `WeeklyAvailability` contains dated, timezone-aware, non-overlapping windows associated with one
-athlete environment. `WeeklyScheduler` repeats one prescription template according to its block
-allocation and places each occurrence only in a matching-environment window with adequate time.
+athlete environment. `WeeklyScheduler` repeats each session template and places the whole workout
+in one matching-environment window with adequate time. Every item in a template must resolve to
+that environment, and the template duration must equal the sum of its item durations.
 It enforces configurable daily limits and recovery between high-fatigue sessions. A required
 occurrence that cannot be placed makes the immutable `WeeklyPlan` infeasible and records why.
 
@@ -150,11 +160,13 @@ free text or classify medical meaning. A modification decision lists explicit ch
 execution must acknowledge exactly those changes, while hold and escalation outcomes cannot
 authorize ordinary logging.
 
-`SessionExecution` retains the immutable prescription identity, authorizing decision, timestamps,
-status, applied modifications, and set-level actual repetitions or duration, load, effort, and
-technique-constraint report. The same input is preserved as a direct `WORKOUT_RESULT` observation.
-`SessionAdherence` is a separate `derived` record with bounded prescribed-versus-performed set and
-dose ratios, its source observation, calculation method, timestamp, and rule version. Optional
+`SessionExecution` retains the immutable session-template identity, authorizing decision,
+timestamps, status, applied modifications, and ordered item results. Each item retains its
+prescription identity, completion status, effort, note, and set-level repetitions or duration,
+load, effort, and technique report. The same input is preserved as a direct `WORKOUT_RESULT`
+observation. `SessionAdherence` remains a separate prescription-item-scoped `derived` record with
+bounded prescribed-versus-performed set and dose ratios, its source observation, calculation
+method, timestamp, and rule version. Optional
 post-session safety decisions reference the completed execution without rewriting it. None of
 these records chooses a progression.
 
@@ -168,7 +180,8 @@ jumps without using general fitness as a proxy.
 
 Approved progression decisions may create a new `SessionPrescription` linked through an immutable
 revision record to both the superseded prescription and authorizing decision. Repetitions, sets,
-and duration are the only automatically applicable typed dimensions in V1. Evidence, observation,
+duration, and compatible absolute or relative load targets are automatically applicable in V1;
+unsupported or unit-incompatible adjustments fail explicitly. Evidence, observation,
 exposure-entry, and safety-decision provenance uses ordered foreign-key association tables.
 
 ### Training response and block review
@@ -212,9 +225,9 @@ provenance survives deterministic serialization round trips. Ordered links also 
 requirement's observation/evidence sources, a resolution's candidate ranking, match issues, and the
 availability events used by its environment snapshot.
 Block allocations retain their exact demand and policy; prescriptions retain ordered observation
-and evidence sources; and planned sessions retain their prescription, allocation, environment, and
-availability-window identities.
-Safety policies, safety decisions and their observation links, executions and set performances,
+and evidence sources; session templates retain ordered prescription items and provenance; and
+planned sessions retain their template, environment, and availability-window identities.
+Safety policies, safety decisions and their observation links, executions, item executions, and set performances,
 adherence records and their source links, training responses, review policies, reviews, and all of
 their ordered provenance links are also append-only. Repository checks duplicate the
 domain authorization invariants before persistence so invalid cross-athlete, cross-plan, blocking,
@@ -227,7 +240,7 @@ FastAPI owns transport concerns and database lifecycle. The initial API intentio
 ## Web
 
 The Next.js App Router shell is responsive and installable through a web app manifest. It
-communicates the response-review milestone honestly and does not present a workout generator,
+communicates the session-container foundation honestly and does not present a workout generator,
 automatic athlete-state update, or a polished training workflow.
 
 ## Configuration

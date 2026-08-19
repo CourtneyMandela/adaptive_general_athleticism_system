@@ -40,6 +40,7 @@ from agas_domain.enums import (
     SafetySignalClass,
     SchedulingIssueCode,
     SessionExecutionStatus,
+    SessionSection,
     TrainingPriorityState,
     WeeklyPlanStatus,
 )
@@ -1020,6 +1021,81 @@ class BlockPlan(VersionedRecord):
         return self
 
 
+class AbsoluteLoadTarget(DomainModel):
+    kind: Literal["absolute_load"] = "absolute_load"
+    value: float = Field(gt=0)
+    unit: NonEmptyText
+
+
+class RelativeLoadTarget(DomainModel):
+    kind: Literal["relative_load"] = "relative_load"
+    percentage: float = Field(gt=0, le=200)
+    reference: NonEmptyText
+
+
+class BodyweightTarget(DomainModel):
+    kind: Literal["bodyweight"] = "bodyweight"
+
+
+class EffortRpeTarget(DomainModel):
+    kind: Literal["effort_rpe"] = "effort_rpe"
+    minimum: float = Field(ge=0, le=10)
+    maximum: float = Field(ge=0, le=10)
+
+    @model_validator(mode="after")
+    def validate_range(self) -> EffortRpeTarget:
+        if self.maximum < self.minimum:
+            raise ValueError("RPE maximum cannot be lower than minimum")
+        return self
+
+
+class RepetitionsInReserveTarget(DomainModel):
+    kind: Literal["repetitions_in_reserve"] = "repetitions_in_reserve"
+    minimum: float = Field(ge=0, le=10)
+    maximum: float = Field(ge=0, le=10)
+
+    @model_validator(mode="after")
+    def validate_range(self) -> RepetitionsInReserveTarget:
+        if self.maximum < self.minimum:
+            raise ValueError("RIR maximum cannot be lower than minimum")
+        return self
+
+
+class HeartRateZoneTarget(DomainModel):
+    kind: Literal["heart_rate_zone"] = "heart_rate_zone"
+    zone: int = Field(ge=1, le=5)
+
+
+class PaceTarget(DomainModel):
+    kind: Literal["pace"] = "pace"
+    value: float = Field(gt=0)
+    unit: NonEmptyText
+
+
+class TechniqueTarget(DomainModel):
+    kind: Literal["technique"] = "technique"
+    constraints: Annotated[tuple[NonEmptyText, ...], Field(min_length=1)]
+
+    @model_validator(mode="after")
+    def validate_constraints(self) -> TechniqueTarget:
+        if len(set(self.constraints)) != len(self.constraints):
+            raise ValueError("technique constraints must not contain duplicates")
+        return self
+
+
+IntensityTarget = Annotated[
+    AbsoluteLoadTarget
+    | RelativeLoadTarget
+    | BodyweightTarget
+    | EffortRpeTarget
+    | RepetitionsInReserveTarget
+    | HeartRateZoneTarget
+    | PaceTarget
+    | TechniqueTarget,
+    Field(discriminator="kind"),
+]
+
+
 class SessionPrescription(VersionedRecord):
     athlete_id: UUID
     block_plan_id: UUID
@@ -1031,7 +1107,7 @@ class SessionPrescription(VersionedRecord):
     sets: int = Field(ge=1)
     repetitions_per_set: int | None = Field(default=None, ge=1)
     duration_seconds: int | None = Field(default=None, ge=1)
-    intensity_target: NonEmptyText
+    intensity_targets: Annotated[tuple[IntensityTarget, ...], Field(min_length=1)]
     rest_seconds: int = Field(ge=0)
     progression_rule_reference: NonEmptyText
     substitution_class: NonEmptyText
@@ -1063,6 +1139,52 @@ class SessionPrescription(VersionedRecord):
             raise ValueError("prescription revisions require both superseded and decision ids")
         if self.supersedes_prescription_id == self.id:
             raise ValueError("a prescription cannot supersede itself")
+        target_kinds = [item.kind for item in self.intensity_targets]
+        if len(set(target_kinds)) != len(target_kinds):
+            raise ValueError("intensity target kinds must not contain duplicates")
+        load_kinds = {"absolute_load", "relative_load", "bodyweight"}
+        if len(load_kinds & set(target_kinds)) > 1:
+            raise ValueError("a prescription may contain only one load target")
+        return self
+
+
+class SessionTemplateItem(DomainModel):
+    prescription_id: UUID
+    order_index: int = Field(ge=1)
+    section: SessionSection
+
+
+class SessionTemplate(VersionedRecord):
+    athlete_id: UUID
+    block_plan_id: UUID
+    name: NonEmptyText
+    items: Annotated[tuple[SessionTemplateItem, ...], Field(min_length=1)]
+    sessions_per_week: int = Field(ge=1)
+    planned_duration_minutes: int = Field(gt=0)
+    fatigue_cost: CostLevel
+    source_observation_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
+    evidence_claim_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
+    created_for_block_at: datetime
+    rule_version: NonEmptyText
+
+    @field_validator("created_for_block_at")
+    @classmethod
+    def require_aware_template_time(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("session template timestamps must include a timezone")
+        return value
+
+    @model_validator(mode="after")
+    def validate_template(self) -> SessionTemplate:
+        order = tuple(item.order_index for item in self.items)
+        if order != tuple(range(1, len(self.items) + 1)):
+            raise ValueError("session template item order must be contiguous and start at one")
+        if len({item.prescription_id for item in self.items}) != len(self.items):
+            raise ValueError("session template prescriptions must not contain duplicates")
+        for field_name in ("source_observation_ids", "evidence_claim_ids"):
+            values = getattr(self, field_name)
+            if len(set(values)) != len(values):
+                raise ValueError(f"{field_name} must not contain duplicates")
         return self
 
 
@@ -1130,13 +1252,12 @@ class WeeklySchedulingPolicy(VersionedRecord):
 class SchedulingIssue(DomainModel):
     code: SchedulingIssueCode
     detail: NonEmptyText
-    prescription_id: UUID
+    session_template_id: UUID
     occurrence_index: int = Field(ge=1)
 
 
 class PlannedSession(VersionedRecord):
-    prescription_id: UUID
-    resource_allocation_id: UUID
+    session_template_id: UUID
     occurrence_index: int = Field(ge=1)
     availability_window_id: UUID
     environment_id: UUID
@@ -1183,9 +1304,11 @@ class WeeklyPlan(VersionedRecord):
 
     @model_validator(mode="after")
     def validate_weekly_plan(self) -> WeeklyPlan:
-        occurrence_keys = [(item.prescription_id, item.occurrence_index) for item in self.sessions]
+        occurrence_keys = [
+            (item.session_template_id, item.occurrence_index) for item in self.sessions
+        ]
         if len(set(occurrence_keys)) != len(occurrence_keys):
-            raise ValueError("weekly sessions must contain unique prescription occurrences")
+            raise ValueError("weekly sessions must contain unique template occurrences")
         ordered = sorted(self.sessions, key=lambda item: item.starts_at)
         if any(current.starts_at < previous.ends_at for previous, current in pairwise(ordered)):
             raise ValueError("weekly sessions must not overlap")
@@ -1362,6 +1485,25 @@ class SetPerformance(VersionedRecord):
         return self
 
 
+class SessionItemExecutionInput(DomainModel):
+    prescription_id: UUID
+    status: SessionExecutionStatus
+    performances: tuple[SetPerformance, ...] = ()
+    item_rpe: float | None = Field(default=None, ge=0, le=10)
+    note: str | None = None
+
+    @model_validator(mode="after")
+    def validate_item_execution_input(self) -> SessionItemExecutionInput:
+        if len({item.set_index for item in self.performances}) != len(self.performances):
+            raise ValueError("set performance indices must be unique within an item")
+        if self.status is SessionExecutionStatus.NOT_STARTED:
+            if self.performances or self.item_rpe is not None:
+                raise ValueError("not-started items cannot contain performed work or effort")
+        elif not self.performances:
+            raise ValueError("started items require set performance records")
+        return self
+
+
 class SessionExecutionInput(DomainModel):
     athlete_id: UUID
     weekly_plan_id: UUID
@@ -1370,7 +1512,7 @@ class SessionExecutionInput(DomainModel):
     status: SessionExecutionStatus
     started_at: datetime | None = None
     ended_at: datetime | None = None
-    performances: tuple[SetPerformance, ...] = ()
+    items: Annotated[tuple[SessionItemExecutionInput, ...], Field(min_length=1)]
     applied_modifications: tuple[PrescriptionModification, ...] = ()
     session_rpe: float | None = Field(default=None, ge=0, le=10)
     note: str | None = None
@@ -1387,13 +1529,15 @@ class SessionExecutionInput(DomainModel):
 
     @model_validator(mode="after")
     def validate_execution_input(self) -> SessionExecutionInput:
-        if len({item.set_index for item in self.performances}) != len(self.performances):
-            raise ValueError("set performance indices must be unique")
+        if len({item.prescription_id for item in self.items}) != len(self.items):
+            raise ValueError("session execution items must use unique prescriptions")
         if len(set(self.applied_modifications)) != len(self.applied_modifications):
             raise ValueError("applied modifications must not contain duplicates")
         if self.status is SessionExecutionStatus.NOT_STARTED:
-            if self.started_at is not None or self.ended_at is not None or self.performances:
-                raise ValueError("not-started execution cannot contain performed work")
+            if self.started_at is not None or self.ended_at is not None:
+                raise ValueError("not-started execution cannot contain a time interval")
+            if any(item.status is not SessionExecutionStatus.NOT_STARTED for item in self.items):
+                raise ValueError("not-started sessions require every item to be not started")
             if self.session_rpe is not None:
                 raise ValueError("not-started execution cannot contain session effort")
         else:
@@ -1403,6 +1547,35 @@ class SessionExecutionInput(DomainModel):
                 raise ValueError("execution end must be later than its start")
             if self.logged_at < self.ended_at:
                 raise ValueError("execution cannot be logged before it ends")
+            item_statuses = {item.status for item in self.items}
+            if self.status is SessionExecutionStatus.COMPLETED and item_statuses != {
+                SessionExecutionStatus.COMPLETED
+            }:
+                raise ValueError("completed sessions require every item to be completed")
+            if self.status is SessionExecutionStatus.PARTIAL and (
+                item_statuses == {SessionExecutionStatus.COMPLETED}
+                or item_statuses == {SessionExecutionStatus.NOT_STARTED}
+            ):
+                raise ValueError("partial sessions require a mixture of completed and limited work")
+        return self
+
+
+class SessionItemExecution(VersionedRecord):
+    prescription_id: UUID
+    status: SessionExecutionStatus
+    performances: tuple[SetPerformance, ...] = ()
+    item_rpe: float | None = Field(default=None, ge=0, le=10)
+    note: str | None = None
+
+    @model_validator(mode="after")
+    def validate_item_execution(self) -> SessionItemExecution:
+        if len({item.set_index for item in self.performances}) != len(self.performances):
+            raise ValueError("set performance indices must be unique within an item")
+        if self.status is SessionExecutionStatus.NOT_STARTED:
+            if self.performances or self.item_rpe is not None:
+                raise ValueError("not-started items cannot contain performed work or effort")
+        elif not self.performances:
+            raise ValueError("started items require set performance records")
         return self
 
 
@@ -1410,12 +1583,12 @@ class SessionExecution(VersionedRecord):
     athlete_id: UUID
     weekly_plan_id: UUID
     planned_session_id: UUID
-    prescription_id: UUID
+    session_template_id: UUID
     pre_session_safety_decision_id: UUID
     status: SessionExecutionStatus
     started_at: datetime | None = None
     ended_at: datetime | None = None
-    performances: tuple[SetPerformance, ...] = ()
+    items: Annotated[tuple[SessionItemExecution, ...], Field(min_length=1)]
     applied_modifications: tuple[PrescriptionModification, ...] = ()
     session_rpe: float | None = Field(default=None, ge=0, le=10)
     note: str | None = None
@@ -1432,15 +1605,21 @@ class SessionExecution(VersionedRecord):
 
     @model_validator(mode="after")
     def validate_execution(self) -> SessionExecution:
-        if len({item.set_index for item in self.performances}) != len(self.performances):
-            raise ValueError("set performance indices must be unique")
+        if len({item.prescription_id for item in self.items}) != len(self.items):
+            raise ValueError("session execution items must use unique prescriptions")
         if len(set(self.applied_modifications)) != len(self.applied_modifications):
             raise ValueError("applied modifications must not contain duplicates")
         if self.status is SessionExecutionStatus.NOT_STARTED:
-            if self.started_at is not None or self.ended_at is not None or self.performances:
-                raise ValueError("not-started execution cannot contain performed work")
+            if self.started_at is not None or self.ended_at is not None:
+                raise ValueError("not-started execution cannot contain a time interval")
+            if any(item.status is not SessionExecutionStatus.NOT_STARTED for item in self.items):
+                raise ValueError("not-started sessions require every item to be not started")
         elif self.started_at is None or self.ended_at is None or self.ended_at <= self.started_at:
             raise ValueError("started execution requires a valid time interval")
+        elif self.status is SessionExecutionStatus.COMPLETED and any(
+            item.status is not SessionExecutionStatus.COMPLETED for item in self.items
+        ):
+            raise ValueError("completed sessions require every item to be completed")
         return self
 
 
@@ -1666,10 +1845,10 @@ class TrainingResponse(VersionedRecord):
             values = getattr(self, field_name)
             if len(set(values)) != len(values):
                 raise ValueError(f"{field_name} must not contain duplicates")
-        if len(self.session_execution_ids) != self.prescribed_sessions:
-            raise ValueError("prescribed sessions must match the recorded executions")
-        if len(self.session_adherence_ids) != len(self.session_execution_ids):
-            raise ValueError("each execution requires exactly one adherence record")
+        if len(self.session_adherence_ids) != self.prescribed_sessions:
+            raise ValueError("prescribed sessions must match item-level adherence records")
+        if len(self.session_execution_ids) > len(self.session_adherence_ids):
+            raise ValueError("each execution requires at least one item-level adherence record")
         return self
 
 

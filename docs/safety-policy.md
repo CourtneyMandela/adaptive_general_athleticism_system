@@ -41,6 +41,11 @@ modification, then proceed. Pre- and post-session reports remain immutable obser
 provenance. A post-session decision references the completed execution and informs later review; it
 does not alter history or automatically modify the next session.
 
+A pre-session decision authorizes or blocks the whole scheduled `SessionTemplate`, not one exercise
+at a time. The execution must preserve every ordered template item and any required session
+modifications exactly. Item-level completion and adherence remain visible without weakening the
+session-level hold or escalation boundary.
+
 Block review may preserve post-session safety decisions as context, but it does not reinterpret
 their signal tags, infer a condition, or diagnose why a response occurred. Safety history and
 measurement uncertainty remain visible for a later governed state-update decision.

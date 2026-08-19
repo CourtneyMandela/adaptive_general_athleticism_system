@@ -2,11 +2,12 @@
 
 AGAS is an evidence-grounded, adaptive system for developing broad general athleticism. This repository is intentionally building the inspectable domain and feedback loop before workout generation or polished product features.
 
-The current milestone derives an immutable training response from compatible before-and-after
-capability estimates and the work actually delivered in a block. A deterministic, evidence-linked
-policy then reviews the block hypothesis as supported, partially supported, not supported, or
-inconclusive. Low delivery and low-confidence measurement remain inconclusive. The review does not
-silently update athlete state or create the next plan; those transitions remain deferred.
+The current foundation schedules explicit multi-item session templates, records one session-level
+safety decision with ordered item-level performance, and derives adherence and progression per
+prescription item. Prescription intensity is structured as typed load, effort, pace, heart-rate,
+bodyweight, or technique targets instead of free text. The previously implemented immutable
+training-response and block-review chain remains intact; it still does not silently update athlete
+state or create the next plan.
 
 ## Architecture at a glance
 
@@ -58,6 +59,9 @@ Apply the database migration:
 ```bash
 alembic upgrade head
 ```
+
+The checked-in baseline is for a new pre-production database. Once shared seed or athlete data
+exists, schema changes must use new incremental revisions rather than rewriting this baseline.
 
 ## Run the backend
 

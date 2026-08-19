@@ -7,9 +7,9 @@ export default function Home() {
         <p className="eyebrow">Adaptive General Athleticism System</p>
         <h1 id="product-title">Build capability. Preserve the why.</h1>
         <p className="lede">
-          AGAS now preserves delivered training and compatible reassessment as an immutable
-          response, then reviews the original block hypothesis against explicit thresholds.
-          Capability updates and next-block replanning remain deliberately deferred.
+          AGAS now schedules a real workout as an ordered set of prescription items, applies one
+          safety decision to the session, and preserves performance and progression per item.
+          Automatic session generation and production training rules remain deliberately deferred.
         </p>
         <dl className="status-card">
           <div>

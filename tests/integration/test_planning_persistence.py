@@ -19,6 +19,7 @@ from agas_domain import (
     CompetencyFloor,
     Confidence,
     CostLevel,
+    EffortRpeTarget,
     Environment,
     Equipment,
     EquipmentAvailability,
@@ -54,9 +55,13 @@ from agas_domain import (
     SafetySignalClass,
     SessionExecutionInput,
     SessionExecutionStatus,
+    SessionItemExecutionInput,
     SessionPrescription,
     SessionSafetyCheckInput,
     SessionSafetyPolicy,
+    SessionSection,
+    SessionTemplate,
+    SessionTemplateItem,
     SetPerformance,
     StimulusRequirement,
     StimulusSpecification,
@@ -442,6 +447,7 @@ def build_and_persist_weekly_chain(
     ResourceAllocationPolicy,
     BlockPlan,
     SessionPrescription,
+    SessionTemplate,
     WeeklyAvailability,
     WeeklySchedulingPolicy,
     WeeklyPlan,
@@ -503,7 +509,7 @@ def build_and_persist_weekly_chain(
         reason_for_inclusion="Synthetic persistence prescription.",
         sets=3,
         repetitions_per_set=5,
-        intensity_target="fixture effort target",
+        intensity_targets=(EffortRpeTarget(minimum=6, maximum=8),),
         rest_seconds=120,
         progression_rule_reference="fixture:no-automatic-progression@1.0.0",
         substitution_class="fixture_resolution_candidates",
@@ -512,6 +518,25 @@ def build_and_persist_weekly_chain(
         source_observation_ids=strategy.source_observation_ids,
         evidence_claim_ids=strategy.evidence_claim_ids,
         prescribed_at=NOW,
+        rule_version="fixture@1.0.0",
+    )
+    session_template = SessionTemplate(
+        athlete_id=strategy.athlete_id,
+        block_plan_id=block.id,
+        name="Synthetic persisted training session",
+        items=(
+            SessionTemplateItem(
+                prescription_id=prescription.id,
+                order_index=1,
+                section=SessionSection.PRIMARY,
+            ),
+        ),
+        sessions_per_week=allocation.sessions_per_week,
+        planned_duration_minutes=prescription.planned_duration_minutes,
+        fatigue_cost=prescription.fatigue_cost,
+        source_observation_ids=strategy.source_observation_ids,
+        evidence_claim_ids=strategy.evidence_claim_ids,
+        created_for_block_at=NOW,
         rule_version="fixture@1.0.0",
     )
     weekly_availability = WeeklyAvailability(
@@ -543,6 +568,7 @@ def build_and_persist_weekly_chain(
         block=block,
         availability=weekly_availability,
         prescriptions=(prescription,),
+        session_templates=(session_template,),
         resolutions=(resolution,),
         policy=scheduling_policy,
         generated_at=NOW,
@@ -555,6 +581,7 @@ def build_and_persist_weekly_chain(
     repository.add_block_plan(block)
     session.flush()
     repository.add_session_prescription(prescription)
+    repository.add_session_template(session_template)
     repository.add_weekly_availability(weekly_availability)
     repository.add_weekly_scheduling_policy(scheduling_policy)
     session.flush()
@@ -571,6 +598,7 @@ def build_and_persist_weekly_chain(
         allocation_policy,
         block,
         prescription,
+        session_template,
         weekly_availability,
         scheduling_policy,
         weekly_plan,
@@ -589,6 +617,7 @@ def test_block_prescription_and_weekly_plan_round_trip_preserves_full_chain(
         allocation_policy,
         block,
         prescription,
+        session_template,
         weekly_availability,
         scheduling_policy,
         weekly_plan,
@@ -598,10 +627,11 @@ def test_block_prescription_and_weekly_plan_round_trip_preserves_full_chain(
     assert repository.get_resource_allocation_policy(allocation_policy.id) == allocation_policy
     assert repository.get_block_plan(block.id) == block
     assert repository.get_session_prescription(prescription.id) == prescription
+    assert repository.get_session_template(session_template.id) == session_template
     assert repository.get_weekly_availability(weekly_availability.id) == weekly_availability
     assert repository.get_weekly_scheduling_policy(scheduling_policy.id) == scheduling_policy
     assert repository.get_weekly_plan(weekly_plan.id) == weekly_plan
-    assert weekly_plan.sessions[0].prescription_id == prescription.id
+    assert weekly_plan.sessions[0].session_template_id == session_template.id
     assert block.long_range_strategy_id == strategy.id
     assert demand.stimulus_requirement_id == requirement.id
 
@@ -624,6 +654,7 @@ def test_safety_execution_and_adherence_round_trip_preserves_provenance(
         _,
         _,
         prescription,
+        session_template,
         _,
         _,
         weekly_plan,
@@ -694,7 +725,14 @@ def test_safety_execution_and_adherence_round_trip_preserves_provenance(
         status=SessionExecutionStatus.COMPLETED,
         started_at=planned_session.starts_at,
         ended_at=planned_session.ends_at,
-        performances=performances,
+        items=(
+            SessionItemExecutionInput(
+                prescription_id=prescription.id,
+                status=SessionExecutionStatus.COMPLETED,
+                performances=performances,
+                item_rpe=7,
+            ),
+        ),
         session_rpe=7,
         logged_at=planned_session.ends_at + timedelta(minutes=2),
         reliability=Confidence.HIGH,
@@ -704,7 +742,8 @@ def test_safety_execution_and_adherence_round_trip_preserves_provenance(
         execution_input=execution_input,
         weekly_plan=weekly_plan,
         planned_session=planned_session,
-        prescription=prescription,
+        session_template=session_template,
+        prescriptions=(prescription,),
         pre_session_decision=pre_decision,
     )
     repository.add_observation(performance_observation)
@@ -777,7 +816,7 @@ def test_safety_execution_and_adherence_round_trip_preserves_provenance(
 
 
 def test_progression_exposure_and_revised_prescription_round_trip(session: Session) -> None:
-    (repository, strategy, _, _, _, _, block, prescription, _, _, weekly_plan) = (
+    (repository, strategy, _, _, _, _, block, prescription, session_template, _, _, weekly_plan) = (
         build_and_persist_weekly_chain(session)
     )
     planned = weekly_plan.sessions[0]
@@ -825,16 +864,23 @@ def test_progression_exposure_and_revised_prescription_round_trip(session: Sessi
         status=SessionExecutionStatus.COMPLETED,
         started_at=planned.starts_at,
         ended_at=planned.ends_at,
-        performances=tuple(
-            SetPerformance(
-                set_index=index,
-                performed=True,
-                target_completed=True,
-                actual_repetitions=5,
-                effort_rpe=7,
-                technique_constraint_met=True,
-            )
-            for index in range(1, 4)
+        items=(
+            SessionItemExecutionInput(
+                prescription_id=prescription.id,
+                status=SessionExecutionStatus.COMPLETED,
+                performances=tuple(
+                    SetPerformance(
+                        set_index=index,
+                        performed=True,
+                        target_completed=True,
+                        actual_repetitions=5,
+                        effort_rpe=7,
+                        technique_constraint_met=True,
+                    )
+                    for index in range(1, 4)
+                ),
+                item_rpe=7,
+            ),
         ),
         session_rpe=7,
         logged_at=planned.ends_at + timedelta(minutes=1),
@@ -845,7 +891,8 @@ def test_progression_exposure_and_revised_prescription_round_trip(session: Sessi
         execution_input=execution_input,
         weekly_plan=weekly_plan,
         planned_session=planned,
-        prescription=prescription,
+        session_template=session_template,
+        prescriptions=(prescription,),
         pre_session_decision=safety_decision,
     )
     repository.add_observation(performance_observation)

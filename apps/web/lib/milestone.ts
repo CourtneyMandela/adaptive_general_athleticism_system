@@ -1,5 +1,5 @@
 export const milestone = {
-  name: "Training response and block review foundation",
-  available: "Traceable delivered-dose responses and deterministic hypothesis review",
-  deferred: "Capability updates, next-block replanning, response profiles, and training UI",
+  name: "Session container and typed intensity foundation",
+  available: "Multi-item sessions with session-level safety and item-level progression",
+  deferred: "Controlled ontology vocabularies, verified seed data, travel scenarios, and training UI",
 } as const;

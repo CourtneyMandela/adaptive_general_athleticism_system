@@ -232,6 +232,15 @@ class SessionExecutionStatus(StrEnum):
     STOPPED_SAFETY = "stopped_safety"
 
 
+class SessionSection(StrEnum):
+    PREPARATION = "preparation"
+    PRIMARY = "primary"
+    ACCESSORY = "accessory"
+    CONDITIONING = "conditioning"
+    COOLDOWN = "cooldown"
+    OTHER = "other"
+
+
 class ProgressionOutcome(StrEnum):
     PROGRESS = "progress"
     REPEAT = "repeat"
