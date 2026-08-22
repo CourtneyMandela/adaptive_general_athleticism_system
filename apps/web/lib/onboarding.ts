@@ -1,4 +1,5 @@
 import { isUuid, type Confidence, type ProvenanceInput } from "./current-week";
+import { authorizedHeaders } from "./identity";
 
 export interface OnboardingEquipmentOption {
   equipment_id: string;
@@ -196,7 +197,10 @@ export async function submitAthleteOnboarding(
 ): Promise<AthleteOnboardingResult> {
   const response = await fetcher(`${apiBaseUrl.replace(/\/$/, "")}/v1/onboarding/athletes`, {
     method: "POST",
-    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    headers: authorizedHeaders({
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    }),
     body: JSON.stringify(command),
   });
   if (!response.ok) {

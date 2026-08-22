@@ -54,6 +54,16 @@ def test_baseline_migration_matches_current_metadata(
         assert "supersedes_strategy_id" in strategy_columns
         assert "triggering_block_review_id" in strategy_columns
         assert "catalog_imports" in actual_tables
+        assert "accounts" in actual_tables
+        assert "athlete_ownerships" in actual_tables
+        assert any(
+            constraint["name"] == "uq_account_issuer_subject"
+            for constraint in inspector.get_unique_constraints("accounts")
+        )
+        assert any(
+            constraint["name"] == "uq_athlete_owner"
+            for constraint in inspector.get_unique_constraints("athlete_ownerships")
+        )
         assert any(
             constraint["name"] == "uq_strategy_triggering_block_review"
             for constraint in inspector.get_unique_constraints("long_range_strategies")

@@ -38,6 +38,14 @@ class VersionedRecordMixin:
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
 
 
+class AccountRecord(VersionedRecordMixin, Base):
+    __tablename__ = "accounts"
+    __table_args__ = (UniqueConstraint("issuer", "subject", name="uq_account_issuer_subject"),)
+
+    issuer: Mapped[str] = mapped_column(String(300), nullable=False)
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
+
+
 class AthleteRecord(VersionedRecordMixin, Base):
     __tablename__ = "athletes"
 
@@ -45,6 +53,21 @@ class AthleteRecord(VersionedRecordMixin, Base):
     date_of_birth: Mapped[date | None] = mapped_column(Date(), nullable=True)
     preferences: Mapped[dict[str, Any]] = mapped_column(JsonType, nullable=False, default=dict)
     goals: Mapped[list[str]] = mapped_column(JsonType, nullable=False, default=list)
+
+
+class AthleteOwnershipRecord(VersionedRecordMixin, Base):
+    __tablename__ = "athlete_ownerships"
+    __table_args__ = (UniqueConstraint("athlete_id", name="uq_athlete_owner"),)
+
+    account_id: Mapped[UUID] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    athlete_id: Mapped[UUID] = mapped_column(
+        ForeignKey("athletes.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    granted_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+    grant_method: Mapped[str] = mapped_column(String(120), nullable=False)
+    rule_version: Mapped[str] = mapped_column(String(120), nullable=False)
 
 
 class ObservationRecord(VersionedRecordMixin, Base):
@@ -2224,6 +2247,8 @@ def _reject_mutation(_mapper: object, _connection: object, target: object) -> No
 
 
 for _record_type in (
+    AccountRecord,
+    AthleteOwnershipRecord,
     ObservationRecord,
     CapabilityEstimateRecord,
     CapabilityEstimateObservationRecord,

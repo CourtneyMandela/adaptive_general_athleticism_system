@@ -105,7 +105,12 @@ describe("current-week presentation", () => {
     ).resolves.toMatchObject({ athlete_display_name: "Fixture athlete", week: null });
     expect(success).toHaveBeenCalledWith(
       `http://localhost:8000/v1/athletes/${prescription.adaptation_id}/current-week?on=2026-08-24`,
-      { headers: { Accept: "application/json" } },
+      {
+        headers: {
+          Accept: "application/json",
+          Authorization: "Bearer dev.local-browser",
+        },
+      },
     );
 
     const failure = vi
@@ -242,6 +247,9 @@ describe("current-week presentation", () => {
     await submitSafetyCheck("http://localhost:8000/", "plan", "session", safetyCommand, fetcher);
     expect(fetcher.mock.calls[0][0]).toBe("http://localhost:8000/v1/weekly-plans/plan/sessions/session/safety-checks");
     expect(fetcher.mock.calls[0][1]).toMatchObject({ method: "POST" });
+    expect(fetcher.mock.calls[0][1]?.headers).toMatchObject({
+      Authorization: "Bearer dev.local-browser",
+    });
 
     await submitSafetyCheck("http://localhost:8000", "plan", "session", {
       ...safetyCommand,
