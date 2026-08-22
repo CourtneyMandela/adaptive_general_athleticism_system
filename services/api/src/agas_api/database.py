@@ -1,3 +1,4 @@
+from collections.abc import Iterator
 from functools import lru_cache
 
 from sqlalchemy import Engine, create_engine
@@ -18,3 +19,8 @@ def get_session_factory() -> sessionmaker[Session]:
 
 def database_session() -> Session:
     return get_session_factory()()
+
+
+def database_session_dependency() -> Iterator[Session]:
+    with database_session() as session:
+        yield session

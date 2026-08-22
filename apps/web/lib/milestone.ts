@@ -1,5 +1,5 @@
 export const milestone = {
-  name: "Training response and block review foundation",
-  available: "Traceable delivered-dose responses and deterministic hypothesis review",
-  deferred: "Capability updates, next-block replanning, response profiles, and training UI",
+  name: "Connected current-week PWA slice",
+  available: "Persisted weekly sessions, prescription rationale, safety, and completion status",
+  deferred: "In-app onboarding, safety check submission, and workout logging",
 } as const;

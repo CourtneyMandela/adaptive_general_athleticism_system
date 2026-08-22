@@ -30,3 +30,10 @@ estimates and the exact prescription/execution/adherence chain. A deterministic,
 policy reviews the original block hypothesis against explicit meaningful-change targets. Low
 delivery or low confidence is inconclusive. The engine does not update capability estimates or
 generate the next block.
+
+The session-container correction keeps each `SessionPrescription` item independently versioned
+while an explicit `SessionTemplate` groups ordered items into one real workout. The scheduler uses
+one availability window per template occurrence, the safety decision applies to the whole session,
+and execution/adherence/progression preserve item identity. Typed intensity targets now support
+auditable absolute and relative load progression; template generation and scientific dose rules
+remain deferred.

@@ -57,6 +57,90 @@ class Loadability(StrEnum):
     HIGH = "high"
 
 
+class MovementPattern(StrEnum):
+    KNEE_DOMINANT = "knee_dominant"
+    HIP_HINGE = "hip_hinge"
+    HORIZONTAL_PUSH = "horizontal_push"
+    VERTICAL_PUSH = "vertical_push"
+    HORIZONTAL_PULL = "horizontal_pull"
+    VERTICAL_PULL = "vertical_pull"
+    CARRY = "carry"
+    LOCOMOTION = "locomotion"
+    TRUNK_STABILITY = "trunk_stability"
+    JUMP = "jump"
+    LANDING = "landing"
+    CHANGE_OF_DIRECTION = "change_of_direction"
+    CYCLIC = "cyclic"
+
+
+class LoadingType(StrEnum):
+    EXTERNAL_LOAD = "external_load"
+    BODYWEIGHT = "bodyweight"
+    CYCLIC = "cyclic"
+    BALLISTIC = "ballistic"
+
+
+class VelocityCharacteristic(StrEnum):
+    CONTROLLED = "controlled"
+    EXPLOSIVE = "explosive"
+    CONTINUOUS = "continuous"
+    HIGH_SPEED = "high_speed"
+
+
+class JointRegion(StrEnum):
+    ANKLE = "ankle"
+    KNEE = "knee"
+    HIP = "hip"
+    SPINE_TRUNK = "spine_trunk"
+    SHOULDER = "shoulder"
+    ELBOW = "elbow"
+    WRIST = "wrist"
+
+
+class Laterality(StrEnum):
+    BILATERAL = "bilateral"
+    UNILATERAL = "unilateral"
+    ALTERNATING = "alternating"
+    NOT_APPLICABLE = "not_applicable"
+
+
+class StimulusType(StrEnum):
+    HIGH_FORCE = "high_force"
+    MUSCLE_TENSION = "muscle_tension"
+    EXPLOSIVE = "explosive"
+    STEADY_STATE_AEROBIC = "steady_state_aerobic"
+    INTERVAL_AEROBIC = "interval_aerobic"
+    REPEATED_EFFORT = "repeated_effort"
+    HIGH_SPEED = "high_speed"
+    IMPACT_EXPOSURE = "impact_exposure"
+    DECELERATION = "deceleration"
+    LOADED_LOCOMOTION = "loaded_locomotion"
+    MOTOR_CONTROL = "motor_control"
+
+
+class TrainingModality(StrEnum):
+    RESISTANCE = "resistance"
+    RUNNING = "running"
+    CYCLING = "cycling"
+    ROWING = "rowing"
+    PLYOMETRIC = "plyometric"
+    CARRY = "carry"
+    CALISTHENIC = "calisthenic"
+    MOBILITY_CONTROL = "mobility_control"
+
+
+class DoseDimension(StrEnum):
+    LOAD = "load"
+    REPETITIONS = "repetitions"
+    SETS = "sets"
+    DURATION = "duration"
+    DISTANCE = "distance"
+    FREQUENCY = "frequency"
+    DENSITY = "density"
+    SPEED = "speed"
+    IMPACT_CONTACTS = "impact_contacts"
+
+
 class AdaptationRelationshipType(StrEnum):
     PREREQUISITE = "prerequisite"
     PARTIAL_PREREQUISITE = "partial_prerequisite"
@@ -152,6 +236,7 @@ class ResolutionIssueCode(StrEnum):
     LOADING_TYPE_MISMATCH = "loading_type_mismatch"
     INSUFFICIENT_LOADABILITY = "insufficient_loadability"
     VELOCITY_MISMATCH = "velocity_mismatch"
+    LATERALITY_MISMATCH = "laterality_mismatch"
     SKILL_CONSTRAINT = "skill_constraint"
     IMPACT_CONSTRAINT = "impact_constraint"
     STABILITY_CONSTRAINT = "stability_constraint"
@@ -230,6 +315,15 @@ class SessionExecutionStatus(StrEnum):
     PARTIAL = "partial"
     NOT_STARTED = "not_started"
     STOPPED_SAFETY = "stopped_safety"
+
+
+class SessionSection(StrEnum):
+    PREPARATION = "preparation"
+    PRIMARY = "primary"
+    ACCESSORY = "accessory"
+    CONDITIONING = "conditioning"
+    COOLDOWN = "cooldown"
+    OTHER = "other"
 
 
 class ProgressionOutcome(StrEnum):

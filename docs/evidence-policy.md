@@ -25,7 +25,8 @@ Evidence strength and athlete applicability must be assessed separately. A stron
 - Store uncertainty and limitations explicitly.
 - Do not silently edit a material scientific rule. Create a new version and preserve the prior record.
 - Re-review claims when stronger evidence appears, existing evidence is contradicted, or athlete applicability changes.
-- No scientific seed claims are included until their source metadata and interpretation have been verified.
+- Seed claims require checked source metadata and interpretation. Secondary-AI verification must
+  remain distinguishable from production approval in the catalog manifest and reviewer field.
 
 ## Planning thresholds
 
@@ -42,7 +43,8 @@ match means the configured structural requirements are satisfied; a partial matc
 its mismatches, and an infeasible result must remain infeasible. Claims about transfer,
 interchangeability, dose equivalence, or adaptation magnitude require reviewed evidence and a
 versioned applicability judgment before they can become operational rules. No scientific exercise
-claims or production exercise catalog are seeded in this milestone.
+claims. The small exercise catalog is provisional ontology annotation, not a production-approved
+equivalence or prescription library.
 
 ## Dose and scheduling
 
@@ -52,6 +54,10 @@ minimum doses, target doses, intensity targets, rest intervals, recovery interva
 progression rules require reviewed evidence, scoped applicability, and explicit uncertainty. The
 current allocator and scheduler preserve these values and test feasibility; they do not establish
 that a fixture value is effective or optimal.
+
+Typed intensity targets make units and target semantics inspectable; they do not make a prescribed
+load, RPE range, heart-rate zone, pace, or technique constraint evidence-based. Session-template
+composition and frequency are likewise governed inputs until a reviewed generation policy exists.
 
 ## Safety and execution
 
@@ -63,9 +69,10 @@ from raw text or model memory.
 
 Set completion and dose-completion ratios are transparent descriptive calculations from an
 immutable prescription and direct performance observation. They are not evidence of training
-effectiveness, motivation, readiness, or an appropriate progression. Any future rule that converts
+effectiveness, motivation, readiness, or an appropriate progression. A rule that converts
 execution or adherence into progression must carry its own version, applicability, uncertainty,
-and evidence provenance.
+and evidence provenance. The application service loads such persisted policy records; it does not
+create thresholds or increments.
 
 Milestone 5C requires evidence-claim identifiers on progression policies, exposure definitions,
 and exposure caps. Test fixtures are software-only, not production thresholds.
@@ -81,3 +88,15 @@ Meaningful-change thresholds, minimum delivery, and minimum confidence are versi
 interpretations and must link to reviewed evidence before production use. The repository seeds no
 universal response threshold. If delivery or confidence is insufficient, the review is
 `INCONCLUSIVE`; it may not convert missing evidence into a claim that the block failed.
+
+A follow-up capability estimate and a block review answer different questions. Replanning may use
+a valid reviewed follow-up estimate as current-state evidence even when the block's causal outcome
+is inconclusive or unsupported. The replacement strategy must retain review lineage and must not
+present the observed change as caused by the intervention. Relevance, trainability, transfer, and
+cost inputs require their own governed provenance; one personal response does not establish them.
+
+The persisted review boundary will not review a caller-selected favorable subset. Every planned
+week and session outcome must be present, every executed prescription must appear in exactly one
+response, and all post-session safety decisions are loaded from persistence. Comparison direction
+and meaningful-change thresholds remain explicit policy inputs; the service does not manufacture
+them from an observed change.

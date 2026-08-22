@@ -152,6 +152,7 @@ class StimulusRequirementBuilder:
             priority_state=priority.state,
             movement_patterns=specification.movement_patterns,
             allowed_loading_types=specification.allowed_loading_types,
+            allowed_lateralities=specification.allowed_lateralities,
             minimum_loadability=specification.minimum_loadability,
             required_velocity_characteristics=specification.required_velocity_characteristics,
             maximum_skill_complexity=specification.maximum_skill_complexity,
@@ -319,12 +320,14 @@ class ExerciseResolver:
             if required_velocity
             else 1.0
         )
+        laterality_score = float(exercise.laterality in requirement.allowed_lateralities)
         components = {
             "adaptation_role": adaptation_score,
             "movement_pattern": movement_score,
             "loading_type": loading_score,
             "loadability": loadability_score,
             "velocity": velocity_score,
+            "laterality": laterality_score,
         }
         weights = {
             "adaptation_role": policy.adaptation_role_weight,
@@ -332,6 +335,7 @@ class ExerciseResolver:
             "loading_type": policy.loading_type_weight,
             "loadability": policy.loadability_weight,
             "velocity": policy.velocity_weight,
+            "laterality": policy.laterality_weight,
         }
         weight_total = sum(weights.values())
         score = sum(components[name] * weight for name, weight in weights.items()) / weight_total
@@ -370,6 +374,13 @@ class ExerciseResolver:
                 ResolutionIssue(
                     code=ResolutionIssueCode.VELOCITY_MISMATCH,
                     detail=f"{exercise.name} does not cover every required velocity characteristic",
+                )
+            )
+        if laterality_score < 1:
+            issues.append(
+                ResolutionIssue(
+                    code=ResolutionIssueCode.LATERALITY_MISMATCH,
+                    detail=f"{exercise.name} does not use an allowed laterality",
                 )
             )
 

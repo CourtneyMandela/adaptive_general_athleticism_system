@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-from agas_domain import CostLevel, SessionPrescription
+from agas_domain import CostLevel, EffortRpeTarget, SessionPrescription
 from pydantic import ValidationError
 
 NOW = datetime(2026, 8, 19, 14, 0, tzinfo=UTC)
@@ -21,7 +21,7 @@ def test_session_prescription_requires_one_explicit_dose_form() -> None:
             sets=3,
             repetitions_per_set=5,
             duration_seconds=30,
-            intensity_target="fixture target",
+            intensity_targets=(EffortRpeTarget(minimum=6, maximum=8),),
             rest_seconds=60,
             progression_rule_reference="fixture:manual-review@1.0.0",
             substitution_class="fixture",

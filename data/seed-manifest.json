@@ -1,0 +1,12 @@
+{
+  "catalog_version": "0.1.0",
+  "review_status": "secondary_ai_verified",
+  "reviewed_by": "Codex source and schema review; owner approval pending",
+  "reviewed_at": "2026-08-19",
+  "scope": "Small ontology and travel-counterfactual seed; not a workout or dose library.",
+  "notes": [
+    "Exercise metadata is provisional domain annotation, not evidence of equivalence.",
+    "Evidence identifiers were checked against primary PubMed records but are not production-approved.",
+    "No progression thresholds, universal dose targets, or speculative adaptation relationships are seeded."
+  ]
+}

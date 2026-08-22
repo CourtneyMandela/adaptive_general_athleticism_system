@@ -18,6 +18,7 @@ from agas_planner.progression import (
     ProgressionEngine,
     ProgressionError,
 )
+from agas_planner.replanning import ClosedLoopReplanner, ClosedLoopReplanningError
 from agas_planner.resolution import (
     EnvironmentSnapshotBuilder,
     ExerciseResolver,
@@ -34,6 +35,8 @@ __all__ = [
     "BlockPlanningError",
     "BlockReviewEngine",
     "BlockReviewError",
+    "ClosedLoopReplanner",
+    "ClosedLoopReplanningError",
     "CompetencyFloorDetector",
     "ConservativeCapabilityEstimator",
     "EnvironmentSnapshotBuilder",

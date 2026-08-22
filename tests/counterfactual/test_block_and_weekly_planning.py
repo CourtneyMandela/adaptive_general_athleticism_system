@@ -11,6 +11,7 @@ from agas_domain import (
     BlockPlanStatus,
     Confidence,
     CostLevel,
+    EffortRpeTarget,
     ExerciseMatch,
     ExerciseResolution,
     LongRangeStrategy,
@@ -29,9 +30,13 @@ from agas_domain import (
     SchedulingIssueCode,
     SessionExecutionInput,
     SessionExecutionStatus,
+    SessionItemExecutionInput,
     SessionPrescription,
     SessionSafetyCheckInput,
     SessionSafetyPolicy,
+    SessionSection,
+    SessionTemplate,
+    SessionTemplateItem,
     SetPerformance,
     TrainingPriorityState,
     WeeklyAvailability,
@@ -253,7 +258,7 @@ def prescriptions_for(
                 reason_for_inclusion="Synthetic prescription fixture",
                 sets=3,
                 repetitions_per_set=5,
-                intensity_target="fixture effort target",
+                intensity_targets=(EffortRpeTarget(minimum=6, maximum=8),),
                 rest_seconds=120,
                 progression_rule_reference="fixture:no-automatic-progression@1.0.0",
                 substitution_class="fixture_resolution_candidates",
@@ -272,6 +277,37 @@ def prescriptions_for(
             )
         )
     return tuple(result)
+
+
+def templates_for(
+    block: BlockPlan,
+    prescriptions: tuple[SessionPrescription, ...],
+) -> tuple[SessionTemplate, ...]:
+    allocation_by_id = {item.id: item for item in block.allocations}
+    return tuple(
+        SessionTemplate(
+            athlete_id=block.athlete_id,
+            block_plan_id=block.id,
+            name=f"Synthetic session for {prescription.adaptation_id}",
+            items=(
+                SessionTemplateItem(
+                    prescription_id=prescription.id,
+                    order_index=1,
+                    section=SessionSection.PRIMARY,
+                ),
+            ),
+            sessions_per_week=allocation_by_id[
+                prescription.resource_allocation_id
+            ].sessions_per_week,
+            planned_duration_minutes=prescription.planned_duration_minutes,
+            fatigue_cost=prescription.fatigue_cost,
+            source_observation_ids=prescription.source_observation_ids,
+            evidence_claim_ids=prescription.evidence_claim_ids,
+            created_for_block_at=NOW,
+            rule_version="fixture@1.0.0",
+        )
+        for prescription in prescriptions
+    )
 
 
 def availability_fixture(
@@ -301,6 +337,7 @@ def scheduling_policy() -> WeeklySchedulingPolicy:
         minimum_high_fatigue_recovery_hours=24,
         maximum_sessions_per_day=1,
         maximum_high_fatigue_sessions_per_day=1,
+        allow_partial_exercise_resolution=True,
         policy_version="fixture@1.0.0",
     )
 
@@ -326,10 +363,12 @@ def safety_policy() -> SessionSafetyPolicy:
 def execution_fixture() -> tuple[
     BlockPlan,
     SessionPrescription,
+    SessionTemplate,
     WeeklyPlan,
 ]:
     block, strategy, resolutions = build_block()
     prescriptions = prescriptions_for(block, strategy, resolutions)
+    session_templates = templates_for(block, prescriptions)
     availability = availability_fixture(
         block.athlete_id,
         resolutions[0].environment_id,
@@ -339,15 +378,19 @@ def execution_fixture() -> tuple[
         block=block,
         availability=availability,
         prescriptions=prescriptions,
+        session_templates=session_templates,
         resolutions=resolutions,
         policy=scheduling_policy(),
         generated_at=NOW,
     )
     planned_session = weekly_plan.sessions[0]
-    prescription = next(
-        item for item in prescriptions if item.id == planned_session.prescription_id
+    session_template = next(
+        item for item in session_templates if item.id == planned_session.session_template_id
     )
-    return block, prescription, weekly_plan
+    prescription = next(
+        item for item in prescriptions if item.id == session_template.items[0].prescription_id
+    )
+    return block, prescription, session_template, weekly_plan
 
 
 def test_less_time_reduces_targets_without_silently_breaching_minimums() -> None:
@@ -416,6 +459,7 @@ def test_partial_exercise_policy_is_explicit() -> None:
 def test_availability_change_changes_schedule_not_block_or_prescriptions() -> None:
     block, strategy, resolutions = build_block()
     prescriptions = prescriptions_for(block, strategy, resolutions)
+    session_templates = templates_for(block, prescriptions)
     environment_id = resolutions[0].environment_id
     spacious_week = availability_fixture(block.athlete_id, environment_id, (0, 2, 4))
     constrained_week = availability_fixture(block.athlete_id, environment_id, (0, 2))
@@ -425,6 +469,7 @@ def test_availability_change_changes_schedule_not_block_or_prescriptions() -> No
         block=block,
         availability=spacious_week,
         prescriptions=prescriptions,
+        session_templates=session_templates,
         resolutions=resolutions,
         policy=scheduling_policy(),
         generated_at=NOW,
@@ -433,6 +478,7 @@ def test_availability_change_changes_schedule_not_block_or_prescriptions() -> No
         block=block,
         availability=constrained_week,
         prescriptions=prescriptions,
+        session_templates=session_templates,
         resolutions=resolutions,
         policy=scheduling_policy(),
         generated_at=NOW,
@@ -444,20 +490,22 @@ def test_availability_change_changes_schedule_not_block_or_prescriptions() -> No
     assert len(infeasible.sessions) == 2
     assert any(issue.code is SchedulingIssueCode.NO_AVAILABLE_WINDOW for issue in infeasible.issues)
     assert feasible.block_plan_id == infeasible.block_plan_id == block.id
-    assert {item.prescription_id for item in feasible.sessions} == {
-        item.id for item in prescriptions
+    assert {item.session_template_id for item in feasible.sessions} == {
+        item.id for item in session_templates
     }
 
 
 def test_configured_high_fatigue_recovery_can_make_week_infeasible() -> None:
     block, strategy, resolutions = build_block()
     prescriptions = prescriptions_for(block, strategy, resolutions)
+    session_templates = templates_for(block, prescriptions)
     environment_id = resolutions[0].environment_id
     availability = availability_fixture(block.athlete_id, environment_id, (0, 1, 2))
     strict_recovery = WeeklySchedulingPolicy(
         minimum_high_fatigue_recovery_hours=48,
         maximum_sessions_per_day=1,
         maximum_high_fatigue_sessions_per_day=1,
+        allow_partial_exercise_resolution=True,
         policy_version="strict-recovery-fixture@1.0.0",
     )
 
@@ -465,6 +513,7 @@ def test_configured_high_fatigue_recovery_can_make_week_infeasible() -> None:
         block=block,
         availability=availability,
         prescriptions=prescriptions,
+        session_templates=session_templates,
         resolutions=resolutions,
         policy=strict_recovery,
         generated_at=NOW,
@@ -475,7 +524,7 @@ def test_configured_high_fatigue_recovery_can_make_week_infeasible() -> None:
 
 
 def test_completed_session_creates_direct_performance_and_derived_adherence() -> None:
-    _, prescription, weekly_plan = execution_fixture()
+    _, prescription, session_template, weekly_plan = execution_fixture()
     planned_session = weekly_plan.sessions[0]
     report_time = planned_session.starts_at - timedelta(minutes=5)
     provenance = Provenance(
@@ -509,18 +558,25 @@ def test_completed_session_creates_direct_performance_and_derived_adherence() ->
         status=SessionExecutionStatus.COMPLETED,
         started_at=planned_session.starts_at,
         ended_at=planned_session.ends_at,
-        performances=tuple(
-            SetPerformance(
-                set_index=index,
-                performed=True,
-                target_completed=True,
-                actual_repetitions=5,
-                load_value=20,
-                load_unit="kg",
-                effort_rpe=7,
-                technique_constraint_met=True,
-            )
-            for index in range(1, 4)
+        items=(
+            SessionItemExecutionInput(
+                prescription_id=prescription.id,
+                status=SessionExecutionStatus.COMPLETED,
+                performances=tuple(
+                    SetPerformance(
+                        set_index=index,
+                        performed=True,
+                        target_completed=True,
+                        actual_repetitions=5,
+                        load_value=20,
+                        load_unit="kg",
+                        effort_rpe=7,
+                        technique_constraint_met=True,
+                    )
+                    for index in range(1, 4)
+                ),
+                item_rpe=7,
+            ),
         ),
         session_rpe=7,
         logged_at=planned_session.ends_at,
@@ -531,7 +587,8 @@ def test_completed_session_creates_direct_performance_and_derived_adherence() ->
         execution_input=execution_input,
         weekly_plan=weekly_plan,
         planned_session=planned_session,
-        prescription=prescription,
+        session_template=session_template,
+        prescriptions=(prescription,),
         pre_session_decision=decision,
     )
     adherence = SessionAdherenceCalculator().calculate(
@@ -577,7 +634,7 @@ def test_completed_session_creates_direct_performance_and_derived_adherence() ->
 
 
 def test_same_session_is_modified_or_blocked_by_preclassified_safety_input() -> None:
-    _, prescription, weekly_plan = execution_fixture()
+    _, prescription, session_template, weekly_plan = execution_fixture()
     planned_session = weekly_plan.sessions[0]
     report_time = planned_session.starts_at - timedelta(minutes=5)
     provenance = Provenance(
@@ -617,14 +674,20 @@ def test_same_session_is_modified_or_blocked_by_preclassified_safety_input() -> 
         status=SessionExecutionStatus.PARTIAL,
         started_at=planned_session.starts_at,
         ended_at=planned_session.ends_at,
-        performances=(
-            SetPerformance(
-                set_index=1,
-                performed=True,
-                target_completed=False,
-                actual_repetitions=3,
-                effort_rpe=7,
-                technique_constraint_met=True,
+        items=(
+            SessionItemExecutionInput(
+                prescription_id=prescription.id,
+                status=SessionExecutionStatus.PARTIAL,
+                performances=(
+                    SetPerformance(
+                        set_index=1,
+                        performed=True,
+                        target_completed=False,
+                        actual_repetitions=3,
+                        effort_rpe=7,
+                        technique_constraint_met=True,
+                    ),
+                ),
             ),
         ),
         logged_at=planned_session.ends_at,
@@ -636,7 +699,8 @@ def test_same_session_is_modified_or_blocked_by_preclassified_safety_input() -> 
             execution_input=unmodified_execution,
             weekly_plan=weekly_plan,
             planned_session=planned_session,
-            prescription=prescription,
+            session_template=session_template,
+            prescriptions=(prescription,),
             pre_session_decision=modification_decision,
         )
 
@@ -668,11 +732,191 @@ def test_same_session_is_modified_or_blocked_by_preclassified_safety_input() -> 
                     "status": SessionExecutionStatus.NOT_STARTED,
                     "started_at": None,
                     "ended_at": None,
-                    "performances": (),
+                    "items": (
+                        SessionItemExecutionInput(
+                            prescription_id=prescription.id,
+                            status=SessionExecutionStatus.NOT_STARTED,
+                        ),
+                    ),
                 }
             ),
             weekly_plan=weekly_plan,
             planned_session=planned_session,
-            prescription=prescription,
+            session_template=session_template,
+            prescriptions=(prescription,),
             pre_session_decision=escalation_decision,
         )
+
+
+def test_multi_item_session_uses_one_window_and_preserves_item_adherence() -> None:
+    block, strategy, resolutions = build_block()
+    prescriptions = prescriptions_for(block, strategy, resolutions)
+    allocation_by_id = {item.id: item for item in block.allocations}
+    primary = next(
+        item
+        for item in prescriptions
+        if allocation_by_id[item.resource_allocation_id].sessions_per_week == 2
+    )
+    accessory = next(item for item in prescriptions if item.id != primary.id)
+    combined = SessionTemplate(
+        athlete_id=block.athlete_id,
+        block_plan_id=block.id,
+        name="Synthetic combined session",
+        items=(
+            SessionTemplateItem(
+                prescription_id=primary.id,
+                order_index=1,
+                section=SessionSection.PRIMARY,
+            ),
+            SessionTemplateItem(
+                prescription_id=accessory.id,
+                order_index=2,
+                section=SessionSection.ACCESSORY,
+            ),
+        ),
+        sessions_per_week=1,
+        planned_duration_minutes=(
+            primary.planned_duration_minutes + accessory.planned_duration_minutes
+        ),
+        fatigue_cost=CostLevel.HIGH,
+        source_observation_ids=strategy.source_observation_ids,
+        evidence_claim_ids=strategy.evidence_claim_ids,
+        created_for_block_at=NOW,
+        rule_version="fixture@1.0.0",
+    )
+    primary_only = SessionTemplate(
+        athlete_id=block.athlete_id,
+        block_plan_id=block.id,
+        name="Synthetic primary-only session",
+        items=(
+            SessionTemplateItem(
+                prescription_id=primary.id,
+                order_index=1,
+                section=SessionSection.PRIMARY,
+            ),
+        ),
+        sessions_per_week=1,
+        planned_duration_minutes=primary.planned_duration_minutes,
+        fatigue_cost=primary.fatigue_cost,
+        source_observation_ids=strategy.source_observation_ids,
+        evidence_claim_ids=strategy.evidence_claim_ids,
+        created_for_block_at=NOW,
+        rule_version="fixture@1.0.0",
+    )
+    environment_id = resolutions[0].environment_id
+    availability = WeeklyAvailability(
+        athlete_id=block.athlete_id,
+        week_start=BLOCK_START,
+        windows=(
+            AvailabilityWindow(
+                environment_id=environment_id,
+                starts_at=datetime(2026, 8, 24, 18, 0, tzinfo=UTC),
+                ends_at=datetime(2026, 8, 24, 20, 0, tzinfo=UTC),
+            ),
+            AvailabilityWindow(
+                environment_id=environment_id,
+                starts_at=datetime(2026, 8, 27, 18, 0, tzinfo=UTC),
+                ends_at=datetime(2026, 8, 27, 20, 0, tzinfo=UTC),
+            ),
+        ),
+        source_observation_ids=strategy.source_observation_ids,
+        recorded_at=NOW,
+        rule_version="fixture@1.0.0",
+    )
+    weekly_plan = WeeklyScheduler().schedule(
+        block=block,
+        availability=availability,
+        prescriptions=prescriptions,
+        session_templates=(combined, primary_only),
+        resolutions=resolutions,
+        policy=scheduling_policy(),
+        generated_at=NOW,
+    )
+    assert weekly_plan.status is WeeklyPlanStatus.FEASIBLE
+    assert len(weekly_plan.sessions) == 2
+    planned = next(item for item in weekly_plan.sessions if item.session_template_id == combined.id)
+
+    provenance = Provenance(
+        recorded_by="synthetic-athlete",
+        source_system="pytest",
+        ingestion_method="fixture",
+    )
+    check = SessionSafetyCheckInput(
+        athlete_id=block.athlete_id,
+        weekly_plan_id=weekly_plan.id,
+        planned_session_id=planned.id,
+        timing=SafetyGateTiming.PRE_SESSION,
+        readiness=ReadinessLevel.READY,
+        reported_at=planned.starts_at - timedelta(minutes=5),
+        reliability=Confidence.HIGH,
+        provenance=provenance,
+    )
+    _, decision = SessionSafetyGate().evaluate(
+        check=check,
+        weekly_plan=weekly_plan,
+        planned_session=planned,
+        policy=safety_policy(),
+        decided_at=check.reported_at,
+    )
+    execution_input = SessionExecutionInput(
+        athlete_id=block.athlete_id,
+        weekly_plan_id=weekly_plan.id,
+        planned_session_id=planned.id,
+        pre_session_safety_decision_id=decision.id,
+        status=SessionExecutionStatus.COMPLETED,
+        started_at=planned.starts_at,
+        ended_at=planned.ends_at,
+        items=tuple(
+            SessionItemExecutionInput(
+                prescription_id=prescription.id,
+                status=SessionExecutionStatus.COMPLETED,
+                performances=tuple(
+                    SetPerformance(
+                        set_index=index,
+                        performed=True,
+                        target_completed=True,
+                        actual_repetitions=5,
+                        effort_rpe=7,
+                        technique_constraint_met=True,
+                    )
+                    for index in range(1, 4)
+                ),
+                item_rpe=7,
+            )
+            for prescription in (primary, accessory)
+        ),
+        session_rpe=7,
+        logged_at=planned.ends_at,
+        reliability=Confidence.HIGH,
+        provenance=provenance,
+    )
+    _, execution = SessionExecutionRecorder().record(
+        execution_input=execution_input,
+        weekly_plan=weekly_plan,
+        planned_session=planned,
+        session_template=combined,
+        prescriptions=(primary, accessory),
+        pre_session_decision=decision,
+    )
+    primary_adherence = SessionAdherenceCalculator().calculate(
+        execution=execution,
+        planned_session=planned,
+        prescription=primary,
+        calculated_at=execution.logged_at,
+    )
+    accessory_adherence = SessionAdherenceCalculator().calculate(
+        execution=execution,
+        planned_session=planned,
+        prescription=accessory,
+        calculated_at=execution.logged_at,
+    )
+
+    assert execution.session_template_id == combined.id
+    assert tuple(item.prescription_id for item in execution.items) == (
+        primary.id,
+        accessory.id,
+    )
+    assert primary_adherence.session_execution_id == accessory_adherence.session_execution_id
+    assert primary_adherence.prescription_id != accessory_adherence.prescription_id
+    assert primary_adherence.dose_completion_ratio == 1
+    assert accessory_adherence.dose_completion_ratio == 1

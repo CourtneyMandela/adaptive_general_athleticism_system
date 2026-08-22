@@ -153,6 +153,7 @@ class ExerciseRecord(VersionedRecordMixin, Base):
     movement_patterns: Mapped[list[str]] = mapped_column(JsonType, nullable=False)
     joint_demands: Mapped[list[str]] = mapped_column(JsonType, nullable=False)
     loading_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    laterality: Mapped[str] = mapped_column(String(40), nullable=False)
     loadability: Mapped[str] = mapped_column(String(40), nullable=False)
     skill_complexity: Mapped[str] = mapped_column(String(40), nullable=False)
     impact_level: Mapped[str] = mapped_column(String(40), nullable=False)
@@ -405,12 +406,40 @@ class PriorityPolicyRecord(VersionedRecordMixin, Base):
 
 class LongRangeStrategyRecord(VersionedRecordMixin, Base):
     __tablename__ = "long_range_strategies"
+    __table_args__ = (
+        CheckConstraint(
+            "(supersedes_strategy_id IS NULL AND triggering_block_review_id IS NULL) "
+            "OR (supersedes_strategy_id IS NOT NULL "
+            "AND triggering_block_review_id IS NOT NULL)",
+            name="ck_strategy_revision_lineage_pair",
+        ),
+        UniqueConstraint("triggering_block_review_id", name="uq_strategy_triggering_block_review"),
+    )
 
     athlete_id: Mapped[UUID] = mapped_column(
         ForeignKey("athletes.id", ondelete="RESTRICT"), index=True, nullable=False
     )
     priority_policy_id: Mapped[UUID] = mapped_column(
         ForeignKey("priority_policies.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    supersedes_strategy_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey(
+            "long_range_strategies.id",
+            name="fk_strategy_supersedes_strategy",
+            ondelete="RESTRICT",
+        ),
+        index=True,
+        nullable=True,
+    )
+    triggering_block_review_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey(
+            "block_reviews.id",
+            name="fk_strategy_triggering_block_review",
+            ondelete="RESTRICT",
+            use_alter=True,
+        ),
+        index=True,
+        nullable=True,
     )
     horizon_months: Mapped[int] = mapped_column(Integer(), nullable=False)
     block_hypothesis: Mapped[str] = mapped_column(Text(), nullable=False)
@@ -591,6 +620,7 @@ class StimulusRequirementRecord(VersionedRecordMixin, Base):
     priority_state: Mapped[str] = mapped_column(String(40), nullable=False)
     movement_patterns: Mapped[list[str]] = mapped_column(JsonType, nullable=False)
     allowed_loading_types: Mapped[list[str]] = mapped_column(JsonType, nullable=False)
+    allowed_lateralities: Mapped[list[str]] = mapped_column(JsonType, nullable=False)
     minimum_loadability: Mapped[str] = mapped_column(String(40), nullable=False)
     required_velocity_characteristics: Mapped[list[str]] = mapped_column(JsonType, nullable=False)
     maximum_skill_complexity: Mapped[str] = mapped_column(String(40), nullable=False)
@@ -655,6 +685,7 @@ class ExerciseResolverPolicyRecord(VersionedRecordMixin, Base):
     loading_type_weight: Mapped[float] = mapped_column(Float(), nullable=False)
     loadability_weight: Mapped[float] = mapped_column(Float(), nullable=False)
     velocity_weight: Mapped[float] = mapped_column(Float(), nullable=False)
+    laterality_weight: Mapped[float] = mapped_column(Float(), nullable=False)
     secondary_adaptation_credit: Mapped[float] = mapped_column(Float(), nullable=False)
     partial_match_threshold: Mapped[float] = mapped_column(Float(), nullable=False)
     full_match_threshold: Mapped[float] = mapped_column(Float(), nullable=False)
@@ -944,7 +975,7 @@ class SessionPrescriptionRecord(VersionedRecordMixin, Base):
     sets: Mapped[int] = mapped_column(Integer(), nullable=False)
     repetitions_per_set: Mapped[int | None] = mapped_column(Integer(), nullable=True)
     duration_seconds: Mapped[int | None] = mapped_column(Integer(), nullable=True)
-    intensity_target: Mapped[str] = mapped_column(Text(), nullable=False)
+    intensity_targets: Mapped[list[dict[str, Any]]] = mapped_column(JsonType, nullable=False)
     rest_seconds: Mapped[int] = mapped_column(Integer(), nullable=False)
     progression_rule_reference: Mapped[str] = mapped_column(String(200), nullable=False)
     substitution_class: Mapped[str] = mapped_column(String(160), nullable=False)
@@ -988,6 +1019,89 @@ class SessionPrescriptionEvidenceClaimRecord(Base):
 
     prescription_id: Mapped[UUID] = mapped_column(
         ForeignKey("session_prescriptions.id", ondelete="RESTRICT"), primary_key=True
+    )
+    evidence_claim_id: Mapped[UUID] = mapped_column(
+        ForeignKey("evidence_claims.id", ondelete="RESTRICT"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer(), nullable=False)
+
+
+class SessionTemplateRecord(VersionedRecordMixin, Base):
+    __tablename__ = "session_templates"
+
+    athlete_id: Mapped[UUID] = mapped_column(
+        ForeignKey("athletes.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    block_plan_id: Mapped[UUID] = mapped_column(
+        ForeignKey("block_plans.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    previous_template_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("session_templates.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=True,
+        unique=True,
+    )
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    sessions_per_week: Mapped[int] = mapped_column(Integer(), nullable=False)
+    planned_duration_minutes: Mapped[int] = mapped_column(Integer(), nullable=False)
+    fatigue_cost: Mapped[str] = mapped_column(String(40), nullable=False)
+    created_for_block_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(), index=True, nullable=False
+    )
+    rule_version: Mapped[str] = mapped_column(String(160), nullable=False)
+    items: Mapped[list[SessionTemplateItemRecord]] = relationship(
+        cascade="save-update, merge",
+        lazy="selectin",
+        order_by="SessionTemplateItemRecord.order_index",
+    )
+    observation_links: Mapped[list[SessionTemplateObservationRecord]] = relationship(
+        cascade="save-update, merge",
+        lazy="selectin",
+        order_by="SessionTemplateObservationRecord.position",
+    )
+    evidence_links: Mapped[list[SessionTemplateEvidenceRecord]] = relationship(
+        cascade="save-update, merge",
+        lazy="selectin",
+        order_by="SessionTemplateEvidenceRecord.position",
+    )
+
+
+class SessionTemplateItemRecord(Base):
+    __tablename__ = "session_template_items"
+    __table_args__ = (
+        UniqueConstraint("session_template_id", "order_index", name="uq_template_item_order"),
+    )
+    session_template_id: Mapped[UUID] = mapped_column(
+        ForeignKey("session_templates.id", ondelete="RESTRICT"), primary_key=True
+    )
+    prescription_id: Mapped[UUID] = mapped_column(
+        ForeignKey("session_prescriptions.id", ondelete="RESTRICT"), primary_key=True
+    )
+    order_index: Mapped[int] = mapped_column(Integer(), nullable=False)
+    section: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class SessionTemplateObservationRecord(Base):
+    __tablename__ = "session_template_observations"
+    __table_args__ = (
+        UniqueConstraint("session_template_id", "position", name="uq_template_obs_order"),
+    )
+    session_template_id: Mapped[UUID] = mapped_column(
+        ForeignKey("session_templates.id", ondelete="RESTRICT"), primary_key=True
+    )
+    observation_id: Mapped[UUID] = mapped_column(
+        ForeignKey("observations.id", ondelete="RESTRICT"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer(), nullable=False)
+
+
+class SessionTemplateEvidenceRecord(Base):
+    __tablename__ = "session_template_evidence_claims"
+    __table_args__ = (
+        UniqueConstraint("session_template_id", "position", name="uq_template_evidence_order"),
+    )
+    session_template_id: Mapped[UUID] = mapped_column(
+        ForeignKey("session_templates.id", ondelete="RESTRICT"), primary_key=True
     )
     evidence_claim_id: Mapped[UUID] = mapped_column(
         ForeignKey("evidence_claims.id", ondelete="RESTRICT"), primary_key=True
@@ -1055,6 +1169,7 @@ class WeeklySchedulingPolicyRecord(VersionedRecordMixin, Base):
     minimum_high_fatigue_recovery_hours: Mapped[int] = mapped_column(Integer(), nullable=False)
     maximum_sessions_per_day: Mapped[int] = mapped_column(Integer(), nullable=False)
     maximum_high_fatigue_sessions_per_day: Mapped[int] = mapped_column(Integer(), nullable=False)
+    allow_partial_exercise_resolution: Mapped[bool] = mapped_column(Boolean(), nullable=False)
     policy_version: Mapped[str] = mapped_column(String(80), nullable=False)
 
 
@@ -1066,6 +1181,12 @@ class WeeklyPlanRecord(VersionedRecordMixin, Base):
     )
     block_plan_id: Mapped[UUID] = mapped_column(
         ForeignKey("block_plans.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    previous_weekly_plan_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("weekly_plans.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=True,
+        unique=True,
     )
     weekly_availability_id: Mapped[UUID] = mapped_column(
         ForeignKey("weekly_availabilities.id", ondelete="RESTRICT"), index=True, nullable=False
@@ -1093,20 +1214,17 @@ class PlannedSessionRecord(VersionedRecordMixin, Base):
         UniqueConstraint("weekly_plan_id", "position", name="uq_planned_session_order"),
         UniqueConstraint(
             "weekly_plan_id",
-            "prescription_id",
+            "session_template_id",
             "occurrence_index",
-            name="uq_planned_prescription_occurrence",
+            name="uq_planned_template_occurrence",
         ),
     )
 
     weekly_plan_id: Mapped[UUID] = mapped_column(
         ForeignKey("weekly_plans.id", ondelete="RESTRICT"), index=True, nullable=False
     )
-    prescription_id: Mapped[UUID] = mapped_column(
-        ForeignKey("session_prescriptions.id", ondelete="RESTRICT"), index=True, nullable=False
-    )
-    resource_allocation_id: Mapped[UUID] = mapped_column(
-        ForeignKey("block_resource_allocations.id", ondelete="RESTRICT"), index=True, nullable=False
+    session_template_id: Mapped[UUID] = mapped_column(
+        ForeignKey("session_templates.id", ondelete="RESTRICT"), index=True, nullable=False
     )
     occurrence_index: Mapped[int] = mapped_column(Integer(), nullable=False)
     availability_window_id: Mapped[UUID] = mapped_column(
@@ -1211,6 +1329,7 @@ class SessionSafetyDecisionObservationRecord(Base):
 
 class SessionExecutionRecord(VersionedRecordMixin, Base):
     __tablename__ = "session_executions"
+    __table_args__ = (UniqueConstraint("planned_session_id", name="uq_execution_planned_session"),)
 
     athlete_id: Mapped[UUID] = mapped_column(
         ForeignKey("athletes.id", ondelete="RESTRICT"), index=True, nullable=False
@@ -1221,8 +1340,8 @@ class SessionExecutionRecord(VersionedRecordMixin, Base):
     planned_session_id: Mapped[UUID] = mapped_column(
         ForeignKey("planned_sessions.id", ondelete="RESTRICT"), index=True, nullable=False
     )
-    prescription_id: Mapped[UUID] = mapped_column(
-        ForeignKey("session_prescriptions.id", ondelete="RESTRICT"), index=True, nullable=False
+    session_template_id: Mapped[UUID] = mapped_column(
+        ForeignKey("session_templates.id", ondelete="RESTRICT"), index=True, nullable=False
     )
     pre_session_safety_decision_id: Mapped[UUID] = mapped_column(
         ForeignKey("session_safety_decisions.id", ondelete="RESTRICT"), index=True, nullable=False
@@ -1239,6 +1358,31 @@ class SessionExecutionRecord(VersionedRecordMixin, Base):
     logged_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)
     rule_version: Mapped[str] = mapped_column(String(160), nullable=False)
 
+    items: Mapped[list[SessionItemExecutionRecord]] = relationship(
+        cascade="save-update, merge",
+        lazy="selectin",
+        order_by="SessionItemExecutionRecord.position",
+    )
+
+
+class SessionItemExecutionRecord(VersionedRecordMixin, Base):
+    __tablename__ = "session_item_executions"
+    __table_args__ = (
+        UniqueConstraint("session_execution_id", "position", name="uq_execution_item_order"),
+        UniqueConstraint(
+            "session_execution_id", "prescription_id", name="uq_execution_prescription_item"
+        ),
+    )
+    session_execution_id: Mapped[UUID] = mapped_column(
+        ForeignKey("session_executions.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    prescription_id: Mapped[UUID] = mapped_column(
+        ForeignKey("session_prescriptions.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    status: Mapped[str] = mapped_column(String(40), nullable=False)
+    item_rpe: Mapped[float | None] = mapped_column(Float(), nullable=True)
+    note: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    position: Mapped[int] = mapped_column(Integer(), nullable=False)
     performances: Mapped[list[SetPerformanceRecord]] = relationship(
         cascade="save-update, merge",
         lazy="selectin",
@@ -1249,11 +1393,13 @@ class SessionExecutionRecord(VersionedRecordMixin, Base):
 class SetPerformanceRecord(VersionedRecordMixin, Base):
     __tablename__ = "set_performances"
     __table_args__ = (
-        UniqueConstraint("session_execution_id", "set_index", name="uq_execution_set_index"),
+        UniqueConstraint("session_item_execution_id", "set_index", name="uq_item_set_index"),
     )
 
-    session_execution_id: Mapped[UUID] = mapped_column(
-        ForeignKey("session_executions.id", ondelete="RESTRICT"), index=True, nullable=False
+    session_item_execution_id: Mapped[UUID] = mapped_column(
+        ForeignKey("session_item_executions.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=False,
     )
     set_index: Mapped[int] = mapped_column(Integer(), nullable=False)
     performed: Mapped[bool] = mapped_column(Boolean(), nullable=False)
@@ -1268,7 +1414,14 @@ class SetPerformanceRecord(VersionedRecordMixin, Base):
 
 class SessionAdherenceRecord(VersionedRecordMixin, Base):
     __tablename__ = "session_adherence"
-    __table_args__ = (CheckConstraint("kind = 'derived'", name="ck_adherence_is_derived"),)
+    __table_args__ = (
+        CheckConstraint("kind = 'derived'", name="ck_adherence_is_derived"),
+        UniqueConstraint(
+            "session_execution_id",
+            "prescription_id",
+            name="uq_adherence_execution_prescription",
+        ),
+    )
 
     kind: Mapped[str] = mapped_column(String(20), nullable=False, default="derived")
     athlete_id: Mapped[UUID] = mapped_column(
@@ -1353,7 +1506,15 @@ class ExposureDefinitionRecord(VersionedRecordMixin, Base):
 
 class ExposureEntryRecord(VersionedRecordMixin, Base):
     __tablename__ = "exposure_entries"
-    __table_args__ = (CheckConstraint("kind = 'derived'", name="ck_exposure_entry_derived"),)
+    __table_args__ = (
+        CheckConstraint("kind = 'derived'", name="ck_exposure_entry_derived"),
+        UniqueConstraint(
+            "session_execution_id",
+            "prescription_id",
+            "exposure_definition_id",
+            name="uq_exposure_entry_execution_prescription_definition",
+        ),
+    )
     kind: Mapped[str] = mapped_column(String(20), nullable=False)
     athlete_id: Mapped[UUID] = mapped_column(
         ForeignKey("athletes.id", ondelete="RESTRICT"), index=True
@@ -1430,6 +1591,13 @@ class ExposureValidationDecisionRecord(VersionedRecordMixin, Base):
 
 class ProgressionDecisionRecord(VersionedRecordMixin, Base):
     __tablename__ = "progression_decisions"
+    __table_args__ = (
+        UniqueConstraint(
+            "session_execution_id",
+            "prescription_id",
+            name="uq_progression_execution_prescription",
+        ),
+    )
     athlete_id: Mapped[UUID] = mapped_column(
         ForeignKey("athletes.id", ondelete="RESTRICT"), index=True
     )
@@ -1713,7 +1881,10 @@ class BlockReviewPolicyEvidenceRecord(Base):
 
 class BlockReviewRecord(VersionedRecordMixin, Base):
     __tablename__ = "block_reviews"
-    __table_args__ = (CheckConstraint("kind = 'derived'", name="ck_block_review_derived"),)
+    __table_args__ = (
+        CheckConstraint("kind = 'derived'", name="ck_block_review_derived"),
+        UniqueConstraint("block_plan_id", name="uq_block_review_block_plan"),
+    )
     kind: Mapped[str] = mapped_column(String(20), nullable=False)
     athlete_id: Mapped[UUID] = mapped_column(
         ForeignKey("athletes.id", ondelete="RESTRICT"), index=True
@@ -1818,6 +1989,103 @@ class DecisionRecordRecord(VersionedRecordMixin, Base):
     uncertainty: Mapped[str] = mapped_column(Text(), nullable=False)
     decision_version: Mapped[str] = mapped_column(String(80), nullable=False)
     decided_on: Mapped[date] = mapped_column(Date(), nullable=False)
+
+
+class CatalogImportRecord(VersionedRecordMixin, Base):
+    __tablename__ = "catalog_imports"
+
+    catalog_version: Mapped[str] = mapped_column(String(80), unique=True, nullable=False)
+    review_status: Mapped[str] = mapped_column(String(80), nullable=False)
+    reviewed_by: Mapped[str] = mapped_column(Text(), nullable=False)
+    reviewed_at: Mapped[date] = mapped_column(Date(), nullable=False)
+    scope: Mapped[str] = mapped_column(Text(), nullable=False)
+    notes: Mapped[list[str]] = mapped_column(JsonType, nullable=False)
+    content_digest: Mapped[str] = mapped_column(String(80), unique=True, nullable=False)
+    imported_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+    importer_version: Mapped[str] = mapped_column(String(80), nullable=False)
+
+    evidence_links: Mapped[list[CatalogImportEvidenceRecord]] = relationship(
+        cascade="save-update, merge",
+        lazy="selectin",
+        order_by="CatalogImportEvidenceRecord.position",
+    )
+    adaptation_links: Mapped[list[CatalogImportAdaptationRecord]] = relationship(
+        cascade="save-update, merge",
+        lazy="selectin",
+        order_by="CatalogImportAdaptationRecord.position",
+    )
+    equipment_links: Mapped[list[CatalogImportEquipmentRecord]] = relationship(
+        cascade="save-update, merge",
+        lazy="selectin",
+        order_by="CatalogImportEquipmentRecord.position",
+    )
+    exercise_links: Mapped[list[CatalogImportExerciseRecord]] = relationship(
+        cascade="save-update, merge",
+        lazy="selectin",
+        order_by="CatalogImportExerciseRecord.position",
+    )
+
+
+class CatalogImportEvidenceRecord(Base):
+    __tablename__ = "catalog_import_evidence_claims"
+    __table_args__ = (
+        UniqueConstraint("catalog_import_id", "position", name="uq_catalog_import_evidence_order"),
+    )
+
+    catalog_import_id: Mapped[UUID] = mapped_column(
+        ForeignKey("catalog_imports.id", ondelete="RESTRICT"), primary_key=True
+    )
+    evidence_claim_id: Mapped[UUID] = mapped_column(
+        ForeignKey("evidence_claims.id", ondelete="RESTRICT"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer(), nullable=False)
+
+
+class CatalogImportAdaptationRecord(Base):
+    __tablename__ = "catalog_import_adaptations"
+    __table_args__ = (
+        UniqueConstraint(
+            "catalog_import_id", "position", name="uq_catalog_import_adaptation_order"
+        ),
+    )
+
+    catalog_import_id: Mapped[UUID] = mapped_column(
+        ForeignKey("catalog_imports.id", ondelete="RESTRICT"), primary_key=True
+    )
+    adaptation_id: Mapped[UUID] = mapped_column(
+        ForeignKey("adaptations.id", ondelete="RESTRICT"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer(), nullable=False)
+
+
+class CatalogImportEquipmentRecord(Base):
+    __tablename__ = "catalog_import_equipment"
+    __table_args__ = (
+        UniqueConstraint("catalog_import_id", "position", name="uq_catalog_import_equipment_order"),
+    )
+
+    catalog_import_id: Mapped[UUID] = mapped_column(
+        ForeignKey("catalog_imports.id", ondelete="RESTRICT"), primary_key=True
+    )
+    equipment_id: Mapped[UUID] = mapped_column(
+        ForeignKey("equipment.id", ondelete="RESTRICT"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer(), nullable=False)
+
+
+class CatalogImportExerciseRecord(Base):
+    __tablename__ = "catalog_import_exercises"
+    __table_args__ = (
+        UniqueConstraint("catalog_import_id", "position", name="uq_catalog_import_exercise_order"),
+    )
+
+    catalog_import_id: Mapped[UUID] = mapped_column(
+        ForeignKey("catalog_imports.id", ondelete="RESTRICT"), primary_key=True
+    )
+    exercise_id: Mapped[UUID] = mapped_column(
+        ForeignKey("exercises.id", ondelete="RESTRICT"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer(), nullable=False)
 
 
 class ExerciseAdaptationRecord(Base):
@@ -1995,6 +2263,10 @@ for _record_type in (
     SessionPrescriptionRecord,
     SessionPrescriptionObservationRecord,
     SessionPrescriptionEvidenceClaimRecord,
+    SessionTemplateRecord,
+    SessionTemplateItemRecord,
+    SessionTemplateObservationRecord,
+    SessionTemplateEvidenceRecord,
     WeeklyAvailabilityRecord,
     AvailabilityWindowRecord,
     WeeklyAvailabilityObservationRecord,
@@ -2006,6 +2278,7 @@ for _record_type in (
     SessionSafetyDecisionRecord,
     SessionSafetyDecisionObservationRecord,
     SessionExecutionRecord,
+    SessionItemExecutionRecord,
     SetPerformanceRecord,
     SessionAdherenceRecord,
     SessionAdherenceObservationRecord,
@@ -2036,6 +2309,11 @@ for _record_type in (
     BlockReviewObservationRecord,
     BlockReviewEvidenceRecord,
     DecisionRecordRecord,
+    CatalogImportRecord,
+    CatalogImportEvidenceRecord,
+    CatalogImportAdaptationRecord,
+    CatalogImportEquipmentRecord,
+    CatalogImportExerciseRecord,
     ExerciseRecord,
     ExerciseAdaptationRecord,
     ExerciseEquipmentRequirementRecord,

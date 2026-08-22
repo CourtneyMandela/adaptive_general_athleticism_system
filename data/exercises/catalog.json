@@ -1,0 +1,87 @@
+[
+  {
+    "id":"b0000000-0000-4000-8000-000000000001","schema_version":"1.0.0","created_at":"2026-08-19T14:00:00Z","name":"Barbell back squat",
+    "movement_patterns":["knee_dominant"],"primary_adaptation_ids":["a0000000-0000-4000-8000-000000000001"],"joint_demands":["ankle","knee","hip","spine_trunk"],
+    "equipment_requirement_ids":["e0000000-0000-4000-8000-000000000001","e0000000-0000-4000-8000-000000000002","e0000000-0000-4000-8000-000000000003"],
+    "loading_type":"external_load","laterality":"bilateral","loadability":"high","skill_complexity":"moderate","impact_level":"low","velocity_characteristics":["controlled"],
+    "stability_demand":"moderate","fatigue_cost":"high","soreness_cost":"moderate","minimum_floor_area_m2":6,"noise_level":"moderate","measurement_methods":["external load and repetitions"]
+  },
+  {
+    "id":"b0000000-0000-4000-8000-000000000002","schema_version":"1.0.0","created_at":"2026-08-19T14:00:00Z","name":"Dumbbell split squat",
+    "movement_patterns":["knee_dominant"],"primary_adaptation_ids":["a0000000-0000-4000-8000-000000000001"],"joint_demands":["ankle","knee","hip"],
+    "equipment_requirement_ids":["e0000000-0000-4000-8000-000000000004"],"loading_type":"external_load","laterality":"unilateral","loadability":"moderate","skill_complexity":"moderate","impact_level":"low","velocity_characteristics":["controlled"],
+    "stability_demand":"moderate","fatigue_cost":"moderate","soreness_cost":"moderate","minimum_floor_area_m2":3,"noise_level":"low","measurement_methods":["external load and repetitions"]
+  },
+  {
+    "id":"b0000000-0000-4000-8000-000000000003","schema_version":"1.0.0","created_at":"2026-08-19T14:00:00Z","name":"Barbell Romanian deadlift",
+    "movement_patterns":["hip_hinge"],"primary_adaptation_ids":["a0000000-0000-4000-8000-000000000001"],"joint_demands":["hip","spine_trunk"],
+    "equipment_requirement_ids":["e0000000-0000-4000-8000-000000000001","e0000000-0000-4000-8000-000000000003"],"loading_type":"external_load","laterality":"bilateral","loadability":"high","skill_complexity":"moderate","impact_level":"low","velocity_characteristics":["controlled"],
+    "stability_demand":"moderate","fatigue_cost":"high","soreness_cost":"high","minimum_floor_area_m2":5,"noise_level":"moderate","measurement_methods":["external load and repetitions"]
+  },
+  {
+    "id":"b0000000-0000-4000-8000-000000000004","schema_version":"1.0.0","created_at":"2026-08-19T14:00:00Z","name":"Push-up",
+    "movement_patterns":["horizontal_push"],"primary_adaptation_ids":["a0000000-0000-4000-8000-000000000004"],"secondary_adaptation_ids":["a0000000-0000-4000-8000-000000000001"],"joint_demands":["shoulder","elbow","wrist","spine_trunk"],
+    "equipment_requirement_ids":["e0000000-0000-4000-8000-000000000008"],"loading_type":"bodyweight","laterality":"bilateral","loadability":"limited","skill_complexity":"low","impact_level":"none","velocity_characteristics":["controlled"],
+    "stability_demand":"moderate","fatigue_cost":"moderate","soreness_cost":"low","minimum_floor_area_m2":3,"noise_level":"low","measurement_methods":["repetitions"]
+  },
+  {
+    "id":"b0000000-0000-4000-8000-000000000005","schema_version":"1.0.0","created_at":"2026-08-19T14:00:00Z","name":"Dumbbell floor press",
+    "movement_patterns":["horizontal_push"],"primary_adaptation_ids":["a0000000-0000-4000-8000-000000000001"],"joint_demands":["shoulder","elbow"],
+    "equipment_requirement_ids":["e0000000-0000-4000-8000-000000000004","e0000000-0000-4000-8000-000000000008"],"loading_type":"external_load","laterality":"bilateral","loadability":"moderate","skill_complexity":"low","impact_level":"none","velocity_characteristics":["controlled"],
+    "stability_demand":"low","fatigue_cost":"moderate","soreness_cost":"moderate","minimum_floor_area_m2":3,"noise_level":"low","measurement_methods":["external load and repetitions"]
+  },
+  {
+    "id":"b0000000-0000-4000-8000-000000000006","schema_version":"1.0.0","created_at":"2026-08-19T14:00:00Z","name":"One-arm dumbbell row",
+    "movement_patterns":["horizontal_pull"],"primary_adaptation_ids":["a0000000-0000-4000-8000-000000000001"],"joint_demands":["shoulder","elbow","spine_trunk"],
+    "equipment_requirement_ids":["e0000000-0000-4000-8000-000000000004"],"loading_type":"external_load","laterality":"unilateral","loadability":"moderate","skill_complexity":"low","impact_level":"none","velocity_characteristics":["controlled"],
+    "stability_demand":"moderate","fatigue_cost":"moderate","soreness_cost":"low","minimum_floor_area_m2":3,"noise_level":"low","measurement_methods":["external load and repetitions"]
+  },
+  {
+    "id":"b0000000-0000-4000-8000-000000000007","schema_version":"1.0.0","created_at":"2026-08-19T14:00:00Z","name":"Dumbbell farmer carry",
+    "movement_patterns":["carry","locomotion"],"primary_adaptation_ids":["a0000000-0000-4000-8000-000000000005"],"joint_demands":["shoulder","wrist","spine_trunk","hip","knee","ankle"],
+    "equipment_requirement_ids":["e0000000-0000-4000-8000-000000000004"],"loading_type":"external_load","laterality":"bilateral","loadability":"moderate","skill_complexity":"low","impact_level":"low","velocity_characteristics":["continuous"],
+    "stability_demand":"moderate","fatigue_cost":"moderate","soreness_cost":"low","minimum_floor_area_m2":8,"noise_level":"low","measurement_methods":["load and distance"]
+  },
+  {
+    "id":"b0000000-0000-4000-8000-000000000008","schema_version":"1.0.0","created_at":"2026-08-19T14:00:00Z","name":"Dumbbell suitcase carry",
+    "movement_patterns":["carry","locomotion"],"primary_adaptation_ids":["a0000000-0000-4000-8000-000000000005"],"joint_demands":["shoulder","wrist","spine_trunk","hip","knee","ankle"],
+    "equipment_requirement_ids":["e0000000-0000-4000-8000-000000000004"],"loading_type":"external_load","laterality":"unilateral","loadability":"moderate","skill_complexity":"low","impact_level":"low","velocity_characteristics":["continuous"],
+    "stability_demand":"moderate","fatigue_cost":"moderate","soreness_cost":"low","minimum_floor_area_m2":8,"noise_level":"low","measurement_methods":["load and distance"]
+  },
+  {
+    "id":"b0000000-0000-4000-8000-000000000009","schema_version":"1.0.0","created_at":"2026-08-19T14:00:00Z","name":"Treadmill walk or run",
+    "movement_patterns":["cyclic","locomotion"],"primary_adaptation_ids":["a0000000-0000-4000-8000-000000000002"],"joint_demands":["ankle","knee","hip"],
+    "equipment_requirement_ids":["e0000000-0000-4000-8000-000000000005"],"loading_type":"cyclic","laterality":"alternating","loadability":"limited","skill_complexity":"low","impact_level":"low","velocity_characteristics":["continuous"],
+    "stability_demand":"low","fatigue_cost":"moderate","soreness_cost":"low","minimum_floor_area_m2":4,"noise_level":"moderate","measurement_methods":["duration","distance","speed"]
+  },
+  {
+    "id":"b0000000-0000-4000-8000-000000000010","schema_version":"1.0.0","created_at":"2026-08-19T14:00:00Z","name":"Stationary cycling",
+    "movement_patterns":["cyclic"],"primary_adaptation_ids":["a0000000-0000-4000-8000-000000000002"],"joint_demands":["knee","hip"],
+    "equipment_requirement_ids":["e0000000-0000-4000-8000-000000000006"],"loading_type":"cyclic","laterality":"alternating","loadability":"limited","skill_complexity":"low","impact_level":"none","velocity_characteristics":["continuous"],
+    "stability_demand":"low","fatigue_cost":"moderate","soreness_cost":"low","minimum_floor_area_m2":4,"noise_level":"low","measurement_methods":["duration","distance","power"]
+  },
+  {
+    "id":"b0000000-0000-4000-8000-000000000011","schema_version":"1.0.0","created_at":"2026-08-19T14:00:00Z","name":"Snap-down landing",
+    "movement_patterns":["landing"],"primary_adaptation_ids":["a0000000-0000-4000-8000-000000000006"],"joint_demands":["ankle","knee","hip","spine_trunk"],
+    "equipment_requirement_ids":["e0000000-0000-4000-8000-000000000008"],"loading_type":"bodyweight","laterality":"bilateral","loadability":"limited","skill_complexity":"low","impact_level":"low","velocity_characteristics":["explosive"],
+    "stability_demand":"moderate","fatigue_cost":"low","soreness_cost":"low","minimum_floor_area_m2":4,"noise_level":"moderate","measurement_methods":["observed landing task"]
+  },
+  {
+    "id":"b0000000-0000-4000-8000-000000000012","schema_version":"1.0.0","created_at":"2026-08-19T14:00:00Z","name":"Countermovement jump",
+    "movement_patterns":["jump"],"primary_adaptation_ids":["a0000000-0000-4000-8000-000000000003"],"joint_demands":["ankle","knee","hip"],
+    "equipment_requirement_ids":["e0000000-0000-4000-8000-000000000008"],"loading_type":"ballistic","laterality":"bilateral","loadability":"limited","skill_complexity":"moderate","impact_level":"moderate","velocity_characteristics":["explosive"],
+    "stability_demand":"moderate","fatigue_cost":"moderate","soreness_cost":"low","minimum_floor_area_m2":5,"noise_level":"moderate","measurement_methods":["jump height"]
+  },
+  {
+    "id":"b0000000-0000-4000-8000-000000000013","schema_version":"1.0.0","created_at":"2026-08-19T14:00:00Z","name":"Dead bug",
+    "movement_patterns":["trunk_stability"],"primary_adaptation_ids":["a0000000-0000-4000-8000-000000000007"],"joint_demands":["spine_trunk","hip"],
+    "equipment_requirement_ids":["e0000000-0000-4000-8000-000000000008"],"loading_type":"bodyweight","laterality":"alternating","loadability":"limited","skill_complexity":"low","impact_level":"none","velocity_characteristics":["controlled"],
+    "stability_demand":"moderate","fatigue_cost":"low","soreness_cost":"low","minimum_floor_area_m2":3,"noise_level":"low","measurement_methods":["controlled repetitions"]
+  },
+  {
+    "id":"b0000000-0000-4000-8000-000000000014","schema_version":"1.0.0","created_at":"2026-08-19T14:00:00Z","name":"Rowing ergometer",
+    "movement_patterns":["cyclic"],"primary_adaptation_ids":["a0000000-0000-4000-8000-000000000002"],"joint_demands":["ankle","knee","hip","spine_trunk","shoulder","elbow"],
+    "equipment_requirement_ids":["e0000000-0000-4000-8000-000000000007"],"loading_type":"cyclic","laterality":"bilateral","loadability":"limited","skill_complexity":"moderate","impact_level":"none","velocity_characteristics":["continuous"],
+    "stability_demand":"low","fatigue_cost":"moderate","soreness_cost":"low","minimum_floor_area_m2":5,"noise_level":"moderate","measurement_methods":["duration","distance","power"]
+  }
+]

@@ -1,8 +1,8 @@
-"""initial training response review foundation
+"""initial session container foundation
 
-Revision ID: b7798c74a5ac
+Revision ID: 3f0613c5f0d3
 Revises:
-Create Date: 2026-08-19 13:53:43.878154
+Create Date: 2026-08-19 14:25:10.480945
 """
 
 from collections.abc import Sequence
@@ -13,7 +13,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.sql.sqltypes import Text
 
-revision: str = "b7798c74a5ac"
+revision: str = "3f0613c5f0d3"
 down_revision: str | None = None
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
@@ -1334,6 +1334,44 @@ def upgrade() -> None:
         sa.UniqueConstraint("roadmap_item_id", "position", name="uq_roadmap_prerequisite_order"),
     )
     op.create_table(
+        "session_templates",
+        sa.Column("athlete_id", sa.Uuid(), nullable=False),
+        sa.Column("block_plan_id", sa.Uuid(), nullable=False),
+        sa.Column("name", sa.String(length=160), nullable=False),
+        sa.Column("sessions_per_week", sa.Integer(), nullable=False),
+        sa.Column("planned_duration_minutes", sa.Integer(), nullable=False),
+        sa.Column("fatigue_cost", sa.String(length=40), nullable=False),
+        sa.Column(
+            "created_for_block_at",
+            agas_domain.persistence.types.UTCDateTime(timezone=True),
+            nullable=False,
+        ),
+        sa.Column("rule_version", sa.String(length=160), nullable=False),
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("schema_version", sa.String(length=40), nullable=False),
+        sa.Column(
+            "created_at", agas_domain.persistence.types.UTCDateTime(timezone=True), nullable=False
+        ),
+        sa.ForeignKeyConstraint(["athlete_id"], ["athletes.id"], ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(["block_plan_id"], ["block_plans.id"], ondelete="RESTRICT"),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index(
+        op.f("ix_session_templates_athlete_id"), "session_templates", ["athlete_id"], unique=False
+    )
+    op.create_index(
+        op.f("ix_session_templates_block_plan_id"),
+        "session_templates",
+        ["block_plan_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_session_templates_created_for_block_at"),
+        "session_templates",
+        ["created_for_block_at"],
+        unique=False,
+    )
+    op.create_table(
         "training_responses",
         sa.Column("kind", sa.String(length=20), nullable=False),
         sa.Column("athlete_id", sa.Uuid(), nullable=False),
@@ -1511,6 +1549,95 @@ def upgrade() -> None:
         sa.UniqueConstraint("block_review_id", "position", name="uq_block_review_response_order"),
     )
     op.create_table(
+        "planned_sessions",
+        sa.Column("weekly_plan_id", sa.Uuid(), nullable=False),
+        sa.Column("session_template_id", sa.Uuid(), nullable=False),
+        sa.Column("occurrence_index", sa.Integer(), nullable=False),
+        sa.Column("availability_window_id", sa.Uuid(), nullable=False),
+        sa.Column("environment_id", sa.Uuid(), nullable=False),
+        sa.Column(
+            "starts_at", agas_domain.persistence.types.UTCDateTime(timezone=True), nullable=False
+        ),
+        sa.Column(
+            "ends_at", agas_domain.persistence.types.UTCDateTime(timezone=True), nullable=False
+        ),
+        sa.Column("planned_duration_minutes", sa.Integer(), nullable=False),
+        sa.Column("fatigue_cost", sa.String(length=40), nullable=False),
+        sa.Column("position", sa.Integer(), nullable=False),
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("schema_version", sa.String(length=40), nullable=False),
+        sa.Column(
+            "created_at", agas_domain.persistence.types.UTCDateTime(timezone=True), nullable=False
+        ),
+        sa.ForeignKeyConstraint(
+            ["availability_window_id"], ["availability_windows.id"], ondelete="RESTRICT"
+        ),
+        sa.ForeignKeyConstraint(["environment_id"], ["environments.id"], ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(
+            ["session_template_id"], ["session_templates.id"], ondelete="RESTRICT"
+        ),
+        sa.ForeignKeyConstraint(["weekly_plan_id"], ["weekly_plans.id"], ondelete="RESTRICT"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("weekly_plan_id", "position", name="uq_planned_session_order"),
+        sa.UniqueConstraint(
+            "weekly_plan_id",
+            "session_template_id",
+            "occurrence_index",
+            name="uq_planned_template_occurrence",
+        ),
+    )
+    op.create_index(
+        op.f("ix_planned_sessions_availability_window_id"),
+        "planned_sessions",
+        ["availability_window_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_planned_sessions_environment_id"),
+        "planned_sessions",
+        ["environment_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_planned_sessions_session_template_id"),
+        "planned_sessions",
+        ["session_template_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_planned_sessions_starts_at"), "planned_sessions", ["starts_at"], unique=False
+    )
+    op.create_index(
+        op.f("ix_planned_sessions_weekly_plan_id"),
+        "planned_sessions",
+        ["weekly_plan_id"],
+        unique=False,
+    )
+    op.create_table(
+        "session_template_evidence_claims",
+        sa.Column("session_template_id", sa.Uuid(), nullable=False),
+        sa.Column("evidence_claim_id", sa.Uuid(), nullable=False),
+        sa.Column("position", sa.Integer(), nullable=False),
+        sa.ForeignKeyConstraint(["evidence_claim_id"], ["evidence_claims.id"], ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(
+            ["session_template_id"], ["session_templates.id"], ondelete="RESTRICT"
+        ),
+        sa.PrimaryKeyConstraint("session_template_id", "evidence_claim_id"),
+        sa.UniqueConstraint("session_template_id", "position", name="uq_template_evidence_order"),
+    )
+    op.create_table(
+        "session_template_observations",
+        sa.Column("session_template_id", sa.Uuid(), nullable=False),
+        sa.Column("observation_id", sa.Uuid(), nullable=False),
+        sa.Column("position", sa.Integer(), nullable=False),
+        sa.ForeignKeyConstraint(["observation_id"], ["observations.id"], ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(
+            ["session_template_id"], ["session_templates.id"], ondelete="RESTRICT"
+        ),
+        sa.PrimaryKeyConstraint("session_template_id", "observation_id"),
+        sa.UniqueConstraint("session_template_id", "position", name="uq_template_obs_order"),
+    )
+    op.create_table(
         "stimulus_requirements",
         sa.Column("athlete_id", sa.Uuid(), nullable=False),
         sa.Column("long_range_strategy_id", sa.Uuid(), nullable=False),
@@ -1672,6 +1799,93 @@ def upgrade() -> None:
         unique=False,
     )
     op.create_table(
+        "session_safety_decisions",
+        sa.Column("athlete_id", sa.Uuid(), nullable=False),
+        sa.Column("weekly_plan_id", sa.Uuid(), nullable=False),
+        sa.Column("planned_session_id", sa.Uuid(), nullable=False),
+        sa.Column("related_session_execution_id", sa.Uuid(), nullable=True),
+        sa.Column("safety_policy_id", sa.Uuid(), nullable=False),
+        sa.Column("timing", sa.String(length=40), nullable=False),
+        sa.Column("outcome", sa.String(length=40), nullable=False),
+        sa.Column(
+            "required_modifications",
+            sa.JSON().with_variant(postgresql.JSONB(astext_type=Text()), "postgresql"),
+            nullable=False,
+        ),
+        sa.Column(
+            "rationale",
+            sa.JSON().with_variant(postgresql.JSONB(astext_type=Text()), "postgresql"),
+            nullable=False,
+        ),
+        sa.Column(
+            "decided_at", agas_domain.persistence.types.UTCDateTime(timezone=True), nullable=False
+        ),
+        sa.Column("rule_version", sa.String(length=160), nullable=False),
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("schema_version", sa.String(length=40), nullable=False),
+        sa.Column(
+            "created_at", agas_domain.persistence.types.UTCDateTime(timezone=True), nullable=False
+        ),
+        sa.ForeignKeyConstraint(["athlete_id"], ["athletes.id"], ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(
+            ["planned_session_id"], ["planned_sessions.id"], ondelete="RESTRICT"
+        ),
+        *(
+            (
+                sa.ForeignKeyConstraint(
+                    ["related_session_execution_id"],
+                    ["session_executions.id"],
+                    name="fk_safety_decision_related_execution",
+                    ondelete="RESTRICT",
+                    use_alter=True,
+                ),
+            )
+            if op.get_bind().dialect.name == "sqlite"
+            else ()
+        ),
+        sa.ForeignKeyConstraint(
+            ["safety_policy_id"], ["session_safety_policies.id"], ondelete="RESTRICT"
+        ),
+        sa.ForeignKeyConstraint(["weekly_plan_id"], ["weekly_plans.id"], ondelete="RESTRICT"),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index(
+        op.f("ix_session_safety_decisions_athlete_id"),
+        "session_safety_decisions",
+        ["athlete_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_session_safety_decisions_decided_at"),
+        "session_safety_decisions",
+        ["decided_at"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_session_safety_decisions_planned_session_id"),
+        "session_safety_decisions",
+        ["planned_session_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_session_safety_decisions_related_session_execution_id"),
+        "session_safety_decisions",
+        ["related_session_execution_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_session_safety_decisions_safety_policy_id"),
+        "session_safety_decisions",
+        ["safety_policy_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_session_safety_decisions_weekly_plan_id"),
+        "session_safety_decisions",
+        ["weekly_plan_id"],
+        unique=False,
+    )
+    op.create_table(
         "stimulus_requirement_evidence_claims",
         sa.Column("stimulus_requirement_id", sa.Uuid(), nullable=False),
         sa.Column("evidence_claim_id", sa.Uuid(), nullable=False),
@@ -1761,6 +1975,18 @@ def upgrade() -> None:
         unique=False,
     )
     op.create_table(
+        "block_review_safety_decisions",
+        sa.Column("block_review_id", sa.Uuid(), nullable=False),
+        sa.Column("safety_decision_id", sa.Uuid(), nullable=False),
+        sa.Column("position", sa.Integer(), nullable=False),
+        sa.ForeignKeyConstraint(["block_review_id"], ["block_reviews.id"], ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(
+            ["safety_decision_id"], ["session_safety_decisions.id"], ondelete="RESTRICT"
+        ),
+        sa.PrimaryKeyConstraint("block_review_id", "safety_decision_id"),
+        sa.UniqueConstraint("block_review_id", "position", name="uq_block_review_safety_order"),
+    )
+    op.create_table(
         "exercise_matches",
         sa.Column("resolution_id", sa.Uuid(), nullable=False),
         sa.Column("exercise_id", sa.Uuid(), nullable=False),
@@ -1812,6 +2038,110 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("resolution_id", "equipment_availability_id"),
         sa.UniqueConstraint("resolution_id", "position", name="uq_resolution_availability_order"),
+    )
+    op.create_table(
+        "session_executions",
+        sa.Column("athlete_id", sa.Uuid(), nullable=False),
+        sa.Column("weekly_plan_id", sa.Uuid(), nullable=False),
+        sa.Column("planned_session_id", sa.Uuid(), nullable=False),
+        sa.Column("session_template_id", sa.Uuid(), nullable=False),
+        sa.Column("pre_session_safety_decision_id", sa.Uuid(), nullable=False),
+        sa.Column("status", sa.String(length=40), nullable=False),
+        sa.Column(
+            "started_at", agas_domain.persistence.types.UTCDateTime(timezone=True), nullable=True
+        ),
+        sa.Column(
+            "ended_at", agas_domain.persistence.types.UTCDateTime(timezone=True), nullable=True
+        ),
+        sa.Column(
+            "applied_modifications",
+            sa.JSON().with_variant(postgresql.JSONB(astext_type=Text()), "postgresql"),
+            nullable=False,
+        ),
+        sa.Column("session_rpe", sa.Float(), nullable=True),
+        sa.Column("note", sa.Text(), nullable=True),
+        sa.Column("performance_observation_id", sa.Uuid(), nullable=False),
+        sa.Column(
+            "logged_at", agas_domain.persistence.types.UTCDateTime(timezone=True), nullable=False
+        ),
+        sa.Column("rule_version", sa.String(length=160), nullable=False),
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("schema_version", sa.String(length=40), nullable=False),
+        sa.Column(
+            "created_at", agas_domain.persistence.types.UTCDateTime(timezone=True), nullable=False
+        ),
+        sa.ForeignKeyConstraint(["athlete_id"], ["athletes.id"], ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(
+            ["performance_observation_id"], ["observations.id"], ondelete="RESTRICT"
+        ),
+        sa.ForeignKeyConstraint(
+            ["planned_session_id"], ["planned_sessions.id"], ondelete="RESTRICT"
+        ),
+        sa.ForeignKeyConstraint(
+            ["pre_session_safety_decision_id"], ["session_safety_decisions.id"], ondelete="RESTRICT"
+        ),
+        sa.ForeignKeyConstraint(
+            ["session_template_id"], ["session_templates.id"], ondelete="RESTRICT"
+        ),
+        sa.ForeignKeyConstraint(["weekly_plan_id"], ["weekly_plans.id"], ondelete="RESTRICT"),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index(
+        op.f("ix_session_executions_athlete_id"), "session_executions", ["athlete_id"], unique=False
+    )
+    op.create_index(
+        op.f("ix_session_executions_logged_at"), "session_executions", ["logged_at"], unique=False
+    )
+    op.create_index(
+        op.f("ix_session_executions_performance_observation_id"),
+        "session_executions",
+        ["performance_observation_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_session_executions_planned_session_id"),
+        "session_executions",
+        ["planned_session_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_session_executions_pre_session_safety_decision_id"),
+        "session_executions",
+        ["pre_session_safety_decision_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_session_executions_session_template_id"),
+        "session_executions",
+        ["session_template_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_session_executions_weekly_plan_id"),
+        "session_executions",
+        ["weekly_plan_id"],
+        unique=False,
+    )
+    if op.get_bind().dialect.name != "sqlite":
+        op.create_foreign_key(
+            "fk_safety_decision_related_execution",
+            "session_safety_decisions",
+            "session_executions",
+            ["related_session_execution_id"],
+            ["id"],
+            ondelete="RESTRICT",
+        )
+    op.create_table(
+        "session_safety_decision_observations",
+        sa.Column("safety_decision_id", sa.Uuid(), nullable=False),
+        sa.Column("observation_id", sa.Uuid(), nullable=False),
+        sa.Column("position", sa.Integer(), nullable=False),
+        sa.ForeignKeyConstraint(["observation_id"], ["observations.id"], ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(
+            ["safety_decision_id"], ["session_safety_decisions.id"], ondelete="RESTRICT"
+        ),
+        sa.PrimaryKeyConstraint("safety_decision_id", "observation_id"),
+        sa.UniqueConstraint("safety_decision_id", "position", name="uq_safety_decision_obs_order"),
     )
     op.create_table(
         "block_resource_allocations",
@@ -1909,6 +2239,20 @@ def upgrade() -> None:
         sa.UniqueConstraint("resource_demand_id", "position", name="uq_resource_demand_obs_order"),
     )
     op.create_table(
+        "training_response_executions",
+        sa.Column("training_response_id", sa.Uuid(), nullable=False),
+        sa.Column("execution_id", sa.Uuid(), nullable=False),
+        sa.Column("position", sa.Integer(), nullable=False),
+        sa.ForeignKeyConstraint(["execution_id"], ["session_executions.id"], ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(
+            ["training_response_id"], ["training_responses.id"], ondelete="RESTRICT"
+        ),
+        sa.PrimaryKeyConstraint("training_response_id", "execution_id"),
+        sa.UniqueConstraint(
+            "training_response_id", "position", name="uq_training_response_execution_order"
+        ),
+    )
+    op.create_table(
         "session_prescriptions",
         sa.Column("athlete_id", sa.Uuid(), nullable=False),
         sa.Column("block_plan_id", sa.Uuid(), nullable=False),
@@ -1920,7 +2264,11 @@ def upgrade() -> None:
         sa.Column("sets", sa.Integer(), nullable=False),
         sa.Column("repetitions_per_set", sa.Integer(), nullable=True),
         sa.Column("duration_seconds", sa.Integer(), nullable=True),
-        sa.Column("intensity_target", sa.Text(), nullable=False),
+        sa.Column(
+            "intensity_targets",
+            sa.JSON().with_variant(postgresql.JSONB(astext_type=Text()), "postgresql"),
+            nullable=False,
+        ),
         sa.Column("rest_seconds", sa.Integer(), nullable=False),
         sa.Column("progression_rule_reference", sa.String(length=200), nullable=False),
         sa.Column("substitution_class", sa.String(length=160), nullable=False),
@@ -1992,382 +2340,6 @@ def upgrade() -> None:
         unique=False,
     )
     op.create_table(
-        "exposure_validation_decisions",
-        sa.Column("athlete_id", sa.Uuid(), nullable=False),
-        sa.Column("prescription_id", sa.Uuid(), nullable=False),
-        sa.Column("exposure_policy_id", sa.Uuid(), nullable=False),
-        sa.Column("exposure_type", sa.String(length=60), nullable=False),
-        sa.Column("proposed_dose", sa.Float(), nullable=False),
-        sa.Column("dose_unit", sa.String(length=40), nullable=False),
-        sa.Column("baseline_dose", sa.Float(), nullable=True),
-        sa.Column("maximum_allowed_dose", sa.Float(), nullable=False),
-        sa.Column("outcome", sa.String(length=40), nullable=False),
-        sa.Column(
-            "rationale",
-            sa.JSON().with_variant(postgresql.JSONB(astext_type=Text()), "postgresql"),
-            nullable=False,
-        ),
-        sa.Column(
-            "decided_at", agas_domain.persistence.types.UTCDateTime(timezone=True), nullable=False
-        ),
-        sa.Column("rule_version", sa.String(length=160), nullable=False),
-        sa.Column("id", sa.Uuid(), nullable=False),
-        sa.Column("schema_version", sa.String(length=40), nullable=False),
-        sa.Column(
-            "created_at", agas_domain.persistence.types.UTCDateTime(timezone=True), nullable=False
-        ),
-        sa.ForeignKeyConstraint(["athlete_id"], ["athletes.id"], ondelete="RESTRICT"),
-        sa.ForeignKeyConstraint(
-            ["exposure_policy_id"], ["exposure_progression_policies.id"], ondelete="RESTRICT"
-        ),
-        sa.ForeignKeyConstraint(
-            ["prescription_id"], ["session_prescriptions.id"], ondelete="RESTRICT"
-        ),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index(
-        op.f("ix_exposure_validation_decisions_athlete_id"),
-        "exposure_validation_decisions",
-        ["athlete_id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_exposure_validation_decisions_decided_at"),
-        "exposure_validation_decisions",
-        ["decided_at"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_exposure_validation_decisions_exposure_policy_id"),
-        "exposure_validation_decisions",
-        ["exposure_policy_id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_exposure_validation_decisions_prescription_id"),
-        "exposure_validation_decisions",
-        ["prescription_id"],
-        unique=False,
-    )
-    op.create_table(
-        "planned_sessions",
-        sa.Column("weekly_plan_id", sa.Uuid(), nullable=False),
-        sa.Column("prescription_id", sa.Uuid(), nullable=False),
-        sa.Column("resource_allocation_id", sa.Uuid(), nullable=False),
-        sa.Column("occurrence_index", sa.Integer(), nullable=False),
-        sa.Column("availability_window_id", sa.Uuid(), nullable=False),
-        sa.Column("environment_id", sa.Uuid(), nullable=False),
-        sa.Column(
-            "starts_at", agas_domain.persistence.types.UTCDateTime(timezone=True), nullable=False
-        ),
-        sa.Column(
-            "ends_at", agas_domain.persistence.types.UTCDateTime(timezone=True), nullable=False
-        ),
-        sa.Column("planned_duration_minutes", sa.Integer(), nullable=False),
-        sa.Column("fatigue_cost", sa.String(length=40), nullable=False),
-        sa.Column("position", sa.Integer(), nullable=False),
-        sa.Column("id", sa.Uuid(), nullable=False),
-        sa.Column("schema_version", sa.String(length=40), nullable=False),
-        sa.Column(
-            "created_at", agas_domain.persistence.types.UTCDateTime(timezone=True), nullable=False
-        ),
-        sa.ForeignKeyConstraint(
-            ["availability_window_id"], ["availability_windows.id"], ondelete="RESTRICT"
-        ),
-        sa.ForeignKeyConstraint(["environment_id"], ["environments.id"], ondelete="RESTRICT"),
-        sa.ForeignKeyConstraint(
-            ["prescription_id"], ["session_prescriptions.id"], ondelete="RESTRICT"
-        ),
-        sa.ForeignKeyConstraint(
-            ["resource_allocation_id"], ["block_resource_allocations.id"], ondelete="RESTRICT"
-        ),
-        sa.ForeignKeyConstraint(["weekly_plan_id"], ["weekly_plans.id"], ondelete="RESTRICT"),
-        sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("weekly_plan_id", "position", name="uq_planned_session_order"),
-        sa.UniqueConstraint(
-            "weekly_plan_id",
-            "prescription_id",
-            "occurrence_index",
-            name="uq_planned_prescription_occurrence",
-        ),
-    )
-    op.create_index(
-        op.f("ix_planned_sessions_availability_window_id"),
-        "planned_sessions",
-        ["availability_window_id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_planned_sessions_environment_id"),
-        "planned_sessions",
-        ["environment_id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_planned_sessions_prescription_id"),
-        "planned_sessions",
-        ["prescription_id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_planned_sessions_resource_allocation_id"),
-        "planned_sessions",
-        ["resource_allocation_id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_planned_sessions_starts_at"), "planned_sessions", ["starts_at"], unique=False
-    )
-    op.create_index(
-        op.f("ix_planned_sessions_weekly_plan_id"),
-        "planned_sessions",
-        ["weekly_plan_id"],
-        unique=False,
-    )
-    op.create_table(
-        "session_prescription_evidence_claims",
-        sa.Column("prescription_id", sa.Uuid(), nullable=False),
-        sa.Column("evidence_claim_id", sa.Uuid(), nullable=False),
-        sa.Column("position", sa.Integer(), nullable=False),
-        sa.ForeignKeyConstraint(["evidence_claim_id"], ["evidence_claims.id"], ondelete="RESTRICT"),
-        sa.ForeignKeyConstraint(
-            ["prescription_id"], ["session_prescriptions.id"], ondelete="RESTRICT"
-        ),
-        sa.PrimaryKeyConstraint("prescription_id", "evidence_claim_id"),
-        sa.UniqueConstraint("prescription_id", "position", name="uq_prescription_evidence_order"),
-    )
-    op.create_table(
-        "session_prescription_observations",
-        sa.Column("prescription_id", sa.Uuid(), nullable=False),
-        sa.Column("observation_id", sa.Uuid(), nullable=False),
-        sa.Column("position", sa.Integer(), nullable=False),
-        sa.ForeignKeyConstraint(["observation_id"], ["observations.id"], ondelete="RESTRICT"),
-        sa.ForeignKeyConstraint(
-            ["prescription_id"], ["session_prescriptions.id"], ondelete="RESTRICT"
-        ),
-        sa.PrimaryKeyConstraint("prescription_id", "observation_id"),
-        sa.UniqueConstraint("prescription_id", "position", name="uq_prescription_obs_order"),
-    )
-    op.create_table(
-        "training_response_prescriptions",
-        sa.Column("training_response_id", sa.Uuid(), nullable=False),
-        sa.Column("prescription_id", sa.Uuid(), nullable=False),
-        sa.Column("position", sa.Integer(), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["prescription_id"], ["session_prescriptions.id"], ondelete="RESTRICT"
-        ),
-        sa.ForeignKeyConstraint(
-            ["training_response_id"], ["training_responses.id"], ondelete="RESTRICT"
-        ),
-        sa.PrimaryKeyConstraint("training_response_id", "prescription_id"),
-        sa.UniqueConstraint(
-            "training_response_id", "position", name="uq_training_response_prescription_order"
-        ),
-    )
-    op.create_table(
-        "session_safety_decisions",
-        sa.Column("athlete_id", sa.Uuid(), nullable=False),
-        sa.Column("weekly_plan_id", sa.Uuid(), nullable=False),
-        sa.Column("planned_session_id", sa.Uuid(), nullable=False),
-        sa.Column("related_session_execution_id", sa.Uuid(), nullable=True),
-        sa.Column("safety_policy_id", sa.Uuid(), nullable=False),
-        sa.Column("timing", sa.String(length=40), nullable=False),
-        sa.Column("outcome", sa.String(length=40), nullable=False),
-        sa.Column(
-            "required_modifications",
-            sa.JSON().with_variant(postgresql.JSONB(astext_type=Text()), "postgresql"),
-            nullable=False,
-        ),
-        sa.Column(
-            "rationale",
-            sa.JSON().with_variant(postgresql.JSONB(astext_type=Text()), "postgresql"),
-            nullable=False,
-        ),
-        sa.Column(
-            "decided_at", agas_domain.persistence.types.UTCDateTime(timezone=True), nullable=False
-        ),
-        sa.Column("rule_version", sa.String(length=160), nullable=False),
-        sa.Column("id", sa.Uuid(), nullable=False),
-        sa.Column("schema_version", sa.String(length=40), nullable=False),
-        sa.Column(
-            "created_at", agas_domain.persistence.types.UTCDateTime(timezone=True), nullable=False
-        ),
-        sa.ForeignKeyConstraint(["athlete_id"], ["athletes.id"], ondelete="RESTRICT"),
-        sa.ForeignKeyConstraint(
-            ["planned_session_id"], ["planned_sessions.id"], ondelete="RESTRICT"
-        ),
-        *(
-            (
-                sa.ForeignKeyConstraint(
-                    ["related_session_execution_id"],
-                    ["session_executions.id"],
-                    name="fk_safety_decision_related_execution",
-                    ondelete="RESTRICT",
-                    use_alter=True,
-                ),
-            )
-            if op.get_bind().dialect.name == "sqlite"
-            else ()
-        ),
-        sa.ForeignKeyConstraint(
-            ["safety_policy_id"], ["session_safety_policies.id"], ondelete="RESTRICT"
-        ),
-        sa.ForeignKeyConstraint(["weekly_plan_id"], ["weekly_plans.id"], ondelete="RESTRICT"),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index(
-        op.f("ix_session_safety_decisions_athlete_id"),
-        "session_safety_decisions",
-        ["athlete_id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_session_safety_decisions_decided_at"),
-        "session_safety_decisions",
-        ["decided_at"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_session_safety_decisions_planned_session_id"),
-        "session_safety_decisions",
-        ["planned_session_id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_session_safety_decisions_related_session_execution_id"),
-        "session_safety_decisions",
-        ["related_session_execution_id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_session_safety_decisions_safety_policy_id"),
-        "session_safety_decisions",
-        ["safety_policy_id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_session_safety_decisions_weekly_plan_id"),
-        "session_safety_decisions",
-        ["weekly_plan_id"],
-        unique=False,
-    )
-    op.create_table(
-        "block_review_safety_decisions",
-        sa.Column("block_review_id", sa.Uuid(), nullable=False),
-        sa.Column("safety_decision_id", sa.Uuid(), nullable=False),
-        sa.Column("position", sa.Integer(), nullable=False),
-        sa.ForeignKeyConstraint(["block_review_id"], ["block_reviews.id"], ondelete="RESTRICT"),
-        sa.ForeignKeyConstraint(
-            ["safety_decision_id"], ["session_safety_decisions.id"], ondelete="RESTRICT"
-        ),
-        sa.PrimaryKeyConstraint("block_review_id", "safety_decision_id"),
-        sa.UniqueConstraint("block_review_id", "position", name="uq_block_review_safety_order"),
-    )
-    op.create_table(
-        "session_executions",
-        sa.Column("athlete_id", sa.Uuid(), nullable=False),
-        sa.Column("weekly_plan_id", sa.Uuid(), nullable=False),
-        sa.Column("planned_session_id", sa.Uuid(), nullable=False),
-        sa.Column("prescription_id", sa.Uuid(), nullable=False),
-        sa.Column("pre_session_safety_decision_id", sa.Uuid(), nullable=False),
-        sa.Column("status", sa.String(length=40), nullable=False),
-        sa.Column(
-            "started_at", agas_domain.persistence.types.UTCDateTime(timezone=True), nullable=True
-        ),
-        sa.Column(
-            "ended_at", agas_domain.persistence.types.UTCDateTime(timezone=True), nullable=True
-        ),
-        sa.Column(
-            "applied_modifications",
-            sa.JSON().with_variant(postgresql.JSONB(astext_type=Text()), "postgresql"),
-            nullable=False,
-        ),
-        sa.Column("session_rpe", sa.Float(), nullable=True),
-        sa.Column("note", sa.Text(), nullable=True),
-        sa.Column("performance_observation_id", sa.Uuid(), nullable=False),
-        sa.Column(
-            "logged_at", agas_domain.persistence.types.UTCDateTime(timezone=True), nullable=False
-        ),
-        sa.Column("rule_version", sa.String(length=160), nullable=False),
-        sa.Column("id", sa.Uuid(), nullable=False),
-        sa.Column("schema_version", sa.String(length=40), nullable=False),
-        sa.Column(
-            "created_at", agas_domain.persistence.types.UTCDateTime(timezone=True), nullable=False
-        ),
-        sa.ForeignKeyConstraint(["athlete_id"], ["athletes.id"], ondelete="RESTRICT"),
-        sa.ForeignKeyConstraint(
-            ["performance_observation_id"], ["observations.id"], ondelete="RESTRICT"
-        ),
-        sa.ForeignKeyConstraint(
-            ["planned_session_id"], ["planned_sessions.id"], ondelete="RESTRICT"
-        ),
-        sa.ForeignKeyConstraint(
-            ["pre_session_safety_decision_id"], ["session_safety_decisions.id"], ondelete="RESTRICT"
-        ),
-        sa.ForeignKeyConstraint(
-            ["prescription_id"], ["session_prescriptions.id"], ondelete="RESTRICT"
-        ),
-        sa.ForeignKeyConstraint(["weekly_plan_id"], ["weekly_plans.id"], ondelete="RESTRICT"),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index(
-        op.f("ix_session_executions_athlete_id"), "session_executions", ["athlete_id"], unique=False
-    )
-    op.create_index(
-        op.f("ix_session_executions_logged_at"), "session_executions", ["logged_at"], unique=False
-    )
-    op.create_index(
-        op.f("ix_session_executions_performance_observation_id"),
-        "session_executions",
-        ["performance_observation_id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_session_executions_planned_session_id"),
-        "session_executions",
-        ["planned_session_id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_session_executions_pre_session_safety_decision_id"),
-        "session_executions",
-        ["pre_session_safety_decision_id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_session_executions_prescription_id"),
-        "session_executions",
-        ["prescription_id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_session_executions_weekly_plan_id"),
-        "session_executions",
-        ["weekly_plan_id"],
-        unique=False,
-    )
-    if op.get_bind().dialect.name != "sqlite":
-        op.create_foreign_key(
-            "fk_safety_decision_related_execution",
-            "session_safety_decisions",
-            "session_executions",
-            ["related_session_execution_id"],
-            ["id"],
-            ondelete="RESTRICT",
-        )
-    op.create_table(
-        "session_safety_decision_observations",
-        sa.Column("safety_decision_id", sa.Uuid(), nullable=False),
-        sa.Column("observation_id", sa.Uuid(), nullable=False),
-        sa.Column("position", sa.Integer(), nullable=False),
-        sa.ForeignKeyConstraint(["observation_id"], ["observations.id"], ondelete="RESTRICT"),
-        sa.ForeignKeyConstraint(
-            ["safety_decision_id"], ["session_safety_decisions.id"], ondelete="RESTRICT"
-        ),
-        sa.PrimaryKeyConstraint("safety_decision_id", "observation_id"),
-        sa.UniqueConstraint("safety_decision_id", "position", name="uq_safety_decision_obs_order"),
-    )
-    op.create_table(
         "exposure_entries",
         sa.Column("kind", sa.String(length=20), nullable=False),
         sa.Column("athlete_id", sa.Uuid(), nullable=False),
@@ -2432,6 +2404,64 @@ def upgrade() -> None:
         op.f("ix_exposure_entries_session_execution_id"),
         "exposure_entries",
         ["session_execution_id"],
+        unique=False,
+    )
+    op.create_table(
+        "exposure_validation_decisions",
+        sa.Column("athlete_id", sa.Uuid(), nullable=False),
+        sa.Column("prescription_id", sa.Uuid(), nullable=False),
+        sa.Column("exposure_policy_id", sa.Uuid(), nullable=False),
+        sa.Column("exposure_type", sa.String(length=60), nullable=False),
+        sa.Column("proposed_dose", sa.Float(), nullable=False),
+        sa.Column("dose_unit", sa.String(length=40), nullable=False),
+        sa.Column("baseline_dose", sa.Float(), nullable=True),
+        sa.Column("maximum_allowed_dose", sa.Float(), nullable=False),
+        sa.Column("outcome", sa.String(length=40), nullable=False),
+        sa.Column(
+            "rationale",
+            sa.JSON().with_variant(postgresql.JSONB(astext_type=Text()), "postgresql"),
+            nullable=False,
+        ),
+        sa.Column(
+            "decided_at", agas_domain.persistence.types.UTCDateTime(timezone=True), nullable=False
+        ),
+        sa.Column("rule_version", sa.String(length=160), nullable=False),
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("schema_version", sa.String(length=40), nullable=False),
+        sa.Column(
+            "created_at", agas_domain.persistence.types.UTCDateTime(timezone=True), nullable=False
+        ),
+        sa.ForeignKeyConstraint(["athlete_id"], ["athletes.id"], ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(
+            ["exposure_policy_id"], ["exposure_progression_policies.id"], ondelete="RESTRICT"
+        ),
+        sa.ForeignKeyConstraint(
+            ["prescription_id"], ["session_prescriptions.id"], ondelete="RESTRICT"
+        ),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index(
+        op.f("ix_exposure_validation_decisions_athlete_id"),
+        "exposure_validation_decisions",
+        ["athlete_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_exposure_validation_decisions_decided_at"),
+        "exposure_validation_decisions",
+        ["decided_at"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_exposure_validation_decisions_exposure_policy_id"),
+        "exposure_validation_decisions",
+        ["exposure_policy_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_exposure_validation_decisions_prescription_id"),
+        "exposure_validation_decisions",
+        ["prescription_id"],
         unique=False,
     )
     op.create_table(
@@ -2502,46 +2532,95 @@ def upgrade() -> None:
         unique=False,
     )
     op.create_table(
-        "set_performances",
+        "session_item_executions",
         sa.Column("session_execution_id", sa.Uuid(), nullable=False),
-        sa.Column("set_index", sa.Integer(), nullable=False),
-        sa.Column("performed", sa.Boolean(), nullable=False),
-        sa.Column("target_completed", sa.Boolean(), nullable=False),
-        sa.Column("actual_repetitions", sa.Integer(), nullable=True),
-        sa.Column("actual_duration_seconds", sa.Integer(), nullable=True),
-        sa.Column("load_value", sa.Float(), nullable=True),
-        sa.Column("load_unit", sa.String(length=40), nullable=True),
-        sa.Column("effort_rpe", sa.Float(), nullable=True),
-        sa.Column("technique_constraint_met", sa.Boolean(), nullable=True),
+        sa.Column("prescription_id", sa.Uuid(), nullable=False),
+        sa.Column("status", sa.String(length=40), nullable=False),
+        sa.Column("item_rpe", sa.Float(), nullable=True),
+        sa.Column("note", sa.Text(), nullable=True),
+        sa.Column("position", sa.Integer(), nullable=False),
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("schema_version", sa.String(length=40), nullable=False),
         sa.Column(
             "created_at", agas_domain.persistence.types.UTCDateTime(timezone=True), nullable=False
         ),
         sa.ForeignKeyConstraint(
+            ["prescription_id"], ["session_prescriptions.id"], ondelete="RESTRICT"
+        ),
+        sa.ForeignKeyConstraint(
             ["session_execution_id"], ["session_executions.id"], ondelete="RESTRICT"
         ),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("session_execution_id", "set_index", name="uq_execution_set_index"),
+        sa.UniqueConstraint("session_execution_id", "position", name="uq_execution_item_order"),
+        sa.UniqueConstraint(
+            "session_execution_id", "prescription_id", name="uq_execution_prescription_item"
+        ),
     )
     op.create_index(
-        op.f("ix_set_performances_session_execution_id"),
-        "set_performances",
+        op.f("ix_session_item_executions_prescription_id"),
+        "session_item_executions",
+        ["prescription_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_session_item_executions_session_execution_id"),
+        "session_item_executions",
         ["session_execution_id"],
         unique=False,
     )
     op.create_table(
-        "training_response_executions",
-        sa.Column("training_response_id", sa.Uuid(), nullable=False),
-        sa.Column("execution_id", sa.Uuid(), nullable=False),
+        "session_prescription_evidence_claims",
+        sa.Column("prescription_id", sa.Uuid(), nullable=False),
+        sa.Column("evidence_claim_id", sa.Uuid(), nullable=False),
         sa.Column("position", sa.Integer(), nullable=False),
-        sa.ForeignKeyConstraint(["execution_id"], ["session_executions.id"], ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(["evidence_claim_id"], ["evidence_claims.id"], ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(
+            ["prescription_id"], ["session_prescriptions.id"], ondelete="RESTRICT"
+        ),
+        sa.PrimaryKeyConstraint("prescription_id", "evidence_claim_id"),
+        sa.UniqueConstraint("prescription_id", "position", name="uq_prescription_evidence_order"),
+    )
+    op.create_table(
+        "session_prescription_observations",
+        sa.Column("prescription_id", sa.Uuid(), nullable=False),
+        sa.Column("observation_id", sa.Uuid(), nullable=False),
+        sa.Column("position", sa.Integer(), nullable=False),
+        sa.ForeignKeyConstraint(["observation_id"], ["observations.id"], ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(
+            ["prescription_id"], ["session_prescriptions.id"], ondelete="RESTRICT"
+        ),
+        sa.PrimaryKeyConstraint("prescription_id", "observation_id"),
+        sa.UniqueConstraint("prescription_id", "position", name="uq_prescription_obs_order"),
+    )
+    op.create_table(
+        "session_template_items",
+        sa.Column("session_template_id", sa.Uuid(), nullable=False),
+        sa.Column("prescription_id", sa.Uuid(), nullable=False),
+        sa.Column("order_index", sa.Integer(), nullable=False),
+        sa.Column("section", sa.String(length=40), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["prescription_id"], ["session_prescriptions.id"], ondelete="RESTRICT"
+        ),
+        sa.ForeignKeyConstraint(
+            ["session_template_id"], ["session_templates.id"], ondelete="RESTRICT"
+        ),
+        sa.PrimaryKeyConstraint("session_template_id", "prescription_id"),
+        sa.UniqueConstraint("session_template_id", "order_index", name="uq_template_item_order"),
+    )
+    op.create_table(
+        "training_response_prescriptions",
+        sa.Column("training_response_id", sa.Uuid(), nullable=False),
+        sa.Column("prescription_id", sa.Uuid(), nullable=False),
+        sa.Column("position", sa.Integer(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["prescription_id"], ["session_prescriptions.id"], ondelete="RESTRICT"
+        ),
         sa.ForeignKeyConstraint(
             ["training_response_id"], ["training_responses.id"], ondelete="RESTRICT"
         ),
-        sa.PrimaryKeyConstraint("training_response_id", "execution_id"),
+        sa.PrimaryKeyConstraint("training_response_id", "prescription_id"),
         sa.UniqueConstraint(
-            "training_response_id", "position", name="uq_training_response_execution_order"
+            "training_response_id", "position", name="uq_training_response_prescription_order"
         ),
     )
     op.create_table(
@@ -2685,6 +2764,35 @@ def upgrade() -> None:
         sa.UniqueConstraint("session_adherence_id", "position", name="uq_adherence_obs_order"),
     )
     op.create_table(
+        "set_performances",
+        sa.Column("session_item_execution_id", sa.Uuid(), nullable=False),
+        sa.Column("set_index", sa.Integer(), nullable=False),
+        sa.Column("performed", sa.Boolean(), nullable=False),
+        sa.Column("target_completed", sa.Boolean(), nullable=False),
+        sa.Column("actual_repetitions", sa.Integer(), nullable=True),
+        sa.Column("actual_duration_seconds", sa.Integer(), nullable=True),
+        sa.Column("load_value", sa.Float(), nullable=True),
+        sa.Column("load_unit", sa.String(length=40), nullable=True),
+        sa.Column("effort_rpe", sa.Float(), nullable=True),
+        sa.Column("technique_constraint_met", sa.Boolean(), nullable=True),
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("schema_version", sa.String(length=40), nullable=False),
+        sa.Column(
+            "created_at", agas_domain.persistence.types.UTCDateTime(timezone=True), nullable=False
+        ),
+        sa.ForeignKeyConstraint(
+            ["session_item_execution_id"], ["session_item_executions.id"], ondelete="RESTRICT"
+        ),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("session_item_execution_id", "set_index", name="uq_item_set_index"),
+    )
+    op.create_index(
+        op.f("ix_set_performances_session_item_execution_id"),
+        "set_performances",
+        ["session_item_execution_id"],
+        unique=False,
+    )
+    op.create_table(
         "training_response_adherence",
         sa.Column("training_response_id", sa.Uuid(), nullable=False),
         sa.Column("adherence_id", sa.Uuid(), nullable=False),
@@ -2749,6 +2857,10 @@ def downgrade() -> None:
     op.drop_table("progression_decision_safety_decisions")
     op.drop_table("progression_decision_observations")
     op.drop_table("training_response_adherence")
+    op.drop_index(
+        op.f("ix_set_performances_session_item_execution_id"), table_name="set_performances"
+    )
+    op.drop_table("set_performances")
     op.drop_table("session_adherence_observations")
     op.drop_index(
         op.f("ix_progression_decisions_weekly_plan_id"), table_name="progression_decisions"
@@ -2773,74 +2885,24 @@ def downgrade() -> None:
     op.drop_table("progression_decisions")
     op.drop_table("exposure_validation_entries")
     op.drop_table("exposure_entry_observations")
-    op.drop_table("training_response_executions")
-    op.drop_index(op.f("ix_set_performances_session_execution_id"), table_name="set_performances")
-    op.drop_table("set_performances")
+    op.drop_table("training_response_prescriptions")
+    op.drop_table("session_template_items")
+    op.drop_table("session_prescription_observations")
+    op.drop_table("session_prescription_evidence_claims")
+    op.drop_index(
+        op.f("ix_session_item_executions_session_execution_id"),
+        table_name="session_item_executions",
+    )
+    op.drop_index(
+        op.f("ix_session_item_executions_prescription_id"), table_name="session_item_executions"
+    )
+    op.drop_table("session_item_executions")
     op.drop_index(op.f("ix_session_adherence_session_execution_id"), table_name="session_adherence")
     op.drop_index(op.f("ix_session_adherence_prescription_id"), table_name="session_adherence")
     op.drop_index(op.f("ix_session_adherence_planned_session_id"), table_name="session_adherence")
     op.drop_index(op.f("ix_session_adherence_calculated_at"), table_name="session_adherence")
     op.drop_index(op.f("ix_session_adherence_athlete_id"), table_name="session_adherence")
     op.drop_table("session_adherence")
-    op.drop_index(op.f("ix_exposure_entries_session_execution_id"), table_name="exposure_entries")
-    op.drop_index(op.f("ix_exposure_entries_prescription_id"), table_name="exposure_entries")
-    op.drop_index(op.f("ix_exposure_entries_planned_session_id"), table_name="exposure_entries")
-    op.drop_index(op.f("ix_exposure_entries_occurred_at"), table_name="exposure_entries")
-    op.drop_index(op.f("ix_exposure_entries_exposure_definition_id"), table_name="exposure_entries")
-    op.drop_index(op.f("ix_exposure_entries_athlete_id"), table_name="exposure_entries")
-    op.drop_table("exposure_entries")
-    op.drop_table("session_safety_decision_observations")
-    op.drop_index(op.f("ix_session_executions_weekly_plan_id"), table_name="session_executions")
-    op.drop_index(op.f("ix_session_executions_prescription_id"), table_name="session_executions")
-    op.drop_index(
-        op.f("ix_session_executions_pre_session_safety_decision_id"),
-        table_name="session_executions",
-    )
-    op.drop_index(op.f("ix_session_executions_planned_session_id"), table_name="session_executions")
-    op.drop_index(
-        op.f("ix_session_executions_performance_observation_id"), table_name="session_executions"
-    )
-    op.drop_index(op.f("ix_session_executions_logged_at"), table_name="session_executions")
-    op.drop_index(op.f("ix_session_executions_athlete_id"), table_name="session_executions")
-    if op.get_bind().dialect.name != "sqlite":
-        op.drop_constraint(
-            "fk_safety_decision_related_execution",
-            "session_safety_decisions",
-            type_="foreignkey",
-        )
-    op.drop_table("session_executions")
-    op.drop_table("block_review_safety_decisions")
-    op.drop_index(
-        op.f("ix_session_safety_decisions_weekly_plan_id"), table_name="session_safety_decisions"
-    )
-    op.drop_index(
-        op.f("ix_session_safety_decisions_safety_policy_id"), table_name="session_safety_decisions"
-    )
-    op.drop_index(
-        op.f("ix_session_safety_decisions_related_session_execution_id"),
-        table_name="session_safety_decisions",
-    )
-    op.drop_index(
-        op.f("ix_session_safety_decisions_planned_session_id"),
-        table_name="session_safety_decisions",
-    )
-    op.drop_index(
-        op.f("ix_session_safety_decisions_decided_at"), table_name="session_safety_decisions"
-    )
-    op.drop_index(
-        op.f("ix_session_safety_decisions_athlete_id"), table_name="session_safety_decisions"
-    )
-    op.drop_table("session_safety_decisions")
-    op.drop_table("training_response_prescriptions")
-    op.drop_table("session_prescription_observations")
-    op.drop_table("session_prescription_evidence_claims")
-    op.drop_index(op.f("ix_planned_sessions_weekly_plan_id"), table_name="planned_sessions")
-    op.drop_index(op.f("ix_planned_sessions_starts_at"), table_name="planned_sessions")
-    op.drop_index(op.f("ix_planned_sessions_resource_allocation_id"), table_name="planned_sessions")
-    op.drop_index(op.f("ix_planned_sessions_prescription_id"), table_name="planned_sessions")
-    op.drop_index(op.f("ix_planned_sessions_environment_id"), table_name="planned_sessions")
-    op.drop_index(op.f("ix_planned_sessions_availability_window_id"), table_name="planned_sessions")
-    op.drop_table("planned_sessions")
     op.drop_index(
         op.f("ix_exposure_validation_decisions_prescription_id"),
         table_name="exposure_validation_decisions",
@@ -2858,6 +2920,13 @@ def downgrade() -> None:
         table_name="exposure_validation_decisions",
     )
     op.drop_table("exposure_validation_decisions")
+    op.drop_index(op.f("ix_exposure_entries_session_execution_id"), table_name="exposure_entries")
+    op.drop_index(op.f("ix_exposure_entries_prescription_id"), table_name="exposure_entries")
+    op.drop_index(op.f("ix_exposure_entries_planned_session_id"), table_name="exposure_entries")
+    op.drop_index(op.f("ix_exposure_entries_occurred_at"), table_name="exposure_entries")
+    op.drop_index(op.f("ix_exposure_entries_exposure_definition_id"), table_name="exposure_entries")
+    op.drop_index(op.f("ix_exposure_entries_athlete_id"), table_name="exposure_entries")
+    op.drop_table("exposure_entries")
     op.drop_index(
         op.f("ix_session_prescriptions_resource_allocation_id"), table_name="session_prescriptions"
     )
@@ -2876,6 +2945,7 @@ def downgrade() -> None:
         op.f("ix_session_prescriptions_adaptation_id"), table_name="session_prescriptions"
     )
     op.drop_table("session_prescriptions")
+    op.drop_table("training_response_executions")
     op.drop_table("resource_demand_observations")
     op.drop_table("resource_demand_evidence_claims")
     op.drop_index(
@@ -2893,10 +2963,33 @@ def downgrade() -> None:
         op.f("ix_block_resource_allocations_adaptation_id"), table_name="block_resource_allocations"
     )
     op.drop_table("block_resource_allocations")
+    op.drop_table("session_safety_decision_observations")
+    op.drop_index(op.f("ix_session_executions_weekly_plan_id"), table_name="session_executions")
+    op.drop_index(
+        op.f("ix_session_executions_session_template_id"), table_name="session_executions"
+    )
+    op.drop_index(
+        op.f("ix_session_executions_pre_session_safety_decision_id"),
+        table_name="session_executions",
+    )
+    op.drop_index(op.f("ix_session_executions_planned_session_id"), table_name="session_executions")
+    op.drop_index(
+        op.f("ix_session_executions_performance_observation_id"), table_name="session_executions"
+    )
+    op.drop_index(op.f("ix_session_executions_logged_at"), table_name="session_executions")
+    op.drop_index(op.f("ix_session_executions_athlete_id"), table_name="session_executions")
+    if op.get_bind().dialect.name != "sqlite":
+        op.drop_constraint(
+            "fk_safety_decision_related_execution",
+            "session_safety_decisions",
+            type_="foreignkey",
+        )
+    op.drop_table("session_executions")
     op.drop_table("exercise_resolution_availability")
     op.drop_index(op.f("ix_exercise_matches_resolution_id"), table_name="exercise_matches")
     op.drop_index(op.f("ix_exercise_matches_exercise_id"), table_name="exercise_matches")
     op.drop_table("exercise_matches")
+    op.drop_table("block_review_safety_decisions")
     op.drop_index(
         op.f("ix_adaptation_resource_demands_stimulus_requirement_id"),
         table_name="adaptation_resource_demands",
@@ -2920,6 +3013,27 @@ def downgrade() -> None:
     op.drop_table("adaptation_resource_demands")
     op.drop_table("stimulus_requirement_observations")
     op.drop_table("stimulus_requirement_evidence_claims")
+    op.drop_index(
+        op.f("ix_session_safety_decisions_weekly_plan_id"), table_name="session_safety_decisions"
+    )
+    op.drop_index(
+        op.f("ix_session_safety_decisions_safety_policy_id"), table_name="session_safety_decisions"
+    )
+    op.drop_index(
+        op.f("ix_session_safety_decisions_related_session_execution_id"),
+        table_name="session_safety_decisions",
+    )
+    op.drop_index(
+        op.f("ix_session_safety_decisions_planned_session_id"),
+        table_name="session_safety_decisions",
+    )
+    op.drop_index(
+        op.f("ix_session_safety_decisions_decided_at"), table_name="session_safety_decisions"
+    )
+    op.drop_index(
+        op.f("ix_session_safety_decisions_athlete_id"), table_name="session_safety_decisions"
+    )
+    op.drop_table("session_safety_decisions")
     op.drop_index(
         op.f("ix_exercise_resolutions_stimulus_requirement_id"), table_name="exercise_resolutions"
     )
@@ -2945,6 +3059,14 @@ def downgrade() -> None:
         op.f("ix_stimulus_requirements_adaptation_id"), table_name="stimulus_requirements"
     )
     op.drop_table("stimulus_requirements")
+    op.drop_table("session_template_observations")
+    op.drop_table("session_template_evidence_claims")
+    op.drop_index(op.f("ix_planned_sessions_weekly_plan_id"), table_name="planned_sessions")
+    op.drop_index(op.f("ix_planned_sessions_starts_at"), table_name="planned_sessions")
+    op.drop_index(op.f("ix_planned_sessions_session_template_id"), table_name="planned_sessions")
+    op.drop_index(op.f("ix_planned_sessions_environment_id"), table_name="planned_sessions")
+    op.drop_index(op.f("ix_planned_sessions_availability_window_id"), table_name="planned_sessions")
+    op.drop_table("planned_sessions")
     op.drop_table("block_review_responses")
     op.drop_table("block_review_observations")
     op.drop_table("block_review_evidence_claims")
@@ -2968,6 +3090,10 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_training_responses_athlete_id"), table_name="training_responses")
     op.drop_index(op.f("ix_training_responses_adaptation_id"), table_name="training_responses")
     op.drop_table("training_responses")
+    op.drop_index(op.f("ix_session_templates_created_for_block_at"), table_name="session_templates")
+    op.drop_index(op.f("ix_session_templates_block_plan_id"), table_name="session_templates")
+    op.drop_index(op.f("ix_session_templates_athlete_id"), table_name="session_templates")
+    op.drop_table("session_templates")
     op.drop_table("roadmap_item_prerequisites")
     op.drop_table("capability_need_evidence_claims")
     op.drop_index(op.f("ix_block_reviews_reviewed_at"), table_name="block_reviews")

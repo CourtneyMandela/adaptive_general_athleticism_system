@@ -91,12 +91,15 @@ class TrainingResponseCalculator:
         ):
             raise BlockReviewError("prescriptions do not match the block adaptation")
         prescription_ids = {item.id for item in prescription_items}
-        if any(
-            item.athlete_id != block.athlete_id or item.prescription_id not in prescription_ids
-            for item in execution_items
-        ):
+        if any(item.athlete_id != block.athlete_id for item in execution_items):
             raise BlockReviewError("executions do not match the response prescriptions")
-        if {item.prescription_id for item in execution_items} != prescription_ids:
+        expected_pairs = {
+            (execution.id, item.prescription_id)
+            for execution in execution_items
+            for item in execution.items
+            if item.prescription_id in prescription_ids
+        }
+        if not expected_pairs or {pair[1] for pair in expected_pairs} != prescription_ids:
             raise BlockReviewError("each response prescription must have a recorded execution")
         execution_ids = {item.id for item in execution_items}
         if any(
@@ -106,8 +109,11 @@ class TrainingResponseCalculator:
             for item in adherence_items
         ):
             raise BlockReviewError("adherence does not match the response executions")
-        if {item.session_execution_id for item in adherence_items} != execution_ids:
-            raise BlockReviewError("each response execution requires one adherence record")
+        adherence_pairs = {
+            (item.session_execution_id, item.prescription_id) for item in adherence_items
+        }
+        if adherence_pairs != expected_pairs:
+            raise BlockReviewError("each response item execution requires one adherence record")
 
         prescription_by_id = {item.id: item for item in prescription_items}
         prescribed_total = sum(
@@ -117,7 +123,7 @@ class TrainingResponseCalculator:
                 or prescription_by_id[item.prescription_id].duration_seconds
                 or 0
             )
-            for item in execution_items
+            for item in adherence_items
         )
         dose_units = {
             "repetitions" if item.repetitions_per_set is not None else "seconds"
@@ -146,9 +152,17 @@ class TrainingResponseCalculator:
             prescription_ids=tuple(item.id for item in prescription_items),
             session_execution_ids=tuple(item.id for item in execution_items),
             session_adherence_ids=tuple(item.id for item in adherence_items),
-            prescribed_sessions=len(execution_items),
+            prescribed_sessions=len(adherence_items),
             completed_sessions=sum(
-                item.status is SessionExecutionStatus.COMPLETED for item in execution_items
+                next(
+                    item
+                    for item in execution.items
+                    if item.prescription_id == adherence.prescription_id
+                ).status
+                is SessionExecutionStatus.COMPLETED
+                for adherence in adherence_items
+                for execution in execution_items
+                if execution.id == adherence.session_execution_id
             ),
             prescribed_dose_total=prescribed_total,
             actual_dose_total=actual_total,
@@ -207,13 +221,13 @@ class BlockReviewEngine:
             raise BlockReviewError("block review cannot predate its inputs")
         if any(item.timing is not SafetyGateTiming.POST_SESSION for item in safety_items):
             raise BlockReviewError("block reviews accept only post-session safety decisions")
-        execution_ids = [
-            execution_id
+        adherence_ids = [
+            adherence_id
             for response in response_items
-            for execution_id in response.session_execution_ids
+            for adherence_id in response.session_adherence_ids
         ]
-        if len(set(execution_ids)) != len(execution_ids):
-            raise BlockReviewError("training responses cannot count one execution twice")
+        if len(set(adherence_ids)) != len(adherence_ids):
+            raise BlockReviewError("training responses cannot count one delivered item twice")
 
         evaluations = []
         for response, target in zip(response_items, target_items, strict=True):

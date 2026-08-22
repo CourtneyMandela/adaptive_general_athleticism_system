@@ -4,6 +4,7 @@ from collections.abc import Iterable
 from datetime import datetime, timedelta
 
 from agas_domain import (
+    AbsoluteLoadTarget,
     ExposureDefinition,
     ExposureEntry,
     ExposureProgressionPolicy,
@@ -14,6 +15,7 @@ from agas_domain import (
     ProgressionDimension,
     ProgressionOutcome,
     ProgressionPolicy,
+    RelativeLoadTarget,
     SafetyGateOutcome,
     SafetyGateTiming,
     SessionAdherence,
@@ -39,14 +41,17 @@ class ExposureEntryCalculator:
         prescription: SessionPrescription,
         definition: ExposureDefinition,
     ) -> ExposureEntry:
-        if execution.prescription_id != prescription.id:
+        item_execution = next(
+            (item for item in execution.items if item.prescription_id == prescription.id), None
+        )
+        if item_execution is None:
             raise ProgressionError("execution and prescription do not match")
         if definition.exercise_id != prescription.exercise_id:
             raise ProgressionError("exposure definition does not classify this exercise")
         if definition.dose_unit == "repetitions":
-            dose = sum(item.actual_repetitions or 0 for item in execution.performances)
+            dose = sum(item.actual_repetitions or 0 for item in item_execution.performances)
         else:
-            dose = sum(item.actual_duration_seconds or 0 for item in execution.performances)
+            dose = sum(item.actual_duration_seconds or 0 for item in item_execution.performances)
         if execution.ended_at is None:
             raise ProgressionError("an exposure entry requires a started execution")
         return ExposureEntry(
@@ -157,10 +162,10 @@ class ProgressionEngine:
         ExposureProgressionValidator._require_aware(decided_at)
         if policy.reference != prescription.progression_rule_reference:
             raise ProgressionError("progression policy does not match the prescription reference")
-        if (
-            execution.prescription_id != prescription.id
-            or adherence.prescription_id != prescription.id
-        ):
+        item_execution = next(
+            (item for item in execution.items if item.prescription_id == prescription.id), None
+        )
+        if item_execution is None or adherence.prescription_id != prescription.id:
             raise ProgressionError("progression inputs do not share a prescription")
         if (
             adherence.session_execution_id != execution.id
@@ -175,6 +180,8 @@ class ProgressionEngine:
             for item in safety
         ):
             raise ProgressionError("post-session safety decision does not match execution")
+        if any(item.decided_at > decided_at for item in safety):
+            raise ProgressionError("progression cannot predate a post-session safety decision")
 
         outcome = ProgressionOutcome.PROGRESS
         reasons: list[str] = []
@@ -184,20 +191,22 @@ class ProgressionEngine:
         elif any(item.outcome is not SafetyGateOutcome.PROCEED for item in safety):
             outcome = ProgressionOutcome.HOLD
             reasons.append("post-session safety modification holds progression")
-        elif execution.status is not SessionExecutionStatus.COMPLETED:
+        elif item_execution.status is not SessionExecutionStatus.COMPLETED:
             outcome = ProgressionOutcome.REPEAT
-            reasons.append("the prescribed session was not completed")
+            reasons.append("the prescribed session item was not completed")
         elif adherence.set_completion_ratio < policy.minimum_set_completion_ratio:
             outcome = ProgressionOutcome.REPEAT
             reasons.append("set completion is below the configured threshold")
         elif adherence.dose_completion_ratio < policy.minimum_dose_completion_ratio:
             outcome = ProgressionOutcome.REPEAT
             reasons.append("dose completion is below the configured threshold")
-        elif execution.session_rpe is None or execution.session_rpe > policy.maximum_session_rpe:
+        elif item_execution.item_rpe is None or (
+            item_execution.item_rpe > policy.maximum_session_rpe
+        ):
             outcome = ProgressionOutcome.REPEAT
-            reasons.append("reported effort is missing or above the configured threshold")
+            reasons.append("item effort is missing or above the configured threshold")
         elif policy.require_technique_constraint and any(
-            item.technique_constraint_met is not True for item in execution.performances
+            item.technique_constraint_met is not True for item in item_execution.performances
         ):
             outcome = ProgressionOutcome.REPEAT
             reasons.append("required technique constraints were not confirmed")
@@ -271,25 +280,58 @@ class PrescriptionProgressionApplicator:
         ):
             raise ProgressionError("decision does not authorize a prescription revision")
         amount = decision.adjustment.amount
-        if not amount.is_integer():
-            raise ProgressionError("V1 typed prescription adjustments require an integer amount")
-        increment = int(amount)
         updates: dict[str, object] = {}
         dimension = decision.adjustment.dimension
         if dimension is ProgressionDimension.REPETITIONS:
+            if not amount.is_integer():
+                raise ProgressionError("repetition adjustments require an integer amount")
             if prescription.repetitions_per_set is None:
                 raise ProgressionError("repetition progression requires a repetition prescription")
-            updates["repetitions_per_set"] = prescription.repetitions_per_set + increment
+            updates["repetitions_per_set"] = prescription.repetitions_per_set + int(amount)
         elif dimension is ProgressionDimension.SETS:
+            if not amount.is_integer():
+                raise ProgressionError("set adjustments require an integer amount")
             if planned_duration_minutes is None:
                 raise ProgressionError("set progression requires an explicit revised duration")
-            updates["sets"] = prescription.sets + increment
+            updates["sets"] = prescription.sets + int(amount)
         elif dimension is ProgressionDimension.DURATION:
+            if not amount.is_integer():
+                raise ProgressionError("duration adjustments require an integer amount")
             if prescription.duration_seconds is None or planned_duration_minutes is None:
                 raise ProgressionError(
                     "duration progression requires a duration prescription and revised duration"
                 )
-            updates["duration_seconds"] = prescription.duration_seconds + increment
+            updates["duration_seconds"] = prescription.duration_seconds + int(amount)
+        elif dimension is ProgressionDimension.LOAD:
+            revised_target: AbsoluteLoadTarget | RelativeLoadTarget
+            load_target = next(
+                (
+                    item
+                    for item in prescription.intensity_targets
+                    if isinstance(item, (AbsoluteLoadTarget, RelativeLoadTarget))
+                ),
+                None,
+            )
+            if isinstance(load_target, AbsoluteLoadTarget):
+                if decision.adjustment.unit != load_target.unit:
+                    raise ProgressionError("load adjustment unit does not match absolute load")
+                revised_target = load_target.model_copy(
+                    update={"value": load_target.value + amount}
+                )
+            elif isinstance(load_target, RelativeLoadTarget):
+                if decision.adjustment.unit != "percentage_points":
+                    raise ProgressionError("relative-load adjustments require percentage_points")
+                revised_target = load_target.model_copy(
+                    update={"percentage": load_target.percentage + amount}
+                )
+            else:
+                raise ProgressionError(
+                    "load progression requires an absolute or relative typed load target"
+                )
+            updates["intensity_targets"] = tuple(
+                revised_target if item is load_target else item
+                for item in prescription.intensity_targets
+            )
         else:
             raise ProgressionError(
                 f"{dimension.value} progression lacks a typed prescription field in V1"

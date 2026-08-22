@@ -2,9 +2,13 @@
 
 ## Current scope
 
-Milestone 6A establishes immutable delivered-dose `TrainingResponse` records and deterministic
-`BlockReview` outcomes on top of compatible capability reassessments, prescriptions, executions,
-adherence, and safety history. It does not update capability state or generate the next block.
+The current foundation adds controlled exercise/adaptation vocabulary and a deliberately small,
+validated seed boundary. A tested full-gym/travel/return scenario re-resolves exercises against the
+current environment without changing the athlete, strategy, block, adaptation, or stimulus.
+Existing immutable session, execution, response, and block-review behavior remains in place;
+reviewed capability estimates can now drive a lineage-linked replacement strategy. Automatic
+capability estimation from raw results, candidate-context inference, workout generation, and
+next-block generation remain deferred.
 
 ## Shape
 
@@ -89,9 +93,22 @@ level. They are derived resolver inputs, not a replacement for availability hist
 
 ### Exercise and adaptation ontologies
 
-Exercises and adaptations are separate versioned entities. Exercise records carry structured movement, loading, skill, impact, velocity, stability, fatigue, progression, regression, and equipment metadata. Adaptations can carry typed relationships with confidence and evidence references. This milestone defines the structures without inventing scientific relationships or bulk seed data.
+Exercises and adaptations are separate versioned entities. Movement pattern, loading type,
+velocity characteristic, joint region, laterality, preferred stimulus, training modality, and dose
+dimension use controlled enums. Exercise records also retain loadability, skill, impact, stability,
+fatigue, progression, regression, and exact equipment requirements. Adaptations can carry typed
+relationships with confidence and evidence references; the seed contains no speculative
+relationships.
 
-Ontology identity links are relational: exercise adaptation roles, equipment requirements, exercise progression/regression edges, adaptation evidence, and adaptation relationship evidence all use foreign keys. Flexible descriptive metadata remains JSONB. The repository rejects dangling ontology references before persistence.
+Ontology identity links are relational: exercise adaptation roles, equipment requirements,
+exercise progression/regression edges, adaptation evidence, and adaptation relationship evidence
+all use foreign keys. Flexible descriptive metadata remains JSONB. `agas_seed_data` validates IDs,
+relationships, scenario references, and evidence links atomically before persistence. The initial
+catalog is 14 exercises, 8 adaptations, and 8 equipment types—not a complete production library.
+`SeedCatalogImporter` stages those global records in a nested transaction and appends a
+digest-backed `CatalogImport` receipt with ordered foreign-key links to every imported identity.
+Exact reimports are idempotent; version/content collisions fail. Synthetic scenario athletes are
+not imported into athlete state.
 
 ### Stimulus and exercise resolution
 
@@ -104,12 +121,15 @@ repetitions, duration, or schedule.
 The deterministic resolver first applies hard feasibility constraints: exact equipment
 availability, contraindication tags, skill, impact, stability, fatigue, soreness, outdoor access,
 space, and noise. Remaining exercises receive a policy-versioned weighted score for adaptation
-role, movement coverage, loading type, loadability, and velocity coverage. A result is `FULL` only
+role, movement coverage, loading type, loadability, velocity coverage, and laterality. A result is `FULL` only
 when every fidelity component is complete; `PARTIAL` results enumerate every unresolved mismatch;
 and `INFEASIBLE` results select nothing and retain explicit reasons. The score ranks candidates—it
 does not claim two exercises are scientifically equivalent.
 
-Equipment identity matching is intentionally exact in this milestone. Category- or
+Equipment identity matching is intentionally exact in this milestone. A weekly prescription may
+use a newer resolution than its block allocation only for the same stimulus and adaptation. A
+partial re-resolution must be enabled by the weekly policy, and its unresolved limitations remain
+attached to the resolution; the planning-time allocation is not overwritten. Category- or
 capability-based substitutions require a future reviewed compatibility policy rather than hidden
 resolver inference. The repository includes no fabricated exercise catalog or scientific
 equivalence claims.
@@ -130,14 +150,22 @@ Target shortfalls and permitted partial exercise resolutions remain visible as p
 issues. Long-range development allocation scales development weight but is never treated as a
 literal dose.
 
-A `SessionPrescription` stores an explicit exercise, adaptation, reason, sets, repetitions or
-duration, intensity, rest, progression-rule reference, substitution class, planned duration,
-fatigue class, observations, evidence, and rule version. These are supplied inputs in Milestone 5A;
-the scheduler never manufactures them and does not execute the progression reference.
+A `SessionPrescription` stores one explicit exercise and adaptation with its reason, sets,
+repetitions or duration, typed intensity targets, rest, progression-rule reference, substitution
+class, planned duration, fatigue class, observations, evidence, and rule version. Supported target
+types distinguish absolute load, relative load, bodyweight, effort RPE, repetitions-in-reserve,
+heart-rate zone, pace, and technique constraints. Prescriptions remain independently versioned so
+one item can progress without rewriting a completed session.
+
+A versioned `SessionTemplate` is the workout container. It gives ordered prescription items a
+section, owns an explicit weekly frequency, and declares duration and maximum item fatigue. V1
+accepts templates as governed input and validates that their aggregate frequencies exactly match
+block allocations; it does not invent grouping rules.
 
 `WeeklyAvailability` contains dated, timezone-aware, non-overlapping windows associated with one
-athlete environment. `WeeklyScheduler` repeats one prescription template according to its block
-allocation and places each occurrence only in a matching-environment window with adequate time.
+athlete environment. `WeeklyScheduler` repeats each session template and places the whole workout
+in one matching-environment window with adequate time. Every item in a template must resolve to
+that environment, and the template duration must equal the sum of its item durations.
 It enforces configurable daily limits and recovery between high-fatigue sessions. A required
 occurrence that cannot be placed makes the immutable `WeeklyPlan` infeasible and records why.
 
@@ -150,11 +178,13 @@ free text or classify medical meaning. A modification decision lists explicit ch
 execution must acknowledge exactly those changes, while hold and escalation outcomes cannot
 authorize ordinary logging.
 
-`SessionExecution` retains the immutable prescription identity, authorizing decision, timestamps,
-status, applied modifications, and set-level actual repetitions or duration, load, effort, and
-technique-constraint report. The same input is preserved as a direct `WORKOUT_RESULT` observation.
-`SessionAdherence` is a separate `derived` record with bounded prescribed-versus-performed set and
-dose ratios, its source observation, calculation method, timestamp, and rule version. Optional
+`SessionExecution` retains the immutable session-template identity, authorizing decision,
+timestamps, status, applied modifications, and ordered item results. Each item retains its
+prescription identity, completion status, effort, note, and set-level repetitions or duration,
+load, effort, and technique report. The same input is preserved as a direct `WORKOUT_RESULT`
+observation. `SessionAdherence` remains a separate prescription-item-scoped `derived` record with
+bounded prescribed-versus-performed set and dose ratios, its source observation, calculation
+method, timestamp, and rule version. Optional
 post-session safety decisions reference the completed execution without rewriting it. None of
 these records chooses a progression.
 
@@ -168,7 +198,8 @@ jumps without using general fitness as a proxy.
 
 Approved progression decisions may create a new `SessionPrescription` linked through an immutable
 revision record to both the superseded prescription and authorizing decision. Repetitions, sets,
-and duration are the only automatically applicable typed dimensions in V1. Evidence, observation,
+duration, and compatible absolute or relative load targets are automatically applicable in V1;
+unsupported or unit-incompatible adjustments fail explicitly. Evidence, observation,
 exposure-entry, and safety-decision provenance uses ordered foreign-key association tables.
 
 ### Training response and block review
@@ -189,9 +220,155 @@ below the delivery or confidence threshold makes the review inconclusive rather 
 untested or poorly measured intervention as ineffective. Review is descriptive: it changes no
 historical estimate, prescription, or future plan.
 
+### Closed-loop replanning
+
+`ClosedLoopReplanner` is the explicit boundary from a completed block review to a replacement
+`LongRangeStrategy`. It accepts capability estimates that already exist as derived state and
+requires each actively trained adaptation to use the exact follow-up estimate named by its
+reviewed `TrainingResponse`. Inactive adaptations may retain an estimate from the prior strategy.
+Each `ReplanningCandidateContext` names its estimate and competency floor directly, so adaptations
+that share a broad capability domain are not accidentally coupled by domain alone.
+
+The replanner rebuilds immutable `CapabilityNeed` records through the same competency-floor
+detector, delegates scoring to the versioned long-range planner, and records both
+`supersedes_strategy_id` and `triggering_block_review_id`. Those lineage values are a required pair
+in the domain, repository, and relational schema. A review can be causally inconclusive while a
+separately derived follow-up estimate remains valid current-state evidence; using that estimate
+does not assert that the completed block caused the change. Candidate relevance, trainability,
+transfer, and cost values remain explicit governed inputs rather than being inferred from a single
+response.
+
+### Persisted next-block creation
+
+`PersistedBlockCreationService` is the application boundary from a stored strategy to an immutable
+`BlockPlan`. The caller supplies identities for already-governed resource demands and an allocation
+policy, plus dates, weekly time budget, and explicit constraints. The service reconstructs every
+referenced exercise resolution and delegates allocation to `BlockPlanner` in one transaction.
+
+The planner requires one demand for every strategy priority and verifies exact
+strategy–priority–adaptation–state lineage. Active demands must reference a matching persisted
+stimulus and exercise resolution; deferred demands consume no resources. Consequently a revised
+strategy cannot reuse a demand attached to its predecessor, and block two materially depends on
+the replanning result rather than merely copying block one. This boundary stops at resource
+allocation: it creates no prescriptions, sessions, exercise substitutions, or progression rules.
+
+### Governed resource-demand preparation
+
+`PersistedResourcePreparationService` provides the upstream application boundary required by block
+creation. For an active strategy priority, it loads the persisted adaptation, environment,
+effective-dated equipment availability, equipment records, explicit exercise candidates, and
+resolver policy. It binds the caller's explicit stimulus specification to the immutable priority,
+derives one environment snapshot, resolves exercise fidelity, and appends the requirement,
+resolution, and resource demand in one transaction.
+
+The service does not derive scientific dose from `DEVELOP`, `MAINTAIN`, or `EXPOSE`; minimum and
+target minutes plus frequency remain explicit versioned inputs. An `INFEASIBLE` resolution is
+persisted and makes downstream block planning infeasible. A `DEFER` priority instead creates a
+zero-resource demand with no stimulus or resolution. This makes absence of training intentional
+and traceable rather than ambiguous.
+
+### Transactional weekly-plan creation
+
+`PersistedWeeklyPlanService` is the boundary from an immutable block to one dated week. Transport
+drafts key prescriptions and session items by block allocation, allowing the service to derive
+athlete, adaptation, resolution, and selected-exercise identities from persisted state. The caller
+must still provide the actual dose, intensity targets, rest, progression reference, session
+composition, frequency, fatigue classification, dated availability, provenance, and rule versions.
+
+The service creates `SessionPrescription`, `SessionTemplate`, and `WeeklyAvailability` records,
+then delegates placement and feasibility to `WeeklyScheduler`. Prescriptions must cover every
+active allocation exactly, container frequencies must reproduce each allocation frequency, and
+container duration and fatigue must equal their item composition. The result is persisted whether
+feasible or infeasible so schedule limitations remain explicit. All records commit or roll back
+together.
+
+### Transactional safety and session recording
+
+`PersistedSessionSafetyService` is the write boundary for pre- and post-session reports. The URL
+identifies the immutable weekly plan and planned occurrence, while the request supplies a persisted
+safety-policy ID, already classified signals, readiness context, timestamps, reliability, and
+provenance. The deterministic safety gate produces a direct user-report `Observation` and a
+`SessionSafetyDecision`; both append or roll back together.
+
+`PersistedSessionExecutionService` loads the plan, planned occurrence, session container, ordered
+prescriptions, and requested pre-session decision. The decision must be the latest pre-session
+decision for that occurrence and must authorize execution. The client supplies actual set-level
+performance but cannot replace athlete, plan, container, or prescription identity. The service
+atomically appends the workout-result observation, execution, and one derived adherence record per
+prescription. A database uniqueness constraint permits only one execution per planned occurrence;
+future correction support must use explicit supersession rather than competing histories.
+
+### Transactional post-session progression
+
+`PersistedProgressionService` is the boundary from one execution/prescription pair to its immutable
+progression result. It derives the adherence identity and loads every post-session safety decision,
+so transport input cannot omit an escalation. At least one post-session check must close the
+ordinary workflow before the decision is evaluated.
+
+When the selected progression policy declares an exposure type, the request identifies reviewed
+exposure-definition and exposure-policy records and supplies only the proposed dose and target
+time. The service derives the actual exposure entry from performed sets, loads the athlete's prior
+ledger, validates the proposal, and passes that decision into `ProgressionEngine`. The exposure
+entry, exposure validation, progression decision, and any automatically supported typed
+prescription revision commit or roll back together. Database constraints prevent duplicate
+adherence, exposure, and progression facts for the same execution chain.
+
+### Transactional weekly progression roll-forward
+
+`PersistedWeeklyPlanRollForwardService` is the narrow bridge from an immutable weekly plan to the
+immediately following week of the same block. The request supplies only new dated availability and
+a preparation timestamp. The service retains the source plan's scheduling policy, follows each
+session-template item through normalized prescription-revision records, and selects the latest
+revision that existed at preparation time.
+
+Unchanged prescriptions and templates are reused. If one or more items changed, the service creates
+a new immutable template with `previous_template_id`, preserving item order, section, frequency,
+and prescription ancestry while recomputing duration and fatigue from the carried items. The new
+`WeeklyPlan` records `previous_weekly_plan_id` and advances exactly seven days and one block week.
+The complete template, availability, and plan chain commits or rolls back together; unique lineage
+constraints reject competing automatic successors.
+
+The service adds no dose rule and accepts no client-authored prescription revision. Changed
+environments may make scheduling infeasible, but they never trigger an alleged equivalent exercise
+substitution. Exercise re-resolution, exposure proposals, block continuation, and next-block
+creation remain separate governed workflows.
+
+### Transactional completed-block review
+
+`PersistedBlockReviewService` closes the descriptive block history before replanning. It requires
+exactly one feasible `WeeklyPlan` for every dated block week and one persisted execution outcome for
+every planned occurrence; a missed session must therefore be recorded explicitly rather than
+disappearing from review. It derives every execution/adherence relationship and loads every
+post-session safety decision, requiring at least one such decision per execution.
+
+The request groups the exact set of executed prescription identities into non-overlapping response
+drafts and supplies compatible estimate identities, uncertainty, context, comparison direction,
+and a meaningful-change threshold. The service rejects omissions and double counting, derives all
+`TrainingResponse` records, evaluates the original hypothesis under a persisted review policy, and
+appends the response/review chain in one transaction. One block has at most one completed review in
+V1. The review remains descriptive and the existing replanning boundary is the only component that
+may derive a successor strategy.
+
+### Current-week read projection
+
+`CurrentWeekProjector` is a read-only application boundary for daily PWA use. An athlete ID and
+explicit date identify at most one persisted weekly plan. The projector joins immutable session
+containers and prescriptions with exercise/adaptation labels, the latest pre-session safety
+decision, any execution and adherence, all post-session safety outcomes, and any progression
+decision. It returns a purpose-built transport model rather than exposing persistence records or
+adding presentation fields to domain history.
+
+No matching plan is a valid empty-week result. Multiple plans covering the date are a conflict in
+V1 because plan supersession is not modeled; the query will not silently choose the newest record.
+Display status is a deterministic rendering of persisted execution or safety outcomes and is not a
+new training or safety decision.
+
 ### Evidence claims
 
-Evidence claims are reviewed, versioned interpretations linked to source identifiers. Evidence strength and athlete applicability are separate. The repository contains no fabricated scientific seed claims.
+Evidence claims are reviewed, versioned interpretations linked to source identifiers. Evidence
+strength and athlete applicability are separate. Three broad claims have source-checked PMID and
+DOI identifiers and an explicit `secondary_ai_verified` catalog status. They remain pending owner
+or qualified-domain approval and do not authorize dose, progression, or equivalence rules.
 
 ### Decision records
 
@@ -212,23 +389,87 @@ provenance survives deterministic serialization round trips. Ordered links also 
 requirement's observation/evidence sources, a resolution's candidate ranking, match issues, and the
 availability events used by its environment snapshot.
 Block allocations retain their exact demand and policy; prescriptions retain ordered observation
-and evidence sources; and planned sessions retain their prescription, allocation, environment, and
-availability-window identities.
-Safety policies, safety decisions and their observation links, executions and set performances,
-adherence records and their source links, training responses, review policies, reviews, and all of
-their ordered provenance links are also append-only. Repository checks duplicate the
+and evidence sources; session templates retain ordered prescription items and provenance; and
+planned sessions retain their template, environment, and availability-window identities.
+Successor session templates and weekly plans additionally retain explicit predecessor IDs, and
+repository checks require carried template items to be the same prescription or a true descendant
+through immutable progression decisions.
+Safety policies, safety decisions and their observation links, executions, item executions, set
+performances, adherence, exposure entries and validations, progression decisions and revisions,
+training responses, review policies, reviews, and all of their ordered provenance links are also
+append-only. Repository checks duplicate the
 domain authorization invariants before persistence so invalid cross-athlete, cross-plan, blocking,
 or unsupported execution chains cannot be inserted through normal application code.
+Strategy revision links are likewise append-only and must form the concrete chain prior strategy
+to completed block to block review to replacement strategy.
 
 ## API
 
-FastAPI owns transport concerns and database lifecycle. The initial API intentionally exposes only service metadata and health/readiness endpoints. Domain write endpoints will arrive with coherent use cases rather than raw CRUD that could bypass invariants.
+FastAPI owns transport concerns and database lifecycle. In addition to health/readiness, narrow
+write endpoints expose post-block replanning and persisted block creation. A block-review ID
+anchors the stored replanning lineage; the application service loads the governed inputs, invokes
+the deterministic planner, and commits new capability needs plus exactly one successor strategy
+atomically. A strategy-priority pair anchors resource-demand preparation; the service appends
+either an active stimulus-resolution-demand chain or one deferred zero-resource demand. A strategy
+ID anchors block creation; the service loads persisted demands, their resolutions, and the selected
+allocation policy before atomically appending a block. A block ID anchors explicit prescription,
+session-container, availability, and weekly scheduling creation. Weekly-plan and planned-session
+IDs anchor safety evaluation and actual-performance recording through immutable observations.
+One weekly-plan ID can also anchor a single consecutive roll-forward that consumes existing
+prescription-revision lineage rather than accepting new dose.
+Roll-forward appends a direct availability-confirmation observation before the next
+`WeeklyAvailability`, template revisions, and weekly plan. Its transaction preserves both the
+athlete report authorizing scheduling and the earlier observation references carried by the
+submitted availability draft.
+An execution/prescription pair anchors governed exposure and progression processing. A block ID
+anchors completed-history review, while a block-review ID anchors successor-strategy derivation.
+Missing dependencies, invalid inputs, and relational conflicts remain distinct transport errors.
+Raw domain CRUD is intentionally absent because it could bypass invariants.
 
 ## Web
 
-The Next.js App Router shell is responsive and installable through a web app manifest. It
-communicates the response-review milestone honestly and does not present a workout generator,
-automatic athlete-state update, or a polished training workflow.
+The Next.js App Router PWA now has a connected current-week screen for an existing athlete. It
+renders dated session containers, prescription dose and intensity, a compact rationale disclosure,
+environment, safety status, execution, and adherence. Setup, loading, empty, conflict/error, and
+mobile layouts are explicit. It also submits structured pre-session self-reports and actual
+set/dose/effort workout results through the existing transactional use-case endpoints, then reloads
+the read projection. The frontend derives only descriptive execution status from the entered work;
+the backend remains authoritative for safety, execution validation, and adherence.
+
+After an execution, the PWA appends a structured post-session safety report linked to that exact
+execution and then presents persisted per-prescription progression outcomes. It does not select a
+progression policy, exposure definition, exposure policy, or proposed exposure target. Those remain
+governed planning inputs rather than daily-user choices.
+
+The prescription's exact versioned `progression_rule_reference` is now the action-assignment key.
+The current-week projection resolves it against persisted policies and exposes a policy identifier
+only when one unique policy can produce an automatically typed load or repetition revision without
+exposure inputs. Missing, duplicate, exposure-governed, set/duration, and unsupported-dimension
+configurations fail closed with an explicit reason. The browser can request evaluation for a ready
+action, but the transactional backend still loads performance, adherence, all post-session safety
+history, and the evidence-linked policy before creating the immutable decision and revision.
+
+The projection also exposes the persisted week's availability and one backend-derived weekly-review
+state. Closure is descriptive and fail-closed: every scheduled occurrence needs an execution,
+recorded executions need post-session safety, and every prescription needs a resolved progression
+state before normal roll-forward is offered. `HOLD`, `REVIEW_REQUIRED`, infeasible weeks, missing or
+unsupported policies, and final block weeks route to explicit review states. The web client does
+not reproduce that decision tree.
+
+For an ordinary closed week, the PWA proposes the existing windows shifted by seven days, permits
+time edits, and requires explicit confirmation. It sends the exact environment IDs, instants,
+source-observation IDs, reliability, and unverified-user provenance to the transactional
+roll-forward boundary. The saved confirmation is an observation, not an inference that future
+availability matches the past.
+
+Technique-constraint reporting remains separate from completion and is not prefilled. When the
+assigned policy requires technique confirmation, an unreported or failed constraint produces the
+deterministic non-progression outcome rather than a favorable inference.
+
+Until onboarding and safety-policy assignment exist, the local setup requires explicit athlete and
+reviewed safety-policy IDs. The client uses `unverified-athlete-user` provenance to avoid implying
+authentication. It sends no classified safety signal because no governed browser classifier exists;
+a concerning-symptom selection pauses the ordinary form locally.
 
 ## Configuration
 

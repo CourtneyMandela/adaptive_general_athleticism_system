@@ -21,6 +21,7 @@ from agas_domain import (
     SchedulingIssue,
     SchedulingIssueCode,
     SessionPrescription,
+    SessionTemplate,
     TrainingPriorityState,
     WeeklyAvailability,
     WeeklyPlan,
@@ -365,6 +366,7 @@ class WeeklyScheduler:
         block: BlockPlan,
         availability: WeeklyAvailability,
         prescriptions: Iterable[SessionPrescription],
+        session_templates: Iterable[SessionTemplate],
         resolutions: Iterable[ExerciseResolution],
         policy: WeeklySchedulingPolicy,
         generated_at: datetime,
@@ -387,11 +389,14 @@ class WeeklyScheduler:
             item.id: item for item in block.allocations if item.allocated_weekly_minutes > 0
         }
         prescription_list = tuple(prescriptions)
+        prescription_by_id = {item.id: item for item in prescription_list}
+        if len(prescription_by_id) != len(prescription_list):
+            raise BlockPlanningError("session prescriptions contain duplicate ids")
         prescription_by_allocation = {
             item.resource_allocation_id: item for item in prescription_list
         }
         if len(prescription_by_allocation) != len(prescription_list):
-            raise BlockPlanningError("each allocation may have only one prescription template")
+            raise BlockPlanningError("each allocation may have only one current prescription")
         if set(prescription_by_allocation) != set(active_allocations):
             raise BlockPlanningError("prescriptions must cover every active allocation exactly")
         resolution_list = tuple(resolutions)
@@ -399,7 +404,7 @@ class WeeklyScheduler:
         if len(resolution_by_id) != len(resolution_list):
             raise BlockPlanningError("exercise resolutions contain duplicate ids")
 
-        occurrences = []
+        resolution_for_prescription: dict[UUID, ExerciseResolution] = {}
         for allocation_id, allocation in active_allocations.items():
             prescription = prescription_by_allocation[allocation_id]
             if (
@@ -409,11 +414,21 @@ class WeeklyScheduler:
                 raise BlockPlanningError("prescription belongs to a different athlete or block")
             if prescription.adaptation_id != allocation.adaptation_id:
                 raise BlockPlanningError("prescription adaptation differs from its allocation")
-            if prescription.exercise_resolution_id != allocation.exercise_resolution_id:
-                raise BlockPlanningError("prescription resolution differs from its allocation")
             resolution = resolution_by_id.get(prescription.exercise_resolution_id)
             if resolution is None or resolution.selected_exercise_id != prescription.exercise_id:
                 raise BlockPlanningError("prescription must use the resolution's selected exercise")
+            if resolution.stimulus_requirement_id != allocation.stimulus_requirement_id:
+                raise BlockPlanningError("prescription resolution targets another stimulus")
+            if (
+                prescription.exercise_resolution_id != allocation.exercise_resolution_id
+                and resolution.status is ResolutionStatus.PARTIAL
+                and not policy.allow_partial_exercise_resolution
+            ):
+                raise BlockPlanningError(
+                    "partial exercise re-resolution is disabled by weekly scheduling policy"
+                )
+            if resolution.status is ResolutionStatus.INFEASIBLE:
+                raise BlockPlanningError("prescription cannot use an infeasible resolution")
             if (
                 prescription.planned_duration_minutes * allocation.sessions_per_week
                 != allocation.allocated_weekly_minutes
@@ -423,15 +438,76 @@ class WeeklyScheduler:
                 )
             if generated_at < prescription.prescribed_at:
                 raise BlockPlanningError("weekly plan cannot predate its prescription")
-            for occurrence_index in range(1, allocation.sessions_per_week + 1):
-                occurrences.append((prescription, allocation, resolution, occurrence_index))
+            resolution_for_prescription[prescription.id] = resolution
+
+        template_items = tuple(session_templates)
+        if not template_items or len({item.id for item in template_items}) != len(template_items):
+            raise BlockPlanningError("session templates must be nonempty with unique ids")
+        covered_prescription_ids: set[UUID] = set()
+        occurrence_count_by_allocation: dict[UUID, int] = {}
+        template_environment: dict[UUID, UUID] = {}
+        for template in template_items:
+            if template.athlete_id != block.athlete_id or template.block_plan_id != block.id:
+                raise BlockPlanningError("session template belongs to another athlete or block")
+            if generated_at < template.created_for_block_at:
+                raise BlockPlanningError("weekly plan cannot predate its session template")
+            item_prescriptions = []
+            for item in template.items:
+                template_prescription = prescription_by_id.get(item.prescription_id)
+                if template_prescription is None:
+                    raise BlockPlanningError("session template references an unknown prescription")
+                item_prescriptions.append(template_prescription)
+                covered_prescription_ids.add(template_prescription.id)
+                occurrence_count_by_allocation[template_prescription.resource_allocation_id] = (
+                    occurrence_count_by_allocation.get(
+                        template_prescription.resource_allocation_id, 0
+                    )
+                    + template.sessions_per_week
+                )
+            if sum(item.planned_duration_minutes for item in item_prescriptions) != (
+                template.planned_duration_minutes
+            ):
+                raise BlockPlanningError(
+                    "session template duration must equal its prescription-item durations"
+                )
+            fatigue_rank = {CostLevel.LOW: 0, CostLevel.MODERATE: 1, CostLevel.HIGH: 2}
+            expected_fatigue = max(
+                (item.fatigue_cost for item in item_prescriptions),
+                key=lambda item: fatigue_rank[item],
+            )
+            if template.fatigue_cost is not expected_fatigue:
+                raise BlockPlanningError(
+                    "session template fatigue must equal its highest-fatigue item"
+                )
+            environments = {
+                resolution_for_prescription[item.id].environment_id for item in item_prescriptions
+            }
+            if len(environments) != 1:
+                raise BlockPlanningError("one session template must resolve to one environment")
+            template_environment[template.id] = environments.pop()
+
+        if covered_prescription_ids != set(prescription_by_id):
+            raise BlockPlanningError("session templates must cover every prescription")
+        if any(
+            occurrence_count_by_allocation.get(allocation_id, 0) != allocation.sessions_per_week
+            for allocation_id, allocation in active_allocations.items()
+        ):
+            raise BlockPlanningError(
+                "session template frequencies must match every allocation frequency"
+            )
+
+        occurrences = [
+            (template, template_environment[template.id], occurrence_index)
+            for template in template_items
+            for occurrence_index in range(1, template.sessions_per_week + 1)
+        ]
 
         fatigue_rank = {CostLevel.HIGH: 0, CostLevel.MODERATE: 1, CostLevel.LOW: 2}
         occurrences.sort(
             key=lambda item: (
                 fatigue_rank[item[0].fatigue_cost],
                 str(item[0].id),
-                item[3],
+                item[2],
             )
         )
         sessions: list[PlannedSession] = []
@@ -440,17 +516,15 @@ class WeeklyScheduler:
         sessions_by_day: dict[date, int] = {}
         high_fatigue_by_day: dict[date, int] = {}
 
-        for prescription, allocation, resolution, occurrence_index in occurrences:
+        for template, environment_id, occurrence_index in occurrences:
             matching_environment = [
-                window
-                for window in availability.windows
-                if window.environment_id == resolution.environment_id
+                window for window in availability.windows if window.environment_id == environment_id
             ]
             long_enough = [
                 window
                 for window in matching_environment
                 if window.ends_at - window.starts_at
-                >= timedelta(minutes=prescription.planned_duration_minutes)
+                >= timedelta(minutes=template.planned_duration_minutes)
             ]
             selected = None
             rejected_codes = set()
@@ -462,16 +536,16 @@ class WeeklyScheduler:
                     rejected_codes.add(SchedulingIssueCode.DAILY_SESSION_LIMIT)
                     continue
                 if (
-                    prescription.fatigue_cost is CostLevel.HIGH
+                    template.fatigue_cost is CostLevel.HIGH
                     and high_fatigue_by_day.get(day, 0)
                     >= policy.maximum_high_fatigue_sessions_per_day
                 ):
                     rejected_codes.add(SchedulingIssueCode.HIGH_FATIGUE_DAILY_LIMIT)
                     continue
                 candidate_end = window.starts_at + timedelta(
-                    minutes=prescription.planned_duration_minutes
+                    minutes=template.planned_duration_minutes
                 )
-                if prescription.fatigue_cost is CostLevel.HIGH and not self._has_recovery(
+                if template.fatigue_cost is CostLevel.HIGH and not self._has_recovery(
                     window.starts_at,
                     candidate_end,
                     sessions,
@@ -499,7 +573,7 @@ class WeeklyScheduler:
                     SchedulingIssue(
                         code=code,
                         detail=detail,
-                        prescription_id=prescription.id,
+                        session_template_id=template.id,
                         occurrence_index=occurrence_index,
                     )
                 )
@@ -507,21 +581,20 @@ class WeeklyScheduler:
 
             window, ends_at = selected
             session = PlannedSession(
-                prescription_id=prescription.id,
-                resource_allocation_id=allocation.id,
+                session_template_id=template.id,
                 occurrence_index=occurrence_index,
                 availability_window_id=window.id,
                 environment_id=window.environment_id,
                 starts_at=window.starts_at,
                 ends_at=ends_at,
-                planned_duration_minutes=prescription.planned_duration_minutes,
-                fatigue_cost=prescription.fatigue_cost,
+                planned_duration_minutes=template.planned_duration_minutes,
+                fatigue_cost=template.fatigue_cost,
             )
             sessions.append(session)
             used_windows.add(window.id)
             day = window.starts_at.date()
             sessions_by_day[day] = sessions_by_day.get(day, 0) + 1
-            if prescription.fatigue_cost is CostLevel.HIGH:
+            if template.fatigue_cost is CostLevel.HIGH:
                 high_fatigue_by_day[day] = high_fatigue_by_day.get(day, 0) + 1
 
         sessions.sort(key=lambda item: (item.starts_at, str(item.id)))
