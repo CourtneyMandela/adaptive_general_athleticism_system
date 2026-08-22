@@ -8,6 +8,8 @@ from agas_api.main import app
 from agas_api.onboarding import AthleteOnboardingResult
 from agas_domain import Equipment, EquipmentAvailability
 from agas_domain.persistence.models import (
+    AccountRecord,
+    AthleteOwnershipRecord,
     AthleteRecord,
     EnvironmentRecord,
     EquipmentAvailabilityRecord,
@@ -165,7 +167,9 @@ def test_onboarding_rolls_back_a_late_environment_persistence_failure(
     counts_before = tuple(
         session.scalar(select(func.count()).select_from(record_type))
         for record_type in (
+            AccountRecord,
             AthleteRecord,
+            AthleteOwnershipRecord,
             ObservationRecord,
             EnvironmentRecord,
             EquipmentAvailabilityRecord,
@@ -195,7 +199,9 @@ def test_onboarding_rolls_back_a_late_environment_persistence_failure(
     counts_after = tuple(
         session.scalar(select(func.count()).select_from(record_type))
         for record_type in (
+            AccountRecord,
             AthleteRecord,
+            AthleteOwnershipRecord,
             ObservationRecord,
             EnvironmentRecord,
             EquipmentAvailabilityRecord,

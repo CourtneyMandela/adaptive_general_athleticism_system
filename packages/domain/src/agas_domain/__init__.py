@@ -46,6 +46,7 @@ from agas_domain.enums import (
 )
 from agas_domain.models import (
     AbsoluteLoadTarget,
+    Account,
     Adaptation,
     AdaptationPlanningCandidate,
     AdaptationPriority,
@@ -56,6 +57,7 @@ from agas_domain.models import (
     AssessmentResultInput,
     AssessmentSelection,
     Athlete,
+    AthleteOwnership,
     AvailabilityWindow,
     AvailableEquipmentSnapshot,
     BlockIssue,
@@ -130,6 +132,7 @@ from agas_domain.models import (
 
 __all__ = [
     "AbsoluteLoadTarget",
+    "Account",
     "Adaptation",
     "AdaptationPlanningCandidate",
     "AdaptationPriority",
@@ -145,6 +148,7 @@ __all__ = [
     "AssessmentResultInput",
     "AssessmentSelection",
     "Athlete",
+    "AthleteOwnership",
     "AvailabilityWindow",
     "AvailableEquipmentSnapshot",
     "BlockIssue",

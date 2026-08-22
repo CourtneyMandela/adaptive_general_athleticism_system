@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from agas_domain.models import (
+    Account,
     Adaptation,
     AdaptationPriority,
     AdaptationRelationship,
@@ -16,6 +17,7 @@ from agas_domain.models import (
     AssessmentDefinition,
     AssessmentSelection,
     Athlete,
+    AthleteOwnership,
     AvailabilityWindow,
     BlockIssue,
     BlockPlan,
@@ -68,6 +70,7 @@ from agas_domain.models import (
     WeeklySchedulingPolicy,
 )
 from agas_domain.persistence.models import (
+    AccountRecord,
     AdaptationEvidenceClaimRecord,
     AdaptationPriorityRecord,
     AdaptationRecord,
@@ -77,6 +80,7 @@ from agas_domain.persistence.models import (
     AssessmentDefinitionRecord,
     AssessmentSelectionObservationRecord,
     AssessmentSelectionRecord,
+    AthleteOwnershipRecord,
     AthleteRecord,
     AvailabilityWindowRecord,
     BlockPlanEvidenceClaimRecord,
@@ -179,6 +183,77 @@ class DomainIntegrityError(ValueError):
 class DomainRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
+
+    def add_account(self, account: Account) -> None:
+        self.session.add(
+            AccountRecord(
+                id=account.id,
+                schema_version=account.schema_version,
+                created_at=account.created_at,
+                issuer=account.issuer,
+                subject=account.subject,
+            )
+        )
+
+    def get_account(self, account_id: UUID) -> Account | None:
+        record = self.session.get(AccountRecord, account_id)
+        return self._account_from_record(record) if record is not None else None
+
+    def get_account_by_identity(self, issuer: str, subject: str) -> Account | None:
+        record = self.session.scalar(
+            select(AccountRecord).where(
+                AccountRecord.issuer == issuer,
+                AccountRecord.subject == subject,
+            )
+        )
+        return self._account_from_record(record) if record is not None else None
+
+    def add_athlete_ownership(self, ownership: AthleteOwnership) -> None:
+        if self.get_account(ownership.account_id) is None:
+            raise DomainIntegrityError("ownership account does not exist")
+        self._require_athlete(ownership.athlete_id)
+        existing = self.get_athlete_ownership(ownership.athlete_id)
+        if existing is not None:
+            raise DomainIntegrityError("athlete already has an owner")
+        self.session.add(
+            AthleteOwnershipRecord(
+                id=ownership.id,
+                schema_version=ownership.schema_version,
+                created_at=ownership.created_at,
+                account_id=ownership.account_id,
+                athlete_id=ownership.athlete_id,
+                granted_at=ownership.granted_at,
+                grant_method=ownership.grant_method,
+                rule_version=ownership.rule_version,
+            )
+        )
+
+    def get_athlete_ownership(self, athlete_id: UUID) -> AthleteOwnership | None:
+        record = self.session.scalar(
+            select(AthleteOwnershipRecord).where(AthleteOwnershipRecord.athlete_id == athlete_id)
+        )
+        if record is None:
+            return None
+        return AthleteOwnership(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            account_id=record.account_id,
+            athlete_id=record.athlete_id,
+            granted_at=record.granted_at,
+            grant_method=record.grant_method,
+            rule_version=record.rule_version,
+        )
+
+    @staticmethod
+    def _account_from_record(record: AccountRecord) -> Account:
+        return Account(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            issuer=record.issuer,
+            subject=record.subject,
+        )
 
     def add_athlete(self, athlete: Athlete) -> None:
         self.session.add(

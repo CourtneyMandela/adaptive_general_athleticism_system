@@ -1,10 +1,28 @@
 from collections.abc import Iterator
 
 import pytest
+from agas_api.identity import AuthenticatedPrincipal, authenticated_principal_dependency
+from agas_api.main import app
 from agas_domain.persistence.models import Base
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
+
+TEST_PRINCIPAL = AuthenticatedPrincipal(
+    issuer="urn:agas:test-suite",
+    subject="test-suite-account",
+    authentication_method="test-bypass",
+    test_bypass=True,
+)
+
+
+@pytest.fixture(autouse=True)
+def authenticated_test_principal() -> Iterator[None]:
+    app.dependency_overrides[authenticated_principal_dependency] = lambda: TEST_PRINCIPAL
+    try:
+        yield
+    finally:
+        app.dependency_overrides.pop(authenticated_principal_dependency, None)
 
 
 @pytest.fixture

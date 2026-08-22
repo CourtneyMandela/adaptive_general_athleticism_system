@@ -5,7 +5,9 @@ from typing import Annotated
 from uuid import UUID
 
 from agas_domain import (
+    Account,
     Athlete,
+    AthleteOwnership,
     Confidence,
     CostLevel,
     Environment,
@@ -18,6 +20,8 @@ from agas_domain.persistence.repository import DomainIntegrityError, DomainRepos
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+
+from agas_api.identity import AuthenticatedPrincipal
 
 NonEmptyText = Annotated[str, Field(min_length=1)]
 
@@ -150,10 +154,32 @@ class PersistedAthleteOnboardingService:
         self.session = session
         self.repository = DomainRepository(session)
 
-    def execute(self, command: CreateAthleteOnboardingCommand) -> AthleteOnboardingResult:
+    def execute(
+        self, command: CreateAthleteOnboardingCommand, principal: AuthenticatedPrincipal
+    ) -> AthleteOnboardingResult:
         try:
             result = self._build(command)
+            account = self.repository.get_account_by_identity(principal.issuer, principal.subject)
+            if account is None:
+                account = Account(
+                    created_at=command.reported_at,
+                    issuer=principal.issuer,
+                    subject=principal.subject,
+                )
+                self.repository.add_account(account)
+                self.session.flush()
             self.repository.add_athlete(result.athlete)
+            self.session.flush()
+            self.repository.add_athlete_ownership(
+                AthleteOwnership(
+                    created_at=command.reported_at,
+                    account_id=account.id,
+                    athlete_id=result.athlete.id,
+                    granted_at=command.reported_at,
+                    grant_method="self-service-onboarding",
+                    rule_version=self.rule_version,
+                )
+            )
             self.session.flush()
             self.repository.add_observation(result.intake_observation)
             self.session.flush()

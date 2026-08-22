@@ -378,6 +378,11 @@ Material architecture and training-model choices exist as both human-readable re
 
 SQLAlchemy 2 maps domain records to a PostgreSQL-oriented relational schema. JSON columns are used only for flexible context and ontology metadata; identity, ownership, temporal history, versioning, and provenance links remain explicit columns and relationships. SQLite is used only for fast isolated tests.
 
+Provider-subject accounts and athlete ownerships are normalized immutable records. The account
+identity is not embedded in `Athlete`; one account may own multiple athlete records, while the V1
+database constraint permits exactly one permanent owner record per athlete. Transfer, revocation,
+and delegated roles are not implied by this narrow schema.
+
 Historical athlete evidence, planning history, stimulus requirements, resolver policies, matches,
 resolutions, resource demands, blocks, prescriptions, availability windows, and weekly plans are
 append-only at the repository boundary. ORM
@@ -410,8 +415,8 @@ write endpoints expose profile/environment onboarding, post-block replanning, an
 creation. Onboarding accepts only non-sensitive direct reports, validates equipment identities
 against the global catalog, and atomically appends the athlete, observation, environments, and
 equipment-availability events. It creates no estimate, safety assignment, assessment, or plan.
-A block-review ID
-anchors the stored replanning lineage; the application service loads the governed inputs, invokes
+An account and athlete ownership are appended in the same transaction. A block-review ID anchors
+the stored replanning lineage; the application service loads the governed inputs, invokes
 the deterministic planner, and commits new capability needs plus exactly one successor strategy
 atomically. A strategy-priority pair anchors resource-demand preparation; the service appends
 either an active stimulus-resolution-demand chain or one deferred zero-resource demand. A strategy
@@ -429,6 +434,16 @@ An execution/prescription pair anchors governed exposure and progression process
 anchors completed-history review, while a block-review ID anchors successor-strategy derivation.
 Missing dependencies, invalid inputs, and relational conflicts remain distinct transport errors.
 Raw domain CRUD is intentionally absent because it could bypass invariants.
+
+Every athlete-scoped route depends on a replaceable authenticated-principal boundary. The
+authorizer resolves strategy, block, review, weekly-plan, and execution identifiers back to their
+persisted athlete before the use case runs. A different account receives the same not-found result
+as an absent aggregate. The equipment catalog is public because it has no athlete state.
+
+Only a development bearer verifier exists today. `dev.<subject>` maps to the configured development
+issuer, onboarding creates the account and owner atomically, and a local operator CLI handles
+pre-existing fixtures. Production configuration rejects that verifier; external mode remains
+unavailable until a cryptographically verifying provider adapter is implemented.
 
 ## Web
 
@@ -477,13 +492,18 @@ Technique-constraint reporting remains separate from completion and is not prefi
 assigned policy requires technique confirmation, an unreported or failed constraint produces the
 deterministic non-progression outcome rather than a favorable inference.
 
-The secondary local-development setup requires explicit athlete and reviewed safety-policy IDs.
+The secondary local-development setup requires explicit athlete and reviewed safety-policy IDs,
+and the athlete must belong to the configured development account.
 Safety-policy assignment remains outside onboarding because applicability is governed rather than a
 user preference. The client uses `unverified-athlete-user` provenance to avoid implying
-authentication. It sends no classified safety signal because no governed browser classifier exists;
-a concerning-symptom selection pauses the ordinary form locally. Authentication and account-to-
-athlete authorization are required before sensitive intake or production use.
+real-world identity verification. It sends no classified safety signal because no governed browser
+classifier exists; a concerning-symptom selection pauses the ordinary form locally. Verified
+production authentication, consent, and account lifecycle controls are required before sensitive
+intake or production use.
 
 ## Configuration
 
-Configuration is environment-based and prefixed with `AGAS_`. PostgreSQL is the local/default authoritative store. Secrets are not committed.
+Configuration is environment-based and prefixed with `AGAS_`. PostgreSQL is the local/default
+authoritative store. The PWA's `NEXT_PUBLIC_AGAS_DEVELOPMENT_TOKEN` is a public local identity
+selector, not a secret. Production provider secrets and tokens must never use a `NEXT_PUBLIC_`
+variable and are not committed.

@@ -94,11 +94,39 @@ class Provenance(DomainModel):
     raw_record_hash: str | None = None
 
 
+class Account(VersionedRecord):
+    issuer: Annotated[str, Field(min_length=1, max_length=300)]
+    subject: Annotated[str, Field(min_length=1, max_length=255)]
+
+    @field_validator("issuer", "subject")
+    @classmethod
+    def normalize_identity_value(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("account identity values must not be blank")
+        return normalized
+
+
 class Athlete(VersionedRecord):
     display_name: Annotated[str, Field(min_length=1, max_length=120)]
     date_of_birth: date | None = None
     preferences: dict[str, JsonValue] = Field(default_factory=dict)
     goals: tuple[NonEmptyText, ...] = ()
+
+
+class AthleteOwnership(VersionedRecord):
+    account_id: UUID
+    athlete_id: UUID
+    granted_at: datetime
+    grant_method: NonEmptyText
+    rule_version: NonEmptyText
+
+    @field_validator("granted_at")
+    @classmethod
+    def require_aware_granted_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("ownership grant time must include a timezone")
+        return value
 
 
 class Observation(VersionedRecord):

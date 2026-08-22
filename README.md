@@ -92,6 +92,11 @@ uvicorn agas_api.main:app --reload
 
 The health endpoint is available at `http://localhost:8000/health`.
 
+Local development uses the explicit bearer `dev.local-browser` by default. It selects a local
+account identity; it is not a password or production authentication. `AGAS_AUTH_MODE=development`
+is rejected when `AGAS_ENVIRONMENT=production`. External authentication mode fails closed until a
+verified provider adapter is configured.
+
 The application endpoints are intentionally narrow:
 
 ```text
@@ -112,7 +117,18 @@ POST /v1/session-executions/{session_execution_id}/prescriptions/{prescription_i
 Onboarding creates one non-sensitive athlete profile, one provenance-bearing direct user report,
 one or more environments, and append-only equipment-availability events in a single transaction.
 Selections must reference the persisted equipment catalog. It does not create capability estimates,
-choose a safety policy, run an assessment, or generate a workout.
+choose a safety policy, run an assessment, or generate a workout. The authenticated account and
+immutable athlete ownership are created in the same transaction.
+
+All athlete-scoped endpoints require bearer authentication and verify aggregate ownership. Health,
+readiness, and the global onboarding equipment catalog remain public. To grant a pre-existing local
+fixture athlete to the default development account, run:
+
+```bash
+python -m agas_api.identity_admin grant --athlete-id YOUR_ATHLETE_UUID
+```
+
+There is deliberately no public endpoint for claiming an arbitrary athlete ID.
 
 It accepts explicit replanning candidate contexts, reconstructs the persisted review chain, and
 atomically appends capability needs and one replacement strategy. Raw strategy/need CRUD is not
@@ -173,7 +189,8 @@ pnpm --filter @agas/web dev
 
 Open `http://localhost:3000`.
 
-The current PWA screen connects to `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`) and can
+The current PWA screen connects to `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`) and uses
+`NEXT_PUBLIC_AGAS_DEVELOPMENT_TOKEN` (default `dev.local-browser`) for local identity. It can
 create a basic athlete profile with goals, activity preferences, one or more environments, and
 controlled equipment selections. The backend must have imported the seed catalog for equipment
 choices to appear. A new profile opens the authoritative empty-week state rather than receiving a
@@ -183,9 +200,9 @@ The secondary development path accepts an existing athlete ID plus a reviewed sa
 Set `NEXT_PUBLIC_AGAS_ATHLETE_ID` and `NEXT_PUBLIC_AGAS_SAFETY_POLICY_ID` in `.env` to prefill those
 fields for a local demo. After connecting, an athlete can append a pre-session readiness report,
 receive the backend's deterministic safety result, and log actual sets, dose, effort, timestamps,
-and notes. The screen
-then collects a short post-session recovery report and displays persisted progression outcomes per
-exercise. When an exact unique non-exposure load or repetition policy is assigned by the
+and notes. The screen then collects a short post-session recovery report and displays persisted
+progression outcomes per exercise. When an exact unique non-exposure load or repetition policy is
+assigned by the
 prescription's versioned rule reference, the athlete can ask the deterministic backend to evaluate
 progression. It refreshes from the authoritative current-week projection after each write.
 Once every scheduled occurrence, recovery report, and supported progression is closed, the screen
@@ -193,10 +210,11 @@ offers a weekly review. It starts from availability shifted by seven days, requi
 confirm or edit those actual times, and prepares exactly one consecutive successor week. Block-end,
 hold, review-required, missing-policy, and unsupported-policy states remain visibly blocked.
 
-This setup is provisional: there is no authentication, account ownership, sensitive health intake,
-assessment orchestration, or athlete-to-policy assignment workflow yet. Do not use it for sensitive
-or production athlete data. The browser does not classify raw symptoms. Selecting a concerning
-symptom pauses the ordinary workout flow instead of fabricating a safety signal.
+This setup is provisional: there is no verified production identity provider, account recovery,
+consent/export/deletion workflow, sensitive health intake, assessment orchestration, or
+athlete-to-policy assignment workflow yet. Do not use it for sensitive or production athlete data.
+The browser does not classify raw symptoms. Selecting a concerning symptom pauses the ordinary
+workout flow instead of fabricating a safety signal.
 Progression remains backend-governed: the PWA never chooses among policies or invents exposure
 targets, session-duration budgets, or adjustment values. Unsupported, exposure-sensitive, missing,
 and ambiguous configurations are shown as requiring governed setup.

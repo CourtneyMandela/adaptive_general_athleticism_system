@@ -33,6 +33,12 @@ from agas_api.current_week import (
     CurrentWeekProjector,
 )
 from agas_api.database import database_session, database_session_dependency
+from agas_api.identity import (
+    AuthenticatedPrincipal,
+    OwnershipAuthorizer,
+    authenticated_principal_dependency,
+    ownership_authorizer_dependency,
+)
 from agas_api.onboarding import (
     AthleteOnboardingConflictError,
     AthleteOnboardingNotFoundError,
@@ -152,9 +158,10 @@ def get_onboarding_equipment(
 def create_athlete_onboarding(
     command: CreateAthleteOnboardingCommand,
     session: Annotated[Session, Depends(database_session_dependency)],
+    principal: Annotated[AuthenticatedPrincipal, Depends(authenticated_principal_dependency)],
 ) -> AthleteOnboardingResult:
     try:
-        return PersistedAthleteOnboardingService(session).execute(command)
+        return PersistedAthleteOnboardingService(session).execute(command, principal)
     except AthleteOnboardingNotFoundError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
     except AthleteOnboardingConflictError as error:
@@ -173,8 +180,10 @@ def create_athlete_onboarding(
 def get_current_week(
     athlete_id: UUID,
     session: Annotated[Session, Depends(database_session_dependency)],
+    authorizer: Annotated[OwnershipAuthorizer, Depends(ownership_authorizer_dependency)],
     on: Annotated[date, Query(description="Date that must fall within the requested week")],
 ) -> CurrentWeekProjection:
+    authorizer.require_athlete(athlete_id)
     try:
         return CurrentWeekProjector(session).project(athlete_id, on)
     except CurrentWeekNotFoundError as error:
@@ -193,7 +202,9 @@ def create_block_review(
     block_id: UUID,
     command: CreateBlockReviewCommand,
     session: Annotated[Session, Depends(database_session_dependency)],
+    authorizer: Annotated[OwnershipAuthorizer, Depends(ownership_authorizer_dependency)],
 ) -> BlockReviewCreationResult:
+    authorizer.require_block(block_id)
     try:
         return PersistedBlockReviewService(session).execute(block_id, command)
     except BlockReviewNotFoundError as error:
@@ -216,7 +227,9 @@ def replan_after_block_review(
     block_review_id: UUID,
     command: PostBlockReplanningCommand,
     session: Annotated[Session, Depends(database_session_dependency)],
+    authorizer: Annotated[OwnershipAuthorizer, Depends(ownership_authorizer_dependency)],
 ) -> ClosedLoopReplanningResult:
+    authorizer.require_block_review(block_review_id)
     try:
         return PersistedReplanningService(session).execute(block_review_id, command)
     except ReplanningNotFoundError as error:
@@ -239,7 +252,9 @@ def create_block_plan(
     strategy_id: UUID,
     command: CreateBlockPlanCommand,
     session: Annotated[Session, Depends(database_session_dependency)],
+    authorizer: Annotated[OwnershipAuthorizer, Depends(ownership_authorizer_dependency)],
 ) -> BlockPlan:
+    authorizer.require_strategy(strategy_id)
     try:
         return PersistedBlockCreationService(session).execute(strategy_id, command)
     except BlockCreationNotFoundError as error:
@@ -263,7 +278,9 @@ def prepare_resource_demand(
     priority_id: UUID,
     command: ResourceDemandPreparationCommand,
     session: Annotated[Session, Depends(database_session_dependency)],
+    authorizer: Annotated[OwnershipAuthorizer, Depends(ownership_authorizer_dependency)],
 ) -> ResourceDemandPreparationResult:
+    authorizer.require_strategy(strategy_id)
     try:
         return PersistedResourcePreparationService(session).execute(
             strategy_id, priority_id, command
@@ -288,7 +305,9 @@ def create_weekly_plan(
     block_id: UUID,
     command: CreateWeeklyPlanCommand,
     session: Annotated[Session, Depends(database_session_dependency)],
+    authorizer: Annotated[OwnershipAuthorizer, Depends(ownership_authorizer_dependency)],
 ) -> WeeklyPlanCreationResult:
+    authorizer.require_block(block_id)
     try:
         return PersistedWeeklyPlanService(session).execute(block_id, command)
     except WeeklyPlanNotFoundError as error:
@@ -311,7 +330,9 @@ def roll_forward_weekly_plan(
     weekly_plan_id: UUID,
     command: RollForwardWeeklyPlanCommand,
     session: Annotated[Session, Depends(database_session_dependency)],
+    authorizer: Annotated[OwnershipAuthorizer, Depends(ownership_authorizer_dependency)],
 ) -> WeeklyPlanRollForwardResult:
+    authorizer.require_weekly_plan(weekly_plan_id)
     try:
         return PersistedWeeklyPlanRollForwardService(session).execute(weekly_plan_id, command)
     except WeeklyPlanRollForwardNotFoundError as error:
@@ -335,7 +356,9 @@ def create_session_safety_decision(
     planned_session_id: UUID,
     command: CreateSessionSafetyDecisionCommand,
     session: Annotated[Session, Depends(database_session_dependency)],
+    authorizer: Annotated[OwnershipAuthorizer, Depends(ownership_authorizer_dependency)],
 ) -> SessionSafetyCreationResult:
+    authorizer.require_weekly_plan(weekly_plan_id)
     try:
         return PersistedSessionSafetyService(session).execute(
             weekly_plan_id, planned_session_id, command
@@ -361,7 +384,9 @@ def create_session_execution(
     planned_session_id: UUID,
     command: CreateSessionExecutionCommand,
     session: Annotated[Session, Depends(database_session_dependency)],
+    authorizer: Annotated[OwnershipAuthorizer, Depends(ownership_authorizer_dependency)],
 ) -> SessionExecutionCreationResult:
+    authorizer.require_weekly_plan(weekly_plan_id)
     try:
         return PersistedSessionExecutionService(session).execute(
             weekly_plan_id, planned_session_id, command
@@ -387,7 +412,9 @@ def create_progression_decision(
     prescription_id: UUID,
     command: CreateProgressionDecisionCommand,
     session: Annotated[Session, Depends(database_session_dependency)],
+    authorizer: Annotated[OwnershipAuthorizer, Depends(ownership_authorizer_dependency)],
 ) -> ProgressionCreationResult:
+    authorizer.require_session_execution(session_execution_id)
     try:
         return PersistedProgressionService(session).execute(
             session_execution_id, prescription_id, command

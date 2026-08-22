@@ -140,6 +140,9 @@ describe("governed onboarding client", () => {
     expect(fetcher.mock.calls[0][0]).toBe("http://localhost:8000/v1/onboarding/equipment");
     expect(fetcher.mock.calls[1][0]).toBe("http://localhost:8000/v1/onboarding/athletes");
     expect(fetcher.mock.calls[1][1]).toMatchObject({ method: "POST" });
+    expect(fetcher.mock.calls[1][1]?.headers).toMatchObject({
+      Authorization: "Bearer dev.local-browser",
+    });
     expect(JSON.parse(fetcher.mock.calls[1][1]!.body as string)).toEqual(command);
   });
 

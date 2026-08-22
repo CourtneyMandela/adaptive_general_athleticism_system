@@ -297,7 +297,8 @@ export function CurrentWeekDashboard() {
                 autoComplete="off"
               />
               <p className="form-help">
-                This developer path requires persisted IDs and a reviewed safety policy.
+                This developer path requires persisted IDs, a reviewed safety policy, and ownership
+                granted to the local development account.
               </p>
               <button type="submit">Open current week</button>
             </form>

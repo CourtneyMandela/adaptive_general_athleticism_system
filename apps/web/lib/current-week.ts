@@ -1,3 +1,5 @@
+import { authorizedHeaders } from "./identity";
+
 export type SessionDisplayStatus =
   | "scheduled"
   | "cleared"
@@ -345,7 +347,7 @@ export async function fetchCurrentWeek(
   const baseUrl = apiBaseUrl.replace(/\/$/, "");
   const response = await fetcher(
     `${baseUrl}/v1/athletes/${encodeURIComponent(athleteId)}/current-week?on=${encodeURIComponent(on)}`,
-    { headers: { Accept: "application/json" } },
+    { headers: authorizedHeaders({ Accept: "application/json" }) },
   );
   if (!response.ok) {
     let message = `Current week request failed (${response.status})`;
@@ -371,7 +373,10 @@ async function postSessionCommand<T>(
 ): Promise<T> {
   const response = await fetcher(url, {
     method: "POST",
-    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    headers: authorizedHeaders({
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    }),
     body: JSON.stringify(command),
   });
   if (!response.ok) {
