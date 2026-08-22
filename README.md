@@ -1,5 +1,7 @@
 # Adaptive General Athleticism System
 
+[![CI](https://github.com/CourtneyMandela/adaptive_general_athleticism_system/actions/workflows/ci.yml/badge.svg)](https://github.com/CourtneyMandela/adaptive_general_athleticism_system/actions/workflows/ci.yml)
+
 AGAS is an evidence-grounded, adaptive system for developing broad general athleticism. This repository is intentionally building the inspectable domain and feedback loop before workout generation or polished product features.
 
 The current foundation includes controlled ontology vocabulary, a cross-reference-validated small
