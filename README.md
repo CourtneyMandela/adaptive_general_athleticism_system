@@ -10,6 +10,8 @@ adherence, training response, and block review remain immutable and provenance-p
 Reviewed follow-up estimates can regenerate capability needs and a replacement long-range
 strategy through an explicit closed-loop replanning boundary. Each revision retains the exact
 prior strategy and triggering review without inferring causation or rewriting athlete history.
+An initial or revised strategy can then create a persisted block only from already-governed
+resource demands, exercise resolutions, and an explicit allocation policy.
 
 ## Architecture at a glance
 
@@ -88,15 +90,18 @@ uvicorn agas_api.main:app --reload
 
 The health endpoint is available at `http://localhost:8000/health`.
 
-The first write use case is intentionally narrow:
+The planning write use cases are intentionally narrow:
 
 ```text
 POST /v1/block-reviews/{block_review_id}/replan
+POST /v1/strategies/{strategy_id}/blocks
 ```
 
 It accepts explicit replanning candidate contexts, reconstructs the persisted review chain, and
 atomically appends capability needs and one replacement strategy. Raw strategy/need CRUD is not
-exposed.
+exposed. Block creation accepts persisted demand identities plus an allocation policy, dates,
+weekly budget, and explicit constraints. It atomically appends the deterministic block but does
+not invent stimuli, exercise resolutions, prescriptions, or dose targets.
 
 ## Run the frontend
 

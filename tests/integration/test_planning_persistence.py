@@ -76,6 +76,7 @@ from agas_domain import (
     WeeklySchedulingPolicy,
 )
 from agas_domain.persistence.models import (
+    BlockPlanRecord,
     BlockReviewRecord,
     CapabilityNeedRecord,
     ExerciseResolutionRecord,
@@ -828,9 +829,20 @@ def test_safety_execution_and_adherence_round_trip_preserves_provenance(
 
 
 def test_progression_exposure_and_revised_prescription_round_trip(session: Session) -> None:
-    (repository, strategy, _, _, _, _, block, prescription, session_template, _, _, weekly_plan) = (
-        build_and_persist_weekly_chain(session)
-    )
+    (
+        repository,
+        strategy,
+        requirement,
+        resolution,
+        first_demand,
+        allocation_policy,
+        block,
+        prescription,
+        session_template,
+        _,
+        _,
+        weekly_plan,
+    ) = build_and_persist_weekly_chain(session)
     planned = weekly_plan.sessions[0]
     claim_ids = strategy.evidence_claim_ids
     provenance = Provenance(
@@ -1011,7 +1023,7 @@ def test_progression_exposure_and_revised_prescription_round_trip(session: Sessi
         athlete_id=strategy.athlete_id,
         observed_at=review_time - timedelta(hours=1),
         observation_type="fixture_strength_test",
-        measurement=70,
+        measurement=110,
         unit="fixture_unit",
         source=ObservationSource.TEST_RESULT,
         reliability=Confidence.MODERATE,
@@ -1022,7 +1034,7 @@ def test_progression_exposure_and_revised_prescription_round_trip(session: Sessi
     followup = CapabilityEstimate(
         athlete_id=strategy.athlete_id,
         domain=baseline.domain,
-        estimate=70,
+        estimate=110,
         unit_or_scale=baseline.unit_or_scale,
         estimate_scope=baseline.estimate_scope,
         confidence=Confidence.MODERATE,
@@ -1158,6 +1170,104 @@ def test_progression_exposure_and_revised_prescription_round_trip(session: Sessi
         == replanning_result.strategy
     )
     assert repository.get_long_range_strategy(strategy.id) == strategy
+    revised_priority = replanning_result.strategy.priorities[0]
+    assert block.allocations[0].priority_state.value == "develop"
+    assert revised_priority.state.value == "maintain"
+
+    next_generated_at = review.reviewed_at + timedelta(minutes=3)
+    next_requirement = StimulusRequirement.model_validate(
+        {
+            **requirement.model_dump(),
+            "id": uuid4(),
+            "long_range_strategy_id": replanning_result.strategy.id,
+            "adaptation_priority_id": revised_priority.id,
+            "priority_state": revised_priority.state,
+            "source_observation_ids": replanning_result.strategy.source_observation_ids,
+            "generated_at": next_generated_at,
+        }
+    )
+    next_resolution = ExerciseResolution(
+        stimulus_requirement_id=next_requirement.id,
+        environment_id=resolution.environment_id,
+        resolver_policy_id=resolution.resolver_policy_id,
+        status=resolution.status,
+        selected_exercise_id=resolution.selected_exercise_id,
+        ranked_matches=tuple(
+            item.model_copy(update={"id": uuid4()}) for item in resolution.ranked_matches
+        ),
+        unresolved_issues=resolution.unresolved_issues,
+        source_availability_ids=resolution.source_availability_ids,
+        rationale="Re-resolved persisted fixture stimulus for the revised strategy.",
+        resolved_at=next_generated_at,
+        rule_version="fixture-re-resolution@1.0.0",
+    )
+    next_demand = AdaptationResourceDemand(
+        long_range_strategy_id=replanning_result.strategy.id,
+        adaptation_priority_id=revised_priority.id,
+        adaptation_id=revised_priority.adaptation_id,
+        priority_state=revised_priority.state,
+        stimulus_requirement_id=next_requirement.id,
+        exercise_resolution_id=next_resolution.id,
+        minimum_weekly_minutes=30,
+        target_weekly_minutes=30,
+        sessions_per_week=1,
+        source_observation_ids=replanning_result.strategy.source_observation_ids,
+        evidence_claim_ids=replanning_result.strategy.evidence_claim_ids,
+        rationale="Synthetic maintained-capability demand for the dependent second block.",
+        demand_version="fixture-next-block@1.0.0",
+    )
+    repository.add_stimulus_requirement(next_requirement)
+    session.flush()
+    repository.add_exercise_resolution(next_resolution)
+    session.flush()
+    repository.add_adaptation_resource_demand(next_demand)
+    session.commit()
+
+    block_request = {
+        "resource_demand_ids": [str(next_demand.id)],
+        "resource_allocation_policy_id": str(allocation_policy.id),
+        "weekly_budget_minutes": 30,
+        "starts_on": "2026-09-21",
+        "duration_weeks": 4,
+        "constraints": ["Synthetic dependent second-block fixture"],
+        "generated_at": next_generated_at.isoformat(),
+    }
+    blocks_before_invalid_request = session.scalar(
+        select(func.count()).select_from(BlockPlanRecord)
+    )
+    app.dependency_overrides[database_session_dependency] = override_session
+    try:
+        missing_demand_response = TestClient(app).post(
+            f"/v1/strategies/{replanning_result.strategy.id}/blocks",
+            json={**block_request, "resource_demand_ids": [str(uuid4())]},
+        )
+        stale_demand_response = TestClient(app).post(
+            f"/v1/strategies/{replanning_result.strategy.id}/blocks",
+            json={**block_request, "resource_demand_ids": [str(first_demand.id)]},
+        )
+        blocks_after_invalid_request = session.scalar(
+            select(func.count()).select_from(BlockPlanRecord)
+        )
+        block_response = TestClient(app).post(
+            f"/v1/strategies/{replanning_result.strategy.id}/blocks",
+            json=block_request,
+        )
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+    assert missing_demand_response.status_code == 404
+    assert stale_demand_response.status_code == 422
+    assert "strategy priority" in stale_demand_response.json()["detail"]
+    assert blocks_after_invalid_request == blocks_before_invalid_request
+    assert block_response.status_code == 201
+    second_block = BlockPlan.model_validate(block_response.json())
+    session.expire_all()
+    assert repository.get_block_plan(second_block.id) == second_block
+    assert second_block.long_range_strategy_id == replanning_result.strategy.id
+    assert second_block.long_range_strategy_id != block.long_range_strategy_id
+    assert second_block.allocations[0].adaptation_priority_id == revised_priority.id
+    assert second_block.allocations[0].priority_state.value == "maintain"
+    assert followup_observation.id in second_block.source_observation_ids
+
     invalid_revision = replanning_result.strategy.model_copy(
         update={"id": uuid4(), "triggering_block_review_id": uuid4()}
     )

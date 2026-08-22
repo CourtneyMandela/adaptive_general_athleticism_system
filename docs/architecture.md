@@ -238,6 +238,20 @@ does not assert that the completed block caused the change. Candidate relevance,
 transfer, and cost values remain explicit governed inputs rather than being inferred from a single
 response.
 
+### Persisted next-block creation
+
+`PersistedBlockCreationService` is the application boundary from a stored strategy to an immutable
+`BlockPlan`. The caller supplies identities for already-governed resource demands and an allocation
+policy, plus dates, weekly time budget, and explicit constraints. The service reconstructs every
+referenced exercise resolution and delegates allocation to `BlockPlanner` in one transaction.
+
+The planner requires one demand for every strategy priority and verifies exact
+strategy–priority–adaptation–state lineage. Active demands must reference a matching persisted
+stimulus and exercise resolution; deferred demands consume no resources. Consequently a revised
+strategy cannot reuse a demand attached to its predecessor, and block two materially depends on
+the replanning result rather than merely copying block one. This boundary stops at resource
+allocation: it creates no prescriptions, sessions, exercise substitutions, or progression rules.
+
 ### Evidence claims
 
 Evidence claims are reviewed, versioned interpretations linked to source identifiers. Evidence
@@ -276,12 +290,14 @@ to completed block to block review to replacement strategy.
 
 ## API
 
-FastAPI owns transport concerns and database lifecycle. In addition to health/readiness, the first
-write endpoint exposes the coherent post-block replanning use case. A block-review ID anchors the
-stored lineage; the application service loads the governed inputs, invokes the deterministic
-planner, and commits new capability needs plus exactly one successor strategy atomically. Missing
-dependencies, invalid planning inputs, and duplicate revision attempts remain distinct transport
-errors. Raw domain CRUD is intentionally absent because it could bypass invariants.
+FastAPI owns transport concerns and database lifecycle. In addition to health/readiness, narrow
+write endpoints expose post-block replanning and persisted block creation. A block-review ID
+anchors the stored replanning lineage; the application service loads the governed inputs, invokes
+the deterministic planner, and commits new capability needs plus exactly one successor strategy
+atomically. A strategy ID anchors block creation; the service loads persisted demands, their
+resolutions, and the selected allocation policy before atomically appending a block. Missing
+dependencies, invalid planning inputs, and relational conflicts remain distinct transport errors.
+Raw domain CRUD is intentionally absent because it could bypass invariants.
 
 ## Web
 

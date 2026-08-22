@@ -3,13 +3,20 @@ from contextlib import contextmanager
 from typing import Annotated
 from uuid import UUID
 
-from agas_domain import ClosedLoopReplanningResult
+from agas_domain import BlockPlan, ClosedLoopReplanningResult
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from agas_api import __version__
+from agas_api.block_creation import (
+    BlockCreationConflictError,
+    BlockCreationNotFoundError,
+    BlockCreationValidationError,
+    CreateBlockPlanCommand,
+    PersistedBlockCreationService,
+)
 from agas_api.database import database_session, database_session_dependency
 from agas_api.replanning import (
     PersistedReplanningService,
@@ -75,6 +82,29 @@ def replan_after_block_review(
     except ReplanningConflictError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     except ReplanningValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.post(
+    "/v1/strategies/{strategy_id}/blocks",
+    tags=["planning"],
+    response_model=BlockPlan,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_block_plan(
+    strategy_id: UUID,
+    command: CreateBlockPlanCommand,
+    session: Annotated[Session, Depends(database_session_dependency)],
+) -> BlockPlan:
+    try:
+        return PersistedBlockCreationService(session).execute(strategy_id, command)
+    except BlockCreationNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except BlockCreationConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except BlockCreationValidationError as error:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
         ) from error

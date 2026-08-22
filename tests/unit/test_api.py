@@ -56,3 +56,37 @@ def test_replanning_endpoint_reports_missing_review_without_creating_state(
     assert response.status_code == 404
     assert response.json() == {"detail": "block review does not exist"}
     assert naive_time_response.status_code == 422
+
+
+def test_block_creation_endpoint_reports_missing_strategy_and_rejects_naive_time(
+    session: Session,
+) -> None:
+    def override_session() -> Iterator[Session]:
+        yield session
+
+    strategy_id = uuid4()
+    request_body = {
+        "resource_demand_ids": [str(uuid4())],
+        "resource_allocation_policy_id": str(uuid4()),
+        "weekly_budget_minutes": 120,
+        "starts_on": "2026-08-24",
+        "duration_weeks": 4,
+        "constraints": ["fixture constraint"],
+        "generated_at": datetime(2026, 8, 22, tzinfo=UTC).isoformat(),
+    }
+    app.dependency_overrides[database_session_dependency] = override_session
+    try:
+        response = TestClient(app).post(
+            f"/v1/strategies/{strategy_id}/blocks",
+            json=request_body,
+        )
+        naive_time_response = TestClient(app).post(
+            f"/v1/strategies/{strategy_id}/blocks",
+            json={**request_body, "generated_at": "2026-08-22T00:00:00"},
+        )
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "long-range strategy does not exist"}
+    assert naive_time_response.status_code == 422
