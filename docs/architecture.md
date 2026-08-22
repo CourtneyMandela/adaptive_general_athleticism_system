@@ -402,8 +402,15 @@ Raw domain CRUD is intentionally absent because it could bypass invariants.
 The Next.js App Router PWA now has a connected current-week screen for an existing athlete. It
 renders dated session containers, prescription dose and intensity, a compact rationale disclosure,
 environment, safety status, execution, and adherence. Setup, loading, empty, conflict/error, and
-mobile layouts are explicit. It does not present workout generation, onboarding, safety submission,
-or performance logging that the web client cannot yet perform.
+mobile layouts are explicit. It also submits structured pre-session self-reports and actual
+set/dose/effort workout results through the existing transactional use-case endpoints, then reloads
+the read projection. The frontend derives only descriptive execution status from the entered work;
+the backend remains authoritative for safety, execution validation, and adherence.
+
+Until onboarding and policy assignment exist, the local setup requires explicit athlete and
+reviewed safety-policy IDs. The client uses `unverified-athlete-user` provenance to avoid implying
+authentication. It sends no classified safety signal because no governed browser classifier exists;
+a concerning-symptom selection pauses the ordinary form locally.
 
 ## Configuration
 

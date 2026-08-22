@@ -22,7 +22,7 @@ body {
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
-button, input { font: inherit; }
+button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 
 .eyebrow {
@@ -74,9 +74,7 @@ button { cursor: pointer; }
   text-transform: uppercase;
 }
 
-.athlete-form div { display: flex; gap: .65rem; }
-
-.athlete-form input, .week-nav input {
+.athlete-form input, .week-nav input, .action-form input, .action-form select, .action-form textarea {
   min-width: 0;
   border: 1px solid #b9c2bb;
   border-radius: .7rem;
@@ -84,9 +82,9 @@ button { cursor: pointer; }
   color: var(--ink);
 }
 
-.athlete-form input { flex: 1; padding: .85rem 1rem; }
+.athlete-form input { width: 100%; padding: .85rem 1rem; }
 
-.athlete-form button, .state-card button {
+.athlete-form button, .state-card button, .action-form button {
   border: 0;
   border-radius: .7rem;
   background: var(--accent);
@@ -229,6 +227,27 @@ button { cursor: pointer; }
 .session-result { color: var(--muted); font-size: .82rem; font-weight: 700; }
 .session-pending { margin: 0; }
 
+.session-actions { background: #f3f5f0; }
+.action-panel { border-top: 1px solid var(--line); }
+.action-panel > summary { padding: .85rem 1.15rem; color: var(--accent); cursor: pointer; font-size: .86rem; font-weight: 800; }
+.action-form { padding: 0 1.15rem 1.15rem; }
+.action-form fieldset { display: grid; gap: .85rem; min-width: 0; margin: 0; padding: 1rem; border: 1px solid var(--line); border-radius: .8rem; background: var(--surface); }
+.action-form legend { padding: 0 .35rem; font-weight: 800; }
+.action-form label { display: grid; gap: .35rem; color: var(--muted); font-size: .78rem; font-weight: 750; }
+.action-form label span { font-weight: 500; }
+.action-form input, .action-form select, .action-form textarea { width: 100%; padding: .65rem .7rem; }
+.action-form textarea { resize: vertical; }
+.action-form button { justify-self: start; }
+.action-form button:disabled { cursor: not-allowed; opacity: .55; }
+.form-help { margin: 0; color: var(--muted); font-size: .78rem; line-height: 1.45; }
+.check-list { display: grid; gap: .55rem; }
+.check-list label { display: flex; align-items: flex-start; gap: .55rem; color: var(--ink); font-weight: 600; }
+.check-list input { width: auto; margin-top: .1rem; }
+.safety-stop { margin: 0; padding: .75rem; border-radius: .65rem; background: var(--danger-soft); color: var(--danger); font-size: .82rem; font-weight: 650; line-height: 1.45; }
+.execution-items { display: grid; gap: .7rem; }
+.execution-item { display: grid; gap: .55rem; padding: .75rem; border: 1px solid var(--line); border-radius: .65rem; }
+.compact-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .6rem; }
+
 .state-card {
   display: grid;
   justify-items: start;
@@ -260,12 +279,13 @@ button { cursor: pointer; }
 }
 
 @media (max-width: 38rem) {
-  .athlete-form div, .topbar, .week-summary { align-items: stretch; flex-direction: column; }
+  .topbar, .week-summary { align-items: stretch; flex-direction: column; }
   .week-nav { grid-template-columns: 1fr 1fr; }
   .week-nav label { grid-column: 1 / -1; grid-row: 1; justify-self: stretch; }
   .week-stat { text-align: left; }
   .session-card__header, .exercise-line { align-items: flex-start; flex-direction: column; }
   .status-badge { align-self: flex-start; }
+  .compact-fields { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) { .loader { animation: none; } }

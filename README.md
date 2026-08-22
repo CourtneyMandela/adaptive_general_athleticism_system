@@ -151,8 +151,15 @@ pnpm --filter @agas/web dev
 Open `http://localhost:3000`.
 
 The current PWA screen connects to `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`) and asks
-for an existing athlete ID. Set `NEXT_PUBLIC_AGAS_ATHLETE_ID` in `.env` to prefill that field for a
-local demo. Athlete onboarding and session-write controls are not yet exposed in the PWA.
+for an existing athlete ID plus a reviewed safety-policy ID. Set `NEXT_PUBLIC_AGAS_ATHLETE_ID` and
+`NEXT_PUBLIC_AGAS_SAFETY_POLICY_ID` in `.env` to prefill those fields for a local demo. After
+connecting, an athlete can append a pre-session readiness report, receive the backend's
+deterministic safety result, and log actual sets, dose, effort, timestamps, and notes. The screen
+refreshes from the authoritative current-week projection after each write.
+
+This setup is provisional: there is no authentication, athlete onboarding, or athlete-to-policy
+assignment workflow yet. The browser does not classify raw symptoms. Selecting a concerning
+symptom pauses the ordinary workout flow instead of fabricating a safety signal.
 
 ## Run tests
 

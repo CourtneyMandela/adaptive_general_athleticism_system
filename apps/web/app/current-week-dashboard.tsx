@@ -12,9 +12,11 @@ import {
   type CurrentWeekProjection,
   type PlannedSessionProjection,
 } from "@/lib/current-week";
+import { SafetyCheckForm, WorkoutLogForm } from "./session-actions";
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const configuredAthleteId = process.env.NEXT_PUBLIC_AGAS_ATHLETE_ID ?? "";
+const configuredSafetyPolicyId = process.env.NEXT_PUBLIC_AGAS_SAFETY_POLICY_ID ?? "";
 
 function formatWeekRange(start: string, end: string): string {
   const formatter = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
@@ -31,7 +33,19 @@ function formatSessionTime(startsAt: string): string {
   }).format(new Date(startsAt));
 }
 
-function SessionCard({ session, asOf }: { session: PlannedSessionProjection; asOf: string }) {
+function SessionCard({
+  session,
+  asOf,
+  weeklyPlanId,
+  safetyPolicyId,
+  onSaved,
+}: {
+  session: PlannedSessionProjection;
+  asOf: string;
+  weeklyPlanId: string;
+  safetyPolicyId: string;
+  onSaved: () => Promise<void>;
+}) {
   const isToday = session.starts_at.slice(0, 10) === asOf;
   return (
     <article className={`session-card${isToday ? " session-card--today" : ""}`}>
@@ -97,7 +111,29 @@ function SessionCard({ session, asOf }: { session: PlannedSessionProjection; asO
           </span>
         </footer>
       ) : (
-        <p className="session-pending">Safety check and workout logging are the next PWA step.</p>
+        <div className="session-actions">
+          <SafetyCheckForm
+            apiBaseUrl={apiBaseUrl}
+            weeklyPlanId={weeklyPlanId}
+            safetyPolicyId={safetyPolicyId}
+            session={session}
+            onSaved={onSaved}
+          />
+          {session.pre_session_safety?.outcome === "proceed" ||
+          session.pre_session_safety?.outcome === "modify" ? (
+            <WorkoutLogForm
+              apiBaseUrl={apiBaseUrl}
+              weeklyPlanId={weeklyPlanId}
+              session={session}
+              onSaved={onSaved}
+            />
+          ) : session.pre_session_safety ? (
+            <p className="session-pending">
+              This safety decision does not authorize an ordinary workout. Update the safety check
+              only if your reported state has genuinely changed.
+            </p>
+          ) : null}
+        </div>
       )}
     </article>
   );
@@ -105,7 +141,9 @@ function SessionCard({ session, asOf }: { session: PlannedSessionProjection; asO
 
 export function CurrentWeekDashboard() {
   const [athleteInput, setAthleteInput] = useState(configuredAthleteId);
+  const [safetyPolicyInput, setSafetyPolicyInput] = useState(configuredSafetyPolicyId);
   const [athleteId, setAthleteId] = useState("");
+  const [safetyPolicyId, setSafetyPolicyId] = useState("");
   const [asOf, setAsOf] = useState(localIsoDate);
   const [projection, setProjection] = useState<CurrentWeekProjection | null>(null);
   const [state, setState] = useState<"setup" | "loading" | "ready" | "error">("setup");
@@ -139,7 +177,14 @@ export function CurrentWeekDashboard() {
       setState("error");
       return;
     }
+    const normalizedPolicy = safetyPolicyInput.trim();
+    if (!isUuid(normalizedPolicy)) {
+      setMessage("Enter a valid reviewed safety policy ID from the persisted backend.");
+      setState("error");
+      return;
+    }
     setAthleteId(normalized);
+    setSafetyPolicyId(normalizedPolicy);
     void load(normalized, asOf);
   }
 
@@ -155,22 +200,30 @@ export function CurrentWeekDashboard() {
           <p className="eyebrow">Adaptive General Athleticism System</p>
           <h1 id="setup-title">Your training week, with the why intact.</h1>
           <p className="lede">
-            This first connected PWA slice reads an athlete and weekly plan already stored by the
-            governed backend. In-app onboarding is not implemented yet.
+            Connect an existing athlete and reviewed safety policy. This daily-use slice can inspect
+            the persisted week, evaluate a pre-session report, and record actual work.
           </p>
           <form onSubmit={connectAthlete} className="athlete-form">
             <label htmlFor="athlete-id">Athlete ID</label>
-            <div>
-              <input
-                id="athlete-id"
-                name="athlete-id"
-                value={athleteInput}
-                onChange={(event) => setAthleteInput(event.target.value)}
-                placeholder="00000000-0000-4000-8000-000000000000"
-                autoComplete="off"
-              />
-              <button type="submit">Open current week</button>
-            </div>
+            <input
+              id="athlete-id"
+              name="athlete-id"
+              value={athleteInput}
+              onChange={(event) => setAthleteInput(event.target.value)}
+              placeholder="00000000-0000-4000-8000-000000000000"
+              autoComplete="off"
+            />
+            <label htmlFor="safety-policy-id">Safety policy ID</label>
+            <input
+              id="safety-policy-id"
+              name="safety-policy-id"
+              value={safetyPolicyInput}
+              onChange={(event) => setSafetyPolicyInput(event.target.value)}
+              placeholder="00000000-0000-4000-8000-000000000000"
+              autoComplete="off"
+            />
+            <p className="form-help">Temporary local setup until onboarding and policy assignment exist.</p>
+            <button type="submit">Open current week</button>
           </form>
           {message ? <p className="form-error">{message}</p> : null}
         </section>
@@ -190,6 +243,7 @@ export function CurrentWeekDashboard() {
           className="text-button"
           onClick={() => {
             setAthleteId("");
+            setSafetyPolicyId("");
             setProjection(null);
             setState("setup");
           }}
@@ -254,7 +308,14 @@ export function CurrentWeekDashboard() {
           </section>
           <section className="session-grid" aria-label="Scheduled sessions">
             {projection.week.sessions.map((session) => (
-              <SessionCard key={session.planned_session_id} session={session} asOf={asOf} />
+              <SessionCard
+                key={session.planned_session_id}
+                session={session}
+                asOf={asOf}
+                weeklyPlanId={projection.week!.weekly_plan_id}
+                safetyPolicyId={safetyPolicyId}
+                onSaved={() => load(athleteId, asOf)}
+              />
             ))}
           </section>
         </>

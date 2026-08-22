@@ -18,6 +18,12 @@ preclassified escalation signals. The gate records `STOP_AND_ESCALATE`; it does 
 diagnose a condition, or generate medical advice from raw text. Concrete signal tags and
 user-facing language remain unseeded pending qualified review.
 
+The first daily PWA therefore does not translate free text or a symptom checkbox into a classified
+signal. If the athlete selects the concerning-symptom control, ordinary submission is paused and
+the interface explains that it cannot classify symptoms or provide medical guidance. This is a
+conservative product boundary, not a triage decision, and the missing governed symptom-reporting
+workflow remains explicit.
+
 ### Modification
 
 Preclassified safety input, limited readiness, unusual soreness, major sleep disruption, or a
