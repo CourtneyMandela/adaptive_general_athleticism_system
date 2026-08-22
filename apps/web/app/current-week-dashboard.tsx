@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useState } from "react";
 
 import {
   fetchCurrentWeek,
@@ -20,6 +20,7 @@ import {
   SafetyCheckForm,
   WorkoutLogForm,
 } from "./session-actions";
+import { WeeklyReview } from "./weekly-review";
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const configuredAthleteId = process.env.NEXT_PUBLIC_AGAS_ATHLETE_ID ?? "";
@@ -230,12 +231,6 @@ export function CurrentWeekDashboard() {
     }
   }
 
-  const completedSessions = useMemo(
-    () =>
-      projection?.week?.sessions.filter((session) => session.status === "completed").length ?? 0,
-    [projection],
-  );
-
   function connectAthlete(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const normalized = athleteInput.trim();
@@ -268,7 +263,8 @@ export function CurrentWeekDashboard() {
           <h1 id="setup-title">Your training week, with the why intact.</h1>
           <p className="lede">
             Connect an existing athlete and reviewed safety policy. This daily-use slice can inspect
-            the persisted week, evaluate a pre-session report, and record actual work.
+            the persisted week, evaluate safety reports, record actual work, and close the week
+            without inventing training decisions.
           </p>
           <form onSubmit={connectAthlete} className="athlete-form">
             <label htmlFor="athlete-id">Athlete ID</label>
@@ -368,7 +364,8 @@ export function CurrentWeekDashboard() {
             </div>
             <div className="week-stat">
               <strong>
-                {completedSessions}/{projection.week.sessions.length}
+                {projection.week.review.completed_sessions}/
+                {projection.week.review.scheduled_sessions}
               </strong>
               <span>sessions completed</span>
             </div>
@@ -385,6 +382,15 @@ export function CurrentWeekDashboard() {
               />
             ))}
           </section>
+          <WeeklyReview
+            key={projection.week.weekly_plan_id}
+            week={projection.week}
+            apiBaseUrl={apiBaseUrl}
+            onWeekPrepared={async (nextWeekStart) => {
+              setAsOf(nextWeekStart);
+              await load(athleteId, nextWeekStart);
+            }}
+          />
         </>
       ) : null}
     </main>

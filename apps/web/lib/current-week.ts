@@ -87,19 +87,59 @@ export interface PlannedSessionProjection {
   prescriptions: PrescriptionProjection[];
 }
 
+export type WeeklyReviewStatus =
+  | "awaiting_sessions"
+  | "awaiting_post_session_safety"
+  | "awaiting_progression"
+  | "manual_configuration_required"
+  | "ready_to_prepare_next_week"
+  | "next_week_already_prepared"
+  | "block_complete";
+
+export interface WeeklyAvailabilityWindowProjection {
+  environment_id: string;
+  environment_name: string;
+  starts_at: string;
+  ends_at: string;
+}
+
+export interface WeekProjection {
+  weekly_plan_id: string;
+  block_plan_id: string;
+  week_start: string;
+  week_end: string;
+  block_week: number;
+  status: string;
+  availability: {
+    source_observation_ids: string[];
+    rule_version: string;
+    windows: WeeklyAvailabilityWindowProjection[];
+  };
+  review: {
+    status: WeeklyReviewStatus;
+    reason: string;
+    scheduled_sessions: number;
+    recorded_sessions: number;
+    completed_sessions: number;
+    post_session_closed: number;
+    progression_items: number;
+    resolved_progression_items: number;
+    progression_outcomes: {
+      progress: number;
+      repeat: number;
+      hold: number;
+      review_required: number;
+    };
+    next_week_start: string | null;
+  };
+  sessions: PlannedSessionProjection[];
+}
+
 export interface CurrentWeekProjection {
   athlete_id: string;
   athlete_display_name: string;
   as_of: string;
-  week: {
-    weekly_plan_id: string;
-    block_plan_id: string;
-    week_start: string;
-    week_end: string;
-    block_week: number;
-    status: string;
-    sessions: PlannedSessionProjection[];
-  } | null;
+  week: WeekProjection | null;
 }
 
 export type Confidence = "unknown" | "low" | "moderate" | "high";
@@ -181,6 +221,28 @@ export interface ProgressionEvaluationCommand {
   decided_at: string;
   revision_prescribed_at: string;
   revised_planned_duration_minutes: null;
+}
+
+export interface WeeklyRollForwardCommand {
+  availability: {
+    week_start: string;
+    windows: Array<{
+      environment_id: string;
+      starts_at: string;
+      ends_at: string;
+    }>;
+    source_observation_ids: string[];
+    rule_version: string;
+  };
+  prepared_at: string;
+  reliability: Confidence;
+  provenance: ProvenanceInput;
+}
+
+export interface WeeklyAvailabilityDraft {
+  environmentId: string;
+  startsAt: Date;
+  endsAt: Date;
 }
 
 export const pwaProvenance: ProvenanceInput = {
@@ -300,7 +362,11 @@ export async function fetchCurrentWeek(
 
 async function postSessionCommand<T>(
   url: string,
-  command: SafetyCheckCommand | SessionExecutionCommand | ProgressionEvaluationCommand,
+  command:
+    | SafetyCheckCommand
+    | SessionExecutionCommand
+    | ProgressionEvaluationCommand
+    | WeeklyRollForwardCommand,
   fetcher: typeof fetch,
 ): Promise<T> {
   const response = await fetcher(url, {
@@ -379,6 +445,67 @@ export async function submitProgressionEvaluation(
   const baseUrl = apiBaseUrl.replace(/\/$/, "");
   return postSessionCommand(
     `${baseUrl}/v1/session-executions/${encodeURIComponent(sessionExecutionId)}/prescriptions/${encodeURIComponent(prescriptionId)}/progression`,
+    command,
+    fetcher,
+  );
+}
+
+export function buildWeeklyRollForwardCommand({
+  nextWeekStart,
+  sourceObservationIds,
+  windows,
+  reliability,
+  preparedAt = new Date(),
+}: {
+  nextWeekStart: string;
+  sourceObservationIds: string[];
+  windows: WeeklyAvailabilityDraft[];
+  reliability: Confidence;
+  preparedAt?: Date;
+}): WeeklyRollForwardCommand {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(nextWeekStart)) {
+    throw new Error("Next week must have a valid start date.");
+  }
+  if (sourceObservationIds.length === 0 || sourceObservationIds.some((item) => !isUuid(item))) {
+    throw new Error("Next-week availability requires its persisted source observations.");
+  }
+  if (windows.length === 0) throw new Error("Confirm at least one availability window.");
+  if (!Number.isFinite(preparedAt.getTime())) throw new Error("Confirmation time must be valid.");
+  return {
+    availability: {
+      week_start: nextWeekStart,
+      windows: windows.map((window) => {
+        if (!isUuid(window.environmentId)) throw new Error("Availability environment must be valid.");
+        if (!Number.isFinite(window.startsAt.getTime()) || !Number.isFinite(window.endsAt.getTime())) {
+          throw new Error("Availability times must be valid.");
+        }
+        if (window.endsAt <= window.startsAt) {
+          throw new Error("Availability must end after it starts.");
+        }
+        return {
+          environment_id: window.environmentId,
+          starts_at: window.startsAt.toISOString(),
+          ends_at: window.endsAt.toISOString(),
+        };
+      }),
+      source_observation_ids: [...sourceObservationIds],
+      rule_version: "agas-web-availability-confirmation@1.0.0",
+    },
+    prepared_at: preparedAt.toISOString(),
+    reliability,
+    provenance: pwaProvenance,
+  };
+}
+
+export async function submitWeeklyRollForward(
+  apiBaseUrl: string,
+  weeklyPlanId: string,
+  command: WeeklyRollForwardCommand,
+  fetcher: typeof fetch = fetch,
+): Promise<{ weekly_plan: { id: string; week_start: string; status: string } }> {
+  const baseUrl = apiBaseUrl.replace(/\/$/, "");
+  return postSessionCommand(
+    `${baseUrl}/v1/weekly-plans/${encodeURIComponent(weeklyPlanId)}/roll-forward`,
     command,
     fetcher,
   );

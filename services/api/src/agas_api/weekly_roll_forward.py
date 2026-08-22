@@ -7,7 +7,11 @@ from uuid import UUID
 
 from agas_domain import (
     AvailabilityWindow,
+    Confidence,
     CostLevel,
+    Observation,
+    ObservationSource,
+    Provenance,
     SessionPrescription,
     SessionTemplate,
     SessionTemplateItem,
@@ -28,6 +32,8 @@ class RollForwardWeeklyPlanCommand(BaseModel):
 
     availability: WeeklyAvailabilityDraft
     prepared_at: datetime
+    reliability: Confidence
+    provenance: Provenance
 
     @model_validator(mode="after")
     def validate_command(self) -> RollForwardWeeklyPlanCommand:
@@ -42,6 +48,7 @@ class WeeklyPlanRollForwardResult(BaseModel):
     prescriptions: Annotated[tuple[SessionPrescription, ...], Field(min_length=1)]
     session_templates: Annotated[tuple[SessionTemplate, ...], Field(min_length=1)]
     created_session_templates: tuple[SessionTemplate, ...]
+    availability_observation: Observation
     availability: WeeklyAvailability
     weekly_plan: WeeklyPlan
 
@@ -78,6 +85,8 @@ class PersistedWeeklyPlanRollForwardService:
                     "weekly plan already has an automatic successor"
                 )
             result = self._build(weekly_plan_id, command)
+            self.repository.add_observation(result.availability_observation)
+            self.session.flush()
             for template in result.created_session_templates:
                 self.repository.add_session_template(template)
             self.repository.add_weekly_availability(result.availability)
@@ -152,6 +161,26 @@ class PersistedWeeklyPlanRollForwardService:
             if effective_template.id != source_template.id:
                 created_templates.append(effective_template)
 
+        availability_observation = Observation(
+            athlete_id=source_plan.athlete_id,
+            observed_at=command.prepared_at,
+            observation_type="weekly_availability_confirmation",
+            measurement={
+                "week_start": command.availability.week_start.isoformat(),
+                "windows": [
+                    {
+                        "environment_id": str(item.environment_id),
+                        "starts_at": item.starts_at.isoformat(),
+                        "ends_at": item.ends_at.isoformat(),
+                    }
+                    for item in command.availability.windows
+                ],
+            },
+            source=ObservationSource.USER_REPORT,
+            reliability=command.reliability,
+            context={"source_weekly_plan_id": str(source_plan.id)},
+            provenance=command.provenance,
+        )
         availability = WeeklyAvailability(
             athlete_id=source_plan.athlete_id,
             week_start=command.availability.week_start,
@@ -163,7 +192,10 @@ class PersistedWeeklyPlanRollForwardService:
                 )
                 for item in command.availability.windows
             ),
-            source_observation_ids=command.availability.source_observation_ids,
+            source_observation_ids=self._ordered_union(
+                command.availability.source_observation_ids,
+                (availability_observation.id,),
+            ),
             recorded_at=command.prepared_at,
             rule_version=command.availability.rule_version,
         )
@@ -197,6 +229,7 @@ class PersistedWeeklyPlanRollForwardService:
             prescriptions=tuple(prescriptions_by_id.values()),
             session_templates=tuple(effective_templates),
             created_session_templates=tuple(created_templates),
+            availability_observation=availability_observation,
             availability=availability,
             weekly_plan=plan,
         )

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  buildWeeklyRollForwardCommand,
   buildProgressionEvaluationCommand,
   buildExecutionCommand,
   CurrentWeekRequestError,
@@ -14,6 +15,7 @@ import {
   submitSafetyCheck,
   submitSessionExecution,
   submitProgressionEvaluation,
+  submitWeeklyRollForward,
   type PrescriptionProjection,
 } from "./current-week";
 
@@ -304,5 +306,86 @@ describe("current-week presentation", () => {
     expect(fetcher.mock.calls[3][0]).toBe(
       `http://localhost:8000/v1/session-executions/${executionId}/prescriptions/${prescription.prescription_id}/progression`,
     );
+  });
+
+  it("builds and submits an explicit, provenance-bearing availability confirmation", async () => {
+    const sourceObservationId = "00000000-0000-4000-8000-000000000024";
+    const command = buildWeeklyRollForwardCommand({
+      nextWeekStart: "2026-08-31",
+      sourceObservationIds: [sourceObservationId],
+      windows: [
+        {
+          environmentId: session.environment_id,
+          startsAt: new Date("2026-08-31T14:00:00Z"),
+          endsAt: new Date("2026-08-31T15:00:00Z"),
+        },
+      ],
+      reliability: "high",
+      preparedAt: new Date("2026-08-30T18:00:00Z"),
+    });
+
+    expect(command).toEqual({
+      availability: {
+        week_start: "2026-08-31",
+        windows: [
+          {
+            environment_id: session.environment_id,
+            starts_at: "2026-08-31T14:00:00.000Z",
+            ends_at: "2026-08-31T15:00:00.000Z",
+          },
+        ],
+        source_observation_ids: [sourceObservationId],
+        rule_version: "agas-web-availability-confirmation@1.0.0",
+      },
+      prepared_at: "2026-08-30T18:00:00.000Z",
+      reliability: "high",
+      provenance: {
+        recorded_by: "unverified-athlete-user",
+        source_system: "agas-web",
+        ingestion_method: "interactive-form",
+      },
+    });
+
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          weekly_plan: {
+            id: "00000000-0000-4000-8000-000000000025",
+            week_start: "2026-08-31",
+            status: "draft",
+          },
+        }),
+        { status: 201 },
+      ),
+    );
+    await submitWeeklyRollForward("http://localhost:8000/", "source-plan", command, fetcher);
+    expect(fetcher.mock.calls[0][0]).toBe(
+      "http://localhost:8000/v1/weekly-plans/source-plan/roll-forward",
+    );
+    expect(JSON.parse(fetcher.mock.calls[0][1]!.body as string)).toEqual(command);
+  });
+
+  it("rejects unsupported or internally inconsistent availability confirmations", () => {
+    const validWindow = {
+      environmentId: session.environment_id,
+      startsAt: new Date("2026-08-31T14:00:00Z"),
+      endsAt: new Date("2026-08-31T15:00:00Z"),
+    };
+    expect(() =>
+      buildWeeklyRollForwardCommand({
+        nextWeekStart: "2026-08-31",
+        sourceObservationIds: [],
+        windows: [validWindow],
+        reliability: "moderate",
+      }),
+    ).toThrow("persisted source observations");
+    expect(() =>
+      buildWeeklyRollForwardCommand({
+        nextWeekStart: "2026-08-31",
+        sourceObservationIds: ["00000000-0000-4000-8000-000000000024"],
+        windows: [{ ...validWindow, endsAt: validWindow.startsAt }],
+        reliability: "moderate",
+      }),
+    ).toThrow("end after it starts");
   });
 });

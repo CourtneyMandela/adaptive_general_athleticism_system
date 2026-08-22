@@ -1014,7 +1014,7 @@ def test_current_week_projection_exposes_schedule_and_persisted_completion(
         _,
         prescription,
         session_template,
-        _,
+        weekly_availability,
         _,
         weekly_plan,
     ) = build_and_persist_weekly_chain(session)
@@ -1093,6 +1093,26 @@ def test_current_week_projection_exposes_schedule_and_persisted_completion(
             },
         )
         progressed_response = TestClient(app).get(path, params={"on": "2026-08-25"})
+        second_execution, _ = build_and_persist_execution_for_planned_session(
+            session,
+            repository,
+            athlete_id=strategy.athlete_id,
+            weekly_plan=weekly_plan,
+            planned_session_index=1,
+            session_template=session_template,
+            prescription=prescription,
+            safety_policy=safety_policy,
+            provenance=provenance,
+        )
+        persist_post_session_safety(
+            session,
+            repository,
+            weekly_plan=weekly_plan,
+            execution=second_execution,
+            safety_policy=safety_policy,
+            provenance=provenance,
+        )
+        closed_week_response = TestClient(app).get(path, params={"on": "2026-08-25"})
 
         duplicate_plan = weekly_plan.model_copy(
             update={
@@ -1123,6 +1143,14 @@ def test_current_week_projection_exposes_schedule_and_persisted_completion(
     assert first_prescription.intensity_targets == ("RPE 6-8",)
     assert first_prescription.reason_for_inclusion == prescription.reason_for_inclusion
     assert first_prescription.progression_action.status == "awaiting_execution"
+    assert scheduled.week.review.status == "awaiting_sessions"
+    assert scheduled.week.review.recorded_sessions == 0
+    assert scheduled.week.review.scheduled_sessions == 2
+    assert len(scheduled.week.availability.windows) == 2
+    assert (
+        scheduled.week.availability.source_observation_ids
+        == weekly_availability.source_observation_ids
+    )
     assert no_plan_response.status_code == 200
     assert CurrentWeekProjection.model_validate(no_plan_response.json()).week is None
 
@@ -1158,6 +1186,19 @@ def test_current_week_projection_exposes_schedule_and_persisted_completion(
     assert progressed_prescription.progression.outcome == "progress"
     assert progressed_prescription.progression_action.status == "completed"
     assert progressed_prescription.progression_action.progression_policy_id is None
+    assert progressed.week.review.status == "awaiting_sessions"
+    assert closed_week_response.status_code == 200
+    closed_week = CurrentWeekProjection.model_validate(closed_week_response.json())
+    assert closed_week.week is not None
+    assert closed_week.week.review.status == "ready_to_prepare_next_week"
+    assert closed_week.week.review.recorded_sessions == 2
+    assert closed_week.week.review.post_session_closed == 2
+    assert closed_week.week.review.resolved_progression_items == 2
+    assert closed_week.week.review.progression_outcomes.progress == 1
+    assert (
+        closed_week.week.sessions[1].prescriptions[0].progression_action.reason
+        == "this prescription already has an immutable revision descendant"
+    )
     assert ambiguous_response.status_code == 409
 
 
@@ -1731,6 +1772,8 @@ def test_weekly_roll_forward_carries_progression_revision_with_immutable_lineage
     roll_forward_body: dict[str, object] = {
         "availability": availability_body,
         "prepared_at": prepared_at.isoformat(),
+        "reliability": "high",
+        "provenance": provenance.model_dump(mode="json"),
     }
 
     def override_session() -> Iterator[Session]:
@@ -1757,6 +1800,7 @@ def test_weekly_roll_forward_carries_progression_revision_with_immutable_lineage
         assert progression_result.revised_prescription is not None
         revised = progression_result.revised_prescription
         record_types = (
+            ObservationRecord,
             SessionPrescriptionRecord,
             SessionTemplateRecord,
             WeeklyAvailabilityRecord,
@@ -1796,6 +1840,8 @@ def test_weekly_roll_forward_carries_progression_revision_with_immutable_lineage
     assert counts_after_failures == counts_before
     assert response.status_code == 201
     result = WeeklyPlanRollForwardResult.model_validate(response.json())
+    assert result.availability_observation.observation_type == ("weekly_availability_confirmation")
+    assert result.availability_observation.id in result.availability.source_observation_ids
     assert result.prescriptions == (revised,)
     assert len(result.created_session_templates) == 1
     successor_template = result.created_session_templates[0]
@@ -1813,6 +1859,10 @@ def test_weekly_roll_forward_carries_progression_revision_with_immutable_lineage
     assert repository.get_session_template(source_template.id) == source_template
     assert repository.get_session_prescription(prescription.id) == prescription
     assert repository.get_session_prescription(revised.id) == revised
+    assert (
+        repository.get_observation(result.availability_observation.id)
+        == result.availability_observation
+    )
     assert repository.get_session_template(successor_template.id) == successor_template
     assert repository.get_weekly_plan(result.weekly_plan.id) == result.weekly_plan
     assert repository.get_weekly_plan_successor(source_plan.id) == result.weekly_plan
@@ -1866,6 +1916,12 @@ def test_weekly_roll_forward_reuses_unchanged_prescription_and_template(
                     "rule_version": "fixture-unchanged-availability@1.0.0",
                 },
                 "prepared_at": (NOW + timedelta(minutes=1)).isoformat(),
+                "reliability": "moderate",
+                "provenance": {
+                    "recorded_by": "automated-test",
+                    "source_system": "pytest",
+                    "ingestion_method": "fixture",
+                },
             },
         )
     finally:

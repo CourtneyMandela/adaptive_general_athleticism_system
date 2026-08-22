@@ -46,6 +46,15 @@ ProgressionActionStatus = Literal[
     "policy_unavailable",
     "completed",
 ]
+WeeklyReviewStatus = Literal[
+    "awaiting_sessions",
+    "awaiting_post_session_safety",
+    "awaiting_progression",
+    "manual_configuration_required",
+    "ready_to_prepare_next_week",
+    "next_week_already_prepared",
+    "block_complete",
+]
 
 
 class SafetyStatusProjection(BaseModel):
@@ -138,6 +147,47 @@ class PlannedSessionProjection(BaseModel):
     prescriptions: tuple[PrescriptionProjection, ...]
 
 
+class AvailabilityWindowProjection(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    environment_id: UUID
+    environment_name: str
+    starts_at: datetime
+    ends_at: datetime
+
+
+class WeeklyAvailabilityProjection(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    source_observation_ids: tuple[UUID, ...]
+    rule_version: str
+    windows: tuple[AvailabilityWindowProjection, ...]
+
+
+class ProgressionOutcomeSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    progress: int
+    repeat: int
+    hold: int
+    review_required: int
+
+
+class WeeklyReviewProjection(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    status: WeeklyReviewStatus
+    reason: str
+    scheduled_sessions: int
+    recorded_sessions: int
+    completed_sessions: int
+    post_session_closed: int
+    progression_items: int
+    resolved_progression_items: int
+    progression_outcomes: ProgressionOutcomeSummary
+    next_week_start: date | None
+
+
 class WeekProjection(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -147,6 +197,8 @@ class WeekProjection(BaseModel):
     week_end: date
     block_week: int
     status: WeeklyPlanStatus
+    availability: WeeklyAvailabilityProjection
+    review: WeeklyReviewProjection
     sessions: tuple[PlannedSessionProjection, ...]
 
 
@@ -199,6 +251,31 @@ class CurrentWeekProjector:
         )
 
     def _project_week(self, plan: WeeklyPlan) -> WeekProjection:
+        block = self.repository.get_block_plan(plan.block_plan_id)
+        availability = self.repository.get_weekly_availability(plan.weekly_availability_id)
+        if block is None or availability is None:
+            raise CurrentWeekConflictError("weekly plan references incomplete planning metadata")
+        if (
+            block.athlete_id != plan.athlete_id
+            or availability.athlete_id != plan.athlete_id
+            or availability.week_start != plan.week_start
+        ):
+            raise CurrentWeekConflictError("weekly planning metadata belongs elsewhere")
+        availability_windows = []
+        for window in availability.windows:
+            environment = self.repository.get_environment(window.environment_id)
+            if environment is None or environment.athlete_id != plan.athlete_id:
+                raise CurrentWeekConflictError(
+                    "weekly availability references incomplete environment metadata"
+                )
+            availability_windows.append(
+                AvailabilityWindowProjection(
+                    environment_id=environment.id,
+                    environment_name=environment.name,
+                    starts_at=window.starts_at,
+                    ends_at=window.ends_at,
+                )
+            )
         sessions = tuple(self._project_session(plan, item) for item in plan.sessions)
         return WeekProjection(
             weekly_plan_id=plan.id,
@@ -207,7 +284,100 @@ class CurrentWeekProjector:
             week_end=plan.week_start + timedelta(days=6),
             block_week=plan.block_week,
             status=plan.status,
+            availability=WeeklyAvailabilityProjection(
+                source_observation_ids=availability.source_observation_ids,
+                rule_version=availability.rule_version,
+                windows=tuple(availability_windows),
+            ),
+            review=self._weekly_review(
+                plan=plan,
+                sessions=sessions,
+                block_duration_weeks=block.duration_weeks,
+                successor_exists=(self.repository.get_weekly_plan_successor(plan.id) is not None),
+            ),
             sessions=sessions,
+        )
+
+    def _weekly_review(
+        self,
+        *,
+        plan: WeeklyPlan,
+        sessions: tuple[PlannedSessionProjection, ...],
+        block_duration_weeks: int,
+        successor_exists: bool,
+    ) -> WeeklyReviewProjection:
+        scheduled = len(sessions)
+        recorded = sum(item.execution is not None for item in sessions)
+        completed = sum(item.status == "completed" for item in sessions)
+        post_closed = sum(
+            item.execution is not None and bool(item.execution.post_session_safety_outcomes)
+            for item in sessions
+        )
+        prescriptions = tuple(
+            prescription for session in sessions for prescription in session.prescriptions
+        )
+        resolved = sum(item.progression_action.status == "completed" for item in prescriptions)
+        outcome_counts = {
+            "progress": 0,
+            "repeat": 0,
+            "hold": 0,
+            "review_required": 0,
+        }
+        for prescription in prescriptions:
+            if (
+                prescription.progression is not None
+                and prescription.progression.outcome in outcome_counts
+            ):
+                outcome_counts[prescription.progression.outcome] += 1
+
+        next_week_start: date | None = plan.week_start + timedelta(days=7)
+        if plan.status is WeeklyPlanStatus.INFEASIBLE:
+            status: WeeklyReviewStatus = "manual_configuration_required"
+            reason = "the current week is infeasible and requires governed scheduling review"
+        elif successor_exists:
+            status = "next_week_already_prepared"
+            reason = "the next weekly plan already exists"
+        elif plan.block_week >= block_duration_weeks:
+            status = "block_complete"
+            reason = "the block has reached its final week and requires block review"
+            next_week_start = None
+        elif recorded < scheduled:
+            status = "awaiting_sessions"
+            reason = "record every scheduled session outcome before preparing the next week"
+        elif post_closed < recorded:
+            status = "awaiting_post_session_safety"
+            reason = "close every recorded session with a recovery report"
+        elif outcome_counts["hold"] or outcome_counts["review_required"]:
+            status = "manual_configuration_required"
+            reason = "a hold or review-required progression outcome needs governed review"
+        elif any(
+            item.progression_action.status
+            in {"manual_configuration_required", "policy_unavailable"}
+            for item in prescriptions
+        ):
+            status = "manual_configuration_required"
+            reason = "one or more prescription progressions require governed configuration"
+        elif any(item.progression_action.status == "ready" for item in prescriptions):
+            status = "awaiting_progression"
+            reason = "evaluate every ready deterministic progression before preparing next week"
+        elif resolved < len(prescriptions):
+            status = "awaiting_progression"
+            reason = "resolve every prescription progression before preparing next week"
+        else:
+            status = "ready_to_prepare_next_week"
+            reason = "the week is closed and next-week availability can be confirmed"
+
+        return WeeklyReviewProjection(
+            status=status,
+            reason=reason,
+            scheduled_sessions=scheduled,
+            recorded_sessions=recorded,
+            completed_sessions=completed,
+            post_session_closed=post_closed,
+            progression_items=len(prescriptions),
+            resolved_progression_items=resolved,
+            progression_outcomes=ProgressionOutcomeSummary(**outcome_counts),
+            next_week_start=next_week_start,
         )
 
     def _project_session(
@@ -384,6 +554,28 @@ class CurrentWeekProjector:
                     else None
                 ),
                 reason="an immutable progression decision already exists",
+            )
+        successor = self.repository.get_latest_session_prescription_revision(prescription.id)
+        if successor is not None and successor.id != prescription.id:
+            successor_decision = (
+                self.repository.get_progression_decision(successor.progression_decision_id)
+                if successor.progression_decision_id is not None
+                else None
+            )
+            return ProgressionActionProjection(
+                status="completed",
+                rule_reference=reference,
+                adjustment_dimension=(
+                    successor_decision.adjustment.dimension.value
+                    if successor_decision is not None and successor_decision.adjustment is not None
+                    else None
+                ),
+                adjustment_description=(
+                    successor_decision.adjustment.description
+                    if successor_decision is not None and successor_decision.adjustment is not None
+                    else None
+                ),
+                reason="this prescription already has an immutable revision descendant",
             )
         if not execution_exists:
             return ProgressionActionProjection(

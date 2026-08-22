@@ -136,8 +136,10 @@ It retains the source plan's scheduling policy and session structure, carries th
 prescription revision into a successor template when one exists, and schedules the consecutive
 block week. Unchanged prescriptions and templates are reused. Source plans, templates, and
 prescriptions remain historical, while explicit predecessor IDs preserve the complete lineage.
-Roll-forward does not generate dose, choose a progression, substitute equipment, or create a new
-block.
+The submitted availability is also stored as a direct user-report observation with reliability and
+provenance; the next availability record retains that observation alongside its prior source
+references. Roll-forward does not generate dose, choose a progression, substitute equipment, or
+create a new block.
 
 Completed-block review requires exactly one feasible weekly plan for every block week, a recorded
 outcome and adherence for every planned session item, and at least one post-session safety decision
@@ -150,6 +152,9 @@ The current-week query is a read-only projection for daily use. It assembles ath
 session container, exercise, adaptation, safety, execution, adherence, and progression records
 without changing their meaning or persistence history. An explicit date keeps queries deterministic;
 multiple plans covering the same date are rejected until supersession semantics exist.
+The same projection derives a typed weekly-review state and descriptive closure counts. It exposes
+the persisted source availability so clients can request confirmation without silently copying it
+or reimplementing review policy.
 
 ## Run the frontend
 
@@ -168,6 +173,10 @@ then collects a short post-session recovery report and displays persisted progre
 exercise. When an exact unique non-exposure load or repetition policy is assigned by the
 prescription's versioned rule reference, the athlete can ask the deterministic backend to evaluate
 progression. It refreshes from the authoritative current-week projection after each write.
+Once every scheduled occurrence, recovery report, and supported progression is closed, the screen
+offers a weekly review. It starts from availability shifted by seven days, requires the athlete to
+confirm or edit those actual times, and prepares exactly one consecutive successor week. Block-end,
+hold, review-required, missing-policy, and unsupported-policy states remain visibly blocked.
 
 This setup is provisional: there is no authentication, athlete onboarding, or athlete-to-policy
 assignment workflow yet. The browser does not classify raw symptoms. Selecting a concerning

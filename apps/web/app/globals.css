@@ -50,7 +50,7 @@ button { cursor: pointer; }
   box-shadow: var(--shadow);
 }
 
-.setup-card h1, .topbar h1, .week-summary h2, .state-card h2 {
+.setup-card h1, .topbar h1, .week-summary h2, .state-card h2, .weekly-review h2 {
   font-family: Georgia, "Times New Roman", serif;
   font-weight: 500;
   letter-spacing: -.035em;
@@ -74,7 +74,8 @@ button { cursor: pointer; }
   text-transform: uppercase;
 }
 
-.athlete-form input, .week-nav input, .action-form input, .action-form select, .action-form textarea {
+.athlete-form input, .week-nav input, .action-form input, .action-form select, .action-form textarea,
+.availability-form input, .availability-form select {
   min-width: 0;
   border: 1px solid #b9c2bb;
   border-radius: .7rem;
@@ -84,7 +85,7 @@ button { cursor: pointer; }
 
 .athlete-form input { width: 100%; padding: .85rem 1rem; }
 
-.athlete-form button, .state-card button, .action-form button {
+.athlete-form button, .state-card button, .action-form button, .availability-form button {
   border: 0;
   border-radius: .7rem;
   background: var(--accent);
@@ -271,6 +272,41 @@ button { cursor: pointer; }
 .state-card h2, .state-card p { margin: 0; }
 .state-card--error { border-color: #d6aaa5; background: #fff8f6; }
 
+.weekly-review {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 3rem;
+  padding: clamp(1.15rem, 3vw, 2rem);
+  border: 1px solid var(--line);
+  border-radius: 1.15rem;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.weekly-review__heading { display: grid; gap: 1rem; }
+.weekly-review h2 { margin: .25rem 0 .4rem; font-size: clamp(1.6rem, 4vw, 2.35rem); }
+.weekly-review__heading > div > p:last-child { max-width: 62ch; margin: 0; color: var(--muted); line-height: 1.5; }
+.review-counts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .65rem; margin: 0; }
+.review-counts div { display: grid; gap: .2rem; padding: .75rem; border-radius: .7rem; background: #f3f5f0; }
+.review-counts dt { color: var(--muted); font-size: .72rem; font-weight: 750; }
+.review-counts dd { margin: 0; color: var(--accent); font-family: Georgia, "Times New Roman", serif; font-size: 1.45rem; }
+.review-outcomes { display: flex; flex-wrap: wrap; gap: .5rem; margin: 0; padding: 0; list-style: none; }
+.review-outcomes li { padding: .4rem .65rem; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: .78rem; }
+.review-outcomes strong { color: var(--ink); }
+.availability-form { border-top: 1px solid var(--line); padding-top: 1rem; }
+.availability-form fieldset { display: grid; gap: 1rem; min-width: 0; margin: 0; padding: 0; border: 0; }
+.availability-form legend { margin-bottom: .4rem; padding: 0; font-size: 1.05rem; font-weight: 800; }
+.availability-windows { display: grid; gap: .75rem; }
+.availability-window { display: grid; gap: .65rem; padding: .85rem; border: 1px solid var(--line); border-radius: .75rem; background: #f9faf6; }
+.availability-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; }
+.availability-form label { display: grid; gap: .35rem; color: var(--muted); font-size: .78rem; font-weight: 750; }
+.availability-form input, .availability-form select { width: 100%; padding: .65rem .7rem; }
+.availability-form button { justify-self: start; }
+.availability-form button:disabled { cursor: not-allowed; opacity: .55; }
+.availability-confirmation { display: flex !important; align-items: flex-start; gap: .55rem !important; color: var(--ink) !important; font-weight: 600 !important; }
+.availability-confirmation input { width: auto; margin-top: .12rem; }
+.review-navigation { justify-self: start; border: 1px solid var(--accent); border-radius: .7rem; background: transparent; color: var(--accent); padding: .7rem .85rem; font-weight: 800; }
+
 .loader {
   width: 1.25rem;
   height: 1.25rem;
@@ -285,6 +321,7 @@ button { cursor: pointer; }
 @media (min-width: 54rem) {
   .dashboard-shell { padding: 2rem; }
   .session-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .weekly-review__heading { grid-template-columns: minmax(0, 1.35fr) minmax(20rem, 1fr); align-items: start; }
 }
 
 @media (max-width: 38rem) {
@@ -295,6 +332,7 @@ button { cursor: pointer; }
   .session-card__header, .exercise-line { align-items: flex-start; flex-direction: column; }
   .status-badge { align-self: flex-start; }
   .compact-fields, .performance-fields { grid-template-columns: 1fr; }
+  .review-counts, .availability-fields { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) { .loader { animation: none; } }

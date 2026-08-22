@@ -417,6 +417,10 @@ session-container, availability, and weekly scheduling creation. Weekly-plan and
 IDs anchor safety evaluation and actual-performance recording through immutable observations.
 One weekly-plan ID can also anchor a single consecutive roll-forward that consumes existing
 prescription-revision lineage rather than accepting new dose.
+Roll-forward appends a direct availability-confirmation observation before the next
+`WeeklyAvailability`, template revisions, and weekly plan. Its transaction preserves both the
+athlete report authorizing scheduling and the earlier observation references carried by the
+submitted availability draft.
 An execution/prescription pair anchors governed exposure and progression processing. A block ID
 anchors completed-history review, while a block-review ID anchors successor-strategy derivation.
 Missing dependencies, invalid inputs, and relational conflicts remain distinct transport errors.
@@ -444,6 +448,19 @@ exposure inputs. Missing, duplicate, exposure-governed, set/duration, and unsupp
 configurations fail closed with an explicit reason. The browser can request evaluation for a ready
 action, but the transactional backend still loads performance, adherence, all post-session safety
 history, and the evidence-linked policy before creating the immutable decision and revision.
+
+The projection also exposes the persisted week's availability and one backend-derived weekly-review
+state. Closure is descriptive and fail-closed: every scheduled occurrence needs an execution,
+recorded executions need post-session safety, and every prescription needs a resolved progression
+state before normal roll-forward is offered. `HOLD`, `REVIEW_REQUIRED`, infeasible weeks, missing or
+unsupported policies, and final block weeks route to explicit review states. The web client does
+not reproduce that decision tree.
+
+For an ordinary closed week, the PWA proposes the existing windows shifted by seven days, permits
+time edits, and requires explicit confirmation. It sends the exact environment IDs, instants,
+source-observation IDs, reliability, and unverified-user provenance to the transactional
+roll-forward boundary. The saved confirmation is an observation, not an inference that future
+availability matches the past.
 
 Technique-constraint reporting remains separate from completion and is not prefilled. When the
 assigned policy requires technique confirmation, an unreported or failed constraint produces the
