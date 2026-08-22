@@ -88,6 +88,16 @@ uvicorn agas_api.main:app --reload
 
 The health endpoint is available at `http://localhost:8000/health`.
 
+The first write use case is intentionally narrow:
+
+```text
+POST /v1/block-reviews/{block_review_id}/replan
+```
+
+It accepts explicit replanning candidate contexts, reconstructs the persisted review chain, and
+atomically appends capability needs and one replacement strategy. Raw strategy/need CRUD is not
+exposed.
+
 ## Run the frontend
 
 ```bash

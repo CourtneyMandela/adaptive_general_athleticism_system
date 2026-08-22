@@ -1,13 +1,23 @@
 from collections.abc import Iterator
 from contextlib import contextmanager
+from typing import Annotated
+from uuid import UUID
 
-from fastapi import FastAPI
+from agas_domain import ClosedLoopReplanningResult
+from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from agas_api import __version__
-from agas_api.database import database_session
+from agas_api.database import database_session, database_session_dependency
+from agas_api.replanning import (
+    PersistedReplanningService,
+    PostBlockReplanningCommand,
+    ReplanningConflictError,
+    ReplanningNotFoundError,
+    ReplanningValidationError,
+)
 from agas_api.settings import get_settings
 
 settings = get_settings()
@@ -21,7 +31,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[str(origin).rstrip("/") for origin in settings.cors_origins],
     allow_credentials=True,
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
@@ -45,3 +55,26 @@ def ready() -> dict[str, str]:
     with _session_scope() as session:
         session.execute(text("SELECT 1"))
     return {"status": "ready"}
+
+
+@app.post(
+    "/v1/block-reviews/{block_review_id}/replan",
+    tags=["planning"],
+    response_model=ClosedLoopReplanningResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def replan_after_block_review(
+    block_review_id: UUID,
+    command: PostBlockReplanningCommand,
+    session: Annotated[Session, Depends(database_session_dependency)],
+) -> ClosedLoopReplanningResult:
+    try:
+        return PersistedReplanningService(session).execute(block_review_id, command)
+    except ReplanningNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except ReplanningConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except ReplanningValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error

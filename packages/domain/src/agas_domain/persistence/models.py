@@ -413,6 +413,7 @@ class LongRangeStrategyRecord(VersionedRecordMixin, Base):
             "AND triggering_block_review_id IS NOT NULL)",
             name="ck_strategy_revision_lineage_pair",
         ),
+        UniqueConstraint("triggering_block_review_id", name="uq_strategy_triggering_block_review"),
     )
 
     athlete_id: Mapped[UUID] = mapped_column(

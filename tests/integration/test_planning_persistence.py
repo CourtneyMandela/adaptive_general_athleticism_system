@@ -1,7 +1,10 @@
+from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
 
 import pytest
+from agas_api.database import database_session_dependency
+from agas_api.main import app
 from agas_domain import (
     Adaptation,
     AdaptationPlanningCandidate,
@@ -15,6 +18,7 @@ from agas_domain import (
     BlockReviewPolicy,
     CapabilityDomain,
     CapabilityEstimate,
+    ClosedLoopReplanningResult,
     ComparisonDirection,
     CompetencyFloor,
     Confidence,
@@ -73,6 +77,7 @@ from agas_domain import (
 )
 from agas_domain.persistence.models import (
     BlockReviewRecord,
+    CapabilityNeedRecord,
     ExerciseResolutionRecord,
     ImmutableHistoricalRecordError,
     LongRangeStrategyRecord,
@@ -85,7 +90,6 @@ from agas_domain.persistence.repository import DomainIntegrityError, DomainRepos
 from agas_planner import (
     BlockPlanner,
     BlockReviewEngine,
-    ClosedLoopReplanner,
     CompetencyFloorDetector,
     EnvironmentSnapshotBuilder,
     ExerciseResolver,
@@ -101,6 +105,8 @@ from agas_planner import (
     WeeklyScheduler,
 )
 from agas_safety import SessionSafetyGate
+from fastapi.testclient import TestClient
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 NOW = datetime(2026, 8, 19, 14, 0, tzinfo=UTC)
@@ -1092,43 +1098,60 @@ def test_progression_exposure_and_revised_prescription_round_trip(session: Sessi
 
     adaptation = repository.get_adaptation(prescription.adaptation_id)
     floor = repository.get_competency_floor(strategy.competency_floor_ids[0])
-    stored_priority_policy = repository.get_priority_policy(strategy.priority_policy_id)
     assert adaptation is not None
     assert floor is not None
-    assert stored_priority_policy is not None
-    replanning_result = ClosedLoopReplanner().replan(
-        previous_strategy=strategy,
-        completed_block=block,
-        block_review=review,
-        training_responses=(response,),
-        selected_estimates=(followup,),
-        adaptations=(adaptation,),
-        competency_floors=(floor,),
-        candidate_contexts=(
-            ReplanningCandidateContext(
-                adaptation_id=adaptation.id,
-                competency_floor_id=floor.id,
-                capability_estimate_id=followup.id,
-                general_relevance=0.9,
-                goal_relevance=0.8,
-                prerequisite_value=0.7,
-                expected_trainability=0.7,
-                transfer_value=0.8,
-                fatigue_cost=0.3,
-                time_cost=0.3,
-                interference_cost=0.2,
-                evidence_claim_ids=claim_ids,
-            ),
-        ),
-        priority_policy=stored_priority_policy,
-        generated_at=review.reviewed_at + timedelta(minutes=1),
-        review_after_days=42,
+    context = ReplanningCandidateContext(
+        adaptation_id=adaptation.id,
+        competency_floor_id=floor.id,
+        capability_estimate_id=followup.id,
+        general_relevance=0.9,
+        goal_relevance=0.8,
+        prerequisite_value=0.7,
+        expected_trainability=0.7,
+        transfer_value=0.8,
+        fatigue_cost=0.3,
+        time_cost=0.3,
+        interference_cost=0.2,
+        evidence_claim_ids=claim_ids,
     )
-    for need in replanning_result.capability_needs:
-        repository.add_capability_need(need)
-    session.flush()
-    repository.add_long_range_strategy(replanning_result.strategy)
-    session.commit()
+
+    def override_session() -> Iterator[Session]:
+        yield session
+
+    app.dependency_overrides[database_session_dependency] = override_session
+    request_body = {
+        "candidate_contexts": [context.model_dump(mode="json")],
+        "generated_at": (review.reviewed_at + timedelta(minutes=1)).isoformat(),
+        "review_after_days": 42,
+    }
+    invalid_context = context.model_copy(update={"evidence_claim_ids": (uuid4(),)})
+    invalid_request_body = {
+        **request_body,
+        "candidate_contexts": [invalid_context.model_dump(mode="json")],
+    }
+    needs_before_invalid_request = session.scalar(
+        select(func.count()).select_from(CapabilityNeedRecord)
+    )
+    try:
+        invalid_response = TestClient(app).post(
+            f"/v1/block-reviews/{review.id}/replan", json=invalid_request_body
+        )
+        needs_after_invalid_request = session.scalar(
+            select(func.count()).select_from(CapabilityNeedRecord)
+        )
+        api_response = TestClient(app).post(
+            f"/v1/block-reviews/{review.id}/replan", json=request_body
+        )
+        conflict_response = TestClient(app).post(
+            f"/v1/block-reviews/{review.id}/replan", json=request_body
+        )
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+    assert invalid_response.status_code == 422
+    assert needs_after_invalid_request == needs_before_invalid_request
+    assert api_response.status_code == 201
+    assert conflict_response.status_code == 409
+    replanning_result = ClosedLoopReplanningResult.model_validate(api_response.json())
     session.expire_all()
     assert (
         repository.get_long_range_strategy(replanning_result.strategy.id)

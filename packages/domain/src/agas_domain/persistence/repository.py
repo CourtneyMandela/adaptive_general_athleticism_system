@@ -643,6 +643,14 @@ class DomainRepository:
         if self.session.get(PriorityPolicyRecord, strategy.priority_policy_id) is None:
             raise DomainIntegrityError("priority policy does not exist")
         if strategy.supersedes_strategy_id is not None:
+            existing_revision = self.session.scalar(
+                select(LongRangeStrategyRecord).where(
+                    LongRangeStrategyRecord.triggering_block_review_id
+                    == strategy.triggering_block_review_id
+                )
+            )
+            if existing_revision is not None:
+                raise DomainIntegrityError("triggering review already has a strategy revision")
             previous = self.session.get(LongRangeStrategyRecord, strategy.supersedes_strategy_id)
             review = self.session.get(BlockReviewRecord, strategy.triggering_block_review_id)
             if previous is None or previous.athlete_id != strategy.athlete_id:
@@ -2929,6 +2937,16 @@ class DomainRepository:
             supersedes_strategy_id=record.supersedes_strategy_id,
             triggering_block_review_id=record.triggering_block_review_id,
         )
+
+    def get_long_range_strategy_by_triggering_review(
+        self, block_review_id: UUID
+    ) -> LongRangeStrategy | None:
+        record = self.session.scalar(
+            select(LongRangeStrategyRecord).where(
+                LongRangeStrategyRecord.triggering_block_review_id == block_review_id
+            )
+        )
+        return self.get_long_range_strategy(record.id) if record is not None else None
 
     def add_assessment_definition(self, definition: AssessmentDefinition) -> None:
         self.session.add(

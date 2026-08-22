@@ -276,7 +276,12 @@ to completed block to block review to replacement strategy.
 
 ## API
 
-FastAPI owns transport concerns and database lifecycle. The initial API intentionally exposes only service metadata and health/readiness endpoints. Domain write endpoints will arrive with coherent use cases rather than raw CRUD that could bypass invariants.
+FastAPI owns transport concerns and database lifecycle. In addition to health/readiness, the first
+write endpoint exposes the coherent post-block replanning use case. A block-review ID anchors the
+stored lineage; the application service loads the governed inputs, invokes the deterministic
+planner, and commits new capability needs plus exactly one successor strategy atomically. Missing
+dependencies, invalid planning inputs, and duplicate revision attempts remain distinct transport
+errors. Raw domain CRUD is intentionally absent because it could bypass invariants.
 
 ## Web
 
