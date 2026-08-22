@@ -14,6 +14,7 @@ from agas_api.session_recording import (
     SessionSafetyCreationResult,
 )
 from agas_api.weekly_planning import WeeklyPlanCreationResult
+from agas_api.weekly_roll_forward import WeeklyPlanRollForwardResult
 from agas_domain import (
     Adaptation,
     AdaptationPlanningCandidate,
@@ -1632,6 +1633,300 @@ def test_weekly_plan_endpoint_persists_explicit_session_chain_atomically(
     )
     assert repository.get_weekly_availability(result.availability.id) == result.availability
     assert repository.get_weekly_plan(result.weekly_plan.id) == result.weekly_plan
+
+
+def test_weekly_roll_forward_carries_progression_revision_with_immutable_lineage(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (
+        repository,
+        strategy,
+        _,
+        _,
+        _,
+        _,
+        _,
+        prescription,
+        source_template,
+        source_availability,
+        _,
+        source_plan,
+    ) = build_and_persist_weekly_chain(session)
+    provenance = Provenance(
+        recorded_by="automated-test",
+        source_system="pytest",
+        ingestion_method="fixture",
+    )
+    safety_policy = SessionSafetyPolicy(
+        allowed_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        limited_readiness_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        unusual_soreness_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        sleep_disruption_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        schedule_limitation_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        evidence_claim_ids=strategy.evidence_claim_ids,
+        rationale="Synthetic roll-forward safety policy.",
+        policy_version="fixture-roll-forward-safety@1.0.0",
+    )
+    progression_policy = ProgressionPolicy(
+        reference=prescription.progression_rule_reference,
+        minimum_set_completion_ratio=1,
+        minimum_dose_completion_ratio=1,
+        maximum_session_rpe=8,
+        require_technique_constraint=True,
+        adjustment=PrescriptionAdjustment(
+            dimension=ProgressionDimension.REPETITIONS,
+            amount=1,
+            unit="repetitions_per_set",
+            description="add one repetition per set",
+        ),
+        evidence_claim_ids=strategy.evidence_claim_ids,
+        rationale="Synthetic roll-forward progression policy.",
+        policy_version="fixture-roll-forward-progression@1.0.0",
+    )
+    repository.add_session_safety_policy(safety_policy)
+    repository.add_progression_policy(progression_policy)
+    session.commit()
+    execution, _ = build_and_persist_execution_for_planned_session(
+        session,
+        repository,
+        athlete_id=strategy.athlete_id,
+        weekly_plan=source_plan,
+        planned_session_index=0,
+        session_template=source_template,
+        prescription=prescription,
+        safety_policy=safety_policy,
+        provenance=provenance,
+    )
+    post_safety = persist_post_session_safety(
+        session,
+        repository,
+        weekly_plan=source_plan,
+        execution=execution,
+        safety_policy=safety_policy,
+        provenance=provenance,
+    )
+    progression_decided_at = post_safety.decided_at + timedelta(minutes=1)
+    revision_prescribed_at = progression_decided_at + timedelta(minutes=1)
+    prepared_at = revision_prescribed_at + timedelta(minutes=1)
+    next_week_start = source_plan.week_start + timedelta(days=7)
+    environment_id = source_availability.windows[0].environment_id
+    next_windows = (
+        {
+            "environment_id": str(environment_id),
+            "starts_at": datetime(2026, 8, 31, 18, 0, tzinfo=UTC).isoformat(),
+            "ends_at": datetime(2026, 8, 31, 18, 30, tzinfo=UTC).isoformat(),
+        },
+        {
+            "environment_id": str(environment_id),
+            "starts_at": datetime(2026, 9, 3, 18, 0, tzinfo=UTC).isoformat(),
+            "ends_at": datetime(2026, 9, 3, 18, 30, tzinfo=UTC).isoformat(),
+        },
+    )
+    availability_body: dict[str, object] = {
+        "week_start": next_week_start.isoformat(),
+        "windows": list(next_windows),
+        "source_observation_ids": [str(item) for item in strategy.source_observation_ids],
+        "rule_version": "fixture-roll-forward-availability@1.0.0",
+    }
+    roll_forward_body: dict[str, object] = {
+        "availability": availability_body,
+        "prepared_at": prepared_at.isoformat(),
+    }
+
+    def override_session() -> Iterator[Session]:
+        yield session
+
+    def reject_plan(_repository: DomainRepository, _plan: WeeklyPlan) -> None:
+        raise DomainIntegrityError("synthetic late roll-forward persistence failure")
+
+    app.dependency_overrides[database_session_dependency] = override_session
+    progression_path = (
+        f"/v1/session-executions/{execution.id}/prescriptions/{prescription.id}/progression"
+    )
+    roll_forward_path = f"/v1/weekly-plans/{source_plan.id}/roll-forward"
+    try:
+        progression_response = TestClient(app).post(
+            progression_path,
+            json={
+                "progression_policy_id": str(progression_policy.id),
+                "decided_at": progression_decided_at.isoformat(),
+                "revision_prescribed_at": revision_prescribed_at.isoformat(),
+            },
+        )
+        progression_result = ProgressionCreationResult.model_validate(progression_response.json())
+        assert progression_result.revised_prescription is not None
+        revised = progression_result.revised_prescription
+        record_types = (
+            SessionPrescriptionRecord,
+            SessionTemplateRecord,
+            WeeklyAvailabilityRecord,
+            WeeklyPlanRecord,
+        )
+        counts_before = tuple(
+            session.scalar(select(func.count()).select_from(record_type))
+            for record_type in record_types
+        )
+        wrong_week_response = TestClient(app).post(
+            roll_forward_path,
+            json={
+                **roll_forward_body,
+                "availability": {
+                    **availability_body,
+                    "week_start": source_plan.week_start.isoformat(),
+                },
+            },
+        )
+        with monkeypatch.context() as context:
+            context.setattr(DomainRepository, "add_weekly_plan", reject_plan)
+            late_failure_response = TestClient(app).post(roll_forward_path, json=roll_forward_body)
+        counts_after_failures = tuple(
+            session.scalar(select(func.count()).select_from(record_type))
+            for record_type in record_types
+        )
+        response = TestClient(app).post(roll_forward_path, json=roll_forward_body)
+        duplicate_response = TestClient(app).post(roll_forward_path, json=roll_forward_body)
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert progression_response.status_code == 201
+    assert prescription.repetitions_per_set is not None
+    assert revised.repetitions_per_set == prescription.repetitions_per_set + 1
+    assert wrong_week_response.status_code == 422
+    assert late_failure_response.status_code == 422
+    assert counts_after_failures == counts_before
+    assert response.status_code == 201
+    result = WeeklyPlanRollForwardResult.model_validate(response.json())
+    assert result.prescriptions == (revised,)
+    assert len(result.created_session_templates) == 1
+    successor_template = result.created_session_templates[0]
+    assert successor_template.previous_template_id == source_template.id
+    assert successor_template.items[0].prescription_id == revised.id
+    assert result.session_templates == (successor_template,)
+    assert result.weekly_plan.previous_weekly_plan_id == source_plan.id
+    assert result.weekly_plan.block_week == source_plan.block_week + 1
+    assert result.weekly_plan.week_start == next_week_start
+    assert {item.session_template_id for item in result.weekly_plan.sessions} == {
+        successor_template.id
+    }
+    assert duplicate_response.status_code == 409
+    session.expire_all()
+    assert repository.get_session_template(source_template.id) == source_template
+    assert repository.get_session_prescription(prescription.id) == prescription
+    assert repository.get_session_prescription(revised.id) == revised
+    assert repository.get_session_template(successor_template.id) == successor_template
+    assert repository.get_weekly_plan(result.weekly_plan.id) == result.weekly_plan
+    assert repository.get_weekly_plan_successor(source_plan.id) == result.weekly_plan
+
+
+def test_weekly_roll_forward_reuses_unchanged_prescription_and_template(
+    session: Session,
+) -> None:
+    (
+        repository,
+        strategy,
+        _,
+        _,
+        _,
+        _,
+        _,
+        prescription,
+        source_template,
+        source_availability,
+        _,
+        source_plan,
+    ) = build_and_persist_weekly_chain(session)
+    next_week_start = source_plan.week_start + timedelta(days=7)
+    environment_id = source_availability.windows[0].environment_id
+
+    def override_session() -> Iterator[Session]:
+        yield session
+
+    app.dependency_overrides[database_session_dependency] = override_session
+    try:
+        response = TestClient(app).post(
+            f"/v1/weekly-plans/{source_plan.id}/roll-forward",
+            json={
+                "availability": {
+                    "week_start": next_week_start.isoformat(),
+                    "windows": [
+                        {
+                            "environment_id": str(environment_id),
+                            "starts_at": datetime(2026, 8, 31, 18, 0, tzinfo=UTC).isoformat(),
+                            "ends_at": datetime(2026, 8, 31, 18, 30, tzinfo=UTC).isoformat(),
+                        },
+                        {
+                            "environment_id": str(environment_id),
+                            "starts_at": datetime(2026, 9, 3, 18, 0, tzinfo=UTC).isoformat(),
+                            "ends_at": datetime(2026, 9, 3, 18, 30, tzinfo=UTC).isoformat(),
+                        },
+                    ],
+                    "source_observation_ids": [
+                        str(item) for item in strategy.source_observation_ids
+                    ],
+                    "rule_version": "fixture-unchanged-availability@1.0.0",
+                },
+                "prepared_at": (NOW + timedelta(minutes=1)).isoformat(),
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert response.status_code == 201
+    result = WeeklyPlanRollForwardResult.model_validate(response.json())
+    assert result.prescriptions == (prescription,)
+    assert result.session_templates == (source_template,)
+    assert result.created_session_templates == ()
+    assert {item.session_template_id for item in result.weekly_plan.sessions} == {
+        source_template.id
+    }
+    session.expire_all()
+    assert repository.get_session_template(source_template.id) == source_template
+    assert repository.get_weekly_plan(result.weekly_plan.id) == result.weekly_plan
+
+
+def test_session_template_lineage_rejects_unrelated_prescription(
+    session: Session,
+) -> None:
+    (
+        repository,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        prescription,
+        source_template,
+        _,
+        _,
+        _,
+    ) = build_and_persist_weekly_chain(session)
+    unrelated = prescription.model_copy(
+        update={
+            "id": uuid4(),
+            "prescribed_at": prescription.prescribed_at + timedelta(minutes=1),
+            "rule_version": "fixture-unrelated-prescription@1.0.0",
+        }
+    )
+    repository.add_session_prescription(unrelated)
+    session.flush()
+    invalid_template = source_template.model_copy(
+        update={
+            "id": uuid4(),
+            "items": (
+                source_template.items[0].model_copy(update={"prescription_id": unrelated.id}),
+            ),
+            "created_for_block_at": source_template.created_for_block_at + timedelta(minutes=2),
+            "rule_version": "fixture-invalid-template-lineage@1.0.0",
+            "previous_template_id": source_template.id,
+        }
+    )
+
+    with pytest.raises(DomainIntegrityError, match="must follow prescription lineage"):
+        repository.add_session_template(invalid_template)
+    session.rollback()
+    assert repository.get_session_template(source_template.id) == source_template
+    assert repository.get_session_prescription(unrelated.id) is None
 
 
 def test_session_endpoints_enforce_latest_safety_and_persist_feedback_atomically(

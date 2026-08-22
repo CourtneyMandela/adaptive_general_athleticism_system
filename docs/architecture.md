@@ -313,6 +313,26 @@ entry, exposure validation, progression decision, and any automatically supporte
 prescription revision commit or roll back together. Database constraints prevent duplicate
 adherence, exposure, and progression facts for the same execution chain.
 
+### Transactional weekly progression roll-forward
+
+`PersistedWeeklyPlanRollForwardService` is the narrow bridge from an immutable weekly plan to the
+immediately following week of the same block. The request supplies only new dated availability and
+a preparation timestamp. The service retains the source plan's scheduling policy, follows each
+session-template item through normalized prescription-revision records, and selects the latest
+revision that existed at preparation time.
+
+Unchanged prescriptions and templates are reused. If one or more items changed, the service creates
+a new immutable template with `previous_template_id`, preserving item order, section, frequency,
+and prescription ancestry while recomputing duration and fatigue from the carried items. The new
+`WeeklyPlan` records `previous_weekly_plan_id` and advances exactly seven days and one block week.
+The complete template, availability, and plan chain commits or rolls back together; unique lineage
+constraints reject competing automatic successors.
+
+The service adds no dose rule and accepts no client-authored prescription revision. Changed
+environments may make scheduling infeasible, but they never trigger an alleged equivalent exercise
+substitution. Exercise re-resolution, exposure proposals, block continuation, and next-block
+creation remain separate governed workflows.
+
 ### Transactional completed-block review
 
 `PersistedBlockReviewService` closes the descriptive block history before replanning. It requires
@@ -371,6 +391,9 @@ availability events used by its environment snapshot.
 Block allocations retain their exact demand and policy; prescriptions retain ordered observation
 and evidence sources; session templates retain ordered prescription items and provenance; and
 planned sessions retain their template, environment, and availability-window identities.
+Successor session templates and weekly plans additionally retain explicit predecessor IDs, and
+repository checks require carried template items to be the same prescription or a true descendant
+through immutable progression decisions.
 Safety policies, safety decisions and their observation links, executions, item executions, set
 performances, adherence, exposure entries and validations, progression decisions and revisions,
 training responses, review policies, reviews, and all of their ordered provenance links are also
@@ -392,6 +415,8 @@ ID anchors block creation; the service loads persisted demands, their resolution
 allocation policy before atomically appending a block. A block ID anchors explicit prescription,
 session-container, availability, and weekly scheduling creation. Weekly-plan and planned-session
 IDs anchor safety evaluation and actual-performance recording through immutable observations.
+One weekly-plan ID can also anchor a single consecutive roll-forward that consumes existing
+prescription-revision lineage rather than accepting new dose.
 An execution/prescription pair anchors governed exposure and progression processing. A block ID
 anchors completed-history review, while a block-review ID anchors successor-strategy derivation.
 Missing dependencies, invalid inputs, and relational conflicts remain distinct transport errors.

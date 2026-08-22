@@ -31,6 +31,12 @@ def test_baseline_migration_matches_current_metadata(
         assert "session_template_id" in {
             column["name"] for column in inspector.get_columns("planned_sessions")
         }
+        assert "previous_template_id" in {
+            column["name"] for column in inspector.get_columns("session_templates")
+        }
+        assert "previous_weekly_plan_id" in {
+            column["name"] for column in inspector.get_columns("weekly_plans")
+        }
         assert "session_item_executions" in actual_tables
         assert "laterality" in {column["name"] for column in inspector.get_columns("exercises")}
         assert "allowed_lateralities" in {
@@ -55,6 +61,14 @@ def test_baseline_migration_matches_current_metadata(
         assert any(
             constraint["name"] == "uq_block_review_block_plan"
             for constraint in inspector.get_unique_constraints("block_reviews")
+        )
+        assert any(
+            constraint["name"] == "uq_session_templates_previous_template"
+            for constraint in inspector.get_unique_constraints("session_templates")
+        )
+        assert any(
+            constraint["name"] == "uq_weekly_plans_previous_weekly_plan"
+            for constraint in inspector.get_unique_constraints("weekly_plans")
         )
 
         command.downgrade(config, "base")

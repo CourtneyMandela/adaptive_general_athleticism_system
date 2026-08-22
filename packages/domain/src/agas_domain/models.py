@@ -1274,6 +1274,7 @@ class SessionTemplate(VersionedRecord):
     evidence_claim_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
     created_for_block_at: datetime
     rule_version: NonEmptyText
+    previous_template_id: UUID | None = None
 
     @field_validator("created_for_block_at")
     @classmethod
@@ -1293,6 +1294,8 @@ class SessionTemplate(VersionedRecord):
             values = getattr(self, field_name)
             if len(set(values)) != len(values):
                 raise ValueError(f"{field_name} must not contain duplicates")
+        if self.previous_template_id == self.id:
+            raise ValueError("a session template cannot follow itself")
         return self
 
 
@@ -1403,6 +1406,7 @@ class WeeklyPlan(VersionedRecord):
     issues: tuple[SchedulingIssue, ...] = ()
     generated_at: datetime
     rule_version: NonEmptyText
+    previous_weekly_plan_id: UUID | None = None
 
     @field_validator("generated_at")
     @classmethod
@@ -1413,6 +1417,8 @@ class WeeklyPlan(VersionedRecord):
 
     @model_validator(mode="after")
     def validate_weekly_plan(self) -> WeeklyPlan:
+        if self.previous_weekly_plan_id == self.id:
+            raise ValueError("a weekly plan cannot follow itself")
         occurrence_keys = [
             (item.session_template_id, item.occurrence_index) for item in self.sessions
         ]

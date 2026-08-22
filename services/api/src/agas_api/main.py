@@ -76,6 +76,14 @@ from agas_api.weekly_planning import (
     WeeklyPlanNotFoundError,
     WeeklyPlanValidationError,
 )
+from agas_api.weekly_roll_forward import (
+    PersistedWeeklyPlanRollForwardService,
+    RollForwardWeeklyPlanCommand,
+    WeeklyPlanRollForwardConflictError,
+    WeeklyPlanRollForwardNotFoundError,
+    WeeklyPlanRollForwardResult,
+    WeeklyPlanRollForwardValidationError,
+)
 
 settings = get_settings()
 
@@ -245,6 +253,29 @@ def create_weekly_plan(
     except WeeklyPlanConflictError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     except WeeklyPlanValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.post(
+    "/v1/weekly-plans/{weekly_plan_id}/roll-forward",
+    tags=["planning"],
+    response_model=WeeklyPlanRollForwardResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def roll_forward_weekly_plan(
+    weekly_plan_id: UUID,
+    command: RollForwardWeeklyPlanCommand,
+    session: Annotated[Session, Depends(database_session_dependency)],
+) -> WeeklyPlanRollForwardResult:
+    try:
+        return PersistedWeeklyPlanRollForwardService(session).execute(weekly_plan_id, command)
+    except WeeklyPlanRollForwardNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except WeeklyPlanRollForwardConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except WeeklyPlanRollForwardValidationError as error:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
         ) from error

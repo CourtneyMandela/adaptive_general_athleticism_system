@@ -99,6 +99,7 @@ POST /v1/blocks/{block_id}/reviews
 POST /v1/strategies/{strategy_id}/priorities/{priority_id}/resource-demands
 POST /v1/strategies/{strategy_id}/blocks
 POST /v1/blocks/{block_id}/weekly-plans
+POST /v1/weekly-plans/{weekly_plan_id}/roll-forward
 POST /v1/weekly-plans/{weekly_plan_id}/sessions/{planned_session_id}/safety-checks
 POST /v1/weekly-plans/{weekly_plan_id}/sessions/{planned_session_id}/executions
 POST /v1/session-executions/{session_execution_id}/prescriptions/{prescription_id}/progression
@@ -129,6 +130,14 @@ Post-session progression loads the complete persisted execution, adherence, and 
 optionally derives a classified exposure and validates an explicit proposal, then atomically stores
 the deterministic progression decision and any supported typed prescription revision. Thresholds,
 increments, and exposure caps come only from persisted evidence-linked policies.
+
+Weekly roll-forward accepts only the next week's explicit availability and a preparation timestamp.
+It retains the source plan's scheduling policy and session structure, carries the latest immutable
+prescription revision into a successor template when one exists, and schedules the consecutive
+block week. Unchanged prescriptions and templates are reused. Source plans, templates, and
+prescriptions remain historical, while explicit predecessor IDs preserve the complete lineage.
+Roll-forward does not generate dose, choose a progression, substitute equipment, or create a new
+block.
 
 Completed-block review requires exactly one feasible weekly plan for every block week, a recorded
 outcome and adherence for every planned session item, and at least one post-session safety decision

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from datetime import datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import select
@@ -1501,6 +1502,58 @@ class DomainRepository:
             progression_decision_id=(revision.progression_decision_id if revision else None),
         )
 
+    def get_latest_session_prescription_revision(
+        self,
+        prescription_id: UUID,
+        *,
+        at_or_before: datetime | None = None,
+    ) -> SessionPrescription | None:
+        current = self.get_session_prescription(prescription_id)
+        if current is None:
+            return None
+        visited = {current.id}
+        while True:
+            statement = (
+                select(SessionPrescriptionRevisionRecord.revised_prescription_id)
+                .join(
+                    SessionPrescriptionRecord,
+                    SessionPrescriptionRecord.id
+                    == SessionPrescriptionRevisionRecord.revised_prescription_id,
+                )
+                .where(SessionPrescriptionRevisionRecord.superseded_prescription_id == current.id)
+            )
+            if at_or_before is not None:
+                statement = statement.where(SessionPrescriptionRecord.prescribed_at <= at_or_before)
+            revised_id = self.session.scalar(statement)
+            if revised_id is None:
+                return current
+            if revised_id in visited:
+                raise DomainIntegrityError("prescription revision lineage contains a cycle")
+            visited.add(revised_id)
+            revised = self.get_session_prescription(revised_id)
+            if revised is None:
+                raise DomainIntegrityError("prescription revision lineage is incomplete")
+            current = revised
+
+    def session_prescription_descends_from(
+        self, prescription_id: UUID, ancestor_prescription_id: UUID
+    ) -> bool:
+        current_id = prescription_id
+        visited: set[UUID] = set()
+        while current_id not in visited:
+            if current_id == ancestor_prescription_id:
+                return True
+            visited.add(current_id)
+            previous_id = self.session.scalar(
+                select(SessionPrescriptionRevisionRecord.superseded_prescription_id).where(
+                    SessionPrescriptionRevisionRecord.revised_prescription_id == current_id
+                )
+            )
+            if previous_id is None:
+                return False
+            current_id = previous_id
+        raise DomainIntegrityError("prescription revision lineage contains a cycle")
+
     def add_session_template(self, template: SessionTemplate) -> None:
         block = self.session.get(BlockPlanRecord, template.block_plan_id)
         if block is None or block.athlete_id != template.athlete_id:
@@ -1521,6 +1574,33 @@ class DomainRepository:
             for item in prescriptions
         ):
             raise DomainIntegrityError("session template prescription belongs elsewhere")
+        if template.previous_template_id is not None:
+            previous = self.session.get(SessionTemplateRecord, template.previous_template_id)
+            if (
+                previous is None
+                or previous.athlete_id != template.athlete_id
+                or previous.block_plan_id != template.block_plan_id
+            ):
+                raise DomainIntegrityError("previous session template belongs elsewhere")
+            if template.created_for_block_at < previous.created_for_block_at:
+                raise DomainIntegrityError("session template cannot predate its predecessor")
+            if (
+                template.name != previous.name
+                or template.sessions_per_week != previous.sessions_per_week
+            ):
+                raise DomainIntegrityError("session template revision cannot change structure")
+            previous_items = tuple(previous.items)
+            if len(previous_items) != len(template.items):
+                raise DomainIntegrityError("session template revision cannot change item count")
+            for old, new in zip(previous_items, template.items, strict=True):
+                if old.order_index != new.order_index or old.section != new.section.value:
+                    raise DomainIntegrityError("session template revision cannot change structure")
+                if not self.session_prescription_descends_from(
+                    new.prescription_id, old.prescription_id
+                ):
+                    raise DomainIntegrityError(
+                        "session template revision must follow prescription lineage"
+                    )
         observations = self._observations_by_id(template.source_observation_ids)
         if {item.id for item in observations} != set(template.source_observation_ids):
             raise DomainIntegrityError("one or more session template observations do not exist")
@@ -1537,6 +1617,7 @@ class DomainRepository:
             created_at=template.created_at,
             athlete_id=template.athlete_id,
             block_plan_id=template.block_plan_id,
+            previous_template_id=template.previous_template_id,
             name=template.name,
             sessions_per_week=template.sessions_per_week,
             planned_duration_minutes=template.planned_duration_minutes,
@@ -1581,6 +1662,7 @@ class DomainRepository:
             created_at=record.created_at,
             athlete_id=record.athlete_id,
             block_plan_id=record.block_plan_id,
+            previous_template_id=record.previous_template_id,
             name=record.name,
             items=tuple(
                 SessionTemplateItem(
@@ -1717,6 +1799,23 @@ class DomainRepository:
             raise DomainIntegrityError("weekly plan date differs from its availability")
         if self.session.get(WeeklySchedulingPolicyRecord, plan.scheduling_policy_id) is None:
             raise DomainIntegrityError("weekly scheduling policy does not exist")
+        if plan.previous_weekly_plan_id is not None:
+            previous = self.session.get(WeeklyPlanRecord, plan.previous_weekly_plan_id)
+            if (
+                previous is None
+                or previous.athlete_id != plan.athlete_id
+                or previous.block_plan_id != plan.block_plan_id
+            ):
+                raise DomainIntegrityError("previous weekly plan belongs elsewhere")
+            if (
+                plan.week_start != previous.week_start + timedelta(days=7)
+                or plan.block_week != previous.block_week + 1
+            ):
+                raise DomainIntegrityError("weekly plan lineage must advance one block week")
+            if plan.generated_at < previous.generated_at:
+                raise DomainIntegrityError("weekly plan cannot predate its predecessor")
+            if plan.scheduling_policy_id != previous.scheduling_policy_id:
+                raise DomainIntegrityError("weekly roll-forward must retain its scheduling policy")
         window_by_id = {item.id: item for item in availability.windows}
         for session in plan.sessions:
             template = self.session.get(SessionTemplateRecord, session.session_template_id)
@@ -1737,6 +1836,7 @@ class DomainRepository:
             created_at=plan.created_at,
             athlete_id=plan.athlete_id,
             block_plan_id=plan.block_plan_id,
+            previous_weekly_plan_id=plan.previous_weekly_plan_id,
             weekly_availability_id=plan.weekly_availability_id,
             scheduling_policy_id=plan.scheduling_policy_id,
             week_start=plan.week_start,
@@ -1776,6 +1876,7 @@ class DomainRepository:
             created_at=record.created_at,
             athlete_id=record.athlete_id,
             block_plan_id=record.block_plan_id,
+            previous_weekly_plan_id=record.previous_weekly_plan_id,
             weekly_availability_id=record.weekly_availability_id,
             scheduling_policy_id=record.scheduling_policy_id,
             week_start=record.week_start,
@@ -1801,6 +1902,14 @@ class DomainRepository:
             generated_at=record.generated_at,
             rule_version=record.rule_version,
         )
+
+    def get_weekly_plan_successor(self, previous_weekly_plan_id: UUID) -> WeeklyPlan | None:
+        plan_id = self.session.scalar(
+            select(WeeklyPlanRecord.id).where(
+                WeeklyPlanRecord.previous_weekly_plan_id == previous_weekly_plan_id
+            )
+        )
+        return self.get_weekly_plan(plan_id) if plan_id is not None else None
 
     def list_weekly_plans_for_block(self, block_plan_id: UUID) -> tuple[WeeklyPlan, ...]:
         plan_ids = self.session.scalars(

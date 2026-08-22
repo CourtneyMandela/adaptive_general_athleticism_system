@@ -1035,6 +1035,12 @@ class SessionTemplateRecord(VersionedRecordMixin, Base):
     block_plan_id: Mapped[UUID] = mapped_column(
         ForeignKey("block_plans.id", ondelete="RESTRICT"), index=True, nullable=False
     )
+    previous_template_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("session_templates.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=True,
+        unique=True,
+    )
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     sessions_per_week: Mapped[int] = mapped_column(Integer(), nullable=False)
     planned_duration_minutes: Mapped[int] = mapped_column(Integer(), nullable=False)
@@ -1175,6 +1181,12 @@ class WeeklyPlanRecord(VersionedRecordMixin, Base):
     )
     block_plan_id: Mapped[UUID] = mapped_column(
         ForeignKey("block_plans.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    previous_weekly_plan_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("weekly_plans.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=True,
+        unique=True,
     )
     weekly_availability_id: Mapped[UUID] = mapped_column(
         ForeignKey("weekly_availabilities.id", ondelete="RESTRICT"), index=True, nullable=False
