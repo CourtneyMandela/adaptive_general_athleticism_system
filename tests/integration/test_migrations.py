@@ -47,6 +47,7 @@ def test_baseline_migration_matches_current_metadata(
         }
         assert "supersedes_strategy_id" in strategy_columns
         assert "triggering_block_review_id" in strategy_columns
+        assert "catalog_imports" in actual_tables
 
         command.downgrade(config, "base")
         assert set(inspect(engine).get_table_names()) == {"alembic_version"}

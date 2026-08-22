@@ -40,6 +40,14 @@ where = [
 ]
 namespaces = false
 
+[tool.setuptools.data-files]
+"share/agas/data" = ["data/seed-manifest.json"]
+"share/agas/data/adaptations" = ["data/adaptations/*.json"]
+"share/agas/data/equipment" = ["data/equipment/*.json"]
+"share/agas/data/evidence_seed" = ["data/evidence_seed/*.json"]
+"share/agas/data/exercises" = ["data/exercises/*.json"]
+"share/agas/data/synthetic_athletes" = ["data/synthetic_athletes/*.json"]
+
 [tool.pytest.ini_options]
 addopts = "--strict-config --strict-markers -q"
 testpaths = ["tests"]

@@ -1952,6 +1952,103 @@ class DecisionRecordRecord(VersionedRecordMixin, Base):
     decided_on: Mapped[date] = mapped_column(Date(), nullable=False)
 
 
+class CatalogImportRecord(VersionedRecordMixin, Base):
+    __tablename__ = "catalog_imports"
+
+    catalog_version: Mapped[str] = mapped_column(String(80), unique=True, nullable=False)
+    review_status: Mapped[str] = mapped_column(String(80), nullable=False)
+    reviewed_by: Mapped[str] = mapped_column(Text(), nullable=False)
+    reviewed_at: Mapped[date] = mapped_column(Date(), nullable=False)
+    scope: Mapped[str] = mapped_column(Text(), nullable=False)
+    notes: Mapped[list[str]] = mapped_column(JsonType, nullable=False)
+    content_digest: Mapped[str] = mapped_column(String(80), unique=True, nullable=False)
+    imported_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+    importer_version: Mapped[str] = mapped_column(String(80), nullable=False)
+
+    evidence_links: Mapped[list[CatalogImportEvidenceRecord]] = relationship(
+        cascade="save-update, merge",
+        lazy="selectin",
+        order_by="CatalogImportEvidenceRecord.position",
+    )
+    adaptation_links: Mapped[list[CatalogImportAdaptationRecord]] = relationship(
+        cascade="save-update, merge",
+        lazy="selectin",
+        order_by="CatalogImportAdaptationRecord.position",
+    )
+    equipment_links: Mapped[list[CatalogImportEquipmentRecord]] = relationship(
+        cascade="save-update, merge",
+        lazy="selectin",
+        order_by="CatalogImportEquipmentRecord.position",
+    )
+    exercise_links: Mapped[list[CatalogImportExerciseRecord]] = relationship(
+        cascade="save-update, merge",
+        lazy="selectin",
+        order_by="CatalogImportExerciseRecord.position",
+    )
+
+
+class CatalogImportEvidenceRecord(Base):
+    __tablename__ = "catalog_import_evidence_claims"
+    __table_args__ = (
+        UniqueConstraint("catalog_import_id", "position", name="uq_catalog_import_evidence_order"),
+    )
+
+    catalog_import_id: Mapped[UUID] = mapped_column(
+        ForeignKey("catalog_imports.id", ondelete="RESTRICT"), primary_key=True
+    )
+    evidence_claim_id: Mapped[UUID] = mapped_column(
+        ForeignKey("evidence_claims.id", ondelete="RESTRICT"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer(), nullable=False)
+
+
+class CatalogImportAdaptationRecord(Base):
+    __tablename__ = "catalog_import_adaptations"
+    __table_args__ = (
+        UniqueConstraint(
+            "catalog_import_id", "position", name="uq_catalog_import_adaptation_order"
+        ),
+    )
+
+    catalog_import_id: Mapped[UUID] = mapped_column(
+        ForeignKey("catalog_imports.id", ondelete="RESTRICT"), primary_key=True
+    )
+    adaptation_id: Mapped[UUID] = mapped_column(
+        ForeignKey("adaptations.id", ondelete="RESTRICT"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer(), nullable=False)
+
+
+class CatalogImportEquipmentRecord(Base):
+    __tablename__ = "catalog_import_equipment"
+    __table_args__ = (
+        UniqueConstraint("catalog_import_id", "position", name="uq_catalog_import_equipment_order"),
+    )
+
+    catalog_import_id: Mapped[UUID] = mapped_column(
+        ForeignKey("catalog_imports.id", ondelete="RESTRICT"), primary_key=True
+    )
+    equipment_id: Mapped[UUID] = mapped_column(
+        ForeignKey("equipment.id", ondelete="RESTRICT"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer(), nullable=False)
+
+
+class CatalogImportExerciseRecord(Base):
+    __tablename__ = "catalog_import_exercises"
+    __table_args__ = (
+        UniqueConstraint("catalog_import_id", "position", name="uq_catalog_import_exercise_order"),
+    )
+
+    catalog_import_id: Mapped[UUID] = mapped_column(
+        ForeignKey("catalog_imports.id", ondelete="RESTRICT"), primary_key=True
+    )
+    exercise_id: Mapped[UUID] = mapped_column(
+        ForeignKey("exercises.id", ondelete="RESTRICT"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer(), nullable=False)
+
+
 class ExerciseAdaptationRecord(Base):
     __tablename__ = "exercise_adaptations"
     __table_args__ = (
@@ -2173,6 +2270,11 @@ for _record_type in (
     BlockReviewObservationRecord,
     BlockReviewEvidenceRecord,
     DecisionRecordRecord,
+    CatalogImportRecord,
+    CatalogImportEvidenceRecord,
+    CatalogImportAdaptationRecord,
+    CatalogImportEquipmentRecord,
+    CatalogImportExerciseRecord,
     ExerciseRecord,
     ExerciseAdaptationRecord,
     ExerciseEquipmentRequirementRecord,

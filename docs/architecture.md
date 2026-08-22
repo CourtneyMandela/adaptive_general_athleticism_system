@@ -105,6 +105,10 @@ exercise progression/regression edges, adaptation evidence, and adaptation relat
 all use foreign keys. Flexible descriptive metadata remains JSONB. `agas_seed_data` validates IDs,
 relationships, scenario references, and evidence links atomically before persistence. The initial
 catalog is 14 exercises, 8 adaptations, and 8 equipment types—not a complete production library.
+`SeedCatalogImporter` stages those global records in a nested transaction and appends a
+digest-backed `CatalogImport` receipt with ordered foreign-key links to every imported identity.
+Exact reimports are idempotent; version/content collisions fail. Synthetic scenario athletes are
+not imported into athlete state.
 
 ### Stimulus and exercise resolution
 

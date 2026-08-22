@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import sysconfig
+from datetime import date
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Any
@@ -21,7 +23,7 @@ class SeedCatalogManifest(BaseModel):
     catalog_version: Annotated[str, Field(pattern=r"^\d+\.\d+\.\d+$")]
     review_status: CatalogReviewStatus
     reviewed_by: Annotated[str, Field(min_length=1)]
-    reviewed_at: Annotated[str, Field(min_length=1)]
+    reviewed_at: date
     scope: Annotated[str, Field(min_length=1)]
     notes: Annotated[tuple[str, ...], Field(min_length=1)]
 
@@ -123,7 +125,7 @@ class SeedCatalog(BaseModel):
 def load_seed_catalog(data_root: Path | None = None) -> SeedCatalog:
     """Load and cross-validate the small repository-owned seed catalog."""
 
-    root = data_root or Path(__file__).resolve().parents[4] / "data"
+    root = data_root or _default_data_root()
     return SeedCatalog(
         manifest=SeedCatalogManifest.model_validate(_read_json(root / "seed-manifest.json")),
         evidence_claims=tuple(
@@ -146,6 +148,13 @@ def load_seed_catalog(data_root: Path | None = None) -> SeedCatalog:
             _read_json(root / "synthetic_athletes" / "travel_scenario.json")
         ),
     )
+
+
+def _default_data_root() -> Path:
+    repository_data = Path(__file__).resolve().parents[4] / "data"
+    if repository_data.is_dir():
+        return repository_data
+    return Path(sysconfig.get_path("data")) / "share" / "agas" / "data"
 
 
 def _read_json(path: Path) -> Any:

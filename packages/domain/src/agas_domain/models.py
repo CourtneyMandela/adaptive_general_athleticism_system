@@ -308,6 +308,42 @@ class DecisionRecord(VersionedRecord):
     decided_on: date
 
 
+class CatalogImport(VersionedRecord):
+    catalog_version: Annotated[str, Field(pattern=r"^\d+\.\d+\.\d+$")]
+    review_status: NonEmptyText
+    reviewed_by: NonEmptyText
+    reviewed_at: date
+    scope: NonEmptyText
+    notes: Annotated[tuple[NonEmptyText, ...], Field(min_length=1)]
+    content_digest: Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
+    evidence_claim_ids: tuple[UUID, ...] = ()
+    adaptation_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
+    equipment_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
+    exercise_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
+    imported_at: datetime
+    importer_version: NonEmptyText
+
+    @field_validator("imported_at")
+    @classmethod
+    def require_aware_imported_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("imported_at must include a timezone")
+        return value
+
+    @model_validator(mode="after")
+    def validate_catalog_ids(self) -> CatalogImport:
+        for field_name in (
+            "evidence_claim_ids",
+            "adaptation_ids",
+            "equipment_ids",
+            "exercise_ids",
+        ):
+            values = getattr(self, field_name)
+            if len(set(values)) != len(values):
+                raise ValueError(f"{field_name} must not contain duplicates")
+        return self
+
+
 class AssessmentContext(DomainModel):
     athlete_id: UUID
     source_observation_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]

@@ -72,6 +72,14 @@ Validate the repository seed catalog without loading it into an athlete database
 python -c "from agas_seed_data import load_seed_catalog; print(load_seed_catalog().manifest)"
 ```
 
+After migrating PostgreSQL, import the validated global catalog and its audit receipt:
+
+```bash
+python -m agas_api.seed
+```
+
+The command is idempotent for the exact catalog version. It does not import the synthetic athlete.
+
 ## Run the backend
 
 ```bash

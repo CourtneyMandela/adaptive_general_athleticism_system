@@ -22,6 +22,7 @@ from agas_domain.models import (
     BlockReviewPolicy,
     CapabilityEstimate,
     CapabilityNeed,
+    CatalogImport,
     CompetencyFloor,
     DecisionRecord,
     Environment,
@@ -92,6 +93,11 @@ from agas_domain.persistence.models import (
     CapabilityEstimateRecord,
     CapabilityNeedEvidenceClaimRecord,
     CapabilityNeedRecord,
+    CatalogImportAdaptationRecord,
+    CatalogImportEquipmentRecord,
+    CatalogImportEvidenceRecord,
+    CatalogImportExerciseRecord,
+    CatalogImportRecord,
     CompetencyFloorEvidenceClaimRecord,
     CompetencyFloorRecord,
     DecisionRecordRecord,
@@ -474,6 +480,65 @@ class DomainRepository:
                 decided_on=decision.decided_on,
             )
         )
+
+    def add_catalog_import(self, catalog_import: CatalogImport) -> None:
+        self._require_ids_exist(
+            EvidenceClaimRecord.id, catalog_import.evidence_claim_ids, "catalog evidence claims"
+        )
+        self._require_ids_exist(
+            AdaptationRecord.id, catalog_import.adaptation_ids, "catalog adaptations"
+        )
+        self._require_ids_exist(
+            EquipmentRecord.id, catalog_import.equipment_ids, "catalog equipment"
+        )
+        self._require_ids_exist(ExerciseRecord.id, catalog_import.exercise_ids, "catalog exercises")
+        record = CatalogImportRecord(
+            id=catalog_import.id,
+            schema_version=catalog_import.schema_version,
+            created_at=catalog_import.created_at,
+            catalog_version=catalog_import.catalog_version,
+            review_status=catalog_import.review_status,
+            reviewed_by=catalog_import.reviewed_by,
+            reviewed_at=catalog_import.reviewed_at,
+            scope=catalog_import.scope,
+            notes=list(catalog_import.notes),
+            content_digest=catalog_import.content_digest,
+            imported_at=catalog_import.imported_at,
+            importer_version=catalog_import.importer_version,
+        )
+        record.evidence_links = [
+            CatalogImportEvidenceRecord(
+                catalog_import_id=catalog_import.id,
+                evidence_claim_id=item_id,
+                position=position,
+            )
+            for position, item_id in enumerate(catalog_import.evidence_claim_ids)
+        ]
+        record.adaptation_links = [
+            CatalogImportAdaptationRecord(
+                catalog_import_id=catalog_import.id,
+                adaptation_id=item_id,
+                position=position,
+            )
+            for position, item_id in enumerate(catalog_import.adaptation_ids)
+        ]
+        record.equipment_links = [
+            CatalogImportEquipmentRecord(
+                catalog_import_id=catalog_import.id,
+                equipment_id=item_id,
+                position=position,
+            )
+            for position, item_id in enumerate(catalog_import.equipment_ids)
+        ]
+        record.exercise_links = [
+            CatalogImportExerciseRecord(
+                catalog_import_id=catalog_import.id,
+                exercise_id=item_id,
+                position=position,
+            )
+            for position, item_id in enumerate(catalog_import.exercise_ids)
+        ]
+        self.session.add(record)
 
     def add_competency_floor(self, floor: CompetencyFloor) -> None:
         self._require_ids_exist(
@@ -3039,6 +3104,52 @@ class DomainRepository:
             ),
             reviewer=record.reviewer,
             claim_version=record.claim_version,
+        )
+
+    def get_equipment(self, equipment_id: UUID) -> Equipment | None:
+        record = self.session.get(EquipmentRecord, equipment_id)
+        if record is None:
+            return None
+        return Equipment(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            name=record.name,
+            category=record.category,
+            capabilities=record.capabilities,
+        )
+
+    def get_catalog_import(self, catalog_import_id: UUID) -> CatalogImport | None:
+        record = self.session.get(CatalogImportRecord, catalog_import_id)
+        return self._catalog_import_from_record(record) if record is not None else None
+
+    def get_catalog_import_by_version(self, catalog_version: str) -> CatalogImport | None:
+        record = self.session.scalar(
+            select(CatalogImportRecord).where(
+                CatalogImportRecord.catalog_version == catalog_version
+            )
+        )
+        return self._catalog_import_from_record(record) if record is not None else None
+
+    @staticmethod
+    def _catalog_import_from_record(record: CatalogImportRecord) -> CatalogImport:
+        return CatalogImport(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            catalog_version=record.catalog_version,
+            review_status=record.review_status,
+            reviewed_by=record.reviewed_by,
+            reviewed_at=record.reviewed_at,
+            scope=record.scope,
+            notes=tuple(record.notes),
+            content_digest=record.content_digest,
+            evidence_claim_ids=tuple(item.evidence_claim_id for item in record.evidence_links),
+            adaptation_ids=tuple(item.adaptation_id for item in record.adaptation_links),
+            equipment_ids=tuple(item.equipment_id for item in record.equipment_links),
+            exercise_ids=tuple(item.exercise_id for item in record.exercise_links),
+            imported_at=record.imported_at,
+            importer_version=record.importer_version,
         )
 
     def get_exercise(self, exercise_id: UUID) -> Exercise | None:
