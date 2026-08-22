@@ -2,14 +2,20 @@ from datetime import UTC, datetime
 
 import pytest
 from agas_domain import (
+    Applicability,
     AssessmentContext,
     AssessmentDefinition,
+    AssessmentDefinitionReview,
     AssessmentIntensity,
     AssessmentResultInput,
+    AssessmentReviewDecision,
     Athlete,
     CapabilityDomain,
     CapabilityEstimationPolicy,
     Confidence,
+    EvidenceClaim,
+    EvidenceSourceIdentifier,
+    EvidenceStrength,
     Observation,
     ObservationSource,
     Provenance,
@@ -54,6 +60,46 @@ def assessment() -> AssessmentDefinition:
     )
 
 
+def approve(
+    repository: DomainRepository, definition: AssessmentDefinition
+) -> AssessmentDefinitionReview:
+    evidence = EvidenceClaim(
+        claim="Synthetic software fixture for assessment persistence tests.",
+        domain="software_test_fixture",
+        population="No athlete population; software fixture only.",
+        intervention="No intervention.",
+        outcome="Assessment persistence behavior.",
+        study_design="software_test_fixture",
+        uncertainty="Not scientific evidence and not operationally applicable.",
+        evidence_strength=EvidenceStrength.INSUFFICIENT,
+        athlete_applicability=Applicability.UNKNOWN,
+        applicability_notes="Not applicable to athletes.",
+        source_identifiers=(
+            EvidenceSourceIdentifier(scheme="other", value="urn:agas:test:assessment-persistence"),
+        ),
+        reviewer="automated-test-fixture",
+        claim_version="software-fixture@1.0.0",
+    )
+    review = AssessmentDefinitionReview(
+        assessment_definition_id=definition.id,
+        decision=AssessmentReviewDecision.APPROVED,
+        sequence_number=1,
+        protocol_instructions=("Follow the isolated software-test fixture protocol.",),
+        result_entry_instructions="Enter the synthetic fixture value.",
+        recommended_reassessment_days=28,
+        self_administered=True,
+        evidence_claim_ids=(evidence.id,),
+        reviewed_at=NOW,
+        reviewer="automated-test-reviewer",
+        applicability_notes="Software validation only; not applicable to an athlete.",
+        uncertainty="This record does not approve a real assessment protocol.",
+        review_version="assessment-review-fixture@1.0.0",
+    )
+    repository.add_evidence_claim(evidence)
+    repository.add_assessment_definition_review(review)
+    return review
+
+
 def test_assessment_definition_and_selection_round_trip_with_provenance(
     session: Session,
 ) -> None:
@@ -64,6 +110,7 @@ def test_assessment_definition_and_selection_round_trip_with_provenance(
     repository.add_athlete(athlete)
     repository.add_observation(source)
     repository.add_assessment_definition(definition)
+    approved_review = approve(repository, definition)
     session.flush()
     context = AssessmentContext(
         athlete_id=athlete.id,
@@ -72,7 +119,9 @@ def test_assessment_definition_and_selection_round_trip_with_provenance(
         available_equipment_categories=("cycle_ergometer",),
         evaluated_at=NOW,
     )
-    selection = AdaptiveAssessmentSelector().select(context, (definition,))[0]
+    selection = AdaptiveAssessmentSelector().select_reviewed(
+        context, ((definition, approved_review),)
+    )[0]
     repository.add_assessment_selection(selection)
     result = AssessmentResultRecorder().record(
         definition,
@@ -124,6 +173,7 @@ def test_selection_rejects_a_foreign_athlete_source_observation(session: Session
     repository.add_athlete(second)
     repository.add_observation(source)
     repository.add_assessment_definition(definition)
+    approved_review = approve(repository, definition)
     session.flush()
     context = AssessmentContext(
         athlete_id=second.id,
@@ -132,7 +182,33 @@ def test_selection_rejects_a_foreign_athlete_source_observation(session: Session
         available_equipment_categories=("cycle_ergometer",),
         evaluated_at=NOW,
     )
-    selection = AdaptiveAssessmentSelector().select(context, (definition,))[0]
+    selection = AdaptiveAssessmentSelector().select_reviewed(
+        context, ((definition, approved_review),)
+    )[0]
 
     with pytest.raises(DomainIntegrityError, match="same athlete"):
+        repository.add_assessment_selection(selection)
+
+
+def test_selection_rejects_an_unreviewed_assessment_definition(session: Session) -> None:
+    repository = DomainRepository(session)
+    athlete = Athlete(display_name="Unreviewed assessment athlete")
+    source = intake(athlete)
+    definition = assessment()
+    repository.add_athlete(athlete)
+    repository.add_observation(source)
+    repository.add_assessment_definition(definition)
+    session.flush()
+    selection = AdaptiveAssessmentSelector().select(
+        AssessmentContext(
+            athlete_id=athlete.id,
+            source_observation_ids=(source.id,),
+            health_screening_completed=True,
+            available_equipment_categories=("cycle_ergometer",),
+            evaluated_at=NOW,
+        ),
+        (definition,),
+    )[0]
+
+    with pytest.raises(DomainIntegrityError, match="current approved"):
         repository.add_assessment_selection(selection)

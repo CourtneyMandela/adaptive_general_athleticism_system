@@ -11,6 +11,10 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from agas_api import __version__
+from agas_api.assessment_catalog import (
+    ReviewedAssessmentCatalogItem,
+    list_reviewed_assessment_catalog,
+)
 from agas_api.block_creation import (
     BlockCreationConflictError,
     BlockCreationNotFoundError,
@@ -147,6 +151,17 @@ def get_onboarding_equipment(
     session: Annotated[Session, Depends(database_session_dependency)],
 ) -> tuple[OnboardingEquipmentOption, ...]:
     return list_onboarding_equipment(session)
+
+
+@app.get(
+    "/v1/assessments/catalog",
+    tags=["assessment"],
+    response_model=tuple[ReviewedAssessmentCatalogItem, ...],
+)
+def get_reviewed_assessment_catalog(
+    session: Annotated[Session, Depends(database_session_dependency)],
+) -> tuple[ReviewedAssessmentCatalogItem, ...]:
+    return list_reviewed_assessment_catalog(session)
 
 
 @app.post(

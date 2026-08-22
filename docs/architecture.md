@@ -54,10 +54,21 @@ norms, athletic labels, or unsupported composite scores.
 
 Assessment definitions are versioned protocols with explicit domain, intensity, unit, body-mass
 requirement, equipment, training-history, skill, recent-exposure, injury, symptom, and
-health-screening constraints. The selector
+health-screening constraints. Each definition has a separate append-only
+`AssessmentDefinitionReview` history. Reviews retain an explicit decision, ordered protocol and
+result-entry instructions, reassessment interval, self-administration status, evidence-claim
+links, applicability, uncertainty, reviewer, time, and version. Replacements form a linear
+sequence; a later rejection or needs-revision decision withdraws a prior approval without erasing
+it. Only definitions whose latest review is approved appear in the read-only global assessment
+catalog, and persistence rejects athlete selections against any other definition. No operational
+assessment protocol is seeded by this boundary.
+
+The selector
 uses exact tag matching and a versioned deterministic rule. Each selected, deferred, or excluded
 decision records reason codes, human-readable rationale, and the immutable intake observations it
-used.
+used. Persisted selections also name the exact approved review that authorized evaluation, so a
+later withdrawal does not make historical authority ambiguous. Legacy selections may have a null
+review reference after migration, but new repository writes fail closed without the current one.
 
 Incomplete health screening excludes assessment. Health, injury, and symptom tags are constraints
 supplied by intake/safety workflows; the selector does not diagnose or infer medical meaning. A

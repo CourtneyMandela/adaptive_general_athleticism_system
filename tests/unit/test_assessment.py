@@ -4,8 +4,10 @@ from uuid import uuid4
 import pytest
 from agas_domain import (
     AssessmentDefinition,
+    AssessmentDefinitionReview,
     AssessmentIntensity,
     AssessmentResultInput,
+    AssessmentReviewDecision,
     CapabilityDomain,
     CapabilityEstimationPolicy,
     Confidence,
@@ -129,3 +131,55 @@ def test_estimator_rejects_an_observation_that_is_inside_the_window_but_stale() 
 
     with pytest.raises(AssessmentError, match="stale"):
         ConservativeCapabilityEstimator().estimate(policy, (stale,), NOW)
+
+
+def test_approved_assessment_review_requires_an_explicit_reassessment_interval() -> None:
+    with pytest.raises(ValueError, match="reassessment interval"):
+        AssessmentDefinitionReview(
+            assessment_definition_id=definition().id,
+            decision=AssessmentReviewDecision.APPROVED,
+            sequence_number=1,
+            protocol_instructions=("Follow the test-only fixture protocol.",),
+            result_entry_instructions="Enter the observed fixture value.",
+            evidence_claim_ids=(uuid4(),),
+            reviewed_at=NOW,
+            reviewer="test-reviewer",
+            applicability_notes="Software validation fixture only.",
+            uncertainty="Not an operational assessment protocol.",
+            review_version="assessment-review-test@1.0.0",
+        )
+
+
+def test_assessment_review_requires_linear_history_and_unique_provenance() -> None:
+    definition_id = definition().id
+    evidence_id = uuid4()
+
+    with pytest.raises(ValueError, match="reference their predecessor"):
+        AssessmentDefinitionReview(
+            assessment_definition_id=definition_id,
+            decision=AssessmentReviewDecision.NEEDS_REVISION,
+            sequence_number=2,
+            protocol_instructions=("Review this test-only fixture protocol.",),
+            result_entry_instructions="Enter the fixture value.",
+            evidence_claim_ids=(evidence_id,),
+            reviewed_at=NOW,
+            reviewer="test-reviewer",
+            applicability_notes="Software validation fixture only.",
+            uncertainty="Not an operational assessment protocol.",
+            review_version="assessment-review-test@1.0.0",
+        )
+
+    with pytest.raises(ValueError, match="evidence_claim_ids"):
+        AssessmentDefinitionReview(
+            assessment_definition_id=definition_id,
+            decision=AssessmentReviewDecision.NEEDS_REVISION,
+            sequence_number=1,
+            protocol_instructions=("Review this test-only fixture protocol.",),
+            result_entry_instructions="Enter the fixture value.",
+            evidence_claim_ids=(evidence_id, evidence_id),
+            reviewed_at=NOW,
+            reviewer="test-reviewer",
+            applicability_notes="Software validation fixture only.",
+            uncertainty="Not an operational assessment protocol.",
+            review_version="assessment-review-test@1.0.0",
+        )

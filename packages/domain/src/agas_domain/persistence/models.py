@@ -286,6 +286,78 @@ class AssessmentDefinitionRecord(VersionedRecordMixin, Base):
     )
 
 
+class AssessmentDefinitionReviewRecord(VersionedRecordMixin, Base):
+    __tablename__ = "assessment_definition_reviews"
+    __table_args__ = (
+        CheckConstraint(
+            "decision IN ('approved', 'needs_revision', 'rejected')",
+            name="ck_assessment_review_decision",
+        ),
+        CheckConstraint("sequence_number >= 1", name="ck_assessment_review_sequence_positive"),
+        CheckConstraint(
+            "recommended_reassessment_days IS NULL OR recommended_reassessment_days >= 1",
+            name="ck_assessment_review_reassessment_positive",
+        ),
+        CheckConstraint(
+            "decision != 'approved' OR recommended_reassessment_days IS NOT NULL",
+            name="ck_approved_assessment_has_reassessment_interval",
+        ),
+        UniqueConstraint(
+            "assessment_definition_id",
+            "sequence_number",
+            name="uq_assessment_review_definition_sequence",
+        ),
+        UniqueConstraint("supersedes_review_id", name="uq_assessment_review_superseded_once"),
+    )
+
+    assessment_definition_id: Mapped[UUID] = mapped_column(
+        ForeignKey("assessment_definitions.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=False,
+    )
+    decision: Mapped[str] = mapped_column(String(40), index=True, nullable=False)
+    sequence_number: Mapped[int] = mapped_column(Integer(), nullable=False)
+    supersedes_review_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("assessment_definition_reviews.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=True,
+    )
+    protocol_instructions: Mapped[list[str]] = mapped_column(JsonType, nullable=False)
+    result_entry_instructions: Mapped[str] = mapped_column(Text(), nullable=False)
+    recommended_reassessment_days: Mapped[int | None] = mapped_column(Integer(), nullable=True)
+    self_administered: Mapped[bool] = mapped_column(Boolean(), nullable=False, default=False)
+    reviewed_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)
+    reviewer: Mapped[str] = mapped_column(String(160), nullable=False)
+    applicability_notes: Mapped[str] = mapped_column(Text(), nullable=False)
+    uncertainty: Mapped[str] = mapped_column(Text(), nullable=False)
+    review_version: Mapped[str] = mapped_column(String(120), nullable=False)
+
+    evidence_links: Mapped[list[AssessmentDefinitionReviewEvidenceClaimRecord]] = relationship(
+        cascade="save-update, merge",
+        lazy="selectin",
+        order_by="AssessmentDefinitionReviewEvidenceClaimRecord.position",
+    )
+
+
+class AssessmentDefinitionReviewEvidenceClaimRecord(Base):
+    __tablename__ = "assessment_definition_review_evidence_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "assessment_review_id",
+            "position",
+            name="uq_assessment_review_evidence_order",
+        ),
+    )
+
+    assessment_review_id: Mapped[UUID] = mapped_column(
+        ForeignKey("assessment_definition_reviews.id", ondelete="RESTRICT"), primary_key=True
+    )
+    evidence_claim_id: Mapped[UUID] = mapped_column(
+        ForeignKey("evidence_claims.id", ondelete="RESTRICT"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer(), nullable=False)
+
+
 class AssessmentSelectionRecord(VersionedRecordMixin, Base):
     __tablename__ = "assessment_selections"
 
@@ -294,6 +366,11 @@ class AssessmentSelectionRecord(VersionedRecordMixin, Base):
     )
     assessment_definition_id: Mapped[UUID] = mapped_column(
         ForeignKey("assessment_definitions.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    assessment_definition_review_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("assessment_definition_reviews.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=True,
     )
     decision: Mapped[str] = mapped_column(String(40), nullable=False)
     reason_codes: Mapped[list[str]] = mapped_column(JsonType, nullable=False)
@@ -2290,6 +2367,8 @@ for _record_type in (
     EquipmentAvailabilityRecord,
     EvidenceClaimRecord,
     AssessmentDefinitionRecord,
+    AssessmentDefinitionReviewRecord,
+    AssessmentDefinitionReviewEvidenceClaimRecord,
     AssessmentSelectionRecord,
     AssessmentSelectionObservationRecord,
     CompetencyFloorRecord,

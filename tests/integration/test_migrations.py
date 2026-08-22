@@ -57,8 +57,13 @@ def test_baseline_migration_matches_current_metadata(
         assert "accounts" in actual_tables
         assert "athlete_ownerships" in actual_tables
         assert "athlete_safety_policy_assignments" in actual_tables
+        assert "assessment_definition_reviews" in actual_tables
+        assert "assessment_definition_review_evidence_claims" in actual_tables
         assert "safety_policy_assignment_id" in {
             column["name"] for column in inspector.get_columns("session_safety_decisions")
+        }
+        assert "assessment_definition_review_id" in {
+            column["name"] for column in inspector.get_columns("assessment_selections")
         }
         assert any(
             constraint["name"] == "uq_account_issuer_subject"
@@ -78,6 +83,17 @@ def test_baseline_migration_matches_current_metadata(
         assert any(
             constraint["name"] == "uq_safety_assignment_superseded_once"
             for constraint in safety_assignment_constraints
+        )
+        assessment_review_constraints = inspector.get_unique_constraints(
+            "assessment_definition_reviews"
+        )
+        assert any(
+            constraint["name"] == "uq_assessment_review_definition_sequence"
+            for constraint in assessment_review_constraints
+        )
+        assert any(
+            constraint["name"] == "uq_assessment_review_superseded_once"
+            for constraint in assessment_review_constraints
         )
         assert any(
             constraint["name"] == "uq_strategy_triggering_block_review"

@@ -14,6 +14,9 @@ strategy through an explicit closed-loop replanning boundary. Each revision reta
 prior strategy and triggering review without inferring causation or rewriting athlete history.
 An initial or revised strategy can then create a persisted block only from already-governed
 resource demands, exercise resolutions, and an explicit allocation policy.
+Assessment definitions now have a separate, append-only evidence review history. Only definitions
+whose latest review is approved can appear in the API catalog or be persisted in an athlete
+selection; no real assessment protocols are seeded yet.
 
 ## Architecture at a glance
 
@@ -101,6 +104,7 @@ The application endpoints are intentionally narrow:
 
 ```text
 GET  /v1/onboarding/equipment
+GET  /v1/assessments/catalog
 POST /v1/onboarding/athletes
 GET  /v1/athletes/{athlete_id}/current-week?on=YYYY-MM-DD
 POST /v1/block-reviews/{block_review_id}/replan
@@ -121,8 +125,10 @@ choose a safety policy, run an assessment, or generate a workout. The authentica
 immutable athlete ownership are created in the same transaction.
 
 All athlete-scoped endpoints require bearer authentication and verify aggregate ownership. Health,
-readiness, and the global onboarding equipment catalog remain public. To grant a pre-existing local
-fixture athlete to the default development account, run:
+readiness, the global onboarding equipment catalog, and the reviewed assessment catalog remain
+public. The assessment catalog is empty until definitions have evidence-linked current approvals;
+the API cannot approve protocols. To grant a pre-existing local fixture athlete to the default
+development account, run:
 
 ```bash
 python -m agas_api.identity_admin grant --athlete-id YOUR_ATHLETE_UUID
@@ -226,8 +232,9 @@ confirm or edit those actual times, and prepares exactly one consecutive success
 hold, review-required, missing-policy, and unsupported-policy states remain visibly blocked.
 
 This setup is provisional: there is no verified production identity provider, account recovery,
-consent/export/deletion workflow, sensitive health intake, assessment orchestration, or
-authenticated reviewer workflow yet. Do not use it for sensitive or production athlete data.
+consent/export/deletion workflow, sensitive health intake, assessment orchestration, qualified
+protocol-review workflow, or authenticated reviewer workflow yet. Do not use it for sensitive or
+production athlete data.
 The browser does not classify raw symptoms. Selecting a concerning symptom pauses the ordinary
 workout flow instead of fabricating a safety signal.
 Progression remains backend-governed: the PWA never chooses among policies or invents exposure

@@ -8,6 +8,15 @@ AGAS is a training-planning product for generally healthy adults. It is not a di
 
 Safety validation executes before LLM discretion and ordinary planning. The LLM cannot override a hard safety outcome.
 
+## Assessment boundary
+
+An assessment protocol must have a current evidence-linked approval before it can enter persisted
+athlete selection. Approval records exact instructions, applicability, uncertainty, and whether
+self-administration was reviewed; it is not a medical clearance or a substitute for athlete-level
+screening. The repository currently seeds no assessment protocols and exposes no sensitive
+screening workflow. Unreviewed or withdrawn definitions fail closed, and future intake must not
+infer health, injury, or symptom classifications from free text.
+
 ## Policy classes
 
 ### Escalation

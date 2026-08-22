@@ -3,13 +3,16 @@ from __future__ import annotations
 from collections.abc import Iterable
 from datetime import datetime, timedelta
 from typing import ClassVar
+from uuid import UUID
 
 from agas_domain import (
     AssessmentContext,
     AssessmentDecision,
     AssessmentDefinition,
+    AssessmentDefinitionReview,
     AssessmentReason,
     AssessmentResultInput,
+    AssessmentReviewDecision,
     AssessmentSelection,
     CapabilityEstimate,
     CapabilityEstimationPolicy,
@@ -34,12 +37,27 @@ class AdaptiveAssessmentSelector:
         context: AssessmentContext,
         definitions: Iterable[AssessmentDefinition],
     ) -> tuple[AssessmentSelection, ...]:
-        return tuple(self._evaluate(context, definition) for definition in definitions)
+        return tuple(self._evaluate(context, definition, None) for definition in definitions)
+
+    def select_reviewed(
+        self,
+        context: AssessmentContext,
+        reviewed_definitions: Iterable[tuple[AssessmentDefinition, AssessmentDefinitionReview]],
+    ) -> tuple[AssessmentSelection, ...]:
+        selections: list[AssessmentSelection] = []
+        for definition, review in reviewed_definitions:
+            if review.assessment_definition_id != definition.id:
+                raise AssessmentError("assessment review does not match its definition")
+            if review.decision is not AssessmentReviewDecision.APPROVED:
+                raise AssessmentError("assessment review is not approved")
+            selections.append(self._evaluate(context, definition, review.id))
+        return tuple(selections)
 
     def _evaluate(
         self,
         context: AssessmentContext,
         definition: AssessmentDefinition,
+        definition_review_id: UUID | None,
     ) -> AssessmentSelection:
         exclusion_reasons: list[tuple[AssessmentReason, str]] = []
         deferral_reasons: list[tuple[AssessmentReason, str]] = []
@@ -155,6 +173,7 @@ class AdaptiveAssessmentSelector:
         return AssessmentSelection(
             athlete_id=context.athlete_id,
             assessment_definition_id=definition.id,
+            assessment_definition_review_id=definition_review_id,
             decision=decision,
             reason_codes=tuple(reason for reason, _ in reasons),
             rationale=tuple(rationale for _, rationale in reasons),

@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
+from agas_domain.enums import AssessmentReviewDecision
 from agas_domain.models import (
     Account,
     Adaptation,
@@ -15,6 +16,7 @@ from agas_domain.models import (
     AdaptationRelationship,
     AdaptationResourceDemand,
     AssessmentDefinition,
+    AssessmentDefinitionReview,
     AssessmentSelection,
     Athlete,
     AthleteOwnership,
@@ -79,6 +81,8 @@ from agas_domain.persistence.models import (
     AdaptationRelationshipRecord,
     AdaptationResourceDemandRecord,
     AssessmentDefinitionRecord,
+    AssessmentDefinitionReviewEvidenceClaimRecord,
+    AssessmentDefinitionReviewRecord,
     AssessmentSelectionObservationRecord,
     AssessmentSelectionRecord,
     AthleteOwnershipRecord,
@@ -3463,10 +3467,143 @@ class DomainRepository:
             )
         )
 
+    def add_assessment_definition_review(self, review: AssessmentDefinitionReview) -> None:
+        if self.session.get(AssessmentDefinitionRecord, review.assessment_definition_id) is None:
+            raise DomainIntegrityError("assessment definition does not exist")
+        self._require_ids_exist(
+            EvidenceClaimRecord.id, review.evidence_claim_ids, "assessment review evidence"
+        )
+        current = self.get_current_assessment_definition_review(review.assessment_definition_id)
+        if current is None:
+            if review.sequence_number != 1 or review.supersedes_review_id is not None:
+                raise DomainIntegrityError("the first assessment review must start sequence one")
+        else:
+            if review.sequence_number != current.sequence_number + 1:
+                raise DomainIntegrityError(
+                    "an assessment review replacement must use the next sequence number"
+                )
+            if review.supersedes_review_id != current.id:
+                raise DomainIntegrityError(
+                    "an assessment review replacement must supersede the current review"
+                )
+            if review.reviewed_at < current.reviewed_at:
+                raise DomainIntegrityError(
+                    "an assessment review replacement cannot predate the current review"
+                )
+
+        record = AssessmentDefinitionReviewRecord(
+            id=review.id,
+            schema_version=review.schema_version,
+            created_at=review.created_at,
+            assessment_definition_id=review.assessment_definition_id,
+            decision=review.decision.value,
+            sequence_number=review.sequence_number,
+            supersedes_review_id=review.supersedes_review_id,
+            protocol_instructions=list(review.protocol_instructions),
+            result_entry_instructions=review.result_entry_instructions,
+            recommended_reassessment_days=review.recommended_reassessment_days,
+            self_administered=review.self_administered,
+            reviewed_at=review.reviewed_at,
+            reviewer=review.reviewer,
+            applicability_notes=review.applicability_notes,
+            uncertainty=review.uncertainty,
+            review_version=review.review_version,
+        )
+        record.evidence_links = [
+            AssessmentDefinitionReviewEvidenceClaimRecord(
+                assessment_review_id=review.id,
+                evidence_claim_id=evidence_claim_id,
+                position=position,
+            )
+            for position, evidence_claim_id in enumerate(review.evidence_claim_ids)
+        ]
+        self.session.add(record)
+
+    def get_assessment_definition_review(
+        self, review_id: UUID
+    ) -> AssessmentDefinitionReview | None:
+        record = self.session.get(AssessmentDefinitionReviewRecord, review_id)
+        return self._assessment_review_from_record(record) if record is not None else None
+
+    def get_current_assessment_definition_review(
+        self, definition_id: UUID
+    ) -> AssessmentDefinitionReview | None:
+        record = self.session.scalar(
+            select(AssessmentDefinitionReviewRecord)
+            .where(AssessmentDefinitionReviewRecord.assessment_definition_id == definition_id)
+            .order_by(
+                AssessmentDefinitionReviewRecord.sequence_number.desc(),
+                AssessmentDefinitionReviewRecord.id.desc(),
+            )
+            .limit(1)
+        )
+        return self._assessment_review_from_record(record) if record is not None else None
+
+    def list_approved_assessment_definitions(
+        self,
+    ) -> tuple[tuple[AssessmentDefinition, AssessmentDefinitionReview], ...]:
+        definition_ids = self.session.scalars(
+            select(AssessmentDefinitionReviewRecord.assessment_definition_id)
+            .distinct()
+            .order_by(AssessmentDefinitionReviewRecord.assessment_definition_id)
+        ).all()
+        approved: list[tuple[AssessmentDefinition, AssessmentDefinitionReview]] = []
+        for definition_id in definition_ids:
+            review = self.get_current_assessment_definition_review(definition_id)
+            if review is None or review.decision is not AssessmentReviewDecision.APPROVED:
+                continue
+            definition = self.get_assessment_definition(definition_id)
+            if definition is not None:
+                approved.append((definition, review))
+        return tuple(
+            sorted(
+                approved,
+                key=lambda item: (
+                    item[0].domain.value,
+                    item[0].slug,
+                    item[0].protocol_version,
+                    str(item[0].id),
+                ),
+            )
+        )
+
+    @staticmethod
+    def _assessment_review_from_record(
+        record: AssessmentDefinitionReviewRecord,
+    ) -> AssessmentDefinitionReview:
+        return AssessmentDefinitionReview(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            assessment_definition_id=record.assessment_definition_id,
+            decision=record.decision,
+            sequence_number=record.sequence_number,
+            supersedes_review_id=record.supersedes_review_id,
+            protocol_instructions=tuple(record.protocol_instructions),
+            result_entry_instructions=record.result_entry_instructions,
+            recommended_reassessment_days=record.recommended_reassessment_days,
+            self_administered=record.self_administered,
+            evidence_claim_ids=tuple(link.evidence_claim_id for link in record.evidence_links),
+            reviewed_at=record.reviewed_at,
+            reviewer=record.reviewer,
+            applicability_notes=record.applicability_notes,
+            uncertainty=record.uncertainty,
+            review_version=record.review_version,
+        )
+
     def add_assessment_selection(self, selection: AssessmentSelection) -> None:
         self._require_athlete(selection.athlete_id)
         if self.session.get(AssessmentDefinitionRecord, selection.assessment_definition_id) is None:
             raise DomainIntegrityError("assessment definition does not exist")
+        review = self.get_current_assessment_definition_review(selection.assessment_definition_id)
+        if (
+            review is None
+            or review.decision is not AssessmentReviewDecision.APPROVED
+            or selection.assessment_definition_review_id != review.id
+        ):
+            raise DomainIntegrityError(
+                "assessment selection requires the current approved definition review"
+            )
         observations = self._observations_by_id(selection.source_observation_ids)
         found_ids = {item.id for item in observations}
         missing = set(selection.source_observation_ids) - found_ids
@@ -3483,6 +3620,7 @@ class DomainRepository:
             created_at=selection.created_at,
             athlete_id=selection.athlete_id,
             assessment_definition_id=selection.assessment_definition_id,
+            assessment_definition_review_id=selection.assessment_definition_review_id,
             decision=selection.decision.value,
             reason_codes=[item.value for item in selection.reason_codes],
             rationale=list(selection.rationale),
@@ -3534,6 +3672,7 @@ class DomainRepository:
             created_at=record.created_at,
             athlete_id=record.athlete_id,
             assessment_definition_id=record.assessment_definition_id,
+            assessment_definition_review_id=record.assessment_definition_review_id,
             decision=record.decision,
             reason_codes=tuple(record.reason_codes),
             rationale=tuple(record.rationale),

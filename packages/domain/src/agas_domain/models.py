@@ -14,6 +14,7 @@ from agas_domain.enums import (
     AssessmentDecision,
     AssessmentIntensity,
     AssessmentReason,
+    AssessmentReviewDecision,
     BlockIssueCode,
     BlockPlanStatus,
     BlockReviewOutcome,
@@ -430,9 +431,53 @@ class AssessmentDefinition(VersionedRecord):
     blocked_by_health_screening_flags: tuple[NonEmptyText, ...] = ()
 
 
+class AssessmentDefinitionReview(VersionedRecord):
+    assessment_definition_id: UUID
+    decision: AssessmentReviewDecision
+    sequence_number: Annotated[int, Field(ge=1)]
+    supersedes_review_id: UUID | None = None
+    protocol_instructions: Annotated[tuple[NonEmptyText, ...], Field(min_length=1)]
+    result_entry_instructions: NonEmptyText
+    recommended_reassessment_days: Annotated[int, Field(ge=1)] | None = None
+    self_administered: bool = False
+    evidence_claim_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
+    reviewed_at: datetime
+    reviewer: NonEmptyText
+    applicability_notes: NonEmptyText
+    uncertainty: NonEmptyText
+    review_version: NonEmptyText
+
+    @field_validator("reviewed_at")
+    @classmethod
+    def require_aware_reviewed_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("assessment review time must include a timezone")
+        return value
+
+    @model_validator(mode="after")
+    def validate_review(self) -> AssessmentDefinitionReview:
+        if len(set(self.protocol_instructions)) != len(self.protocol_instructions):
+            raise ValueError("protocol_instructions must not contain duplicates")
+        if len(set(self.evidence_claim_ids)) != len(self.evidence_claim_ids):
+            raise ValueError("evidence_claim_ids must not contain duplicates")
+        if self.sequence_number == 1 and self.supersedes_review_id is not None:
+            raise ValueError("the first assessment review cannot supersede another record")
+        if self.sequence_number > 1 and self.supersedes_review_id is None:
+            raise ValueError("later assessment reviews must reference their predecessor")
+        if self.supersedes_review_id == self.id:
+            raise ValueError("an assessment review cannot supersede itself")
+        if (
+            self.decision is AssessmentReviewDecision.APPROVED
+            and self.recommended_reassessment_days is None
+        ):
+            raise ValueError("approved assessments require a reassessment interval")
+        return self
+
+
 class AssessmentSelection(VersionedRecord):
     athlete_id: UUID
     assessment_definition_id: UUID
+    assessment_definition_review_id: UUID | None = None
     decision: AssessmentDecision
     reason_codes: Annotated[tuple[AssessmentReason, ...], Field(min_length=1)]
     rationale: Annotated[tuple[NonEmptyText, ...], Field(min_length=1)]

@@ -36,6 +36,20 @@ uncertainty, metric scope, unit, and version. Priority policies are versioned he
 scientific facts. Tests may use clearly labeled software-only fixture claims, but those fixtures
 must never be shipped as training evidence or seed data.
 
+## Assessment protocols
+
+An assessment definition is not operational merely because its constraints are representable in
+code. Its current `AssessmentDefinitionReview` must be approved and must retain evidence-claim
+links, exact administration and result-entry instructions, a reassessment interval, applicability,
+uncertainty, reviewer identity, review time, and version. A new review is appended when approval
+changes; prior decisions are not edited or deleted. A later rejection or needs-revision decision
+removes the definition from the operational catalog.
+
+The repository ships no fabricated assessment protocol or norm. Software tests may use explicitly
+labeled non-scientific fixtures in isolated databases. Protocol evidence, population validity,
+measurement reliability, result interpretation, and self-administration suitability require
+qualified review before production use.
+
 ## Exercise resolution
 
 Exercise ontology metadata and resolver scores are not evidence of exercise equivalence. A full

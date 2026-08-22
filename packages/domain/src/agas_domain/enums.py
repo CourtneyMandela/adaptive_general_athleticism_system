@@ -179,6 +179,12 @@ class AssessmentDecision(StrEnum):
     EXCLUDED = "excluded"
 
 
+class AssessmentReviewDecision(StrEnum):
+    APPROVED = "approved"
+    NEEDS_REVISION = "needs_revision"
+    REJECTED = "rejected"
+
+
 class AssessmentReason(StrEnum):
     ELIGIBLE = "eligible"
     MISSING_EQUIPMENT = "missing_equipment"
