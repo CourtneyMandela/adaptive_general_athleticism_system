@@ -90,3 +90,62 @@ def test_block_creation_endpoint_reports_missing_strategy_and_rejects_naive_time
     assert response.status_code == 404
     assert response.json() == {"detail": "long-range strategy does not exist"}
     assert naive_time_response.status_code == 422
+
+
+def test_resource_preparation_endpoint_validates_transport_before_persistence(
+    session: Session,
+) -> None:
+    def override_session() -> Iterator[Session]:
+        yield session
+
+    strategy_id = uuid4()
+    priority_id = uuid4()
+    exercise_id = uuid4()
+    request_body = {
+        "mode": "active",
+        "environment_id": str(uuid4()),
+        "exercise_candidate_ids": [str(exercise_id)],
+        "exercise_resolver_policy_id": str(uuid4()),
+        "stimulus_specification": {
+            "movement_patterns": ["knee_dominant"],
+            "allowed_loading_types": ["external_load"],
+            "allowed_lateralities": ["bilateral"],
+            "minimum_loadability": "high",
+            "required_velocity_characteristics": ["controlled"],
+            "maximum_skill_complexity": "moderate",
+            "maximum_impact_level": "low",
+            "maximum_stability_demand": "moderate",
+            "maximum_fatigue_cost": "moderate",
+            "maximum_soreness_cost": "moderate",
+            "source_observation_ids": [str(uuid4())],
+            "evidence_claim_ids": [str(uuid4())],
+            "rationale": "Synthetic transport fixture.",
+        },
+        "minimum_weekly_minutes": 30,
+        "target_weekly_minutes": 60,
+        "sessions_per_week": 2,
+        "demand_rationale": "Synthetic transport fixture.",
+        "demand_version": "fixture@1.0.0",
+        "prepared_at": datetime(2026, 8, 22, tzinfo=UTC).isoformat(),
+    }
+    path = f"/v1/strategies/{strategy_id}/priorities/{priority_id}/resource-demands"
+    app.dependency_overrides[database_session_dependency] = override_session
+    try:
+        missing_strategy_response = TestClient(app).post(path, json=request_body)
+        naive_time_response = TestClient(app).post(
+            path, json={**request_body, "prepared_at": "2026-08-22T00:00:00"}
+        )
+        duplicate_candidate_response = TestClient(app).post(
+            path,
+            json={
+                **request_body,
+                "exercise_candidate_ids": [str(exercise_id), str(exercise_id)],
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert missing_strategy_response.status_code == 404
+    assert missing_strategy_response.json() == {"detail": "long-range strategy does not exist"}
+    assert naive_time_response.status_code == 422
+    assert duplicate_candidate_response.status_code == 422

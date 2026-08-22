@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 from agas_api.database import database_session_dependency
 from agas_api.main import app
+from agas_api.resource_preparation import ResourceDemandPreparationResult
 from agas_domain import (
     Adaptation,
     AdaptationPlanningCandidate,
@@ -76,6 +77,7 @@ from agas_domain import (
     WeeklySchedulingPolicy,
 )
 from agas_domain.persistence.models import (
+    AdaptationResourceDemandRecord,
     BlockPlanRecord,
     BlockReviewRecord,
     CapabilityNeedRecord,
@@ -84,6 +86,7 @@ from agas_domain.persistence.models import (
     LongRangeStrategyRecord,
     SessionAdherenceRecord,
     SessionExecutionRecord,
+    StimulusRequirementRecord,
     TrainingResponseRecord,
     WeeklyPlanRecord,
 )
@@ -161,7 +164,7 @@ def priority_policy() -> PriorityPolicy:
 
 
 def build_and_persist_strategy(
-    session: Session,
+    session: Session, *, safe_to_train: bool = True
 ) -> tuple[DomainRepository, LongRangeStrategy]:
     repository = DomainRepository(session)
     athlete = Athlete(display_name="Planning persistence athlete")
@@ -233,6 +236,7 @@ def build_and_persist_strategy(
         fatigue_cost=0.3,
         time_cost=0.3,
         interference_cost=0.2,
+        safe_to_train=safe_to_train,
         source_observation_ids=(observation.id,),
         evidence_claim_ids=(claim.id,),
     )
@@ -446,6 +450,183 @@ def test_stimulus_and_partial_exercise_resolution_round_trip_preserves_provenanc
     record.rationale = "silently rewritten"
     with pytest.raises(ImmutableHistoricalRecordError, match="append-only"):
         session.flush()
+
+
+def test_resource_preparation_endpoint_resolves_environment_and_persists_atomically(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (
+        repository,
+        strategy,
+        _,
+        _,
+        policy,
+        environment,
+        availability,
+        exercise,
+    ) = build_and_persist_resolution_chain(session)
+    priority = strategy.priorities[0]
+    prepared_at = NOW + timedelta(minutes=1)
+    specification = StimulusSpecification(
+        movement_patterns=("knee_dominant",),
+        allowed_loading_types=("external_load",),
+        allowed_lateralities=("bilateral", "unilateral"),
+        minimum_loadability=Loadability.HIGH,
+        required_velocity_characteristics=("controlled",),
+        maximum_skill_complexity=CostLevel.MODERATE,
+        maximum_impact_level=ImpactLevel.LOW,
+        maximum_stability_demand=CostLevel.MODERATE,
+        maximum_fatigue_cost=CostLevel.MODERATE,
+        maximum_soreness_cost=CostLevel.MODERATE,
+        source_observation_ids=strategy.source_observation_ids,
+        evidence_claim_ids=strategy.evidence_claim_ids,
+        rationale="Explicit synthetic stimulus input for the API boundary.",
+    )
+    request_body = {
+        "mode": "active",
+        "environment_id": str(environment.id),
+        "exercise_candidate_ids": [str(exercise.id)],
+        "exercise_resolver_policy_id": str(policy.id),
+        "stimulus_specification": specification.model_dump(mode="json"),
+        "minimum_weekly_minutes": 60,
+        "target_weekly_minutes": 60,
+        "sessions_per_week": 2,
+        "demand_rationale": "Explicit synthetic resource demand.",
+        "demand_version": "fixture-resource-preparation@1.0.0",
+        "prepared_at": prepared_at.isoformat(),
+    }
+    requirement_count_before = session.scalar(
+        select(func.count()).select_from(StimulusRequirementRecord)
+    )
+    demand_count_before = session.scalar(
+        select(func.count()).select_from(AdaptationResourceDemandRecord)
+    )
+    resolution_count_before = session.scalar(
+        select(func.count()).select_from(ExerciseResolutionRecord)
+    )
+
+    other_athlete = Athlete(display_name="Other environment owner")
+    other_environment = Environment(athlete_id=other_athlete.id, name="Other gym")
+    repository.add_athlete(other_athlete)
+    session.flush()
+    repository.add_environment(other_environment)
+    session.commit()
+
+    def override_session() -> Iterator[Session]:
+        yield session
+
+    app.dependency_overrides[database_session_dependency] = override_session
+    try:
+        missing_candidate_response = TestClient(app).post(
+            f"/v1/strategies/{strategy.id}/priorities/{priority.id}/resource-demands",
+            json={**request_body, "exercise_candidate_ids": [str(uuid4())]},
+        )
+        foreign_environment_response = TestClient(app).post(
+            f"/v1/strategies/{strategy.id}/priorities/{priority.id}/resource-demands",
+            json={**request_body, "environment_id": str(other_environment.id)},
+        )
+        deferred_mode_response = TestClient(app).post(
+            f"/v1/strategies/{strategy.id}/priorities/{priority.id}/resource-demands",
+            json={
+                "mode": "deferred",
+                "source_observation_ids": [str(item) for item in strategy.source_observation_ids],
+                "evidence_claim_ids": [str(item) for item in strategy.evidence_claim_ids],
+                "demand_rationale": "Invalid deferred request for an active priority.",
+                "demand_version": "fixture@1.0.0",
+            },
+        )
+
+        def reject_demand(_repository: DomainRepository, _demand: AdaptationResourceDemand) -> None:
+            raise DomainIntegrityError("synthetic late persistence failure")
+
+        with monkeypatch.context() as context:
+            context.setattr(DomainRepository, "add_adaptation_resource_demand", reject_demand)
+            late_failure_response = TestClient(app).post(
+                f"/v1/strategies/{strategy.id}/priorities/{priority.id}/resource-demands",
+                json=request_body,
+            )
+        requirement_count_after_invalid = session.scalar(
+            select(func.count()).select_from(StimulusRequirementRecord)
+        )
+        demand_count_after_invalid = session.scalar(
+            select(func.count()).select_from(AdaptationResourceDemandRecord)
+        )
+        resolution_count_after_invalid = session.scalar(
+            select(func.count()).select_from(ExerciseResolutionRecord)
+        )
+        response = TestClient(app).post(
+            f"/v1/strategies/{strategy.id}/priorities/{priority.id}/resource-demands",
+            json=request_body,
+        )
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert missing_candidate_response.status_code == 404
+    assert foreign_environment_response.status_code == 422
+    assert deferred_mode_response.status_code == 422
+    assert late_failure_response.status_code == 422
+    assert requirement_count_after_invalid == requirement_count_before
+    assert demand_count_after_invalid == demand_count_before
+    assert resolution_count_after_invalid == resolution_count_before
+    assert response.status_code == 201
+    result = ResourceDemandPreparationResult.model_validate(response.json())
+    assert result.stimulus_requirement is not None
+    assert result.exercise_resolution is not None
+    assert result.exercise_resolution.status is ResolutionStatus.PARTIAL
+    assert result.exercise_resolution.source_availability_ids == (availability.id,)
+    assert result.resource_demand.exercise_resolution_id == result.exercise_resolution.id
+    session.expire_all()
+    assert repository.get_environment(environment.id) == environment
+    assert repository.list_equipment_availability(environment.id) == (availability,)
+    assert (
+        repository.get_stimulus_requirement(result.stimulus_requirement.id)
+        == result.stimulus_requirement
+    )
+    assert (
+        repository.get_exercise_resolution(result.exercise_resolution.id)
+        == result.exercise_resolution
+    )
+    assert (
+        repository.get_adaptation_resource_demand(result.resource_demand.id)
+        == result.resource_demand
+    )
+
+
+def test_deferred_priority_preparation_creates_zero_resource_demand(session: Session) -> None:
+    repository, strategy = build_and_persist_strategy(session, safe_to_train=False)
+    priority = strategy.priorities[0]
+    assert priority.state.value == "defer"
+
+    def override_session() -> Iterator[Session]:
+        yield session
+
+    app.dependency_overrides[database_session_dependency] = override_session
+    try:
+        response = TestClient(app).post(
+            f"/v1/strategies/{strategy.id}/priorities/{priority.id}/resource-demands",
+            json={
+                "mode": "deferred",
+                "source_observation_ids": [str(item) for item in strategy.source_observation_ids],
+                "evidence_claim_ids": [str(item) for item in strategy.evidence_claim_ids],
+                "demand_rationale": "Explicitly deferred by the persisted safety constraint.",
+                "demand_version": "fixture-deferred-demand@1.0.0",
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert response.status_code == 201
+    result = ResourceDemandPreparationResult.model_validate(response.json())
+    assert result.stimulus_requirement is None
+    assert result.exercise_resolution is None
+    assert result.resource_demand.minimum_weekly_minutes == 0
+    assert result.resource_demand.target_weekly_minutes == 0
+    assert result.resource_demand.sessions_per_week == 0
+    session.expire_all()
+    assert (
+        repository.get_adaptation_resource_demand(result.resource_demand.id)
+        == result.resource_demand
+    )
 
 
 def build_and_persist_weekly_chain(

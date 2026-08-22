@@ -94,6 +94,7 @@ The planning write use cases are intentionally narrow:
 
 ```text
 POST /v1/block-reviews/{block_review_id}/replan
+POST /v1/strategies/{strategy_id}/priorities/{priority_id}/resource-demands
 POST /v1/strategies/{strategy_id}/blocks
 ```
 
@@ -102,6 +103,11 @@ atomically appends capability needs and one replacement strategy. Raw strategy/n
 exposed. Block creation accepts persisted demand identities plus an allocation policy, dates,
 weekly budget, and explicit constraints. It atomically appends the deterministic block but does
 not invent stimuli, exercise resolutions, prescriptions, or dose targets.
+
+Resource-demand preparation bridges those use cases without exposing raw CRUD. Active priorities
+require an explicit stimulus specification, environment, candidate exercises, resolver policy,
+and resource amounts. Deferred priorities produce a provenance-bearing zero-resource demand.
+Partial or infeasible exercise resolution remains visible rather than being replaced silently.
 
 ## Run the frontend
 

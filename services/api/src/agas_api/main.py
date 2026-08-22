@@ -25,6 +25,14 @@ from agas_api.replanning import (
     ReplanningNotFoundError,
     ReplanningValidationError,
 )
+from agas_api.resource_preparation import (
+    PersistedResourcePreparationService,
+    ResourceDemandPreparationCommand,
+    ResourceDemandPreparationResult,
+    ResourcePreparationConflictError,
+    ResourcePreparationNotFoundError,
+    ResourcePreparationValidationError,
+)
 from agas_api.settings import get_settings
 
 settings = get_settings()
@@ -105,6 +113,32 @@ def create_block_plan(
     except BlockCreationConflictError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     except BlockCreationValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.post(
+    "/v1/strategies/{strategy_id}/priorities/{priority_id}/resource-demands",
+    tags=["planning"],
+    response_model=ResourceDemandPreparationResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def prepare_resource_demand(
+    strategy_id: UUID,
+    priority_id: UUID,
+    command: ResourceDemandPreparationCommand,
+    session: Annotated[Session, Depends(database_session_dependency)],
+) -> ResourceDemandPreparationResult:
+    try:
+        return PersistedResourcePreparationService(session).execute(
+            strategy_id, priority_id, command
+        )
+    except ResourcePreparationNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except ResourcePreparationConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except ResourcePreparationValidationError as error:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
         ) from error

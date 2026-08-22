@@ -252,6 +252,21 @@ strategy cannot reuse a demand attached to its predecessor, and block two materi
 the replanning result rather than merely copying block one. This boundary stops at resource
 allocation: it creates no prescriptions, sessions, exercise substitutions, or progression rules.
 
+### Governed resource-demand preparation
+
+`PersistedResourcePreparationService` provides the upstream application boundary required by block
+creation. For an active strategy priority, it loads the persisted adaptation, environment,
+effective-dated equipment availability, equipment records, explicit exercise candidates, and
+resolver policy. It binds the caller's explicit stimulus specification to the immutable priority,
+derives one environment snapshot, resolves exercise fidelity, and appends the requirement,
+resolution, and resource demand in one transaction.
+
+The service does not derive scientific dose from `DEVELOP`, `MAINTAIN`, or `EXPOSE`; minimum and
+target minutes plus frequency remain explicit versioned inputs. An `INFEASIBLE` resolution is
+persisted and makes downstream block planning infeasible. A `DEFER` priority instead creates a
+zero-resource demand with no stimulus or resolution. This makes absence of training intentional
+and traceable rather than ambiguous.
+
 ### Evidence claims
 
 Evidence claims are reviewed, versioned interpretations linked to source identifiers. Evidence
@@ -294,10 +309,12 @@ FastAPI owns transport concerns and database lifecycle. In addition to health/re
 write endpoints expose post-block replanning and persisted block creation. A block-review ID
 anchors the stored replanning lineage; the application service loads the governed inputs, invokes
 the deterministic planner, and commits new capability needs plus exactly one successor strategy
-atomically. A strategy ID anchors block creation; the service loads persisted demands, their
-resolutions, and the selected allocation policy before atomically appending a block. Missing
-dependencies, invalid planning inputs, and relational conflicts remain distinct transport errors.
-Raw domain CRUD is intentionally absent because it could bypass invariants.
+atomically. A strategy-priority pair anchors resource-demand preparation; the service appends
+either an active stimulus-resolution-demand chain or one deferred zero-resource demand. A strategy
+ID anchors block creation; the service loads persisted demands, their resolutions, and the selected
+allocation policy before atomically appending a block. Missing dependencies, invalid planning
+inputs, and relational conflicts remain distinct transport errors. Raw domain CRUD is intentionally
+absent because it could bypass invariants.
 
 ## Web
 

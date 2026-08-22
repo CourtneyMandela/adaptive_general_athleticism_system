@@ -3124,6 +3124,22 @@ class DomainRepository:
             claim_version=record.claim_version,
         )
 
+    def get_environment(self, environment_id: UUID) -> Environment | None:
+        record = self.session.get(EnvironmentRecord, environment_id)
+        if record is None:
+            return None
+        return Environment(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            athlete_id=record.athlete_id,
+            name=record.name,
+            space_constraints=record.space_constraints,
+            noise_constraints=record.noise_constraints,
+            max_noise_level=record.max_noise_level,
+            outdoor_access=record.outdoor_access,
+        )
+
     def get_equipment(self, equipment_id: UUID) -> Equipment | None:
         record = self.session.get(EquipmentRecord, equipment_id)
         if record is None:
@@ -3262,6 +3278,35 @@ class DomainRepository:
             )
         )
         return list(self.session.scalars(statement))
+
+    def list_equipment_availability(
+        self, environment_id: UUID
+    ) -> tuple[EquipmentAvailability, ...]:
+        statement = (
+            select(EquipmentAvailabilityRecord)
+            .where(EquipmentAvailabilityRecord.environment_id == environment_id)
+            .order_by(
+                EquipmentAvailabilityRecord.effective_from,
+                EquipmentAvailabilityRecord.created_at,
+                EquipmentAvailabilityRecord.id,
+            )
+        )
+        return tuple(
+            EquipmentAvailability(
+                id=record.id,
+                schema_version=record.schema_version,
+                created_at=record.created_at,
+                environment_id=record.environment_id,
+                equipment_id=record.equipment_id,
+                is_available=record.is_available,
+                effective_from=record.effective_from,
+                effective_until=record.effective_until,
+                capabilities=record.capabilities,
+                load_limits=record.load_limits,
+                reason=record.reason,
+            )
+            for record in self.session.scalars(statement)
+        )
 
     def _require_athlete(self, athlete_id: UUID) -> None:
         if self.session.get(AthleteRecord, athlete_id) is None:
