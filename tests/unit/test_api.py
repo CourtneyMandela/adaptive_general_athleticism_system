@@ -246,3 +246,54 @@ def test_progression_endpoint_reports_missing_execution_and_rejects_naive_time(
     assert missing_execution_response.status_code == 404
     assert missing_execution_response.json() == {"detail": "session execution does not exist"}
     assert naive_time_response.status_code == 422
+
+
+def test_block_review_endpoint_reports_missing_block_and_rejects_naive_time(
+    session: Session,
+) -> None:
+    def override_session() -> Iterator[Session]:
+        yield session
+
+    block_id = uuid4()
+    prescription_id = uuid4()
+    response_draft = {
+        "adaptation_id": str(uuid4()),
+        "prescription_ids": [str(prescription_id)],
+        "baseline_capability_estimate_id": str(uuid4()),
+        "followup_capability_estimate_id": str(uuid4()),
+        "intervention_summary": "Synthetic transport fixture.",
+        "measurement_uncertainty": "No operational measurement claim.",
+        "contextual_factors": ["synthetic fixture"],
+        "comparison_direction": "higher_is_better",
+        "minimum_meaningful_change": 5,
+    }
+    request_body = {
+        "block_review_policy_id": str(uuid4()),
+        "response_drafts": [response_draft],
+        "responses_calculated_at": datetime(2026, 9, 21, 14, 1, tzinfo=UTC).isoformat(),
+        "reviewed_at": datetime(2026, 9, 21, 14, 2, tzinfo=UTC).isoformat(),
+    }
+    path = f"/v1/blocks/{block_id}/reviews"
+    app.dependency_overrides[database_session_dependency] = override_session
+    try:
+        missing_block_response = TestClient(app).post(path, json=request_body)
+        naive_time_response = TestClient(app).post(
+            path, json={**request_body, "reviewed_at": "2026-09-21T14:02:00"}
+        )
+        duplicate_partition_response = TestClient(app).post(
+            path,
+            json={
+                **request_body,
+                "response_drafts": [
+                    response_draft,
+                    {**response_draft, "adaptation_id": str(uuid4())},
+                ],
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert missing_block_response.status_code == 404
+    assert missing_block_response.json() == {"detail": "block plan does not exist"}
+    assert naive_time_response.status_code == 422
+    assert duplicate_partition_response.status_code == 422

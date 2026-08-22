@@ -1788,6 +1788,21 @@ class DomainRepository:
             rule_version=record.rule_version,
         )
 
+    def list_weekly_plans_for_block(self, block_plan_id: UUID) -> tuple[WeeklyPlan, ...]:
+        plan_ids = self.session.scalars(
+            select(WeeklyPlanRecord.id)
+            .where(WeeklyPlanRecord.block_plan_id == block_plan_id)
+            .order_by(
+                WeeklyPlanRecord.block_week,
+                WeeklyPlanRecord.week_start,
+                WeeklyPlanRecord.generated_at,
+                WeeklyPlanRecord.id,
+            )
+        ).all()
+        return tuple(
+            plan for plan_id in plan_ids if (plan := self.get_weekly_plan(plan_id)) is not None
+        )
+
     def add_session_safety_policy(self, policy: SessionSafetyPolicy) -> None:
         self._require_ids_exist(
             EvidenceClaimRecord.id,
@@ -2951,6 +2966,12 @@ class DomainRepository:
             reviewed_at=record.reviewed_at,
             rule_version=record.rule_version,
         )
+
+    def get_block_review_by_block(self, block_plan_id: UUID) -> BlockReview | None:
+        review_id = self.session.scalar(
+            select(BlockReviewRecord.id).where(BlockReviewRecord.block_plan_id == block_plan_id)
+        )
+        return self.get_block_review(review_id) if review_id is not None else None
 
     def get_competency_floor(self, floor_id: UUID) -> CompetencyFloor | None:
         record = self.session.get(CompetencyFloorRecord, floor_id)

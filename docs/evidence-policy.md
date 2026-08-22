@@ -94,3 +94,9 @@ a valid reviewed follow-up estimate as current-state evidence even when the bloc
 is inconclusive or unsupported. The replacement strategy must retain review lineage and must not
 present the observed change as caused by the intervention. Relevance, trainability, transfer, and
 cost inputs require their own governed provenance; one personal response does not establish them.
+
+The persisted review boundary will not review a caller-selected favorable subset. Every planned
+week and session outcome must be present, every executed prescription must appear in exactly one
+response, and all post-session safety decisions are loaded from persistence. Comparison direction
+and meaningful-change thresholds remain explicit policy inputs; the service does not manufacture
+them from an observed change.

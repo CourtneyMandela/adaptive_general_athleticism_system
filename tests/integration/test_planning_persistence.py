@@ -3,6 +3,7 @@ from datetime import UTC, date, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
+from agas_api.block_review_application import BlockReviewCreationResult
 from agas_api.database import database_session_dependency
 from agas_api.main import app
 from agas_api.progression_application import ProgressionCreationResult
@@ -904,6 +905,62 @@ def build_and_persist_execution_for_planned_session(
     return execution, adherence
 
 
+def persist_remaining_weekly_plans(
+    session: Session,
+    repository: DomainRepository,
+    *,
+    strategy: LongRangeStrategy,
+    block: BlockPlan,
+    prescription: SessionPrescription,
+    session_template: SessionTemplate,
+    resolution: ExerciseResolution,
+    first_availability: WeeklyAvailability,
+    scheduling_policy: WeeklySchedulingPolicy,
+) -> tuple[WeeklyPlan, ...]:
+    plans = [repository.list_weekly_plans_for_block(block.id)[0]]
+    environment_id = first_availability.windows[0].environment_id
+    for block_week in range(2, block.duration_weeks + 1):
+        week_start = block.starts_on + timedelta(weeks=block_week - 1)
+        first_window_start = datetime.combine(week_start, datetime.min.time(), tzinfo=UTC) + (
+            timedelta(hours=18)
+        )
+        availability = WeeklyAvailability(
+            athlete_id=strategy.athlete_id,
+            week_start=week_start,
+            windows=(
+                AvailabilityWindow(
+                    environment_id=environment_id,
+                    starts_at=first_window_start,
+                    ends_at=first_window_start + timedelta(minutes=30),
+                ),
+                AvailabilityWindow(
+                    environment_id=environment_id,
+                    starts_at=first_window_start + timedelta(days=3),
+                    ends_at=first_window_start + timedelta(days=3, minutes=30),
+                ),
+            ),
+            source_observation_ids=strategy.source_observation_ids,
+            recorded_at=NOW,
+            rule_version="fixture@1.0.0",
+        )
+        plan = WeeklyScheduler().schedule(
+            block=block,
+            availability=availability,
+            prescriptions=(prescription,),
+            session_templates=(session_template,),
+            resolutions=(resolution,),
+            policy=scheduling_policy,
+            generated_at=NOW,
+        )
+        assert plan.status is WeeklyPlanStatus.FEASIBLE
+        repository.add_weekly_availability(availability)
+        session.flush()
+        repository.add_weekly_plan(plan)
+        plans.append(plan)
+    session.commit()
+    return tuple(plans)
+
+
 def persist_post_session_safety(
     session: Session,
     repository: DomainRepository,
@@ -939,6 +996,211 @@ def persist_post_session_safety(
     repository.add_session_safety_decision(decision)
     session.commit()
     return decision
+
+
+def test_completed_block_review_api_requires_full_history_and_is_atomic(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (
+        repository,
+        strategy,
+        _,
+        resolution,
+        _,
+        _,
+        block,
+        prescription,
+        session_template,
+        first_availability,
+        scheduling_policy,
+        _,
+    ) = build_and_persist_weekly_chain(session)
+    provenance = Provenance(
+        recorded_by="automated-test",
+        source_system="pytest",
+        ingestion_method="fixture",
+    )
+    safety_policy = SessionSafetyPolicy(
+        allowed_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        limited_readiness_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        unusual_soreness_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        sleep_disruption_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        schedule_limitation_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        evidence_claim_ids=strategy.evidence_claim_ids,
+        rationale="Synthetic completed-block safety policy.",
+        policy_version="fixture-block-review-safety@1.0.0",
+    )
+    review_policy = BlockReviewPolicy(
+        minimum_adherence_ratio=0.8,
+        minimum_response_confidence=Confidence.LOW,
+        evidence_claim_ids=strategy.evidence_claim_ids,
+        rationale="Software fixture only.",
+        policy_version="fixture-block-review@1.0.0",
+    )
+    repository.add_session_safety_policy(safety_policy)
+    repository.add_block_review_policy(review_policy)
+    baseline = repository.get_capability_estimate(strategy.source_capability_estimate_ids[0])
+    assert baseline is not None
+    review_time = datetime(2026, 9, 21, 14, 0, tzinfo=UTC)
+    followup_observation = Observation(
+        athlete_id=strategy.athlete_id,
+        observed_at=review_time - timedelta(hours=1),
+        observation_type="fixture_strength_test",
+        measurement=110,
+        unit=baseline.unit_or_scale,
+        source=ObservationSource.TEST_RESULT,
+        reliability=Confidence.MODERATE,
+        provenance=provenance,
+    )
+    repository.add_observation(followup_observation)
+    session.flush()
+    followup = CapabilityEstimate(
+        athlete_id=strategy.athlete_id,
+        domain=baseline.domain,
+        estimate=110,
+        unit_or_scale=baseline.unit_or_scale,
+        estimate_scope=baseline.estimate_scope,
+        confidence=Confidence.MODERATE,
+        calculation_method="fixture follow-up",
+        source_observation_ids=(followup_observation.id,),
+        estimated_at=review_time,
+        valid_until=review_time + timedelta(days=30),
+        rule_version="fixture@1.0.0",
+    )
+    repository.add_capability_estimate(followup)
+    session.commit()
+
+    response_draft = {
+        "adaptation_id": str(prescription.adaptation_id),
+        "prescription_ids": [str(prescription.id)],
+        "baseline_capability_estimate_id": str(baseline.id),
+        "followup_capability_estimate_id": str(followup.id),
+        "intervention_summary": "Synthetic completed strength prescription.",
+        "measurement_uncertainty": "Software fixture; no operational claim.",
+        "contextual_factors": ["synthetic fixture"],
+        "comparison_direction": "higher_is_better",
+        "minimum_meaningful_change": 5,
+    }
+    request_body = {
+        "block_review_policy_id": str(review_policy.id),
+        "response_drafts": [response_draft],
+        "responses_calculated_at": (review_time + timedelta(minutes=1)).isoformat(),
+        "reviewed_at": (review_time + timedelta(minutes=2)).isoformat(),
+    }
+
+    def override_session() -> Iterator[Session]:
+        yield session
+
+    path = f"/v1/blocks/{block.id}/reviews"
+    app.dependency_overrides[database_session_dependency] = override_session
+    try:
+        incomplete_weeks_response = TestClient(app).post(path, json=request_body)
+        weekly_plans = persist_remaining_weekly_plans(
+            session,
+            repository,
+            strategy=strategy,
+            block=block,
+            prescription=prescription,
+            session_template=session_template,
+            resolution=resolution,
+            first_availability=first_availability,
+            scheduling_policy=scheduling_policy,
+        )
+        executions = []
+        for weekly_plan in weekly_plans:
+            for session_index in range(len(weekly_plan.sessions)):
+                execution, _ = build_and_persist_execution_for_planned_session(
+                    session,
+                    repository,
+                    athlete_id=strategy.athlete_id,
+                    weekly_plan=weekly_plan,
+                    planned_session_index=session_index,
+                    session_template=session_template,
+                    prescription=prescription,
+                    safety_policy=safety_policy,
+                    provenance=provenance,
+                )
+                executions.append((weekly_plan, execution))
+        for weekly_plan, execution in executions[:-1]:
+            persist_post_session_safety(
+                session,
+                repository,
+                weekly_plan=weekly_plan,
+                execution=execution,
+                safety_policy=safety_policy,
+                provenance=provenance,
+            )
+        missing_safety_response = TestClient(app).post(path, json=request_body)
+        final_plan, final_execution = executions[-1]
+        persist_post_session_safety(
+            session,
+            repository,
+            weekly_plan=final_plan,
+            execution=final_execution,
+            safety_policy=safety_policy,
+            provenance=provenance,
+        )
+        persist_post_session_safety(
+            session,
+            repository,
+            weekly_plan=executions[0][0],
+            execution=executions[0][1],
+            safety_policy=safety_policy,
+            provenance=provenance,
+        )
+        invalid_partition_response = TestClient(app).post(
+            path,
+            json={
+                **request_body,
+                "response_drafts": [
+                    {
+                        **response_draft,
+                        "prescription_ids": [str(prescription.id), str(uuid4())],
+                    }
+                ],
+            },
+        )
+        counts_before = (
+            session.scalar(select(func.count()).select_from(TrainingResponseRecord)),
+            session.scalar(select(func.count()).select_from(BlockReviewRecord)),
+        )
+
+        def reject_review(_repository: DomainRepository, _review: object) -> None:
+            raise DomainIntegrityError("synthetic late block-review persistence failure")
+
+        with monkeypatch.context() as context:
+            context.setattr(DomainRepository, "add_block_review", reject_review)
+            late_failure_response = TestClient(app).post(path, json=request_body)
+        counts_after_failure = (
+            session.scalar(select(func.count()).select_from(TrainingResponseRecord)),
+            session.scalar(select(func.count()).select_from(BlockReviewRecord)),
+        )
+        response = TestClient(app).post(path, json=request_body)
+        conflict_response = TestClient(app).post(path, json=request_body)
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert incomplete_weeks_response.status_code == 422
+    assert missing_safety_response.status_code == 422
+    assert invalid_partition_response.status_code == 422
+    assert late_failure_response.status_code == 422
+    assert counts_after_failure == counts_before
+    assert response.status_code == 201
+    assert conflict_response.status_code == 409
+    result = BlockReviewCreationResult.model_validate(response.json())
+    assert len(result.training_responses) == 1
+    assert result.training_responses[0].prescribed_sessions == 8
+    assert result.training_responses[0].session_execution_ids == tuple(
+        execution.id for _, execution in executions
+    )
+    assert result.block_review.outcome is BlockReviewOutcome.SUPPORTED
+    assert len(result.block_review.post_session_safety_decision_ids) == 9
+    session.expire_all()
+    assert (
+        repository.get_training_response(result.training_responses[0].id)
+        == (result.training_responses[0])
+    )
+    assert repository.get_block_review_by_block(block.id) == result.block_review
 
 
 def test_block_prescription_and_weekly_plan_round_trip_preserves_full_chain(

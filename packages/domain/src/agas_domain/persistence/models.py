@@ -1869,7 +1869,10 @@ class BlockReviewPolicyEvidenceRecord(Base):
 
 class BlockReviewRecord(VersionedRecordMixin, Base):
     __tablename__ = "block_reviews"
-    __table_args__ = (CheckConstraint("kind = 'derived'", name="ck_block_review_derived"),)
+    __table_args__ = (
+        CheckConstraint("kind = 'derived'", name="ck_block_review_derived"),
+        UniqueConstraint("block_plan_id", name="uq_block_review_block_plan"),
+    )
     kind: Mapped[str] = mapped_column(String(20), nullable=False)
     athlete_id: Mapped[UUID] = mapped_column(
         ForeignKey("athletes.id", ondelete="RESTRICT"), index=True

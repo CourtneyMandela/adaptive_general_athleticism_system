@@ -17,6 +17,14 @@ from agas_api.block_creation import (
     CreateBlockPlanCommand,
     PersistedBlockCreationService,
 )
+from agas_api.block_review_application import (
+    BlockReviewConflictError,
+    BlockReviewCreationResult,
+    BlockReviewNotFoundError,
+    BlockReviewValidationError,
+    CreateBlockReviewCommand,
+    PersistedBlockReviewService,
+)
 from agas_api.database import database_session, database_session_dependency
 from agas_api.progression_application import (
     CreateProgressionDecisionCommand,
@@ -97,6 +105,29 @@ def ready() -> dict[str, str]:
     with _session_scope() as session:
         session.execute(text("SELECT 1"))
     return {"status": "ready"}
+
+
+@app.post(
+    "/v1/blocks/{block_id}/reviews",
+    tags=["planning"],
+    response_model=BlockReviewCreationResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_block_review(
+    block_id: UUID,
+    command: CreateBlockReviewCommand,
+    session: Annotated[Session, Depends(database_session_dependency)],
+) -> BlockReviewCreationResult:
+    try:
+        return PersistedBlockReviewService(session).execute(block_id, command)
+    except BlockReviewNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except BlockReviewConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except BlockReviewValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
 
 
 @app.post(

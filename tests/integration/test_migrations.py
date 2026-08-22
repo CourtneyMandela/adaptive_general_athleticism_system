@@ -52,6 +52,10 @@ def test_baseline_migration_matches_current_metadata(
             constraint["name"] == "uq_strategy_triggering_block_review"
             for constraint in inspector.get_unique_constraints("long_range_strategies")
         )
+        assert any(
+            constraint["name"] == "uq_block_review_block_plan"
+            for constraint in inspector.get_unique_constraints("block_reviews")
+        )
 
         command.downgrade(config, "base")
         assert set(inspect(engine).get_table_names()) == {"alembic_version"}

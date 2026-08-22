@@ -94,6 +94,7 @@ The planning write use cases are intentionally narrow:
 
 ```text
 POST /v1/block-reviews/{block_review_id}/replan
+POST /v1/blocks/{block_id}/reviews
 POST /v1/strategies/{strategy_id}/priorities/{priority_id}/resource-demands
 POST /v1/strategies/{strategy_id}/blocks
 POST /v1/blocks/{block_id}/weekly-plans
@@ -127,6 +128,13 @@ Post-session progression loads the complete persisted execution, adherence, and 
 optionally derives a classified exposure and validates an explicit proposal, then atomically stores
 the deterministic progression decision and any supported typed prescription revision. Thresholds,
 increments, and exposure caps come only from persisted evidence-linked policies.
+
+Completed-block review requires exactly one feasible weekly plan for every block week, a recorded
+outcome and adherence for every planned session item, and at least one post-session safety decision
+per execution. The caller groups all executed prescriptions into adaptation responses and supplies
+explicit comparison directions and meaningful-change thresholds. The API derives training
+responses, loads all safety history, and appends one immutable review atomically; it does not update
+athlete state or infer scientific thresholds.
 
 ## Run the frontend
 

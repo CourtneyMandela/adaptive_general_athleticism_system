@@ -313,6 +313,22 @@ entry, exposure validation, progression decision, and any automatically supporte
 prescription revision commit or roll back together. Database constraints prevent duplicate
 adherence, exposure, and progression facts for the same execution chain.
 
+### Transactional completed-block review
+
+`PersistedBlockReviewService` closes the descriptive block history before replanning. It requires
+exactly one feasible `WeeklyPlan` for every dated block week and one persisted execution outcome for
+every planned occurrence; a missed session must therefore be recorded explicitly rather than
+disappearing from review. It derives every execution/adherence relationship and loads every
+post-session safety decision, requiring at least one such decision per execution.
+
+The request groups the exact set of executed prescription identities into non-overlapping response
+drafts and supplies compatible estimate identities, uncertainty, context, comparison direction,
+and a meaningful-change threshold. The service rejects omissions and double counting, derives all
+`TrainingResponse` records, evaluates the original hypothesis under a persisted review policy, and
+appends the response/review chain in one transaction. One block has at most one completed review in
+V1. The review remains descriptive and the existing replanning boundary is the only component that
+may derive a successor strategy.
+
 ### Evidence claims
 
 Evidence claims are reviewed, versioned interpretations linked to source identifiers. Evidence
@@ -362,9 +378,10 @@ ID anchors block creation; the service loads persisted demands, their resolution
 allocation policy before atomically appending a block. A block ID anchors explicit prescription,
 session-container, availability, and weekly scheduling creation. Weekly-plan and planned-session
 IDs anchor safety evaluation and actual-performance recording through immutable observations.
-An execution/prescription pair anchors governed exposure and progression processing. Missing
-dependencies, invalid inputs, and relational conflicts remain distinct transport errors. Raw
-domain CRUD is intentionally absent because it could bypass invariants.
+An execution/prescription pair anchors governed exposure and progression processing. A block ID
+anchors completed-history review, while a block-review ID anchors successor-strategy derivation.
+Missing dependencies, invalid inputs, and relational conflicts remain distinct transport errors.
+Raw domain CRUD is intentionally absent because it could bypass invariants.
 
 ## Web
 

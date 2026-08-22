@@ -74,6 +74,11 @@ every such decision for the execution. Callers cannot select a favorable subset.
 requires review, other configured post-session modifications hold progression, and the progression
 decision cannot predate any safety decision it cites.
 
+Completed-block review applies the same completeness rule across the block: each recorded execution
+must have post-session safety closure, and every post-session decision is loaded automatically.
+The review preserves those decisions as context without reclassifying signals or making a medical
+inference.
+
 ### Re-entry
 
 Illness, injury, prolonged interruption, or major detraining can place an athlete in a re-entry state. Prior prescriptions must not resume automatically at full dose.
