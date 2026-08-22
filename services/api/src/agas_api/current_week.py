@@ -202,12 +202,26 @@ class WeekProjection(BaseModel):
     sessions: tuple[PlannedSessionProjection, ...]
 
 
+class SafetyPolicyAssignmentProjection(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    assignment_id: UUID
+    safety_policy_id: UUID
+    policy_version: str
+    sequence_number: int
+    assigned_at: datetime
+    assigned_by: str
+    applicability_rationale: str
+    rule_version: str
+
+
 class CurrentWeekProjection(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     athlete_id: UUID
     athlete_display_name: str
     as_of: date
+    safety_policy_assignment: SafetyPolicyAssignmentProjection | None
     week: WeekProjection | None
 
 
@@ -242,11 +256,30 @@ class CurrentWeekProjector:
             raise CurrentWeekConflictError(
                 "multiple weekly plans cover the requested date; supersession is unresolved"
             )
+        safety_assignment = self.repository.get_current_athlete_safety_policy_assignment(athlete_id)
+        assignment_projection = None
+        if safety_assignment is not None:
+            policy = self.repository.get_session_safety_policy(safety_assignment.safety_policy_id)
+            if policy is None:
+                raise CurrentWeekConflictError(
+                    "the active safety-policy assignment references a missing policy"
+                )
+            assignment_projection = SafetyPolicyAssignmentProjection(
+                assignment_id=safety_assignment.id,
+                safety_policy_id=policy.id,
+                policy_version=policy.policy_version,
+                sequence_number=safety_assignment.sequence_number,
+                assigned_at=safety_assignment.assigned_at,
+                assigned_by=safety_assignment.assigned_by,
+                applicability_rationale=safety_assignment.applicability_rationale,
+                rule_version=safety_assignment.rule_version,
+            )
         week = self._project_week(matching_plans[0]) if matching_plans else None
         return CurrentWeekProjection(
             athlete_id=athlete.id,
             athlete_display_name=athlete.display_name,
             as_of=as_of,
+            safety_policy_assignment=assignment_projection,
             week=week,
         )
 

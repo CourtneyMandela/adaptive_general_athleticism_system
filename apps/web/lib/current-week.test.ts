@@ -95,6 +95,7 @@ describe("current-week presentation", () => {
           athlete_id: prescription.adaptation_id,
           athlete_display_name: "Fixture athlete",
           as_of: "2026-08-24",
+          safety_policy_assignment: null,
           week: null,
         }),
         { status: 200 },
@@ -227,7 +228,6 @@ describe("current-week presentation", () => {
       new Response(JSON.stringify({ decision: { id: "decision", outcome: "proceed" }, execution: { id: "execution", status: "completed" } }), { status: 201 }),
     );
     const safetyCommand = {
-      safety_policy_id: "00000000-0000-4000-8000-000000000020",
       timing: "pre_session" as const,
       readiness: "ready" as const,
       unusual_soreness: false,
@@ -250,6 +250,9 @@ describe("current-week presentation", () => {
     expect(fetcher.mock.calls[0][1]?.headers).toMatchObject({
       Authorization: "Bearer dev.local-browser",
     });
+    expect(JSON.parse(fetcher.mock.calls[0][1]!.body as string)).not.toHaveProperty(
+      "safety_policy_id",
+    );
 
     await submitSafetyCheck("http://localhost:8000", "plan", "session", {
       ...safetyCommand,

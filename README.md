@@ -130,6 +130,20 @@ python -m agas_api.identity_admin grant --athlete-id YOUR_ATHLETE_UUID
 
 There is deliberately no public endpoint for claiming an arbitrary athlete ID.
 
+Safety policy applicability is also governed rather than user-selectable. After a reviewed policy
+exists, a local operator can assign it to an owned athlete with:
+
+```bash
+python -m agas_api.safety_policy_admin assign \
+  --athlete-id YOUR_ATHLETE_UUID \
+  --safety-policy-id YOUR_REVIEWED_POLICY_UUID \
+  --assigned-by "REVIEWER_OR_OPERATOR" \
+  --applicability-rationale "WHY_THIS_REVIEWED_POLICY_APPLIES"
+```
+
+Replacements append a sequenced predecessor-linked assignment. The PWA and session API resolve the
+current assignment from the athlete; clients cannot choose a policy ID per safety report.
+
 It accepts explicit replanning candidate contexts, reconstructs the persisted review chain, and
 atomically appends capability needs and one replacement strategy. Raw strategy/need CRUD is not
 exposed. Block creation accepts persisted demand identities plus an allocation policy, dates,
@@ -196,9 +210,10 @@ controlled equipment selections. The backend must have imported the seed catalog
 choices to appear. A new profile opens the authoritative empty-week state rather than receiving a
 generic workout.
 
-The secondary development path accepts an existing athlete ID plus a reviewed safety-policy ID.
-Set `NEXT_PUBLIC_AGAS_ATHLETE_ID` and `NEXT_PUBLIC_AGAS_SAFETY_POLICY_ID` in `.env` to prefill those
-fields for a local demo. After connecting, an athlete can append a pre-session readiness report,
+The secondary development path accepts an existing owned athlete ID. Set
+`NEXT_PUBLIC_AGAS_ATHLETE_ID` in `.env` to prefill it for a local demo. The backend projection
+reports whether a reviewed safety policy is assigned; no policy UUID is entered in the browser.
+After connecting, an athlete with an assignment can append a pre-session readiness report,
 receive the backend's deterministic safety result, and log actual sets, dose, effort, timestamps,
 and notes. The screen then collects a short post-session recovery report and displays persisted
 progression outcomes per exercise. When an exact unique non-exposure load or repetition policy is
@@ -212,7 +227,7 @@ hold, review-required, missing-policy, and unsupported-policy states remain visi
 
 This setup is provisional: there is no verified production identity provider, account recovery,
 consent/export/deletion workflow, sensitive health intake, assessment orchestration, or
-athlete-to-policy assignment workflow yet. Do not use it for sensitive or production athlete data.
+authenticated reviewer workflow yet. Do not use it for sensitive or production athlete data.
 The browser does not classify raw symptoms. Selecting a concerning symptom pauses the ordinary
 workout flow instead of fabricating a safety signal.
 Progression remains backend-governed: the PWA never chooses among policies or invents exposure

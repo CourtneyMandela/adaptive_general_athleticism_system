@@ -18,6 +18,7 @@ from agas_domain.models import (
     AssessmentSelection,
     Athlete,
     AthleteOwnership,
+    AthleteSafetyPolicyAssignment,
     AvailabilityWindow,
     BlockIssue,
     BlockPlan,
@@ -82,6 +83,7 @@ from agas_domain.persistence.models import (
     AssessmentSelectionRecord,
     AthleteOwnershipRecord,
     AthleteRecord,
+    AthleteSafetyPolicyAssignmentRecord,
     AvailabilityWindowRecord,
     BlockPlanEvidenceClaimRecord,
     BlockPlanObservationRecord,
@@ -2069,6 +2071,85 @@ class DomainRepository:
             policy_version=record.policy_version,
         )
 
+    def add_athlete_safety_policy_assignment(
+        self, assignment: AthleteSafetyPolicyAssignment
+    ) -> None:
+        self._require_athlete(assignment.athlete_id)
+        if self.get_session_safety_policy(assignment.safety_policy_id) is None:
+            raise DomainIntegrityError("session safety policy does not exist")
+        current = self.get_current_athlete_safety_policy_assignment(assignment.athlete_id)
+        if current is None:
+            if assignment.sequence_number != 1 or assignment.supersedes_assignment_id is not None:
+                raise DomainIntegrityError(
+                    "the first athlete safety-policy assignment must start sequence one"
+                )
+        else:
+            if assignment.sequence_number != current.sequence_number + 1:
+                raise DomainIntegrityError(
+                    "a safety-policy replacement must use the next sequence number"
+                )
+            if assignment.supersedes_assignment_id != current.id:
+                raise DomainIntegrityError(
+                    "a safety-policy replacement must supersede the current assignment"
+                )
+            if assignment.assigned_at < current.assigned_at:
+                raise DomainIntegrityError(
+                    "a safety-policy replacement cannot predate the current assignment"
+                )
+        self.session.add(
+            AthleteSafetyPolicyAssignmentRecord(
+                id=assignment.id,
+                schema_version=assignment.schema_version,
+                created_at=assignment.created_at,
+                athlete_id=assignment.athlete_id,
+                safety_policy_id=assignment.safety_policy_id,
+                sequence_number=assignment.sequence_number,
+                supersedes_assignment_id=assignment.supersedes_assignment_id,
+                assigned_at=assignment.assigned_at,
+                assigned_by=assignment.assigned_by,
+                applicability_rationale=assignment.applicability_rationale,
+                rule_version=assignment.rule_version,
+            )
+        )
+
+    def get_athlete_safety_policy_assignment(
+        self, assignment_id: UUID
+    ) -> AthleteSafetyPolicyAssignment | None:
+        record = self.session.get(AthleteSafetyPolicyAssignmentRecord, assignment_id)
+        return self._athlete_safety_assignment_from_record(record) if record is not None else None
+
+    def get_current_athlete_safety_policy_assignment(
+        self, athlete_id: UUID
+    ) -> AthleteSafetyPolicyAssignment | None:
+        record = self.session.scalar(
+            select(AthleteSafetyPolicyAssignmentRecord)
+            .where(AthleteSafetyPolicyAssignmentRecord.athlete_id == athlete_id)
+            .order_by(
+                AthleteSafetyPolicyAssignmentRecord.sequence_number.desc(),
+                AthleteSafetyPolicyAssignmentRecord.id.desc(),
+            )
+            .limit(1)
+        )
+        return self._athlete_safety_assignment_from_record(record) if record is not None else None
+
+    @staticmethod
+    def _athlete_safety_assignment_from_record(
+        record: AthleteSafetyPolicyAssignmentRecord,
+    ) -> AthleteSafetyPolicyAssignment:
+        return AthleteSafetyPolicyAssignment(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            athlete_id=record.athlete_id,
+            safety_policy_id=record.safety_policy_id,
+            sequence_number=record.sequence_number,
+            supersedes_assignment_id=record.supersedes_assignment_id,
+            assigned_at=record.assigned_at,
+            assigned_by=record.assigned_by,
+            applicability_rationale=record.applicability_rationale,
+            rule_version=record.rule_version,
+        )
+
     def add_session_safety_decision(self, decision: SessionSafetyDecision) -> None:
         self._require_athlete(decision.athlete_id)
         plan = self.session.get(WeeklyPlanRecord, decision.weekly_plan_id)
@@ -2079,6 +2160,20 @@ class DomainRepository:
             raise DomainIntegrityError("safety decision session does not belong to its weekly plan")
         if self.session.get(SessionSafetyPolicyRecord, decision.safety_policy_id) is None:
             raise DomainIntegrityError("session safety policy does not exist")
+        if decision.safety_policy_assignment_id is not None:
+            assignment = self.session.get(
+                AthleteSafetyPolicyAssignmentRecord,
+                decision.safety_policy_assignment_id,
+            )
+            if assignment is None:
+                raise DomainIntegrityError("safety-policy assignment does not exist")
+            if (
+                assignment.athlete_id != decision.athlete_id
+                or assignment.safety_policy_id != decision.safety_policy_id
+            ):
+                raise DomainIntegrityError(
+                    "safety-policy assignment does not match the decision athlete and policy"
+                )
         if decision.related_session_execution_id is not None:
             execution = self.session.get(
                 SessionExecutionRecord, decision.related_session_execution_id
@@ -2133,6 +2228,7 @@ class DomainRepository:
             planned_session_id=decision.planned_session_id,
             related_session_execution_id=decision.related_session_execution_id,
             safety_policy_id=decision.safety_policy_id,
+            safety_policy_assignment_id=decision.safety_policy_assignment_id,
             timing=decision.timing.value,
             outcome=decision.outcome.value,
             required_modifications=[item.value for item in decision.required_modifications],
@@ -2163,6 +2259,7 @@ class DomainRepository:
             planned_session_id=record.planned_session_id,
             related_session_execution_id=record.related_session_execution_id,
             safety_policy_id=record.safety_policy_id,
+            safety_policy_assignment_id=record.safety_policy_assignment_id,
             timing=record.timing,
             outcome=record.outcome,
             required_modifications=tuple(record.required_modifications),

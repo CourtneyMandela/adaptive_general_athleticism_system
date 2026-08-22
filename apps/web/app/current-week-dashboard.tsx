@@ -25,7 +25,6 @@ import { WeeklyReview } from "./weekly-review";
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const configuredAthleteId = process.env.NEXT_PUBLIC_AGAS_ATHLETE_ID ?? "";
-const configuredSafetyPolicyId = process.env.NEXT_PUBLIC_AGAS_SAFETY_POLICY_ID ?? "";
 
 function formatWeekRange(start: string, end: string): string {
   const formatter = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
@@ -46,13 +45,13 @@ function SessionCard({
   session,
   asOf,
   weeklyPlanId,
-  safetyPolicyId,
+  hasSafetyPolicyAssignment,
   onSaved,
 }: {
   session: PlannedSessionProjection;
   asOf: string;
   weeklyPlanId: string;
-  safetyPolicyId: string;
+  hasSafetyPolicyAssignment: boolean;
   onSaved: () => Promise<void>;
 }) {
   const isToday = session.starts_at.slice(0, 10) === asOf;
@@ -121,13 +120,18 @@ function SessionCard({
             </span>
           </footer>
           {session.execution.post_session_safety_outcomes.length === 0 ? (
-            <PostSessionSafetyForm
-              apiBaseUrl={apiBaseUrl}
-              weeklyPlanId={weeklyPlanId}
-              safetyPolicyId={safetyPolicyId}
-              session={session}
-              onSaved={onSaved}
-            />
+            hasSafetyPolicyAssignment ? (
+              <PostSessionSafetyForm
+                apiBaseUrl={apiBaseUrl}
+                weeklyPlanId={weeklyPlanId}
+                session={session}
+                onSaved={onSaved}
+              />
+            ) : (
+              <p className="session-pending">
+                A reviewed safety-policy assignment is required before recovery closure.
+              </p>
+            )
           ) : (
             <section className="closure-panel" aria-label="Post-session review">
               <p className="eyebrow">Recovery report</p>
@@ -181,13 +185,19 @@ function SessionCard({
         </div>
       ) : (
         <div className="session-actions">
-          <SafetyCheckForm
-            apiBaseUrl={apiBaseUrl}
-            weeklyPlanId={weeklyPlanId}
-            safetyPolicyId={safetyPolicyId}
-            session={session}
-            onSaved={onSaved}
-          />
+          {hasSafetyPolicyAssignment ? (
+            <SafetyCheckForm
+              apiBaseUrl={apiBaseUrl}
+              weeklyPlanId={weeklyPlanId}
+              session={session}
+              onSaved={onSaved}
+            />
+          ) : (
+            <p className="session-pending">
+              A reviewed safety policy must be assigned before a safety check can authorize this
+              session.
+            </p>
+          )}
           {session.pre_session_safety?.outcome === "proceed" ||
           session.pre_session_safety?.outcome === "modify" ? (
             <WorkoutLogForm
@@ -210,9 +220,7 @@ function SessionCard({
 
 export function CurrentWeekDashboard() {
   const [athleteInput, setAthleteInput] = useState(configuredAthleteId);
-  const [safetyPolicyInput, setSafetyPolicyInput] = useState(configuredSafetyPolicyId);
   const [athleteId, setAthleteId] = useState("");
-  const [safetyPolicyId, setSafetyPolicyId] = useState("");
   const [asOf, setAsOf] = useState(localIsoDate);
   const [projection, setProjection] = useState<CurrentWeekProjection | null>(null);
   const [state, setState] = useState<"setup" | "loading" | "ready" | "error">("setup");
@@ -240,21 +248,13 @@ export function CurrentWeekDashboard() {
       setState("error");
       return;
     }
-    const normalizedPolicy = safetyPolicyInput.trim();
-    if (!isUuid(normalizedPolicy)) {
-      setMessage("Enter a valid reviewed safety policy ID from the persisted backend.");
-      setState("error");
-      return;
-    }
     setAthleteId(normalized);
-    setSafetyPolicyId(normalizedPolicy);
     void load(normalized, asOf);
   }
 
   function openCreatedAthlete(createdAthleteId: string) {
     setAthleteInput(createdAthleteId);
     setAthleteId(createdAthleteId);
-    setSafetyPolicyId(isUuid(configuredSafetyPolicyId) ? configuredSafetyPolicyId : "");
     void load(createdAthleteId, asOf);
   }
 
@@ -287,18 +287,9 @@ export function CurrentWeekDashboard() {
                 placeholder="00000000-0000-4000-8000-000000000000"
                 autoComplete="off"
               />
-              <label htmlFor="safety-policy-id">Safety policy ID</label>
-              <input
-                id="safety-policy-id"
-                name="safety-policy-id"
-                value={safetyPolicyInput}
-                onChange={(event) => setSafetyPolicyInput(event.target.value)}
-                placeholder="00000000-0000-4000-8000-000000000000"
-                autoComplete="off"
-              />
               <p className="form-help">
-                This developer path requires persisted IDs, a reviewed safety policy, and ownership
-                granted to the local development account.
+                This developer path requires an owned athlete ID. Any reviewed safety-policy
+                assignment is resolved from the backend rather than entered here.
               </p>
               <button type="submit">Open current week</button>
             </form>
@@ -321,7 +312,6 @@ export function CurrentWeekDashboard() {
           className="text-button"
           onClick={() => {
             setAthleteId("");
-            setSafetyPolicyId("");
             setProjection(null);
             setState("setup");
           }}
@@ -364,15 +354,37 @@ export function CurrentWeekDashboard() {
         <section className="state-card">
           <p className="eyebrow">Profile saved · No scheduled week</p>
           <h2>There is no persisted plan covering {asOf}.</h2>
-          <p>
-            AGAS will not invent a workout to fill this gap. A reviewed safety-policy assignment,
-            assessment, and governed first-plan workflow are still required.
-          </p>
+          {projection.safety_policy_assignment ? (
+            <p>
+              Safety policy {projection.safety_policy_assignment.policy_version} is assigned. An
+              assessment and governed first-plan workflow are still required; AGAS will not invent
+              a workout to fill the gap.
+            </p>
+          ) : (
+            <p>
+              AGAS will not invent a workout to fill this gap. A reviewed safety-policy assignment,
+              assessment, and governed first-plan workflow are still required.
+            </p>
+          )}
         </section>
       ) : null}
 
       {state === "ready" && projection?.week ? (
         <>
+          {projection.safety_policy_assignment ? (
+            <section className="safety-note" aria-label="Assigned safety policy">
+              <strong>Reviewed safety policy</strong>
+              <span>{projection.safety_policy_assignment.policy_version}</span>
+            </section>
+          ) : (
+            <section className="state-card state-card--error" role="alert">
+              <h2>Safety checks are unavailable.</h2>
+              <p>
+                This athlete has no governed safety-policy assignment. Scheduled work remains
+                visible, but the PWA cannot authorize a session.
+              </p>
+            </section>
+          )}
           <section className="week-summary" aria-labelledby="week-title">
             <div>
               <p className="eyebrow">Block week {projection.week.block_week}</p>
@@ -395,7 +407,7 @@ export function CurrentWeekDashboard() {
                 session={session}
                 asOf={asOf}
                 weeklyPlanId={projection.week!.weekly_plan_id}
-                safetyPolicyId={safetyPolicyId}
+                hasSafetyPolicyAssignment={projection.safety_policy_assignment !== null}
                 onSaved={() => load(athleteId, asOf)}
               />
             ))}

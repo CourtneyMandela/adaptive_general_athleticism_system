@@ -285,9 +285,10 @@ together.
 ### Transactional safety and session recording
 
 `PersistedSessionSafetyService` is the write boundary for pre- and post-session reports. The URL
-identifies the immutable weekly plan and planned occurrence, while the request supplies a persisted
-safety-policy ID, already classified signals, readiness context, timestamps, reliability, and
-provenance. The deterministic safety gate produces a direct user-report `Observation` and a
+identifies the immutable weekly plan and planned occurrence. The service derives the athlete and
+resolves the current predecessor-linked `AthleteSafetyPolicyAssignment`; the request cannot select
+a policy. It supplies only already classified signals, readiness context, timestamps, reliability,
+and provenance. The deterministic safety gate produces a direct user-report `Observation` and a
 `SessionSafetyDecision`; both append or roll back together.
 
 `PersistedSessionExecutionService` loads the plan, planned occurrence, session container, ordered
@@ -492,10 +493,12 @@ Technique-constraint reporting remains separate from completion and is not prefi
 assigned policy requires technique confirmation, an unreported or failed constraint produces the
 deterministic non-progression outcome rather than a favorable inference.
 
-The secondary local-development setup requires explicit athlete and reviewed safety-policy IDs,
-and the athlete must belong to the configured development account.
-Safety-policy assignment remains outside onboarding because applicability is governed rather than a
-user preference. The client uses `unverified-athlete-user` provenance to avoid implying
+The secondary local-development setup requires an owned athlete ID. A sequenced immutable
+assignment selects the athlete's reviewed safety policy, and the current-week projection exposes
+that assignment for inspection. Session safety commands resolve it server-side rather than
+accepting a browser-selected policy UUID. Assignment remains outside onboarding because
+applicability is governed rather than a user preference. The client uses
+`unverified-athlete-user` provenance to avoid implying
 real-world identity verification. It sends no classified safety signal because no governed browser
 classifier exists; a concerning-symptom selection pauses the ordinary form locally. Verified
 production authentication, consent, and account lifecycle controls are required before sensitive

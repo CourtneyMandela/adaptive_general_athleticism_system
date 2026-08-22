@@ -1296,6 +1296,36 @@ class SessionSafetyPolicyEvidenceClaimRecord(Base):
     position: Mapped[int] = mapped_column(Integer(), nullable=False)
 
 
+class AthleteSafetyPolicyAssignmentRecord(VersionedRecordMixin, Base):
+    __tablename__ = "athlete_safety_policy_assignments"
+    __table_args__ = (
+        CheckConstraint("sequence_number >= 1", name="ck_safety_assignment_sequence_positive"),
+        UniqueConstraint(
+            "athlete_id", "sequence_number", name="uq_athlete_safety_assignment_sequence"
+        ),
+        UniqueConstraint("supersedes_assignment_id", name="uq_safety_assignment_superseded_once"),
+    )
+
+    athlete_id: Mapped[UUID] = mapped_column(
+        ForeignKey("athletes.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    safety_policy_id: Mapped[UUID] = mapped_column(
+        ForeignKey("session_safety_policies.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=False,
+    )
+    sequence_number: Mapped[int] = mapped_column(Integer(), nullable=False)
+    supersedes_assignment_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("athlete_safety_policy_assignments.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=True,
+    )
+    assigned_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)
+    assigned_by: Mapped[str] = mapped_column(String(160), nullable=False)
+    applicability_rationale: Mapped[str] = mapped_column(Text(), nullable=False)
+    rule_version: Mapped[str] = mapped_column(String(120), nullable=False)
+
+
 class SessionSafetyDecisionRecord(VersionedRecordMixin, Base):
     __tablename__ = "session_safety_decisions"
 
@@ -1320,6 +1350,11 @@ class SessionSafetyDecisionRecord(VersionedRecordMixin, Base):
     )
     safety_policy_id: Mapped[UUID] = mapped_column(
         ForeignKey("session_safety_policies.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    safety_policy_assignment_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("athlete_safety_policy_assignments.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=True,
     )
     timing: Mapped[str] = mapped_column(String(40), nullable=False)
     outcome: Mapped[str] = mapped_column(String(40), nullable=False)
@@ -2300,6 +2335,7 @@ for _record_type in (
     PlannedSessionRecord,
     SessionSafetyPolicyRecord,
     SessionSafetyPolicyEvidenceClaimRecord,
+    AthleteSafetyPolicyAssignmentRecord,
     SessionSafetyDecisionRecord,
     SessionSafetyDecisionObservationRecord,
     SessionExecutionRecord,
