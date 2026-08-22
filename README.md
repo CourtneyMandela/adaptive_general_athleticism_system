@@ -7,6 +7,9 @@ seed catalog, and a tested home/travel/return counterfactual. Temporary equipmen
 select a newer exercise resolution without changing athlete identity or adaptation intent; partial
 fidelity remains explicit and policy-gated. Session templates, safety decisions, execution,
 adherence, training response, and block review remain immutable and provenance-preserving.
+Reviewed follow-up estimates can regenerate capability needs and a replacement long-range
+strategy through an explicit closed-loop replanning boundary. Each revision retains the exact
+prior strategy and triggering review without inferring causation or rewriting athlete history.
 
 ## Architecture at a glance
 
@@ -60,8 +63,8 @@ Apply the database migration:
 alembic upgrade head
 ```
 
-The checked-in baseline is frozen. Controlled ontology fields are added through the next
-incremental revision; future schema changes must continue to append revisions.
+The checked-in baseline is frozen. Controlled ontology fields and strategy-revision lineage are
+added through incremental revisions; future schema changes must continue to append revisions.
 
 Validate the repository seed catalog without loading it into an athlete database:
 
@@ -97,7 +100,7 @@ pnpm --filter @agas/web test
 ```bash
 ruff check .
 ruff format --check .
-mypy packages/domain/src packages/safety/src services/api/src services/planner/src tests
+mypy packages/domain/src packages/safety/src packages/seed_data/src services/api/src services/planner/src tests
 pnpm --filter @agas/web lint
 pnpm --filter @agas/web typecheck
 ```

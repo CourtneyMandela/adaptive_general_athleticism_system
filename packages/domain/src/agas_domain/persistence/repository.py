@@ -577,6 +577,22 @@ class DomainRepository:
         self._require_athlete(strategy.athlete_id)
         if self.session.get(PriorityPolicyRecord, strategy.priority_policy_id) is None:
             raise DomainIntegrityError("priority policy does not exist")
+        if strategy.supersedes_strategy_id is not None:
+            previous = self.session.get(LongRangeStrategyRecord, strategy.supersedes_strategy_id)
+            review = self.session.get(BlockReviewRecord, strategy.triggering_block_review_id)
+            if previous is None or previous.athlete_id != strategy.athlete_id:
+                raise DomainIntegrityError("superseded strategy belongs to another athlete")
+            if review is None or review.athlete_id != strategy.athlete_id:
+                raise DomainIntegrityError("triggering review belongs to another athlete")
+            reviewed_block = self.session.get(BlockPlanRecord, review.block_plan_id)
+            if (
+                reviewed_block is None
+                or reviewed_block.long_range_strategy_id != previous.id
+                or review.reviewed_at > strategy.generated_at
+            ):
+                raise DomainIntegrityError(
+                    "strategy revision does not follow its reviewed prior strategy"
+                )
         observations = self._observations_by_id(strategy.source_observation_ids)
         if {item.id for item in observations} != set(strategy.source_observation_ids):
             raise DomainIntegrityError("one or more strategy source observations do not exist")
@@ -653,6 +669,8 @@ class DomainRepository:
             created_at=strategy.created_at,
             athlete_id=strategy.athlete_id,
             priority_policy_id=strategy.priority_policy_id,
+            supersedes_strategy_id=strategy.supersedes_strategy_id,
+            triggering_block_review_id=strategy.triggering_block_review_id,
             horizon_months=strategy.horizon_months,
             block_hypothesis=strategy.block_hypothesis,
             generated_at=strategy.generated_at,
@@ -2843,6 +2861,8 @@ class DomainRepository:
             generated_at=record.generated_at,
             next_review_at=record.next_review_at,
             rule_version=record.rule_version,
+            supersedes_strategy_id=record.supersedes_strategy_id,
+            triggering_block_review_id=record.triggering_block_review_id,
         )
 
     def add_assessment_definition(self, definition: AssessmentDefinition) -> None:

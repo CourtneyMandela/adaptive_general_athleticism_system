@@ -6,7 +6,9 @@ The current foundation adds controlled exercise/adaptation vocabulary and a deli
 validated seed boundary. A tested full-gym/travel/return scenario re-resolves exercises against the
 current environment without changing the athlete, strategy, block, adaptation, or stimulus.
 Existing immutable session, execution, response, and block-review behavior remains in place;
-automatic workout generation, capability updates, and next-block generation are deferred.
+reviewed capability estimates can now drive a lineage-linked replacement strategy. Automatic
+capability estimation from raw results, candidate-context inference, workout generation, and
+next-block generation remain deferred.
 
 ## Shape
 
@@ -214,6 +216,24 @@ below the delivery or confidence threshold makes the review inconclusive rather 
 untested or poorly measured intervention as ineffective. Review is descriptive: it changes no
 historical estimate, prescription, or future plan.
 
+### Closed-loop replanning
+
+`ClosedLoopReplanner` is the explicit boundary from a completed block review to a replacement
+`LongRangeStrategy`. It accepts capability estimates that already exist as derived state and
+requires each actively trained adaptation to use the exact follow-up estimate named by its
+reviewed `TrainingResponse`. Inactive adaptations may retain an estimate from the prior strategy.
+Each `ReplanningCandidateContext` names its estimate and competency floor directly, so adaptations
+that share a broad capability domain are not accidentally coupled by domain alone.
+
+The replanner rebuilds immutable `CapabilityNeed` records through the same competency-floor
+detector, delegates scoring to the versioned long-range planner, and records both
+`supersedes_strategy_id` and `triggering_block_review_id`. Those lineage values are a required pair
+in the domain, repository, and relational schema. A review can be causally inconclusive while a
+separately derived follow-up estimate remains valid current-state evidence; using that estimate
+does not assert that the completed block caused the change. Candidate relevance, trainability,
+transfer, and cost values remain explicit governed inputs rather than being inferred from a single
+response.
+
 ### Evidence claims
 
 Evidence claims are reviewed, versioned interpretations linked to source identifiers. Evidence
@@ -247,6 +267,8 @@ adherence records and their source links, training responses, review policies, r
 their ordered provenance links are also append-only. Repository checks duplicate the
 domain authorization invariants before persistence so invalid cross-athlete, cross-plan, blocking,
 or unsupported execution chains cannot be inserted through normal application code.
+Strategy revision links are likewise append-only and must form the concrete chain prior strategy
+to completed block to block review to replacement strategy.
 
 ## API
 

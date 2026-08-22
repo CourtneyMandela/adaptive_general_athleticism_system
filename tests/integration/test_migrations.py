@@ -42,6 +42,11 @@ def test_baseline_migration_matches_current_metadata(
         assert "allow_partial_exercise_resolution" in {
             column["name"] for column in inspector.get_columns("weekly_scheduling_policies")
         }
+        strategy_columns = {
+            column["name"] for column in inspector.get_columns("long_range_strategies")
+        }
+        assert "supersedes_strategy_id" in strategy_columns
+        assert "triggering_block_review_id" in strategy_columns
 
         command.downgrade(config, "base")
         assert set(inspect(engine).get_table_names()) == {"alembic_version"}

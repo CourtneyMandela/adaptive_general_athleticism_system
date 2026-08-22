@@ -559,6 +559,41 @@ class AdaptationPlanningCandidate(DomainModel):
         return self
 
 
+class ReplanningCandidateContext(DomainModel):
+    adaptation_id: UUID
+    competency_floor_id: UUID
+    capability_estimate_id: UUID
+    general_relevance: UnitInterval
+    goal_relevance: UnitInterval
+    prerequisite_value: UnitInterval
+    expected_trainability: UnitInterval
+    transfer_value: UnitInterval
+    fatigue_cost: UnitInterval
+    time_cost: UnitInterval
+    interference_cost: UnitInterval
+    safe_to_train: bool = True
+    introductory_exposure_needed: bool = False
+    prerequisites_met: bool = True
+    prerequisite_adaptation_ids: tuple[UUID, ...] = ()
+    cultivate_comparative_advantage: bool = False
+    source_observation_ids: tuple[UUID, ...] = ()
+    evidence_claim_ids: tuple[UUID, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_context(self) -> ReplanningCandidateContext:
+        for field_name in (
+            "prerequisite_adaptation_ids",
+            "source_observation_ids",
+            "evidence_claim_ids",
+        ):
+            values = getattr(self, field_name)
+            if len(set(values)) != len(values):
+                raise ValueError(f"{field_name} must not contain duplicates")
+        if self.adaptation_id in self.prerequisite_adaptation_ids:
+            raise ValueError("an adaptation cannot be its own prerequisite")
+        return self
+
+
 class AdaptationPriority(VersionedRecord):
     adaptation_id: UUID
     capability_need_id: UUID
@@ -604,6 +639,8 @@ class LongRangeStrategy(VersionedRecord):
     generated_at: datetime
     next_review_at: datetime
     rule_version: NonEmptyText
+    supersedes_strategy_id: UUID | None = None
+    triggering_block_review_id: UUID | None = None
 
     @field_validator("generated_at", "next_review_at")
     @classmethod
@@ -639,6 +676,26 @@ class LongRangeStrategy(VersionedRecord):
             raise ValueError("DEVELOP allocation must sum to one")
         if not has_development and allocation != 0:
             raise ValueError("allocation must be zero when nothing is in DEVELOP")
+        if (self.supersedes_strategy_id is None) != (self.triggering_block_review_id is None):
+            raise ValueError(
+                "strategy revisions require both superseded strategy and triggering review ids"
+            )
+        if self.supersedes_strategy_id == self.id:
+            raise ValueError("a strategy cannot supersede itself")
+        return self
+
+
+class ClosedLoopReplanningResult(DomainModel):
+    capability_needs: Annotated[tuple[CapabilityNeed, ...], Field(min_length=1)]
+    strategy: LongRangeStrategy
+
+    @model_validator(mode="after")
+    def validate_result(self) -> ClosedLoopReplanningResult:
+        need_ids = tuple(item.id for item in self.capability_needs)
+        if len(set(need_ids)) != len(need_ids):
+            raise ValueError("closed-loop replanning needs must have unique ids")
+        if {item.capability_need_id for item in self.strategy.priorities} != set(need_ids):
+            raise ValueError("replanned strategy priorities must use the returned capability needs")
         return self
 
 

@@ -45,6 +45,7 @@ from agas_domain import (
     ProgressionPolicy,
     Provenance,
     ReadinessLevel,
+    ReplanningCandidateContext,
     ResolutionIssueCode,
     ResolutionStatus,
     ResourceAllocationPolicy,
@@ -84,6 +85,7 @@ from agas_domain.persistence.repository import DomainIntegrityError, DomainRepos
 from agas_planner import (
     BlockPlanner,
     BlockReviewEngine,
+    ClosedLoopReplanner,
     CompetencyFloorDetector,
     EnvironmentSnapshotBuilder,
     ExerciseResolver,
@@ -1087,6 +1089,57 @@ def test_progression_exposure_and_revised_prescription_round_trip(session: Sessi
     assert repository.get_training_response(response.id) == response
     assert repository.get_block_review_policy(review_policy.id) == review_policy
     assert repository.get_block_review(review.id) == review
+
+    adaptation = repository.get_adaptation(prescription.adaptation_id)
+    floor = repository.get_competency_floor(strategy.competency_floor_ids[0])
+    stored_priority_policy = repository.get_priority_policy(strategy.priority_policy_id)
+    assert adaptation is not None
+    assert floor is not None
+    assert stored_priority_policy is not None
+    replanning_result = ClosedLoopReplanner().replan(
+        previous_strategy=strategy,
+        completed_block=block,
+        block_review=review,
+        training_responses=(response,),
+        selected_estimates=(followup,),
+        adaptations=(adaptation,),
+        competency_floors=(floor,),
+        candidate_contexts=(
+            ReplanningCandidateContext(
+                adaptation_id=adaptation.id,
+                competency_floor_id=floor.id,
+                capability_estimate_id=followup.id,
+                general_relevance=0.9,
+                goal_relevance=0.8,
+                prerequisite_value=0.7,
+                expected_trainability=0.7,
+                transfer_value=0.8,
+                fatigue_cost=0.3,
+                time_cost=0.3,
+                interference_cost=0.2,
+                evidence_claim_ids=claim_ids,
+            ),
+        ),
+        priority_policy=stored_priority_policy,
+        generated_at=review.reviewed_at + timedelta(minutes=1),
+        review_after_days=42,
+    )
+    for need in replanning_result.capability_needs:
+        repository.add_capability_need(need)
+    session.flush()
+    repository.add_long_range_strategy(replanning_result.strategy)
+    session.commit()
+    session.expire_all()
+    assert (
+        repository.get_long_range_strategy(replanning_result.strategy.id)
+        == replanning_result.strategy
+    )
+    assert repository.get_long_range_strategy(strategy.id) == strategy
+    invalid_revision = replanning_result.strategy.model_copy(
+        update={"id": uuid4(), "triggering_block_review_id": uuid4()}
+    )
+    with pytest.raises(DomainIntegrityError, match="triggering review belongs"):
+        repository.add_long_range_strategy(invalid_revision)
 
     response_record = session.get(TrainingResponseRecord, response.id)
     assert response_record is not None

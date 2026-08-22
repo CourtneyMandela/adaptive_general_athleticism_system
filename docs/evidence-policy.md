@@ -87,3 +87,9 @@ Meaningful-change thresholds, minimum delivery, and minimum confidence are versi
 interpretations and must link to reviewed evidence before production use. The repository seeds no
 universal response threshold. If delivery or confidence is insufficient, the review is
 `INCONCLUSIVE`; it may not convert missing evidence into a claim that the block failed.
+
+A follow-up capability estimate and a block review answer different questions. Replanning may use
+a valid reviewed follow-up estimate as current-state evidence even when the block's causal outcome
+is inconclusive or unsupported. The replacement strategy must retain review lineage and must not
+present the observed change as caused by the intervention. Relevance, trainability, transfer, and
+cost inputs require their own governed provenance; one personal response does not establish them.

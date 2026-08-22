@@ -406,12 +406,39 @@ class PriorityPolicyRecord(VersionedRecordMixin, Base):
 
 class LongRangeStrategyRecord(VersionedRecordMixin, Base):
     __tablename__ = "long_range_strategies"
+    __table_args__ = (
+        CheckConstraint(
+            "(supersedes_strategy_id IS NULL AND triggering_block_review_id IS NULL) "
+            "OR (supersedes_strategy_id IS NOT NULL "
+            "AND triggering_block_review_id IS NOT NULL)",
+            name="ck_strategy_revision_lineage_pair",
+        ),
+    )
 
     athlete_id: Mapped[UUID] = mapped_column(
         ForeignKey("athletes.id", ondelete="RESTRICT"), index=True, nullable=False
     )
     priority_policy_id: Mapped[UUID] = mapped_column(
         ForeignKey("priority_policies.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    supersedes_strategy_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey(
+            "long_range_strategies.id",
+            name="fk_strategy_supersedes_strategy",
+            ondelete="RESTRICT",
+        ),
+        index=True,
+        nullable=True,
+    )
+    triggering_block_review_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey(
+            "block_reviews.id",
+            name="fk_strategy_triggering_block_review",
+            ondelete="RESTRICT",
+            use_alter=True,
+        ),
+        index=True,
+        nullable=True,
     )
     horizon_months: Mapped[int] = mapped_column(Integer(), nullable=False)
     block_hypothesis: Mapped[str] = mapped_column(Text(), nullable=False)
