@@ -27,6 +27,21 @@ export interface ProgressionProjection {
   decided_at: string;
 }
 
+export interface ProgressionActionProjection {
+  status:
+    | "awaiting_execution"
+    | "awaiting_post_session_safety"
+    | "ready"
+    | "manual_configuration_required"
+    | "policy_unavailable"
+    | "completed";
+  rule_reference: string;
+  progression_policy_id: string | null;
+  adjustment_dimension: string | null;
+  adjustment_description: string | null;
+  reason: string;
+}
+
 export interface PrescriptionProjection {
   order_index: number;
   section: string;
@@ -43,6 +58,7 @@ export interface PrescriptionProjection {
   rest_seconds: number;
   adherence: AdherenceProjection | null;
   progression: ProgressionProjection | null;
+  progression_action: ProgressionActionProjection;
 }
 
 export interface PlannedSessionProjection {
@@ -128,6 +144,7 @@ export interface SetPerformanceInput {
   actual_repetitions?: number;
   actual_duration_seconds?: number;
   effort_rpe?: number;
+  technique_constraint_met?: boolean;
 }
 
 export interface SessionExecutionCommand {
@@ -155,6 +172,15 @@ export interface PrescriptionLogDraft {
   performedSets: number;
   actualDosePerSet: number;
   itemRpe: number | null;
+  techniqueConstraintMet: boolean | null;
+}
+
+export interface ProgressionEvaluationCommand {
+  progression_policy_id: string;
+  exposure: null;
+  decided_at: string;
+  revision_prescribed_at: string;
+  revised_planned_duration_minutes: null;
 }
 
 export const pwaProvenance: ProvenanceInput = {
@@ -274,7 +300,7 @@ export async function fetchCurrentWeek(
 
 async function postSessionCommand<T>(
   url: string,
-  command: SafetyCheckCommand | SessionExecutionCommand,
+  command: SafetyCheckCommand | SessionExecutionCommand | ProgressionEvaluationCommand,
   fetcher: typeof fetch,
 ): Promise<T> {
   const response = await fetcher(url, {
@@ -320,6 +346,39 @@ export async function submitSessionExecution(
   const baseUrl = apiBaseUrl.replace(/\/$/, "");
   return postSessionCommand(
     `${baseUrl}/v1/weekly-plans/${encodeURIComponent(weeklyPlanId)}/sessions/${encodeURIComponent(plannedSessionId)}/executions`,
+    command,
+    fetcher,
+  );
+}
+
+export function buildProgressionEvaluationCommand(
+  progressionPolicyId: string,
+  decidedAt = new Date(),
+): ProgressionEvaluationCommand {
+  if (!isUuid(progressionPolicyId)) throw new Error("A valid assigned progression policy is required.");
+  if (!Number.isFinite(decidedAt.getTime())) throw new Error("Progression time must be valid.");
+  return {
+    progression_policy_id: progressionPolicyId,
+    exposure: null,
+    decided_at: decidedAt.toISOString(),
+    revision_prescribed_at: new Date(decidedAt.getTime() + 1).toISOString(),
+    revised_planned_duration_minutes: null,
+  };
+}
+
+export async function submitProgressionEvaluation(
+  apiBaseUrl: string,
+  sessionExecutionId: string,
+  prescriptionId: string,
+  command: ProgressionEvaluationCommand,
+  fetcher: typeof fetch = fetch,
+): Promise<{
+  progression_decision: { id: string; outcome: string };
+  revised_prescription: { id: string } | null;
+}> {
+  const baseUrl = apiBaseUrl.replace(/\/$/, "");
+  return postSessionCommand(
+    `${baseUrl}/v1/session-executions/${encodeURIComponent(sessionExecutionId)}/prescriptions/${encodeURIComponent(prescriptionId)}/progression`,
     command,
     fetcher,
   );
@@ -378,6 +437,9 @@ export function buildExecutionCommand({
             result.actual_duration_seconds = draft.actualDosePerSet;
           }
           if (draft.itemRpe !== null) result.effort_rpe = draft.itemRpe;
+          if (draft.techniqueConstraintMet !== null) {
+            result.technique_constraint_met = draft.techniqueConstraintMet;
+          }
         }
         return result;
       },

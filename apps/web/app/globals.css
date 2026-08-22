@@ -247,11 +247,15 @@ button { cursor: pointer; }
 .execution-items { display: grid; gap: .7rem; }
 .execution-item { display: grid; gap: .55rem; padding: .75rem; border: 1px solid var(--line); border-radius: .65rem; }
 .compact-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .6rem; }
+.performance-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .closure-panel { display: grid; gap: .65rem; padding: 1rem 1.15rem 1.15rem; border-top: 1px solid var(--line); background: var(--surface); }
 .closure-panel p { margin: 0; }
 .progression-list { display: grid; gap: .55rem; margin: 0; padding: 0; list-style: none; }
 .progression-list li { display: grid; gap: .15rem; padding: .65rem .75rem; border: 1px solid var(--line); border-radius: .65rem; }
 .progression-list span { color: var(--muted); font-size: .8rem; }
+.progression-action { display: grid; justify-items: start; gap: .35rem; margin-top: .35rem; }
+.progression-action button { border: 0; border-radius: .55rem; background: var(--accent); color: #fff; padding: .55rem .7rem; font-size: .76rem; font-weight: 800; }
+.progression-action button:disabled { cursor: not-allowed; opacity: .55; }
 
 .state-card {
   display: grid;
@@ -290,7 +294,7 @@ button { cursor: pointer; }
   .week-stat { text-align: left; }
   .session-card__header, .exercise-line { align-items: flex-start; flex-direction: column; }
   .status-badge { align-self: flex-start; }
-  .compact-fields { grid-template-columns: 1fr; }
+  .compact-fields, .performance-fields { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) { .loader { animation: none; } }

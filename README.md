@@ -156,13 +156,16 @@ for an existing athlete ID plus a reviewed safety-policy ID. Set `NEXT_PUBLIC_AG
 connecting, an athlete can append a pre-session readiness report, receive the backend's
 deterministic safety result, and log actual sets, dose, effort, timestamps, and notes. The screen
 then collects a short post-session recovery report and displays persisted progression outcomes per
-exercise. It refreshes from the authoritative current-week projection after each write.
+exercise. When an exact unique non-exposure load or repetition policy is assigned by the
+prescription's versioned rule reference, the athlete can ask the deterministic backend to evaluate
+progression. It refreshes from the authoritative current-week projection after each write.
 
 This setup is provisional: there is no authentication, athlete onboarding, or athlete-to-policy
 assignment workflow yet. The browser does not classify raw symptoms. Selecting a concerning
 symptom pauses the ordinary workout flow instead of fabricating a safety signal.
-Progression remains backend-governed: the PWA displays persisted decisions but does not choose
-progression or exposure policies while policy assignment is unresolved.
+Progression remains backend-governed: the PWA never chooses among policies or invents exposure
+targets, session-duration budgets, or adjustment values. Unsupported, exposure-sensitive, missing,
+and ambiguous configurations are shown as requiring governed setup.
 
 ## Run tests
 

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  buildProgressionEvaluationCommand,
   buildExecutionCommand,
   CurrentWeekRequestError,
   fetchCurrentWeek,
@@ -12,6 +13,7 @@ import {
   shiftIsoDate,
   submitSafetyCheck,
   submitSessionExecution,
+  submitProgressionEvaluation,
   type PrescriptionProjection,
 } from "./current-week";
 
@@ -31,6 +33,14 @@ const prescription: PrescriptionProjection = {
   rest_seconds: 120,
   adherence: null,
   progression: null,
+  progression_action: {
+    status: "awaiting_execution" as const,
+    rule_reference: "fixture-progression@1.0.0",
+    progression_policy_id: null,
+    adjustment_dimension: null,
+    adjustment_description: null,
+    reason: "progression requires a recorded session execution",
+  },
 };
 
 const session = {
@@ -112,6 +122,7 @@ describe("current-week presentation", () => {
         performedSets: 3,
         actualDosePerSet: 5,
         itemRpe: 7,
+        techniqueConstraintMet: true,
       }],
       safetyDecisionId: session.pre_session_safety.decision_id,
       requiredModifications: session.pre_session_safety.required_modifications,
@@ -143,6 +154,7 @@ describe("current-week presentation", () => {
       target_completed: true,
       actual_repetitions: 5,
       effort_rpe: 7,
+      technique_constraint_met: true,
     });
   });
 
@@ -154,6 +166,7 @@ describe("current-week presentation", () => {
         performedSets: 2,
         actualDosePerSet: 4,
         itemRpe: null,
+        techniqueConstraintMet: false,
       }],
       safetyDecisionId: session.pre_session_safety.decision_id,
       requiredModifications: [],
@@ -165,6 +178,10 @@ describe("current-week presentation", () => {
       recordedAt: new Date("2026-08-24T14:46:00Z"),
     });
     expect(partial.status).toBe("partial");
+    expect(partial.items[0].performances[0]).toMatchObject({
+      performed: true,
+      technique_constraint_met: false,
+    });
     expect(partial.items[0].performances.at(-1)).toEqual({
       set_index: 3,
       performed: false,
@@ -178,6 +195,7 @@ describe("current-week presentation", () => {
         performedSets: 0,
         actualDosePerSet: 5,
         itemRpe: null,
+        techniqueConstraintMet: null,
       }],
       safetyDecisionId: session.pre_session_safety.decision_id,
       requiredModifications: [],
@@ -241,7 +259,13 @@ describe("current-week presentation", () => {
 
     const execution = buildExecutionCommand({
       session,
-      drafts: [{ prescriptionId: prescription.prescription_id, performedSets: 0, actualDosePerSet: 5, itemRpe: null }],
+      drafts: [{
+        prescriptionId: prescription.prescription_id,
+        performedSets: 0,
+        actualDosePerSet: 5,
+        itemRpe: null,
+        techniqueConstraintMet: null,
+      }],
       safetyDecisionId: session.pre_session_safety.decision_id,
       requiredModifications: [],
       startedAt: null,
@@ -253,5 +277,32 @@ describe("current-week presentation", () => {
     });
     await submitSessionExecution("http://localhost:8000", "plan", "session", execution, fetcher);
     expect(fetcher.mock.calls[2][0]).toBe("http://localhost:8000/v1/weekly-plans/plan/sessions/session/executions");
+
+    const progressionPolicyId = "00000000-0000-4000-8000-000000000022";
+    expect(() => buildProgressionEvaluationCommand("not-a-policy-id")).toThrow(
+      "A valid assigned progression policy is required.",
+    );
+    const progressionCommand = buildProgressionEvaluationCommand(
+      progressionPolicyId,
+      new Date("2026-08-24T15:03:00Z"),
+    );
+    expect(progressionCommand).toEqual({
+      progression_policy_id: progressionPolicyId,
+      exposure: null,
+      decided_at: "2026-08-24T15:03:00.000Z",
+      revision_prescribed_at: "2026-08-24T15:03:00.001Z",
+      revised_planned_duration_minutes: null,
+    });
+    const executionId = "00000000-0000-4000-8000-000000000023";
+    await submitProgressionEvaluation(
+      "http://localhost:8000",
+      executionId,
+      prescription.prescription_id,
+      progressionCommand,
+      fetcher,
+    );
+    expect(fetcher.mock.calls[3][0]).toBe(
+      `http://localhost:8000/v1/session-executions/${executionId}/prescriptions/${prescription.prescription_id}/progression`,
+    );
   });
 });

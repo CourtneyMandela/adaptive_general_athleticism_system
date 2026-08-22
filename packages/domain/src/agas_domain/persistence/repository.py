@@ -2343,6 +2343,20 @@ class DomainRepository:
             )
         )
 
+    def list_progression_policies_by_reference(
+        self, reference: str
+    ) -> tuple[ProgressionPolicy, ...]:
+        record_ids = self.session.scalars(
+            select(ProgressionPolicyRecord.id)
+            .where(ProgressionPolicyRecord.reference == reference)
+            .order_by(ProgressionPolicyRecord.created_at, ProgressionPolicyRecord.id)
+        ).all()
+        return tuple(
+            policy
+            for record_id in record_ids
+            if (policy := self.get_progression_policy(record_id)) is not None
+        )
+
     def add_exposure_definition(self, definition: ExposureDefinition) -> None:
         self._require_ids_exist(
             EvidenceClaimRecord.id, definition.evidence_claim_ids, "exposure evidence"

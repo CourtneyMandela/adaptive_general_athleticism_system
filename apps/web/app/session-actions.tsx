@@ -3,10 +3,12 @@
 import { FormEvent, useMemo, useState } from "react";
 
 import {
+  buildProgressionEvaluationCommand,
   buildExecutionCommand,
   pwaProvenance,
   submitSafetyCheck,
   submitSessionExecution,
+  submitProgressionEvaluation,
   type Confidence,
   type PlannedSessionProjection,
   type PrescriptionLogDraft,
@@ -145,6 +147,7 @@ export function WorkoutLogForm({
       performedSets: prescription.sets,
       actualDosePerSet: prescription.repetitions_per_set ?? prescription.duration_seconds ?? 0,
       itemRpe: null,
+      techniqueConstraintMet: null,
     })),
     [session.prescriptions],
   );
@@ -202,10 +205,24 @@ export function WorkoutLogForm({
               return (
                 <section key={prescription.prescription_id} className="execution-item">
                   <strong>{prescription.exercise_name}</strong>
-                  <div className="compact-fields">
+                  <div className="compact-fields performance-fields">
                     <label>Sets completed<input type="number" min="0" max={prescription.sets} step="1" value={draft.performedSets} onChange={(event) => updateDraft(draft.prescriptionId, { performedSets: Number(event.target.value) })} /></label>
                     <label>{unit}<input type="number" min="0" step="1" value={draft.actualDosePerSet} disabled={draft.performedSets === 0} onChange={(event) => updateDraft(draft.prescriptionId, { actualDosePerSet: Number(event.target.value) })} /></label>
                     <label>Item RPE<input type="number" min="0" max="10" step="0.5" value={draft.itemRpe ?? ""} disabled={draft.performedSets === 0} onChange={(event) => updateDraft(draft.prescriptionId, { itemRpe: parseOptionalRpe(event.target.value) })} /></label>
+                    <label>
+                      Technique constraint
+                      <select
+                        value={draft.techniqueConstraintMet === null ? "" : String(draft.techniqueConstraintMet)}
+                        disabled={draft.performedSets === 0}
+                        onChange={(event) => updateDraft(draft.prescriptionId, {
+                          techniqueConstraintMet: event.target.value === "" ? null : event.target.value === "true",
+                        })}
+                      >
+                        <option value="">Not reported</option>
+                        <option value="true">Met</option>
+                        <option value="false">Not met</option>
+                      </select>
+                    </label>
                   </div>
                 </section>
               );
@@ -333,5 +350,50 @@ export function PostSessionSafetyForm({
         </fieldset>
       </form>
     </details>
+  );
+}
+
+export function ProgressionEvaluationButton({
+  apiBaseUrl,
+  executionId,
+  prescriptionId,
+  progressionPolicyId,
+  onSaved,
+}: {
+  apiBaseUrl: string;
+  executionId: string;
+  prescriptionId: string;
+  progressionPolicyId: string;
+  onSaved: () => Promise<void>;
+}) {
+  const [state, setState] = useState<"idle" | "saving" | "error">("idle");
+  const [message, setMessage] = useState("");
+
+  async function evaluate() {
+    setState("saving");
+    setMessage("");
+    try {
+      const command = buildProgressionEvaluationCommand(progressionPolicyId);
+      await submitProgressionEvaluation(
+        apiBaseUrl,
+        executionId,
+        prescriptionId,
+        command,
+      );
+      await onSaved();
+      setState("idle");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to evaluate progression.");
+      setState("error");
+    }
+  }
+
+  return (
+    <div className="progression-action">
+      <button type="button" disabled={state === "saving"} onClick={() => void evaluate()}>
+        {state === "saving" ? "Evaluating…" : "Evaluate progression"}
+      </button>
+      {message ? <p className="form-error" role="alert">{message}</p> : null}
+    </div>
   );
 }

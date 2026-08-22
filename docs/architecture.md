@@ -409,10 +409,22 @@ the backend remains authoritative for safety, execution validation, and adherenc
 
 After an execution, the PWA appends a structured post-session safety report linked to that exact
 execution and then presents persisted per-prescription progression outcomes. It does not select a
-progression policy, exposure definition, exposure policy, or proposed exposure target. Those are
-governed planning inputs and require a purpose-built assignment contract before browser invocation.
+progression policy, exposure definition, exposure policy, or proposed exposure target. Those remain
+governed planning inputs rather than daily-user choices.
 
-Until onboarding and policy assignment exist, the local setup requires explicit athlete and
+The prescription's exact versioned `progression_rule_reference` is now the action-assignment key.
+The current-week projection resolves it against persisted policies and exposes a policy identifier
+only when one unique policy can produce an automatically typed load or repetition revision without
+exposure inputs. Missing, duplicate, exposure-governed, set/duration, and unsupported-dimension
+configurations fail closed with an explicit reason. The browser can request evaluation for a ready
+action, but the transactional backend still loads performance, adherence, all post-session safety
+history, and the evidence-linked policy before creating the immutable decision and revision.
+
+Technique-constraint reporting remains separate from completion and is not prefilled. When the
+assigned policy requires technique confirmation, an unreported or failed constraint produces the
+deterministic non-progression outcome rather than a favorable inference.
+
+Until onboarding and safety-policy assignment exist, the local setup requires explicit athlete and
 reviewed safety-policy IDs. The client uses `unverified-athlete-user` provenance to avoid implying
 authentication. It sends no classified safety signal because no governed browser classifier exists;
 a concerning-symptom selection pauses the ordinary form locally.

@@ -14,7 +14,12 @@ import {
   type CurrentWeekProjection,
   type PlannedSessionProjection,
 } from "@/lib/current-week";
-import { PostSessionSafetyForm, SafetyCheckForm, WorkoutLogForm } from "./session-actions";
+import {
+  PostSessionSafetyForm,
+  ProgressionEvaluationButton,
+  SafetyCheckForm,
+  WorkoutLogForm,
+} from "./session-actions";
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const configuredAthleteId = process.env.NEXT_PUBLIC_AGAS_ATHLETE_ID ?? "";
@@ -141,15 +146,32 @@ function SessionCard({
                           : ""}
                       </span>
                     ) : (
-                      <span>Awaiting governed progression evaluation</span>
+                      <>
+                        <span>{prescription.progression_action.reason}</span>
+                        {prescription.progression_action.status === "ready" &&
+                        prescription.progression_action.progression_policy_id ? (
+                          <ProgressionEvaluationButton
+                            apiBaseUrl={apiBaseUrl}
+                            executionId={session.execution!.execution_id}
+                            prescriptionId={prescription.prescription_id}
+                            progressionPolicyId={
+                              prescription.progression_action.progression_policy_id
+                            }
+                            onSaved={onSaved}
+                          />
+                        ) : null}
+                      </>
                     )}
                   </li>
                 ))}
               </ul>
-              {session.prescriptions.some((item) => item.progression === null) ? (
+              {session.prescriptions.some(
+                (item) =>
+                  item.progression === null && item.progression_action.status !== "ready",
+              ) ? (
                 <p className="form-help">
-                  The PWA does not choose training or exposure policies. Pending decisions require
-                  a governed policy assignment before they can be evaluated.
+                  Exposure targets, duration budgets, missing policies, and ambiguous policies
+                  require governed configuration; the PWA will not guess them.
                 </p>
               ) : null}
             </section>

@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from agas_api.block_review_application import BlockReviewCreationResult
-from agas_api.current_week import CurrentWeekProjection
+from agas_api.current_week import CurrentWeekProjection, CurrentWeekProjector
 from agas_api.database import database_session_dependency
 from agas_api.main import app
 from agas_api.progression_application import ProgressionCreationResult
@@ -971,6 +971,7 @@ def persist_post_session_safety(
     safety_policy: SessionSafetyPolicy,
     provenance: Provenance,
     signals: tuple[SafetySignal, ...] = (),
+    reported_after_minutes: int = 2,
 ) -> SessionSafetyDecision:
     planned = next(item for item in weekly_plan.sessions if item.id == execution.planned_session_id)
     post_check = SessionSafetyCheckInput(
@@ -980,7 +981,7 @@ def persist_post_session_safety(
         related_session_execution_id=execution.id,
         timing=SafetyGateTiming.POST_SESSION,
         signals=signals,
-        reported_at=execution.logged_at + timedelta(minutes=2),
+        reported_at=execution.logged_at + timedelta(minutes=reported_after_minutes),
         reliability=Confidence.HIGH,
         provenance=provenance,
     )
@@ -1031,7 +1032,24 @@ def test_current_week_projection_exposes_schedule_and_persisted_completion(
         rationale="Synthetic current-week safety policy.",
         policy_version="fixture-current-week-safety@1.0.0",
     )
+    progression_policy = ProgressionPolicy(
+        reference=prescription.progression_rule_reference,
+        minimum_set_completion_ratio=1,
+        minimum_dose_completion_ratio=1,
+        maximum_session_rpe=8,
+        require_technique_constraint=False,
+        adjustment=PrescriptionAdjustment(
+            dimension=ProgressionDimension.REPETITIONS,
+            amount=1,
+            unit="repetitions_per_set",
+            description="add one repetition per set",
+        ),
+        evidence_claim_ids=strategy.evidence_claim_ids,
+        rationale="Synthetic current-week progression policy.",
+        policy_version="fixture-current-week-progression@1.0.0",
+    )
     repository.add_session_safety_policy(safety_policy)
+    repository.add_progression_policy(progression_policy)
     session.commit()
 
     def override_session() -> Iterator[Session]:
@@ -1053,6 +1071,7 @@ def test_current_week_projection_exposes_schedule_and_persisted_completion(
             safety_policy=safety_policy,
             provenance=provenance,
         )
+        awaiting_safety_response = TestClient(app).get(path, params={"on": "2026-08-25"})
         post_safety = persist_post_session_safety(
             session,
             repository,
@@ -1062,6 +1081,17 @@ def test_current_week_projection_exposes_schedule_and_persisted_completion(
             provenance=provenance,
         )
         completed_response = TestClient(app).get(path, params={"on": "2026-08-25"})
+        progression_response = TestClient(app).post(
+            f"/v1/session-executions/{execution.id}/prescriptions/{prescription.id}/progression",
+            json={
+                "progression_policy_id": str(progression_policy.id),
+                "decided_at": (post_safety.decided_at + timedelta(minutes=1)).isoformat(),
+                "revision_prescribed_at": (
+                    post_safety.decided_at + timedelta(minutes=2)
+                ).isoformat(),
+            },
+        )
+        progressed_response = TestClient(app).get(path, params={"on": "2026-08-25"})
 
         duplicate_plan = weekly_plan.model_copy(
             update={
@@ -1091,8 +1121,17 @@ def test_current_week_projection_exposes_schedule_and_persisted_completion(
     assert first_prescription.adaptation_name == "Maximum strength"
     assert first_prescription.intensity_targets == ("RPE 6-8",)
     assert first_prescription.reason_for_inclusion == prescription.reason_for_inclusion
+    assert first_prescription.progression_action.status == "awaiting_execution"
     assert no_plan_response.status_code == 200
     assert CurrentWeekProjection.model_validate(no_plan_response.json()).week is None
+
+    assert awaiting_safety_response.status_code == 200
+    awaiting_safety = CurrentWeekProjection.model_validate(awaiting_safety_response.json())
+    assert awaiting_safety.week is not None
+    assert (
+        awaiting_safety.week.sessions[0].prescriptions[0].progression_action.status
+        == "awaiting_post_session_safety"
+    )
 
     assert completed_response.status_code == 200
     completed = CurrentWeekProjection.model_validate(completed_response.json())
@@ -1104,8 +1143,117 @@ def test_current_week_projection_exposes_schedule_and_persisted_completion(
     assert completed_session.execution.post_session_safety_outcomes == (post_safety.outcome,)
     assert completed_session.prescriptions[0].adherence is not None
     assert completed_session.prescriptions[0].adherence.adherence_id == adherence.id
+    action = completed_session.prescriptions[0].progression_action
+    assert action.status == "ready"
+    assert action.progression_policy_id == progression_policy.id
+    assert action.adjustment_dimension == "repetitions"
     assert completed.week.sessions[1].status == "scheduled"
+    assert progression_response.status_code == 201
+    assert progressed_response.status_code == 200
+    progressed = CurrentWeekProjection.model_validate(progressed_response.json())
+    assert progressed.week is not None
+    progressed_prescription = progressed.week.sessions[0].prescriptions[0]
+    assert progressed_prescription.progression is not None
+    assert progressed_prescription.progression.outcome == "progress"
+    assert progressed_prescription.progression_action.status == "completed"
+    assert progressed_prescription.progression_action.progression_policy_id is None
     assert ambiguous_response.status_code == 409
+
+
+def test_current_week_progression_action_fails_closed_for_exposure_and_ambiguity(
+    session: Session,
+) -> None:
+    (
+        repository,
+        strategy,
+        _,
+        _,
+        _,
+        _,
+        _,
+        prescription,
+        session_template,
+        _,
+        _,
+        weekly_plan,
+    ) = build_and_persist_weekly_chain(session)
+    provenance = Provenance(
+        recorded_by="automated-test",
+        source_system="pytest",
+        ingestion_method="fixture",
+    )
+    safety_policy = SessionSafetyPolicy(
+        allowed_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        limited_readiness_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        unusual_soreness_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        sleep_disruption_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        schedule_limitation_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        evidence_claim_ids=strategy.evidence_claim_ids,
+        rationale="Synthetic fail-closed safety policy.",
+        policy_version="fixture-fail-closed-safety@1.0.0",
+    )
+    exposure_policy = ProgressionPolicy(
+        reference=prescription.progression_rule_reference,
+        minimum_set_completion_ratio=1,
+        minimum_dose_completion_ratio=1,
+        maximum_session_rpe=8,
+        require_technique_constraint=False,
+        adjustment=PrescriptionAdjustment(
+            dimension=ProgressionDimension.REPETITIONS,
+            amount=1,
+            unit="repetitions_per_set",
+            description="add one repetition per set",
+        ),
+        exposure_type=ExposureType.JUMPING,
+        evidence_claim_ids=strategy.evidence_claim_ids,
+        rationale="Synthetic exposure-sensitive progression policy.",
+        policy_version="fixture-exposure-sensitive@1.0.0",
+    )
+    repository.add_session_safety_policy(safety_policy)
+    repository.add_progression_policy(exposure_policy)
+    session.commit()
+    execution, _ = build_and_persist_execution_for_planned_session(
+        session,
+        repository,
+        athlete_id=strategy.athlete_id,
+        weekly_plan=weekly_plan,
+        planned_session_index=0,
+        session_template=session_template,
+        prescription=prescription,
+        safety_policy=safety_policy,
+        provenance=provenance,
+    )
+    persist_post_session_safety(
+        session,
+        repository,
+        weekly_plan=weekly_plan,
+        execution=execution,
+        safety_policy=safety_policy,
+        provenance=provenance,
+    )
+
+    projected = CurrentWeekProjector(session).project(strategy.athlete_id, date(2026, 8, 25))
+    assert projected.week is not None
+    manual_action = projected.week.sessions[0].prescriptions[0].progression_action
+    assert manual_action.status == "manual_configuration_required"
+    assert manual_action.progression_policy_id is None
+    assert "explicit reviewed exposure target" in manual_action.reason
+
+    duplicate = exposure_policy.model_copy(
+        update={
+            "id": uuid4(),
+            "exposure_type": None,
+            "policy_version": "fixture-ambiguous@1.0.0",
+        }
+    )
+    repository.add_progression_policy(duplicate)
+    session.commit()
+    ambiguous = CurrentWeekProjector(session).project(strategy.athlete_id, date(2026, 8, 25))
+    assert ambiguous.week is not None
+    unavailable = ambiguous.week.sessions[0].prescriptions[0].progression_action
+    assert unavailable.status == "policy_unavailable"
+    assert unavailable.progression_policy_id is None
+    assert "multiple progression policies" in unavailable.reason
 
 
 def test_completed_block_review_api_requires_full_history_and_is_atomic(
@@ -1846,6 +1994,7 @@ def test_progression_endpoint_applies_governed_exposure_and_revision_atomically(
                     classification=SafetySignalClass.ESCALATE,
                 ),
             ),
+            reported_after_minutes=4,
         )
         review_response = TestClient(app).post(
             f"/v1/session-executions/{second_execution.id}/prescriptions/"

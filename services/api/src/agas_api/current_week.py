@@ -11,10 +11,13 @@ from agas_domain import (
     HeartRateZoneTarget,
     PaceTarget,
     PlannedSession,
+    ProgressionDecision,
+    ProgressionDimension,
     RelativeLoadTarget,
     RepetitionsInReserveTarget,
     SafetyGateOutcome,
     SessionExecutionStatus,
+    SessionPrescription,
     TechniqueTarget,
     WeeklyPlan,
     WeeklyPlanStatus,
@@ -34,6 +37,14 @@ SessionDisplayStatus = Literal[
     "partial",
     "not_started",
     "stopped_safety",
+]
+ProgressionActionStatus = Literal[
+    "awaiting_execution",
+    "awaiting_post_session_safety",
+    "ready",
+    "manual_configuration_required",
+    "policy_unavailable",
+    "completed",
 ]
 
 
@@ -68,6 +79,17 @@ class ProgressionProjection(BaseModel):
     decided_at: datetime
 
 
+class ProgressionActionProjection(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    status: ProgressionActionStatus
+    rule_reference: str
+    progression_policy_id: UUID | None = None
+    adjustment_dimension: str | None = None
+    adjustment_description: str | None = None
+    reason: str
+
+
 class PrescriptionProjection(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -86,6 +108,7 @@ class PrescriptionProjection(BaseModel):
     rest_seconds: int
     adherence: AdherenceProjection | None
     progression: ProgressionProjection | None
+    progression_action: ProgressionActionProjection
 
 
 class ExecutionProjection(BaseModel):
@@ -203,6 +226,11 @@ class CurrentWeekProjector:
             planned_session.id, "pre_session"
         )
         execution = self.repository.get_session_execution_by_planned_session(planned_session.id)
+        post_safety = (
+            self.repository.list_post_session_safety_decisions(execution.id)
+            if execution is not None
+            else ()
+        )
         if safety is not None and (
             safety.athlete_id != plan.athlete_id or safety.weekly_plan_id != plan.id
         ):
@@ -286,6 +314,12 @@ class CurrentWeekProjector:
                         if progression is not None
                         else None
                     ),
+                    progression_action=self._progression_action(
+                        prescription=prescription,
+                        execution_exists=execution is not None,
+                        post_session_safety_exists=bool(post_safety),
+                        progression=progression,
+                    ),
                 )
             )
 
@@ -301,7 +335,6 @@ class CurrentWeekProjector:
         )
         execution_projection = None
         if execution is not None:
-            post_safety = self.repository.list_post_session_safety_decisions(execution.id)
             execution_projection = ExecutionProjection(
                 execution_id=execution.id,
                 status=execution.status,
@@ -325,6 +358,89 @@ class CurrentWeekProjector:
             pre_session_safety=safety_projection,
             execution=execution_projection,
             prescriptions=tuple(prescriptions),
+        )
+
+    def _progression_action(
+        self,
+        *,
+        prescription: SessionPrescription,
+        execution_exists: bool,
+        post_session_safety_exists: bool,
+        progression: ProgressionDecision | None,
+    ) -> ProgressionActionProjection:
+        reference = prescription.progression_rule_reference
+        if progression is not None:
+            return ProgressionActionProjection(
+                status="completed",
+                rule_reference=reference,
+                adjustment_dimension=(
+                    progression.adjustment.dimension.value
+                    if progression.adjustment is not None
+                    else None
+                ),
+                adjustment_description=(
+                    progression.adjustment.description
+                    if progression.adjustment is not None
+                    else None
+                ),
+                reason="an immutable progression decision already exists",
+            )
+        if not execution_exists:
+            return ProgressionActionProjection(
+                status="awaiting_execution",
+                rule_reference=reference,
+                reason="progression requires a recorded session execution",
+            )
+        if not post_session_safety_exists:
+            return ProgressionActionProjection(
+                status="awaiting_post_session_safety",
+                rule_reference=reference,
+                reason="progression requires a post-session safety decision",
+            )
+
+        policies = self.repository.list_progression_policies_by_reference(reference)
+        if len(policies) != 1:
+            reason = (
+                "no persisted progression policy matches the prescription rule reference"
+                if not policies
+                else "multiple progression policies match the prescription rule reference"
+            )
+            return ProgressionActionProjection(
+                status="policy_unavailable",
+                rule_reference=reference,
+                reason=reason,
+            )
+
+        policy = policies[0]
+        dimension = policy.adjustment.dimension
+        common = {
+            "rule_reference": reference,
+            "adjustment_dimension": dimension.value,
+            "adjustment_description": policy.adjustment.description,
+        }
+        if policy.exposure_type is not None:
+            return ProgressionActionProjection(
+                status="manual_configuration_required",
+                reason=(
+                    f"{policy.exposure_type.value} progression requires an explicit reviewed "
+                    "exposure target and policy"
+                ),
+                **common,
+            )
+        if dimension not in {ProgressionDimension.LOAD, ProgressionDimension.REPETITIONS}:
+            return ProgressionActionProjection(
+                status="manual_configuration_required",
+                reason=(
+                    f"{dimension.value} progression requires a governed prescription-revision "
+                    "workflow"
+                ),
+                **common,
+            )
+        return ProgressionActionProjection(
+            status="ready",
+            progression_policy_id=policy.id,
+            reason="the exact assigned policy can be evaluated by the deterministic engine",
+            **common,
         )
 
     @staticmethod
