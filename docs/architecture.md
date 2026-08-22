@@ -282,6 +282,22 @@ container duration and fatigue must equal their item composition. The result is 
 feasible or infeasible so schedule limitations remain explicit. All records commit or roll back
 together.
 
+### Transactional safety and session recording
+
+`PersistedSessionSafetyService` is the write boundary for pre- and post-session reports. The URL
+identifies the immutable weekly plan and planned occurrence, while the request supplies a persisted
+safety-policy ID, already classified signals, readiness context, timestamps, reliability, and
+provenance. The deterministic safety gate produces a direct user-report `Observation` and a
+`SessionSafetyDecision`; both append or roll back together.
+
+`PersistedSessionExecutionService` loads the plan, planned occurrence, session container, ordered
+prescriptions, and requested pre-session decision. The decision must be the latest pre-session
+decision for that occurrence and must authorize execution. The client supplies actual set-level
+performance but cannot replace athlete, plan, container, or prescription identity. The service
+atomically appends the workout-result observation, execution, and one derived adherence record per
+prescription. A database uniqueness constraint permits only one execution per planned occurrence;
+future correction support must use explicit supersession rather than competing histories.
+
 ### Evidence claims
 
 Evidence claims are reviewed, versioned interpretations linked to source identifiers. Evidence
@@ -328,9 +344,10 @@ atomically. A strategy-priority pair anchors resource-demand preparation; the se
 either an active stimulus-resolution-demand chain or one deferred zero-resource demand. A strategy
 ID anchors block creation; the service loads persisted demands, their resolutions, and the selected
 allocation policy before atomically appending a block. A block ID anchors explicit prescription,
-session-container, availability, and weekly scheduling creation. Missing dependencies, invalid
-planning inputs, and relational conflicts remain distinct transport errors. Raw domain CRUD is
-intentionally absent because it could bypass invariants.
+session-container, availability, and weekly scheduling creation. Weekly-plan and planned-session
+IDs anchor safety evaluation and actual-performance recording through immutable observations.
+Missing dependencies, invalid inputs, and relational conflicts remain distinct transport errors.
+Raw domain CRUD is intentionally absent because it could bypass invariants.
 
 ## Web
 

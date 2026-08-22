@@ -33,6 +33,17 @@ from agas_api.resource_preparation import (
     ResourcePreparationNotFoundError,
     ResourcePreparationValidationError,
 )
+from agas_api.session_recording import (
+    CreateSessionExecutionCommand,
+    CreateSessionSafetyDecisionCommand,
+    PersistedSessionExecutionService,
+    PersistedSessionSafetyService,
+    SessionExecutionCreationResult,
+    SessionRecordingConflictError,
+    SessionRecordingNotFoundError,
+    SessionRecordingValidationError,
+    SessionSafetyCreationResult,
+)
 from agas_api.settings import get_settings
 from agas_api.weekly_planning import (
     CreateWeeklyPlanCommand,
@@ -170,6 +181,58 @@ def create_weekly_plan(
     except WeeklyPlanConflictError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     except WeeklyPlanValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.post(
+    "/v1/weekly-plans/{weekly_plan_id}/sessions/{planned_session_id}/safety-checks",
+    tags=["execution"],
+    response_model=SessionSafetyCreationResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_session_safety_decision(
+    weekly_plan_id: UUID,
+    planned_session_id: UUID,
+    command: CreateSessionSafetyDecisionCommand,
+    session: Annotated[Session, Depends(database_session_dependency)],
+) -> SessionSafetyCreationResult:
+    try:
+        return PersistedSessionSafetyService(session).execute(
+            weekly_plan_id, planned_session_id, command
+        )
+    except SessionRecordingNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except SessionRecordingConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except SessionRecordingValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.post(
+    "/v1/weekly-plans/{weekly_plan_id}/sessions/{planned_session_id}/executions",
+    tags=["execution"],
+    response_model=SessionExecutionCreationResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_session_execution(
+    weekly_plan_id: UUID,
+    planned_session_id: UUID,
+    command: CreateSessionExecutionCommand,
+    session: Annotated[Session, Depends(database_session_dependency)],
+) -> SessionExecutionCreationResult:
+    try:
+        return PersistedSessionExecutionService(session).execute(
+            weekly_plan_id, planned_session_id, command
+        )
+    except SessionRecordingNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except SessionRecordingConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except SessionRecordingValidationError as error:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
         ) from error

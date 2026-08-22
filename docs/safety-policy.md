@@ -46,6 +46,12 @@ modification, then proceed. Pre- and post-session reports remain immutable obser
 provenance. A post-session decision references the completed execution and informs later review; it
 does not alter history or automatically modify the next session.
 
+Execution authorization uses the latest persisted pre-session decision for the planned occurrence.
+An earlier `PROCEED` or `MODIFY` decision cannot be reused after a newer `HOLD` or
+`STOP_AND_ESCALATE`. A later decision requires a new explicit report; restrictive history is never
+overwritten. Safety observation and decision persistence is atomic, as is the separate chain from
+workout-result observation through execution and derived adherence.
+
 A pre-session decision authorizes or blocks the whole scheduled `SessionTemplate`, not one exercise
 at a time. The execution must preserve every ordered template item and any required session
 modifications exactly. Item-level completion and adherence remain visible without weakening the

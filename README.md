@@ -97,6 +97,8 @@ POST /v1/block-reviews/{block_review_id}/replan
 POST /v1/strategies/{strategy_id}/priorities/{priority_id}/resource-demands
 POST /v1/strategies/{strategy_id}/blocks
 POST /v1/blocks/{block_id}/weekly-plans
+POST /v1/weekly-plans/{weekly_plan_id}/sessions/{planned_session_id}/safety-checks
+POST /v1/weekly-plans/{weekly_plan_id}/sessions/{planned_session_id}/executions
 ```
 
 It accepts explicit replanning candidate contexts, reconstructs the persisted review chain, and
@@ -114,6 +116,11 @@ Weekly-plan creation accepts explicit prescription doses, explicit session compo
 availability, and a persisted scheduling policy. It derives exercise and adaptation identity from
 the block, schedules deterministically, and atomically appends the complete chain. It does not
 generate a generic workout from an adaptation name.
+
+Session recording first appends an explicit user-report observation and deterministic safety
+decision. Execution then requires the latest pre-session decision, accepts actual performed-set
+data, and atomically appends the workout-result observation, immutable execution, and derived
+per-prescription adherence. One planned occurrence cannot acquire competing execution records.
 
 ## Run the frontend
 

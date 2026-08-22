@@ -1945,6 +1945,24 @@ class DomainRepository:
             rule_version=record.rule_version,
         )
 
+    def get_latest_session_safety_decision(
+        self, planned_session_id: UUID, timing: str
+    ) -> SessionSafetyDecision | None:
+        decision_id = self.session.scalar(
+            select(SessionSafetyDecisionRecord.id)
+            .where(
+                SessionSafetyDecisionRecord.planned_session_id == planned_session_id,
+                SessionSafetyDecisionRecord.timing == timing,
+            )
+            .order_by(
+                SessionSafetyDecisionRecord.decided_at.desc(),
+                SessionSafetyDecisionRecord.created_at.desc(),
+                SessionSafetyDecisionRecord.id.desc(),
+            )
+            .limit(1)
+        )
+        return self.get_session_safety_decision(decision_id) if decision_id is not None else None
+
     def add_session_execution(self, execution: SessionExecution) -> None:
         self._require_athlete(execution.athlete_id)
         plan = self.session.get(WeeklyPlanRecord, execution.weekly_plan_id)
@@ -1977,6 +1995,11 @@ class DomainRepository:
             raise DomainIntegrityError("safety decision does not authorize this session")
         if safety_decision.outcome not in {"proceed", "modify"}:
             raise DomainIntegrityError("blocking safety decision cannot authorize execution")
+        authorization_boundary = execution.started_at or execution.logged_at
+        if safety_decision.decided_at > authorization_boundary:
+            raise DomainIntegrityError(
+                "pre-session safety decision cannot postdate execution start or logging"
+            )
         if set(safety_decision.required_modifications) != {
             item.value for item in execution.applied_modifications
         }:
@@ -2107,6 +2130,16 @@ class DomainRepository:
             logged_at=record.logged_at,
             rule_version=record.rule_version,
         )
+
+    def get_session_execution_by_planned_session(
+        self, planned_session_id: UUID
+    ) -> SessionExecution | None:
+        execution_id = self.session.scalar(
+            select(SessionExecutionRecord.id).where(
+                SessionExecutionRecord.planned_session_id == planned_session_id
+            )
+        )
+        return self.get_session_execution(execution_id) if execution_id is not None else None
 
     def add_session_adherence(self, adherence: SessionAdherence) -> None:
         execution = self.session.get(SessionExecutionRecord, adherence.session_execution_id)

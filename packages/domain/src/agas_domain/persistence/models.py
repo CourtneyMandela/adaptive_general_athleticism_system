@@ -1317,6 +1317,7 @@ class SessionSafetyDecisionObservationRecord(Base):
 
 class SessionExecutionRecord(VersionedRecordMixin, Base):
     __tablename__ = "session_executions"
+    __table_args__ = (UniqueConstraint("planned_session_id", name="uq_execution_planned_session"),)
 
     athlete_id: Mapped[UUID] = mapped_column(
         ForeignKey("athletes.id", ondelete="RESTRICT"), index=True, nullable=False

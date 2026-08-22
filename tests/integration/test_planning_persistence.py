@@ -6,6 +6,10 @@ import pytest
 from agas_api.database import database_session_dependency
 from agas_api.main import app
 from agas_api.resource_preparation import ResourceDemandPreparationResult
+from agas_api.session_recording import (
+    SessionExecutionCreationResult,
+    SessionSafetyCreationResult,
+)
 from agas_api.weekly_planning import WeeklyPlanCreationResult
 from agas_domain import (
     Adaptation,
@@ -85,9 +89,11 @@ from agas_domain.persistence.models import (
     ExerciseResolutionRecord,
     ImmutableHistoricalRecordError,
     LongRangeStrategyRecord,
+    ObservationRecord,
     SessionAdherenceRecord,
     SessionExecutionRecord,
     SessionPrescriptionRecord,
+    SessionSafetyDecisionRecord,
     SessionTemplateRecord,
     StimulusRequirementRecord,
     TrainingResponseRecord,
@@ -974,6 +980,191 @@ def test_weekly_plan_endpoint_persists_explicit_session_chain_atomically(
     )
     assert repository.get_weekly_availability(result.availability.id) == result.availability
     assert repository.get_weekly_plan(result.weekly_plan.id) == result.weekly_plan
+
+
+def test_session_endpoints_enforce_latest_safety_and_persist_feedback_atomically(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (
+        repository,
+        strategy,
+        _,
+        _,
+        _,
+        _,
+        _,
+        prescription,
+        _,
+        _,
+        _,
+        weekly_plan,
+    ) = build_and_persist_weekly_chain(session)
+    planned_session = weekly_plan.sessions[0]
+    policy = SessionSafetyPolicy(
+        allowed_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        limited_readiness_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        unusual_soreness_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        sleep_disruption_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        schedule_limitation_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        evidence_claim_ids=strategy.evidence_claim_ids,
+        rationale="Synthetic API safety policy.",
+        policy_version="fixture-api-safety@1.0.0",
+    )
+    repository.add_session_safety_policy(policy)
+    session.commit()
+    provenance = {
+        "recorded_by": "automated-test",
+        "source_system": "pytest",
+        "ingestion_method": "api-fixture",
+    }
+    safety_path = f"/v1/weekly-plans/{weekly_plan.id}/sessions/{planned_session.id}/safety-checks"
+
+    def safety_body(*, readiness: str, minute_offset: int) -> dict[str, object]:
+        reported_at = planned_session.starts_at - timedelta(minutes=minute_offset)
+        return {
+            "safety_policy_id": str(policy.id),
+            "timing": "pre_session",
+            "readiness": readiness,
+            "reported_at": reported_at.isoformat(),
+            "decided_at": (reported_at + timedelta(minutes=1)).isoformat(),
+            "reliability": "high",
+            "provenance": provenance,
+        }
+
+    def override_session() -> Iterator[Session]:
+        yield session
+
+    app.dependency_overrides[database_session_dependency] = override_session
+    try:
+        first_safety_response = TestClient(app).post(
+            safety_path, json=safety_body(readiness="ready", minute_offset=20)
+        )
+        hold_response = TestClient(app).post(
+            safety_path, json=safety_body(readiness="not_ready", minute_offset=15)
+        )
+        first_safety = SessionSafetyCreationResult.model_validate(first_safety_response.json())
+        assert hold_response.status_code == 201
+
+        performances = [
+            {
+                "set_index": index,
+                "performed": True,
+                "target_completed": True,
+                "actual_repetitions": 5,
+                "load_value": 20,
+                "load_unit": "kg",
+                "effort_rpe": 7,
+                "technique_constraint_met": True,
+            }
+            for index in range(1, 4)
+        ]
+        execution_body: dict[str, object] = {
+            "pre_session_safety_decision_id": str(first_safety.decision.id),
+            "status": "completed",
+            "started_at": planned_session.starts_at.isoformat(),
+            "ended_at": planned_session.ends_at.isoformat(),
+            "items": [
+                {
+                    "prescription_id": str(prescription.id),
+                    "status": "completed",
+                    "performances": performances,
+                    "item_rpe": 7,
+                }
+            ],
+            "session_rpe": 7,
+            "logged_at": (planned_session.ends_at + timedelta(minutes=2)).isoformat(),
+            "adherence_calculated_at": (planned_session.ends_at + timedelta(minutes=3)).isoformat(),
+            "reliability": "high",
+            "provenance": provenance,
+        }
+        execution_path = (
+            f"/v1/weekly-plans/{weekly_plan.id}/sessions/{planned_session.id}/executions"
+        )
+        stale_decision_response = TestClient(app).post(execution_path, json=execution_body)
+
+        final_safety_response = TestClient(app).post(
+            safety_path, json=safety_body(readiness="ready", minute_offset=10)
+        )
+        final_safety = SessionSafetyCreationResult.model_validate(final_safety_response.json())
+        execution_body["pre_session_safety_decision_id"] = str(final_safety.decision.id)
+        late_authorization_response = TestClient(app).post(
+            execution_path,
+            json={
+                **execution_body,
+                "started_at": (final_safety.decision.decided_at - timedelta(minutes=1)).isoformat(),
+            },
+        )
+
+        record_types = (ObservationRecord, SessionExecutionRecord, SessionAdherenceRecord)
+        counts_before_failure = tuple(
+            session.scalar(select(func.count()).select_from(record_type))
+            for record_type in record_types
+        )
+
+        def reject_adherence(_repository: DomainRepository, _adherence: object) -> None:
+            raise DomainIntegrityError("synthetic late adherence failure")
+
+        with monkeypatch.context() as context:
+            context.setattr(DomainRepository, "add_session_adherence", reject_adherence)
+            late_failure_response = TestClient(app).post(execution_path, json=execution_body)
+        counts_after_failure = tuple(
+            session.scalar(select(func.count()).select_from(record_type))
+            for record_type in record_types
+        )
+        execution_response = TestClient(app).post(execution_path, json=execution_body)
+        execution_result = SessionExecutionCreationResult.model_validate(execution_response.json())
+        post_safety_response = TestClient(app).post(
+            safety_path,
+            json={
+                "safety_policy_id": str(policy.id),
+                "timing": "post_session",
+                "related_session_execution_id": str(execution_result.execution.id),
+                "signals": [
+                    {
+                        "tag": "fixture_preclassified_escalation",
+                        "classification": "escalate",
+                    }
+                ],
+                "reported_at": (
+                    execution_result.execution.logged_at + timedelta(minutes=1)
+                ).isoformat(),
+                "decided_at": (
+                    execution_result.execution.logged_at + timedelta(minutes=2)
+                ).isoformat(),
+                "reliability": "high",
+                "provenance": provenance,
+            },
+        )
+        duplicate_response = TestClient(app).post(execution_path, json=execution_body)
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert first_safety_response.status_code == 201
+    assert first_safety.decision.outcome is SafetyGateOutcome.PROCEED
+    assert stale_decision_response.status_code == 409
+    assert final_safety_response.status_code == 201
+    assert late_authorization_response.status_code == 422
+    assert counts_after_failure == counts_before_failure
+    assert late_failure_response.status_code == 422
+    assert execution_response.status_code == 201
+    result = execution_result
+    assert result.observation.source is ObservationSource.WORKOUT_RESULT
+    assert result.execution.performance_observation_id == result.observation.id
+    assert result.execution.pre_session_safety_decision_id == final_safety.decision.id
+    assert len(result.adherence) == 1
+    assert result.adherence[0].kind == "derived"
+    assert result.adherence[0].source_observation_ids == (result.observation.id,)
+    assert repository.get_session_execution(result.execution.id) == result.execution
+    assert (
+        repository.get_session_execution_by_planned_session(planned_session.id) == result.execution
+    )
+    assert repository.get_session_adherence(result.adherence[0].id) == result.adherence[0]
+    assert post_safety_response.status_code == 201
+    post_safety = SessionSafetyCreationResult.model_validate(post_safety_response.json())
+    assert post_safety.decision.outcome is SafetyGateOutcome.STOP_AND_ESCALATE
+    assert post_safety.decision.related_session_execution_id == result.execution.id
+    assert duplicate_response.status_code == 409
+    assert session.scalar(select(func.count()).select_from(SessionSafetyDecisionRecord)) == 4
 
 
 def test_safety_execution_and_adherence_round_trip_preserves_provenance(

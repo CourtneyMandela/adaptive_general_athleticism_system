@@ -79,6 +79,11 @@ class SessionExecutionRecorder:
             SafetyGateOutcome.STOP_AND_ESCALATE,
         }:
             raise ExecutionRecordingError("the safety decision does not authorize execution")
+        authorization_boundary = execution_input.started_at or execution_input.logged_at
+        if pre_session_decision.decided_at > authorization_boundary:
+            raise ExecutionRecordingError(
+                "pre-session safety decision cannot postdate execution start or logging"
+            )
         if set(execution_input.applied_modifications) != set(
             pre_session_decision.required_modifications
         ):
