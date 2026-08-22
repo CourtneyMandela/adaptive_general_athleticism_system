@@ -298,6 +298,21 @@ atomically appends the workout-result observation, execution, and one derived ad
 prescription. A database uniqueness constraint permits only one execution per planned occurrence;
 future correction support must use explicit supersession rather than competing histories.
 
+### Transactional post-session progression
+
+`PersistedProgressionService` is the boundary from one execution/prescription pair to its immutable
+progression result. It derives the adherence identity and loads every post-session safety decision,
+so transport input cannot omit an escalation. At least one post-session check must close the
+ordinary workflow before the decision is evaluated.
+
+When the selected progression policy declares an exposure type, the request identifies reviewed
+exposure-definition and exposure-policy records and supplies only the proposed dose and target
+time. The service derives the actual exposure entry from performed sets, loads the athlete's prior
+ledger, validates the proposal, and passes that decision into `ProgressionEngine`. The exposure
+entry, exposure validation, progression decision, and any automatically supported typed
+prescription revision commit or roll back together. Database constraints prevent duplicate
+adherence, exposure, and progression facts for the same execution chain.
+
 ### Evidence claims
 
 Evidence claims are reviewed, versioned interpretations linked to source identifiers. Evidence
@@ -326,9 +341,10 @@ availability events used by its environment snapshot.
 Block allocations retain their exact demand and policy; prescriptions retain ordered observation
 and evidence sources; session templates retain ordered prescription items and provenance; and
 planned sessions retain their template, environment, and availability-window identities.
-Safety policies, safety decisions and their observation links, executions, item executions, and set performances,
-adherence records and their source links, training responses, review policies, reviews, and all of
-their ordered provenance links are also append-only. Repository checks duplicate the
+Safety policies, safety decisions and their observation links, executions, item executions, set
+performances, adherence, exposure entries and validations, progression decisions and revisions,
+training responses, review policies, reviews, and all of their ordered provenance links are also
+append-only. Repository checks duplicate the
 domain authorization invariants before persistence so invalid cross-athlete, cross-plan, blocking,
 or unsupported execution chains cannot be inserted through normal application code.
 Strategy revision links are likewise append-only and must form the concrete chain prior strategy
@@ -346,8 +362,9 @@ ID anchors block creation; the service loads persisted demands, their resolution
 allocation policy before atomically appending a block. A block ID anchors explicit prescription,
 session-container, availability, and weekly scheduling creation. Weekly-plan and planned-session
 IDs anchor safety evaluation and actual-performance recording through immutable observations.
-Missing dependencies, invalid inputs, and relational conflicts remain distinct transport errors.
-Raw domain CRUD is intentionally absent because it could bypass invariants.
+An execution/prescription pair anchors governed exposure and progression processing. Missing
+dependencies, invalid inputs, and relational conflicts remain distinct transport errors. Raw
+domain CRUD is intentionally absent because it could bypass invariants.
 
 ## Web
 

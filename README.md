@@ -99,6 +99,7 @@ POST /v1/strategies/{strategy_id}/blocks
 POST /v1/blocks/{block_id}/weekly-plans
 POST /v1/weekly-plans/{weekly_plan_id}/sessions/{planned_session_id}/safety-checks
 POST /v1/weekly-plans/{weekly_plan_id}/sessions/{planned_session_id}/executions
+POST /v1/session-executions/{session_execution_id}/prescriptions/{prescription_id}/progression
 ```
 
 It accepts explicit replanning candidate contexts, reconstructs the persisted review chain, and
@@ -121,6 +122,11 @@ Session recording first appends an explicit user-report observation and determin
 decision. Execution then requires the latest pre-session decision, accepts actual performed-set
 data, and atomically appends the workout-result observation, immutable execution, and derived
 per-prescription adherence. One planned occurrence cannot acquire competing execution records.
+
+Post-session progression loads the complete persisted execution, adherence, and safety chain. It
+optionally derives a classified exposure and validates an explicit proposal, then atomically stores
+the deterministic progression decision and any supported typed prescription revision. Thresholds,
+increments, and exposure caps come only from persisted evidence-linked policies.
 
 ## Run the frontend
 

@@ -1,10 +1,11 @@
 from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from agas_api.database import database_session_dependency
 from agas_api.main import app
+from agas_api.progression_application import ProgressionCreationResult
 from agas_api.resource_preparation import ResourceDemandPreparationResult
 from agas_api.session_recording import (
     SessionExecutionCreationResult,
@@ -64,11 +65,14 @@ from agas_domain import (
     SafetyGateTiming,
     SafetySignal,
     SafetySignalClass,
+    SessionAdherence,
+    SessionExecution,
     SessionExecutionInput,
     SessionExecutionStatus,
     SessionItemExecutionInput,
     SessionPrescription,
     SessionSafetyCheckInput,
+    SessionSafetyDecision,
     SessionSafetyPolicy,
     SessionSection,
     SessionTemplate,
@@ -87,9 +91,12 @@ from agas_domain.persistence.models import (
     BlockReviewRecord,
     CapabilityNeedRecord,
     ExerciseResolutionRecord,
+    ExposureEntryRecord,
+    ExposureValidationDecisionRecord,
     ImmutableHistoricalRecordError,
     LongRangeStrategyRecord,
     ObservationRecord,
+    ProgressionDecisionRecord,
     SessionAdherenceRecord,
     SessionExecutionRecord,
     SessionPrescriptionRecord,
@@ -809,6 +816,131 @@ def build_and_persist_weekly_chain(
     )
 
 
+def build_and_persist_execution_for_planned_session(
+    session: Session,
+    repository: DomainRepository,
+    *,
+    athlete_id: UUID,
+    weekly_plan: WeeklyPlan,
+    planned_session_index: int,
+    session_template: SessionTemplate,
+    prescription: SessionPrescription,
+    safety_policy: SessionSafetyPolicy,
+    provenance: Provenance,
+) -> tuple[SessionExecution, SessionAdherence]:
+    planned = weekly_plan.sessions[planned_session_index]
+    pre_check = SessionSafetyCheckInput(
+        athlete_id=athlete_id,
+        weekly_plan_id=weekly_plan.id,
+        planned_session_id=planned.id,
+        timing=SafetyGateTiming.PRE_SESSION,
+        readiness=ReadinessLevel.READY,
+        reported_at=planned.starts_at - timedelta(minutes=2),
+        reliability=Confidence.HIGH,
+        provenance=provenance,
+    )
+    safety_observation, safety_decision = SessionSafetyGate().evaluate(
+        check=pre_check,
+        weekly_plan=weekly_plan,
+        planned_session=planned,
+        policy=safety_policy,
+        decided_at=planned.starts_at - timedelta(minutes=1),
+    )
+    repository.add_observation(safety_observation)
+    session.flush()
+    repository.add_session_safety_decision(safety_decision)
+    session.flush()
+    execution_input = SessionExecutionInput(
+        athlete_id=athlete_id,
+        weekly_plan_id=weekly_plan.id,
+        planned_session_id=planned.id,
+        pre_session_safety_decision_id=safety_decision.id,
+        status=SessionExecutionStatus.COMPLETED,
+        started_at=planned.starts_at,
+        ended_at=planned.ends_at,
+        items=(
+            SessionItemExecutionInput(
+                prescription_id=prescription.id,
+                status=SessionExecutionStatus.COMPLETED,
+                performances=tuple(
+                    SetPerformance(
+                        set_index=index,
+                        performed=True,
+                        target_completed=True,
+                        actual_repetitions=prescription.repetitions_per_set,
+                        effort_rpe=7,
+                        technique_constraint_met=True,
+                    )
+                    for index in range(1, prescription.sets + 1)
+                ),
+                item_rpe=7,
+            ),
+        ),
+        session_rpe=7,
+        logged_at=planned.ends_at + timedelta(minutes=1),
+        reliability=Confidence.HIGH,
+        provenance=provenance,
+    )
+    performance_observation, execution = SessionExecutionRecorder().record(
+        execution_input=execution_input,
+        weekly_plan=weekly_plan,
+        planned_session=planned,
+        session_template=session_template,
+        prescriptions=(prescription,),
+        pre_session_decision=safety_decision,
+    )
+    repository.add_observation(performance_observation)
+    session.flush()
+    repository.add_session_execution(execution)
+    session.flush()
+    adherence = SessionAdherenceCalculator().calculate(
+        execution=execution,
+        planned_session=planned,
+        prescription=prescription,
+        calculated_at=execution.logged_at + timedelta(minutes=1),
+    )
+    repository.add_session_adherence(adherence)
+    session.commit()
+    return execution, adherence
+
+
+def persist_post_session_safety(
+    session: Session,
+    repository: DomainRepository,
+    *,
+    weekly_plan: WeeklyPlan,
+    execution: SessionExecution,
+    safety_policy: SessionSafetyPolicy,
+    provenance: Provenance,
+    signals: tuple[SafetySignal, ...] = (),
+) -> SessionSafetyDecision:
+    planned = next(item for item in weekly_plan.sessions if item.id == execution.planned_session_id)
+    post_check = SessionSafetyCheckInput(
+        athlete_id=execution.athlete_id,
+        weekly_plan_id=weekly_plan.id,
+        planned_session_id=planned.id,
+        related_session_execution_id=execution.id,
+        timing=SafetyGateTiming.POST_SESSION,
+        signals=signals,
+        reported_at=execution.logged_at + timedelta(minutes=2),
+        reliability=Confidence.HIGH,
+        provenance=provenance,
+    )
+    observation, decision = SessionSafetyGate().evaluate(
+        check=post_check,
+        weekly_plan=weekly_plan,
+        planned_session=planned,
+        policy=safety_policy,
+        decided_at=post_check.reported_at + timedelta(minutes=1),
+        related_execution=execution,
+    )
+    repository.add_observation(observation)
+    session.flush()
+    repository.add_session_safety_decision(decision)
+    session.commit()
+    return decision
+
+
 def test_block_prescription_and_weekly_plan_round_trip_preserves_full_chain(
     session: Session,
 ) -> None:
@@ -1165,6 +1297,234 @@ def test_session_endpoints_enforce_latest_safety_and_persist_feedback_atomically
     assert post_safety.decision.related_session_execution_id == result.execution.id
     assert duplicate_response.status_code == 409
     assert session.scalar(select(func.count()).select_from(SessionSafetyDecisionRecord)) == 4
+
+
+def test_progression_endpoint_applies_governed_exposure_and_revision_atomically(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (
+        repository,
+        strategy,
+        _,
+        _,
+        _,
+        _,
+        _,
+        prescription,
+        session_template,
+        _,
+        _,
+        weekly_plan,
+    ) = build_and_persist_weekly_chain(session)
+    claim_ids = strategy.evidence_claim_ids
+    safety_policy = SessionSafetyPolicy(
+        allowed_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        limited_readiness_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        unusual_soreness_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        sleep_disruption_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        schedule_limitation_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        evidence_claim_ids=claim_ids,
+        rationale="Synthetic progression API safety policy.",
+        policy_version="fixture-progression-api-safety@1.0.0",
+    )
+    exposure_definition = ExposureDefinition(
+        exercise_id=prescription.exercise_id,
+        exposure_type=ExposureType.JUMPING,
+        dose_unit="repetitions",
+        evidence_claim_ids=claim_ids,
+        rationale="Synthetic exposure classification.",
+        definition_version="fixture-progression-api@1.0.0",
+    )
+    exposure_policy = ExposureProgressionPolicy(
+        exposure_type=ExposureType.JUMPING,
+        dose_unit="repetitions",
+        lookback_days=14,
+        minimum_recent_entries=1,
+        maximum_initial_dose=10,
+        maximum_relative_increase=0.2,
+        maximum_absolute_increase=5,
+        evidence_claim_ids=claim_ids,
+        rationale="Synthetic exposure cap.",
+        policy_version="fixture-progression-api@1.0.0",
+    )
+    progression_policy = ProgressionPolicy(
+        reference=prescription.progression_rule_reference,
+        minimum_set_completion_ratio=1,
+        minimum_dose_completion_ratio=1,
+        maximum_session_rpe=8,
+        adjustment=PrescriptionAdjustment(
+            dimension=ProgressionDimension.REPETITIONS,
+            amount=1,
+            unit="repetitions_per_set",
+            description="add one repetition per set",
+        ),
+        exposure_type=ExposureType.JUMPING,
+        evidence_claim_ids=claim_ids,
+        rationale="Synthetic progression threshold.",
+        policy_version="fixture-progression-api@1.0.0",
+    )
+    non_exposure_policy = progression_policy.model_copy(
+        update={"id": uuid4(), "exposure_type": None, "policy_version": "fixture-no-exposure@1.0.0"}
+    )
+    repository.add_session_safety_policy(safety_policy)
+    repository.add_exposure_definition(exposure_definition)
+    repository.add_exposure_progression_policy(exposure_policy)
+    repository.add_progression_policy(progression_policy)
+    repository.add_progression_policy(non_exposure_policy)
+    session.commit()
+    provenance = Provenance(
+        recorded_by="automated-test",
+        source_system="pytest",
+        ingestion_method="progression-api-fixture",
+    )
+    execution, _ = build_and_persist_execution_for_planned_session(
+        session,
+        repository,
+        athlete_id=strategy.athlete_id,
+        weekly_plan=weekly_plan,
+        planned_session_index=0,
+        session_template=session_template,
+        prescription=prescription,
+        safety_policy=safety_policy,
+        provenance=provenance,
+    )
+    path = f"/v1/session-executions/{execution.id}/prescriptions/{prescription.id}/progression"
+    target_time = execution.logged_at + timedelta(minutes=5)
+    request_body = {
+        "progression_policy_id": str(progression_policy.id),
+        "exposure": {
+            "exposure_definition_id": str(exposure_definition.id),
+            "exposure_progression_policy_id": str(exposure_policy.id),
+            "proposed_dose": 16,
+            "proposed_for": target_time.isoformat(),
+        },
+        "decided_at": target_time.isoformat(),
+        "revision_prescribed_at": (target_time + timedelta(minutes=1)).isoformat(),
+    }
+
+    def override_session() -> Iterator[Session]:
+        yield session
+
+    app.dependency_overrides[database_session_dependency] = override_session
+    try:
+        missing_post_safety_response = TestClient(app).post(path, json=request_body)
+        post_decision = persist_post_session_safety(
+            session,
+            repository,
+            weekly_plan=weekly_plan,
+            execution=execution,
+            safety_policy=safety_policy,
+            provenance=provenance,
+        )
+        record_types = (
+            ExposureEntryRecord,
+            ExposureValidationDecisionRecord,
+            ProgressionDecisionRecord,
+            SessionPrescriptionRecord,
+        )
+        counts_before_failure = tuple(
+            session.scalar(select(func.count()).select_from(record_type))
+            for record_type in record_types
+        )
+
+        def reject_revision(
+            _repository: DomainRepository, _prescription: SessionPrescription
+        ) -> None:
+            raise DomainIntegrityError("synthetic late prescription revision failure")
+
+        with monkeypatch.context() as context:
+            context.setattr(DomainRepository, "add_session_prescription", reject_revision)
+            late_failure_response = TestClient(app).post(path, json=request_body)
+        counts_after_failure = tuple(
+            session.scalar(select(func.count()).select_from(record_type))
+            for record_type in record_types
+        )
+        response = TestClient(app).post(path, json=request_body)
+        duplicate_response = TestClient(app).post(path, json=request_body)
+
+        second_execution, _ = build_and_persist_execution_for_planned_session(
+            session,
+            repository,
+            athlete_id=strategy.athlete_id,
+            weekly_plan=weekly_plan,
+            planned_session_index=1,
+            session_template=session_template,
+            prescription=prescription,
+            safety_policy=safety_policy,
+            provenance=provenance,
+        )
+        second_proceed = persist_post_session_safety(
+            session,
+            repository,
+            weekly_plan=weekly_plan,
+            execution=second_execution,
+            safety_policy=safety_policy,
+            provenance=provenance,
+        )
+        escalation = persist_post_session_safety(
+            session,
+            repository,
+            weekly_plan=weekly_plan,
+            execution=second_execution,
+            safety_policy=safety_policy,
+            provenance=provenance,
+            signals=(
+                SafetySignal(
+                    tag="fixture_preclassified_escalation",
+                    classification=SafetySignalClass.ESCALATE,
+                ),
+            ),
+        )
+        review_response = TestClient(app).post(
+            f"/v1/session-executions/{second_execution.id}/prescriptions/"
+            f"{prescription.id}/progression",
+            json={
+                "progression_policy_id": str(non_exposure_policy.id),
+                "decided_at": (escalation.decided_at + timedelta(minutes=1)).isoformat(),
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert missing_post_safety_response.status_code == 422
+    assert post_decision.outcome is SafetyGateOutcome.PROCEED
+    assert late_failure_response.status_code == 422
+    assert counts_after_failure == counts_before_failure
+    assert response.status_code == 201
+    result = ProgressionCreationResult.model_validate(response.json())
+    assert result.exposure_entry is not None
+    assert result.exposure_entry.dose_value == 15
+    assert result.exposure_validation is not None
+    assert result.exposure_validation.outcome.value == "approved"
+    assert result.progression_decision.outcome.value == "progress"
+    assert result.progression_decision.post_session_safety_decision_ids == (post_decision.id,)
+    assert result.revised_prescription is not None
+    assert result.revised_prescription.repetitions_per_set == 6
+    assert result.revised_prescription.supersedes_prescription_id == prescription.id
+    assert result.revised_prescription.progression_decision_id == result.progression_decision.id
+    session.expire_all()
+    assert repository.get_exposure_entry(result.exposure_entry.id) == result.exposure_entry
+    assert (
+        repository.get_exposure_validation_decision(result.exposure_validation.id)
+        == result.exposure_validation
+    )
+    assert (
+        repository.get_progression_decision(result.progression_decision.id)
+        == result.progression_decision
+    )
+    assert (
+        repository.get_session_prescription(result.revised_prescription.id)
+        == result.revised_prescription
+    )
+    assert duplicate_response.status_code == 409
+    assert review_response.status_code == 201
+    review_result = ProgressionCreationResult.model_validate(review_response.json())
+    assert review_result.progression_decision.outcome.value == "review_required"
+    assert review_result.revised_prescription is None
+    assert review_result.progression_decision.post_session_safety_decision_ids == (
+        second_proceed.id,
+        escalation.id,
+    )
 
 
 def test_safety_execution_and_adherence_round_trip_preserves_provenance(

@@ -69,6 +69,11 @@ The current validator derives entries only from actual workout-result observatio
 configurable initial, relative, and absolute caps. Rejected targets hold progression; no universal
 “10% rule” or cardiovascular proxy is used.
 
+The persisted progression boundary requires at least one post-session safety decision and loads
+every such decision for the execution. Callers cannot select a favorable subset. An escalation
+requires review, other configured post-session modifications hold progression, and the progression
+decision cannot predate any safety decision it cites.
+
 ### Re-entry
 
 Illness, injury, prolonged interruption, or major detraining can place an athlete in a re-entry state. Prior prescriptions must not resume automatically at full dose.

@@ -1963,6 +1963,27 @@ class DomainRepository:
         )
         return self.get_session_safety_decision(decision_id) if decision_id is not None else None
 
+    def list_post_session_safety_decisions(
+        self, session_execution_id: UUID
+    ) -> tuple[SessionSafetyDecision, ...]:
+        decision_ids = self.session.scalars(
+            select(SessionSafetyDecisionRecord.id)
+            .where(
+                SessionSafetyDecisionRecord.related_session_execution_id == session_execution_id,
+                SessionSafetyDecisionRecord.timing == "post_session",
+            )
+            .order_by(
+                SessionSafetyDecisionRecord.decided_at,
+                SessionSafetyDecisionRecord.created_at,
+                SessionSafetyDecisionRecord.id,
+            )
+        ).all()
+        return tuple(
+            decision
+            for decision_id in decision_ids
+            if (decision := self.get_session_safety_decision(decision_id)) is not None
+        )
+
     def add_session_execution(self, execution: SessionExecution) -> None:
         self._require_athlete(execution.athlete_id)
         plan = self.session.get(WeeklyPlanRecord, execution.weekly_plan_id)
@@ -2220,6 +2241,17 @@ class DomainRepository:
             rule_version=record.rule_version,
         )
 
+    def get_session_adherence_by_execution_and_prescription(
+        self, session_execution_id: UUID, prescription_id: UUID
+    ) -> SessionAdherence | None:
+        adherence_id = self.session.scalar(
+            select(SessionAdherenceRecord.id).where(
+                SessionAdherenceRecord.session_execution_id == session_execution_id,
+                SessionAdherenceRecord.prescription_id == prescription_id,
+            )
+        )
+        return self.get_session_adherence(adherence_id) if adherence_id is not None else None
+
     def add_progression_policy(self, policy: ProgressionPolicy) -> None:
         self._require_ids_exist(
             EvidenceClaimRecord.id, policy.evidence_claim_ids, "progression evidence"
@@ -2313,12 +2345,15 @@ class DomainRepository:
     def add_exposure_entry(self, entry: ExposureEntry) -> None:
         execution = self.session.get(SessionExecutionRecord, entry.session_execution_id)
         definition = self.session.get(ExposureDefinitionRecord, entry.exposure_definition_id)
+        prescription = self.session.get(SessionPrescriptionRecord, entry.prescription_id)
         if execution is None or execution.athlete_id != entry.athlete_id:
             raise DomainIntegrityError("exposure entry execution is missing or belongs elsewhere")
         if (
             definition is None
+            or prescription is None
             or not any(item.prescription_id == entry.prescription_id for item in execution.items)
             or execution.planned_session_id != entry.planned_session_id
+            or definition.exercise_id != prescription.exercise_id
             or definition.exposure_type != entry.exposure_type.value
             or definition.dose_unit != entry.dose_unit
             or execution.performance_observation_id not in entry.source_observation_ids
@@ -2378,6 +2413,42 @@ class DomainRepository:
                 rule_version=record.rule_version,
             )
         )
+
+    def list_exposure_entries_for_athlete(
+        self, athlete_id: UUID, exposure_type: str
+    ) -> tuple[ExposureEntry, ...]:
+        entry_ids = self.session.scalars(
+            select(ExposureEntryRecord.id)
+            .where(
+                ExposureEntryRecord.athlete_id == athlete_id,
+                ExposureEntryRecord.exposure_type == exposure_type,
+            )
+            .order_by(
+                ExposureEntryRecord.occurred_at,
+                ExposureEntryRecord.created_at,
+                ExposureEntryRecord.id,
+            )
+        ).all()
+        return tuple(
+            entry
+            for entry_id in entry_ids
+            if (entry := self.get_exposure_entry(entry_id)) is not None
+        )
+
+    def get_exposure_entry_for_execution_prescription_definition(
+        self,
+        session_execution_id: UUID,
+        prescription_id: UUID,
+        exposure_definition_id: UUID,
+    ) -> ExposureEntry | None:
+        entry_id = self.session.scalar(
+            select(ExposureEntryRecord.id).where(
+                ExposureEntryRecord.session_execution_id == session_execution_id,
+                ExposureEntryRecord.prescription_id == prescription_id,
+                ExposureEntryRecord.exposure_definition_id == exposure_definition_id,
+            )
+        )
+        return self.get_exposure_entry(entry_id) if entry_id is not None else None
 
     def add_exposure_progression_policy(self, policy: ExposureProgressionPolicy) -> None:
         self._require_ids_exist(
@@ -2444,30 +2515,60 @@ class DomainRepository:
         )
         execution = self.session.get(SessionExecutionRecord, decision.session_execution_id)
         adherence = self.session.get(SessionAdherenceRecord, decision.session_adherence_id)
+        prescription = self.session.get(SessionPrescriptionRecord, decision.prescription_id)
+        policy = self.session.get(ProgressionPolicyRecord, decision.progression_policy_id)
         if (
             execution is None
             or adherence is None
+            or prescription is None
+            or policy is None
             or execution.athlete_id != decision.athlete_id
+            or execution.weekly_plan_id != decision.weekly_plan_id
+            or execution.planned_session_id != decision.planned_session_id
             or not any(item.prescription_id == decision.prescription_id for item in execution.items)
             or adherence.session_execution_id != execution.id
             or adherence.prescription_id != decision.prescription_id
+            or adherence.planned_session_id != decision.planned_session_id
+            or prescription.athlete_id != decision.athlete_id
+            or policy.reference != prescription.progression_rule_reference
         ):
             raise DomainIntegrityError("progression decision execution chain is invalid")
-        if self.session.get(ProgressionPolicyRecord, decision.progression_policy_id) is None:
-            raise DomainIntegrityError("progression policy does not exist")
         self._require_ids_exist(
             SessionSafetyDecisionRecord.id,
             decision.post_session_safety_decision_ids,
             "post-session safety decisions",
         )
-        if (
-            decision.exposure_validation_decision_id is not None
-            and self.session.get(
-                ExposureValidationDecisionRecord, decision.exposure_validation_decision_id
-            )
-            is None
+        safety_records = tuple(
+            self.session.get(SessionSafetyDecisionRecord, item)
+            for item in decision.post_session_safety_decision_ids
+        )
+        if any(
+            item is None
+            or item.timing != "post_session"
+            or item.related_session_execution_id != execution.id
+            or item.athlete_id != decision.athlete_id
+            or item.decided_at > decision.decided_at
+            for item in safety_records
         ):
+            raise DomainIntegrityError(
+                "progression safety decisions do not match or precede the execution decision"
+            )
+        exposure_validation = (
+            self.session.get(
+                ExposureValidationDecisionRecord,
+                decision.exposure_validation_decision_id,
+            )
+            if decision.exposure_validation_decision_id is not None
+            else None
+        )
+        if decision.exposure_validation_decision_id is not None and exposure_validation is None:
             raise DomainIntegrityError("exposure validation decision does not exist")
+        if exposure_validation is not None and (
+            exposure_validation.athlete_id != decision.athlete_id
+            or exposure_validation.prescription_id != decision.prescription_id
+            or exposure_validation.exposure_type != policy.exposure_type
+        ):
+            raise DomainIntegrityError("exposure validation does not match progression inputs")
         record = ProgressionDecisionRecord(
             id=decision.id,
             schema_version=decision.schema_version,
@@ -2571,6 +2672,17 @@ class DomainRepository:
             decided_at=record.decided_at,
             rule_version=record.rule_version,
         )
+
+    def get_progression_decision_by_execution_and_prescription(
+        self, session_execution_id: UUID, prescription_id: UUID
+    ) -> ProgressionDecision | None:
+        decision_id = self.session.scalar(
+            select(ProgressionDecisionRecord.id).where(
+                ProgressionDecisionRecord.session_execution_id == session_execution_id,
+                ProgressionDecisionRecord.prescription_id == prescription_id,
+            )
+        )
+        return self.get_progression_decision(decision_id) if decision_id is not None else None
 
     def add_training_response(self, response: TrainingResponse) -> None:
         block = self.session.get(BlockPlanRecord, response.block_plan_id)

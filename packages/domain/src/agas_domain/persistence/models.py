@@ -1402,7 +1402,14 @@ class SetPerformanceRecord(VersionedRecordMixin, Base):
 
 class SessionAdherenceRecord(VersionedRecordMixin, Base):
     __tablename__ = "session_adherence"
-    __table_args__ = (CheckConstraint("kind = 'derived'", name="ck_adherence_is_derived"),)
+    __table_args__ = (
+        CheckConstraint("kind = 'derived'", name="ck_adherence_is_derived"),
+        UniqueConstraint(
+            "session_execution_id",
+            "prescription_id",
+            name="uq_adherence_execution_prescription",
+        ),
+    )
 
     kind: Mapped[str] = mapped_column(String(20), nullable=False, default="derived")
     athlete_id: Mapped[UUID] = mapped_column(
@@ -1487,7 +1494,15 @@ class ExposureDefinitionRecord(VersionedRecordMixin, Base):
 
 class ExposureEntryRecord(VersionedRecordMixin, Base):
     __tablename__ = "exposure_entries"
-    __table_args__ = (CheckConstraint("kind = 'derived'", name="ck_exposure_entry_derived"),)
+    __table_args__ = (
+        CheckConstraint("kind = 'derived'", name="ck_exposure_entry_derived"),
+        UniqueConstraint(
+            "session_execution_id",
+            "prescription_id",
+            "exposure_definition_id",
+            name="uq_exposure_entry_execution_prescription_definition",
+        ),
+    )
     kind: Mapped[str] = mapped_column(String(20), nullable=False)
     athlete_id: Mapped[UUID] = mapped_column(
         ForeignKey("athletes.id", ondelete="RESTRICT"), index=True
@@ -1564,6 +1579,13 @@ class ExposureValidationDecisionRecord(VersionedRecordMixin, Base):
 
 class ProgressionDecisionRecord(VersionedRecordMixin, Base):
     __tablename__ = "progression_decisions"
+    __table_args__ = (
+        UniqueConstraint(
+            "session_execution_id",
+            "prescription_id",
+            name="uq_progression_execution_prescription",
+        ),
+    )
     athlete_id: Mapped[UUID] = mapped_column(
         ForeignKey("athletes.id", ondelete="RESTRICT"), index=True
     )

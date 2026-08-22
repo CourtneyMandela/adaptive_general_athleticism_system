@@ -18,6 +18,14 @@ from agas_api.block_creation import (
     PersistedBlockCreationService,
 )
 from agas_api.database import database_session, database_session_dependency
+from agas_api.progression_application import (
+    CreateProgressionDecisionCommand,
+    PersistedProgressionService,
+    ProgressionConflictError,
+    ProgressionCreationResult,
+    ProgressionNotFoundError,
+    ProgressionValidationError,
+)
 from agas_api.replanning import (
     PersistedReplanningService,
     PostBlockReplanningCommand,
@@ -233,6 +241,32 @@ def create_session_execution(
     except SessionRecordingConflictError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     except SessionRecordingValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.post(
+    "/v1/session-executions/{session_execution_id}/prescriptions/{prescription_id}/progression",
+    tags=["progression"],
+    response_model=ProgressionCreationResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_progression_decision(
+    session_execution_id: UUID,
+    prescription_id: UUID,
+    command: CreateProgressionDecisionCommand,
+    session: Annotated[Session, Depends(database_session_dependency)],
+) -> ProgressionCreationResult:
+    try:
+        return PersistedProgressionService(session).execute(
+            session_execution_id, prescription_id, command
+        )
+    except ProgressionNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except ProgressionConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except ProgressionValidationError as error:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
         ) from error

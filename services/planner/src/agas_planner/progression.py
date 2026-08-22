@@ -180,6 +180,8 @@ class ProgressionEngine:
             for item in safety
         ):
             raise ProgressionError("post-session safety decision does not match execution")
+        if any(item.decided_at > decided_at for item in safety):
+            raise ProgressionError("progression cannot predate a post-session safety decision")
 
         outcome = ProgressionOutcome.PROGRESS
         reasons: list[str] = []

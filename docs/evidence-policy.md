@@ -69,9 +69,10 @@ from raw text or model memory.
 
 Set completion and dose-completion ratios are transparent descriptive calculations from an
 immutable prescription and direct performance observation. They are not evidence of training
-effectiveness, motivation, readiness, or an appropriate progression. Any future rule that converts
+effectiveness, motivation, readiness, or an appropriate progression. A rule that converts
 execution or adherence into progression must carry its own version, applicability, uncertainty,
-and evidence provenance.
+and evidence provenance. The application service loads such persisted policy records; it does not
+create thresholds or increments.
 
 Milestone 5C requires evidence-claim identifiers on progression policies, exposure definitions,
 and exposure caps. Test fixtures are software-only, not production thresholds.

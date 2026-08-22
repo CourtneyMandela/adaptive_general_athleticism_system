@@ -219,3 +219,30 @@ def test_weekly_plan_endpoint_reports_missing_block_and_rejects_naive_time(
     assert missing_block_response.status_code == 404
     assert missing_block_response.json() == {"detail": "block plan does not exist"}
     assert naive_time_response.status_code == 422
+
+
+def test_progression_endpoint_reports_missing_execution_and_rejects_naive_time(
+    session: Session,
+) -> None:
+    def override_session() -> Iterator[Session]:
+        yield session
+
+    execution_id = uuid4()
+    prescription_id = uuid4()
+    path = f"/v1/session-executions/{execution_id}/prescriptions/{prescription_id}/progression"
+    request_body = {
+        "progression_policy_id": str(uuid4()),
+        "decided_at": datetime(2026, 8, 22, tzinfo=UTC).isoformat(),
+    }
+    app.dependency_overrides[database_session_dependency] = override_session
+    try:
+        missing_execution_response = TestClient(app).post(path, json=request_body)
+        naive_time_response = TestClient(app).post(
+            path, json={**request_body, "decided_at": "2026-08-22T00:00:00"}
+        )
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert missing_execution_response.status_code == 404
+    assert missing_execution_response.json() == {"detail": "session execution does not exist"}
+    assert naive_time_response.status_code == 422
