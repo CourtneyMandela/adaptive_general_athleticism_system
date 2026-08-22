@@ -3470,6 +3470,20 @@ class DomainRepository:
             capabilities=record.capabilities,
         )
 
+    def list_equipment(self) -> tuple[Equipment, ...]:
+        equipment_ids = self.session.scalars(
+            select(EquipmentRecord.id).order_by(
+                EquipmentRecord.category,
+                EquipmentRecord.name,
+                EquipmentRecord.id,
+            )
+        ).all()
+        return tuple(
+            equipment
+            for equipment_id in equipment_ids
+            if (equipment := self.get_equipment(equipment_id)) is not None
+        )
+
     def get_catalog_import(self, catalog_import_id: UUID) -> CatalogImport | None:
         record = self.session.get(CatalogImportRecord, catalog_import_id)
         return self._catalog_import_from_record(record) if record is not None else None

@@ -95,6 +95,8 @@ The health endpoint is available at `http://localhost:8000/health`.
 The application endpoints are intentionally narrow:
 
 ```text
+GET  /v1/onboarding/equipment
+POST /v1/onboarding/athletes
 GET  /v1/athletes/{athlete_id}/current-week?on=YYYY-MM-DD
 POST /v1/block-reviews/{block_review_id}/replan
 POST /v1/blocks/{block_id}/reviews
@@ -106,6 +108,11 @@ POST /v1/weekly-plans/{weekly_plan_id}/sessions/{planned_session_id}/safety-chec
 POST /v1/weekly-plans/{weekly_plan_id}/sessions/{planned_session_id}/executions
 POST /v1/session-executions/{session_execution_id}/prescriptions/{prescription_id}/progression
 ```
+
+Onboarding creates one non-sensitive athlete profile, one provenance-bearing direct user report,
+one or more environments, and append-only equipment-availability events in a single transaction.
+Selections must reference the persisted equipment catalog. It does not create capability estimates,
+choose a safety policy, run an assessment, or generate a workout.
 
 It accepts explicit replanning candidate contexts, reconstructs the persisted review chain, and
 atomically appends capability needs and one replacement strategy. Raw strategy/need CRUD is not
@@ -166,11 +173,17 @@ pnpm --filter @agas/web dev
 
 Open `http://localhost:3000`.
 
-The current PWA screen connects to `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`) and asks
-for an existing athlete ID plus a reviewed safety-policy ID. Set `NEXT_PUBLIC_AGAS_ATHLETE_ID` and
-`NEXT_PUBLIC_AGAS_SAFETY_POLICY_ID` in `.env` to prefill those fields for a local demo. After
-connecting, an athlete can append a pre-session readiness report, receive the backend's
-deterministic safety result, and log actual sets, dose, effort, timestamps, and notes. The screen
+The current PWA screen connects to `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`) and can
+create a basic athlete profile with goals, activity preferences, one or more environments, and
+controlled equipment selections. The backend must have imported the seed catalog for equipment
+choices to appear. A new profile opens the authoritative empty-week state rather than receiving a
+generic workout.
+
+The secondary development path accepts an existing athlete ID plus a reviewed safety-policy ID.
+Set `NEXT_PUBLIC_AGAS_ATHLETE_ID` and `NEXT_PUBLIC_AGAS_SAFETY_POLICY_ID` in `.env` to prefill those
+fields for a local demo. After connecting, an athlete can append a pre-session readiness report,
+receive the backend's deterministic safety result, and log actual sets, dose, effort, timestamps,
+and notes. The screen
 then collects a short post-session recovery report and displays persisted progression outcomes per
 exercise. When an exact unique non-exposure load or repetition policy is assigned by the
 prescription's versioned rule reference, the athlete can ask the deterministic backend to evaluate
@@ -180,8 +193,9 @@ offers a weekly review. It starts from availability shifted by seven days, requi
 confirm or edit those actual times, and prepares exactly one consecutive successor week. Block-end,
 hold, review-required, missing-policy, and unsupported-policy states remain visibly blocked.
 
-This setup is provisional: there is no authentication, athlete onboarding, or athlete-to-policy
-assignment workflow yet. The browser does not classify raw symptoms. Selecting a concerning
+This setup is provisional: there is no authentication, account ownership, sensitive health intake,
+assessment orchestration, or athlete-to-policy assignment workflow yet. Do not use it for sensitive
+or production athlete data. The browser does not classify raw symptoms. Selecting a concerning
 symptom pauses the ordinary workout flow instead of fabricating a safety signal.
 Progression remains backend-governed: the PWA never chooses among policies or invents exposure
 targets, session-duration budgets, or adjustment values. Unsupported, exposure-sensitive, missing,
