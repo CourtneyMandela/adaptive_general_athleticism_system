@@ -33,6 +33,16 @@ from agas_api.current_week import (
     CurrentWeekProjector,
 )
 from agas_api.database import database_session, database_session_dependency
+from agas_api.onboarding import (
+    AthleteOnboardingConflictError,
+    AthleteOnboardingNotFoundError,
+    AthleteOnboardingResult,
+    AthleteOnboardingValidationError,
+    CreateAthleteOnboardingCommand,
+    OnboardingEquipmentOption,
+    PersistedAthleteOnboardingService,
+    list_onboarding_equipment,
+)
 from agas_api.progression_application import (
     CreateProgressionDecisionCommand,
     PersistedProgressionService,
@@ -120,6 +130,39 @@ def ready() -> dict[str, str]:
     with _session_scope() as session:
         session.execute(text("SELECT 1"))
     return {"status": "ready"}
+
+
+@app.get(
+    "/v1/onboarding/equipment",
+    tags=["onboarding"],
+    response_model=tuple[OnboardingEquipmentOption, ...],
+)
+def get_onboarding_equipment(
+    session: Annotated[Session, Depends(database_session_dependency)],
+) -> tuple[OnboardingEquipmentOption, ...]:
+    return list_onboarding_equipment(session)
+
+
+@app.post(
+    "/v1/onboarding/athletes",
+    tags=["onboarding"],
+    response_model=AthleteOnboardingResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_athlete_onboarding(
+    command: CreateAthleteOnboardingCommand,
+    session: Annotated[Session, Depends(database_session_dependency)],
+) -> AthleteOnboardingResult:
+    try:
+        return PersistedAthleteOnboardingService(session).execute(command)
+    except AthleteOnboardingNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except AthleteOnboardingConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except AthleteOnboardingValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
 
 
 @app.get(

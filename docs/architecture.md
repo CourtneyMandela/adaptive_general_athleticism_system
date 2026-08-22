@@ -406,7 +406,11 @@ to completed block to block review to replacement strategy.
 ## API
 
 FastAPI owns transport concerns and database lifecycle. In addition to health/readiness, narrow
-write endpoints expose post-block replanning and persisted block creation. A block-review ID
+write endpoints expose profile/environment onboarding, post-block replanning, and persisted block
+creation. Onboarding accepts only non-sensitive direct reports, validates equipment identities
+against the global catalog, and atomically appends the athlete, observation, environments, and
+equipment-availability events. It creates no estimate, safety assignment, assessment, or plan.
+A block-review ID
 anchors the stored replanning lineage; the application service loads the governed inputs, invokes
 the deterministic planner, and commits new capability needs plus exactly one successor strategy
 atomically. A strategy-priority pair anchors resource-demand preparation; the service appends
@@ -428,7 +432,14 @@ Raw domain CRUD is intentionally absent because it could bypass invariants.
 
 ## Web
 
-The Next.js App Router PWA now has a connected current-week screen for an existing athlete. It
+The Next.js App Router PWA begins with a bounded profile/environment onboarding form. It submits
+goals and preferences as a timestamped direct report, presents only controlled persisted equipment
+choices, and supports multiple environments without coupling athlete identity to equipment. A
+successful submission opens the authoritative current-week projection; the honest initial state is
+normally an empty week. The form does not collect sensitive health or injury data, derive capability
+estimates, assign safety policy, conduct assessment, or generate training.
+
+The PWA also has a connected current-week screen for an existing athlete. It
 renders dated session containers, prescription dose and intensity, a compact rationale disclosure,
 environment, safety status, execution, and adherence. Setup, loading, empty, conflict/error, and
 mobile layouts are explicit. It also submits structured pre-session self-reports and actual
@@ -466,10 +477,12 @@ Technique-constraint reporting remains separate from completion and is not prefi
 assigned policy requires technique confirmation, an unreported or failed constraint produces the
 deterministic non-progression outcome rather than a favorable inference.
 
-Until onboarding and safety-policy assignment exist, the local setup requires explicit athlete and
-reviewed safety-policy IDs. The client uses `unverified-athlete-user` provenance to avoid implying
+The secondary local-development setup requires explicit athlete and reviewed safety-policy IDs.
+Safety-policy assignment remains outside onboarding because applicability is governed rather than a
+user preference. The client uses `unverified-athlete-user` provenance to avoid implying
 authentication. It sends no classified safety signal because no governed browser classifier exists;
-a concerning-symptom selection pauses the ordinary form locally.
+a concerning-symptom selection pauses the ordinary form locally. Authentication and account-to-
+athlete authorization are required before sensitive intake or production use.
 
 ## Configuration
 

@@ -14,6 +14,7 @@ import {
   type CurrentWeekProjection,
   type PlannedSessionProjection,
 } from "@/lib/current-week";
+import { OnboardingForm } from "./onboarding-form";
 import {
   PostSessionSafetyForm,
   ProgressionEvaluationButton,
@@ -250,6 +251,13 @@ export function CurrentWeekDashboard() {
     void load(normalized, asOf);
   }
 
+  function openCreatedAthlete(createdAthleteId: string) {
+    setAthleteInput(createdAthleteId);
+    setAthleteId(createdAthleteId);
+    setSafetyPolicyId(isUuid(configuredSafetyPolicyId) ? configuredSafetyPolicyId : "");
+    void load(createdAthleteId, asOf);
+  }
+
   function selectDate(nextDate: string) {
     setAsOf(nextDate);
     void load(athleteId, nextDate);
@@ -262,32 +270,38 @@ export function CurrentWeekDashboard() {
           <p className="eyebrow">Adaptive General Athleticism System</p>
           <h1 id="setup-title">Your training week, with the why intact.</h1>
           <p className="lede">
-            Connect an existing athlete and reviewed safety policy. This daily-use slice can inspect
-            the persisted week, evaluate safety reports, record actual work, and close the week
-            without inventing training decisions.
+            Create a non-sensitive athlete profile and record the places and equipment available to
+            you. AGAS keeps your report as provenance-bearing input; it will not turn it into an
+            unsupported fitness score or invented workout.
           </p>
-          <form onSubmit={connectAthlete} className="athlete-form">
-            <label htmlFor="athlete-id">Athlete ID</label>
-            <input
-              id="athlete-id"
-              name="athlete-id"
-              value={athleteInput}
-              onChange={(event) => setAthleteInput(event.target.value)}
-              placeholder="00000000-0000-4000-8000-000000000000"
-              autoComplete="off"
-            />
-            <label htmlFor="safety-policy-id">Safety policy ID</label>
-            <input
-              id="safety-policy-id"
-              name="safety-policy-id"
-              value={safetyPolicyInput}
-              onChange={(event) => setSafetyPolicyInput(event.target.value)}
-              placeholder="00000000-0000-4000-8000-000000000000"
-              autoComplete="off"
-            />
-            <p className="form-help">Temporary local setup until onboarding and policy assignment exist.</p>
-            <button type="submit">Open current week</button>
-          </form>
+          <OnboardingForm apiBaseUrl={apiBaseUrl} onCreated={openCreatedAthlete} />
+          <details className="existing-profile">
+            <summary>Connect an existing development profile</summary>
+            <form onSubmit={connectAthlete} className="athlete-form">
+              <label htmlFor="athlete-id">Athlete ID</label>
+              <input
+                id="athlete-id"
+                name="athlete-id"
+                value={athleteInput}
+                onChange={(event) => setAthleteInput(event.target.value)}
+                placeholder="00000000-0000-4000-8000-000000000000"
+                autoComplete="off"
+              />
+              <label htmlFor="safety-policy-id">Safety policy ID</label>
+              <input
+                id="safety-policy-id"
+                name="safety-policy-id"
+                value={safetyPolicyInput}
+                onChange={(event) => setSafetyPolicyInput(event.target.value)}
+                placeholder="00000000-0000-4000-8000-000000000000"
+                autoComplete="off"
+              />
+              <p className="form-help">
+                This developer path requires persisted IDs and a reviewed safety policy.
+              </p>
+              <button type="submit">Open current week</button>
+            </form>
+          </details>
           {message ? <p className="form-error">{message}</p> : null}
         </section>
       </main>
@@ -347,9 +361,12 @@ export function CurrentWeekDashboard() {
 
       {state === "ready" && projection?.week === null ? (
         <section className="state-card">
-          <p className="eyebrow">No scheduled week</p>
+          <p className="eyebrow">Profile saved · No scheduled week</p>
           <h2>There is no persisted plan covering {asOf}.</h2>
-          <p>AGAS will not invent a workout to fill this gap.</p>
+          <p>
+            AGAS will not invent a workout to fill this gap. A reviewed safety-policy assignment,
+            assessment, and governed first-plan workflow are still required.
+          </p>
         </section>
       ) : null}
 
