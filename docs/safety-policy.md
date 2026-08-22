@@ -24,6 +24,11 @@ the interface explains that it cannot classify symptoms or provide medical guida
 conservative product boundary, not a triage decision, and the missing governed symptom-reporting
 workflow remains explicit.
 
+The same boundary applies to the post-session recovery form. A report of unusual soreness can be
+submitted through the reviewed deterministic policy and can hold later progression. Selecting the
+separate concerning-symptom control pauses normal progression without converting the report into
+an unreviewed diagnostic or escalation classification.
+
 ### Modification
 
 Preclassified safety input, limited readiness, unusual soreness, major sleep disruption, or a

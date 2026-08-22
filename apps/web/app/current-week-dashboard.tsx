@@ -7,12 +7,14 @@ import {
   formatDose,
   isUuid,
   localIsoDate,
+  progressionOutcomeLabel,
+  safetyOutcomeLabel,
   sessionStatusLabel,
   shiftIsoDate,
   type CurrentWeekProjection,
   type PlannedSessionProjection,
 } from "@/lib/current-week";
-import { SafetyCheckForm, WorkoutLogForm } from "./session-actions";
+import { PostSessionSafetyForm, SafetyCheckForm, WorkoutLogForm } from "./session-actions";
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const configuredAthleteId = process.env.NEXT_PUBLIC_AGAS_ATHLETE_ID ?? "";
@@ -102,14 +104,57 @@ function SessionCard({
       </ol>
 
       {session.execution ? (
-        <footer className="session-result">
-          <span>Logged</span>
-          <span>
-            {session.execution.session_rpe === null
-              ? "Effort not reported"
-              : `Session RPE ${session.execution.session_rpe}`}
-          </span>
-        </footer>
+        <div className="session-actions">
+          <footer className="session-result">
+            <span>Logged</span>
+            <span>
+              {session.execution.session_rpe === null
+                ? "Effort not reported"
+                : `Session RPE ${session.execution.session_rpe}`}
+            </span>
+          </footer>
+          {session.execution.post_session_safety_outcomes.length === 0 ? (
+            <PostSessionSafetyForm
+              apiBaseUrl={apiBaseUrl}
+              weeklyPlanId={weeklyPlanId}
+              safetyPolicyId={safetyPolicyId}
+              session={session}
+              onSaved={onSaved}
+            />
+          ) : (
+            <section className="closure-panel" aria-label="Post-session review">
+              <p className="eyebrow">Recovery report</p>
+              <p>
+                {session.execution.post_session_safety_outcomes
+                  .map(safetyOutcomeLabel)
+                  .join(" · ")}
+              </p>
+              <ul className="progression-list">
+                {session.prescriptions.map((prescription) => (
+                  <li key={prescription.prescription_id}>
+                    <strong>{prescription.exercise_name}</strong>
+                    {prescription.progression ? (
+                      <span>
+                        {progressionOutcomeLabel(prescription.progression.outcome)}
+                        {prescription.progression.adjustment_description
+                          ? ` — ${prescription.progression.adjustment_description}`
+                          : ""}
+                      </span>
+                    ) : (
+                      <span>Awaiting governed progression evaluation</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              {session.prescriptions.some((item) => item.progression === null) ? (
+                <p className="form-help">
+                  The PWA does not choose training or exposure policies. Pending decisions require
+                  a governed policy assignment before they can be evaluated.
+                </p>
+              ) : null}
+            </section>
+          )}
+        </div>
       ) : (
         <div className="session-actions">
           <SafetyCheckForm

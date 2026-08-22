@@ -229,3 +229,109 @@ export function WorkoutLogForm({
     </details>
   );
 }
+
+export function PostSessionSafetyForm({
+  apiBaseUrl,
+  weeklyPlanId,
+  safetyPolicyId,
+  session,
+  onSaved,
+}: {
+  apiBaseUrl: string;
+  weeklyPlanId: string;
+  safetyPolicyId: string;
+  session: PlannedSessionProjection;
+  onSaved: () => Promise<void>;
+}) {
+  const execution = session.execution!;
+  const [unusualSoreness, setUnusualSoreness] = useState(false);
+  const [concerningSymptom, setConcerningSymptom] = useState(false);
+  const [note, setNote] = useState("");
+  const [reliability, setReliability] = useState<Confidence>("moderate");
+  const [state, setState] = useState<"idle" | "saving" | "error">("idle");
+  const [message, setMessage] = useState("");
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (concerningSymptom) return;
+    setState("saving");
+    setMessage("");
+    const reportedAt = new Date();
+    try {
+      await submitSafetyCheck(apiBaseUrl, weeklyPlanId, session.planned_session_id, {
+        safety_policy_id: safetyPolicyId,
+        timing: "post_session",
+        related_session_execution_id: execution.execution_id,
+        readiness: null,
+        unusual_soreness: unusualSoreness,
+        major_sleep_disruption: false,
+        major_schedule_limitation: false,
+        signals: [],
+        note: note.trim() || null,
+        reported_at: reportedAt.toISOString(),
+        decided_at: reportedAt.toISOString(),
+        reliability,
+        provenance: pwaProvenance,
+      });
+      await onSaved();
+      setState("idle");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to save the recovery report.");
+      setState("error");
+    }
+  }
+
+  return (
+    <details className="action-panel" open>
+      <summary>Close out this workout</summary>
+      <form className="action-form" onSubmit={submit}>
+        <fieldset disabled={state === "saving"}>
+          <legend>Anything unusual after the session?</legend>
+          <div className="check-list">
+            <label>
+              <input
+                type="checkbox"
+                checked={unusualSoreness}
+                onChange={(event) => setUnusualSoreness(event.target.checked)}
+              />
+              Unusual soreness after this workout
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={concerningSymptom}
+                onChange={(event) => setConcerningSymptom(event.target.checked)}
+              />
+              Pain or another concerning symptom requiring assessment
+            </label>
+          </div>
+          {concerningSymptom ? (
+            <p className="safety-stop" role="alert">
+              Normal progression is paused. This prototype cannot classify symptoms or provide
+              medical guidance. Seek appropriate evaluation when a symptom is concerning.
+            </p>
+          ) : null}
+          <label>
+            Recovery note <span>(optional)</span>
+            <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={2} />
+          </label>
+          <label>
+            Report confidence
+            <select
+              value={reliability}
+              onChange={(event) => setReliability(event.target.value as Confidence)}
+            >
+              {confidenceOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+          <button type="submit" disabled={concerningSymptom || state === "saving"}>
+            {state === "saving" ? "Closing…" : "Save recovery report"}
+          </button>
+          {message ? <p className="form-error" role="alert">{message}</p> : null}
+        </fieldset>
+      </form>
+    </details>
+  );
+}

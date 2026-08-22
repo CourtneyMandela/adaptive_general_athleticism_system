@@ -407,6 +407,11 @@ set/dose/effort workout results through the existing transactional use-case endp
 the read projection. The frontend derives only descriptive execution status from the entered work;
 the backend remains authoritative for safety, execution validation, and adherence.
 
+After an execution, the PWA appends a structured post-session safety report linked to that exact
+execution and then presents persisted per-prescription progression outcomes. It does not select a
+progression policy, exposure definition, exposure policy, or proposed exposure target. Those are
+governed planning inputs and require a purpose-built assignment contract before browser invocation.
+
 Until onboarding and policy assignment exist, the local setup requires explicit athlete and
 reviewed safety-policy IDs. The client uses `unverified-athlete-user` provenance to avoid implying
 authentication. It sends no classified safety signal because no governed browser classifier exists;

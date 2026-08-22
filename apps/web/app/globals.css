@@ -247,6 +247,11 @@ button { cursor: pointer; }
 .execution-items { display: grid; gap: .7rem; }
 .execution-item { display: grid; gap: .55rem; padding: .75rem; border: 1px solid var(--line); border-radius: .65rem; }
 .compact-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .6rem; }
+.closure-panel { display: grid; gap: .65rem; padding: 1rem 1.15rem 1.15rem; border-top: 1px solid var(--line); background: var(--surface); }
+.closure-panel p { margin: 0; }
+.progression-list { display: grid; gap: .55rem; margin: 0; padding: 0; list-style: none; }
+.progression-list li { display: grid; gap: .15rem; padding: .65rem .75rem; border: 1px solid var(--line); border-radius: .65rem; }
+.progression-list span { color: var(--muted); font-size: .8rem; }
 
 .state-card {
   display: grid;

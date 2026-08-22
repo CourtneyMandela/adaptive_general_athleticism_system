@@ -6,6 +6,8 @@ import {
   fetchCurrentWeek,
   formatDose,
   isUuid,
+  progressionOutcomeLabel,
+  safetyOutcomeLabel,
   sessionStatusLabel,
   shiftIsoDate,
   submitSafetyCheck,
@@ -69,6 +71,9 @@ describe("current-week presentation", () => {
     expect(sessionStatusLabel("cleared")).toBe("Safety cleared");
     expect(sessionStatusLabel("needs_attention")).toBe("Needs attention");
     expect(sessionStatusLabel("stopped_safety")).toBe("Stopped for safety");
+    expect(safetyOutcomeLabel("modify")).toBe("Recovery needs attention");
+    expect(progressionOutcomeLabel("repeat")).toBe("Repeat current dose");
+    expect(progressionOutcomeLabel("unexpected-policy-output")).toBe("Decision recorded");
   });
 
   it("requests the dated projection and preserves API errors", async () => {
@@ -218,6 +223,22 @@ describe("current-week presentation", () => {
     expect(fetcher.mock.calls[0][0]).toBe("http://localhost:8000/v1/weekly-plans/plan/sessions/session/safety-checks");
     expect(fetcher.mock.calls[0][1]).toMatchObject({ method: "POST" });
 
+    await submitSafetyCheck("http://localhost:8000", "plan", "session", {
+      ...safetyCommand,
+      timing: "post_session",
+      related_session_execution_id: "00000000-0000-4000-8000-000000000021",
+      readiness: null,
+      reported_at: "2026-08-24T15:02:00Z",
+      decided_at: "2026-08-24T15:02:00Z",
+    }, fetcher);
+    expect(fetcher.mock.calls[1][0]).toBe("http://localhost:8000/v1/weekly-plans/plan/sessions/session/safety-checks");
+    expect(JSON.parse(fetcher.mock.calls[1][1]!.body as string)).toMatchObject({
+      timing: "post_session",
+      related_session_execution_id: "00000000-0000-4000-8000-000000000021",
+      readiness: null,
+      signals: [],
+    });
+
     const execution = buildExecutionCommand({
       session,
       drafts: [{ prescriptionId: prescription.prescription_id, performedSets: 0, actualDosePerSet: 5, itemRpe: null }],
@@ -231,6 +252,6 @@ describe("current-week presentation", () => {
       recordedAt: new Date("2026-08-24T14:46:00Z"),
     });
     await submitSessionExecution("http://localhost:8000", "plan", "session", execution, fetcher);
-    expect(fetcher.mock.calls[1][0]).toBe("http://localhost:8000/v1/weekly-plans/plan/sessions/session/executions");
+    expect(fetcher.mock.calls[2][0]).toBe("http://localhost:8000/v1/weekly-plans/plan/sessions/session/executions");
   });
 });

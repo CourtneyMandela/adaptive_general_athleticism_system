@@ -94,10 +94,8 @@ export interface ProvenanceInput {
   ingestion_method: string;
 }
 
-export interface SafetyCheckCommand {
+interface SafetyCheckCommandBase {
   safety_policy_id: string;
-  timing: "pre_session";
-  readiness: "ready" | "limited" | "not_ready";
   unusual_soreness: boolean;
   major_sleep_disruption: boolean;
   major_schedule_limitation: boolean;
@@ -108,6 +106,20 @@ export interface SafetyCheckCommand {
   reliability: Confidence;
   provenance: ProvenanceInput;
 }
+
+export interface PreSessionSafetyCheckCommand extends SafetyCheckCommandBase {
+  timing: "pre_session";
+  related_session_execution_id?: null;
+  readiness: "ready" | "limited" | "not_ready";
+}
+
+export interface PostSessionSafetyCheckCommand extends SafetyCheckCommandBase {
+  timing: "post_session";
+  related_session_execution_id: string;
+  readiness: null;
+}
+
+export type SafetyCheckCommand = PreSessionSafetyCheckCommand | PostSessionSafetyCheckCommand;
 
 export interface SetPerformanceInput {
   set_index: number;
@@ -214,6 +226,26 @@ export function sessionStatusLabel(status: SessionDisplayStatus): string {
     stopped_safety: "Stopped for safety",
   };
   return labels[status];
+}
+
+export function safetyOutcomeLabel(outcome: string): string {
+  const labels: Record<string, string> = {
+    proceed: "No configured concern",
+    modify: "Recovery needs attention",
+    hold: "Progression on hold",
+    stop_and_escalate: "Further review required",
+  };
+  return labels[outcome] ?? "Safety result recorded";
+}
+
+export function progressionOutcomeLabel(outcome: string): string {
+  const labels: Record<string, string> = {
+    progress: "Progress",
+    repeat: "Repeat current dose",
+    hold: "Hold progression",
+    review_required: "Review required",
+  };
+  return labels[outcome] ?? "Decision recorded";
 }
 
 export async function fetchCurrentWeek(
