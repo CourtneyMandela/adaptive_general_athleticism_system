@@ -192,6 +192,20 @@ class DomainRepository:
             )
         )
 
+    def get_athlete(self, athlete_id: UUID) -> Athlete | None:
+        record = self.session.get(AthleteRecord, athlete_id)
+        if record is None:
+            return None
+        return Athlete(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            display_name=record.display_name,
+            date_of_birth=record.date_of_birth,
+            preferences=record.preferences,
+            goals=tuple(record.goals),
+        )
+
     def add_observation(self, observation: Observation) -> None:
         self._require_athlete(observation.athlete_id)
         self.session.add(
@@ -1794,6 +1808,20 @@ class DomainRepository:
             .where(WeeklyPlanRecord.block_plan_id == block_plan_id)
             .order_by(
                 WeeklyPlanRecord.block_week,
+                WeeklyPlanRecord.week_start,
+                WeeklyPlanRecord.generated_at,
+                WeeklyPlanRecord.id,
+            )
+        ).all()
+        return tuple(
+            plan for plan_id in plan_ids if (plan := self.get_weekly_plan(plan_id)) is not None
+        )
+
+    def list_weekly_plans_for_athlete(self, athlete_id: UUID) -> tuple[WeeklyPlan, ...]:
+        plan_ids = self.session.scalars(
+            select(WeeklyPlanRecord.id)
+            .where(WeeklyPlanRecord.athlete_id == athlete_id)
+            .order_by(
                 WeeklyPlanRecord.week_start,
                 WeeklyPlanRecord.generated_at,
                 WeeklyPlanRecord.id,

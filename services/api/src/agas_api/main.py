@@ -1,10 +1,11 @@
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import date
 from typing import Annotated
 from uuid import UUID
 
 from agas_domain import BlockPlan, ClosedLoopReplanningResult
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -24,6 +25,12 @@ from agas_api.block_review_application import (
     BlockReviewValidationError,
     CreateBlockReviewCommand,
     PersistedBlockReviewService,
+)
+from agas_api.current_week import (
+    CurrentWeekConflictError,
+    CurrentWeekNotFoundError,
+    CurrentWeekProjection,
+    CurrentWeekProjector,
 )
 from agas_api.database import database_session, database_session_dependency
 from agas_api.progression_application import (
@@ -75,7 +82,7 @@ settings = get_settings()
 app = FastAPI(
     title="Adaptive General Athleticism System API",
     version=__version__,
-    description="Domain-first API foundation. Training-plan generation is not implemented.",
+    description="Domain-first planning, execution, review, and daily-use API.",
 )
 app.add_middleware(
     CORSMiddleware,
@@ -105,6 +112,24 @@ def ready() -> dict[str, str]:
     with _session_scope() as session:
         session.execute(text("SELECT 1"))
     return {"status": "ready"}
+
+
+@app.get(
+    "/v1/athletes/{athlete_id}/current-week",
+    tags=["daily-use"],
+    response_model=CurrentWeekProjection,
+)
+def get_current_week(
+    athlete_id: UUID,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    on: Annotated[date, Query(description="Date that must fall within the requested week")],
+) -> CurrentWeekProjection:
+    try:
+        return CurrentWeekProjector(session).project(athlete_id, on)
+    except CurrentWeekNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except CurrentWeekConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
 
 
 @app.post(

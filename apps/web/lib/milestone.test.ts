@@ -3,10 +3,10 @@ import { describe, expect, it } from "vitest";
 import { milestone } from "./milestone";
 
 describe("milestone copy", () => {
-  it("describes controlled resolution without implying generated training", () => {
-    expect(milestone.available.toLowerCase()).toContain("validated small seed catalog");
-    expect(milestone.available.toLowerCase()).toContain("partial");
-    expect(milestone.deferred).toContain("automatic workout generation");
-    expect(milestone.deferred).toContain("Production-approved");
+  it("describes the connected read slice without implying write workflows", () => {
+    expect(milestone.available.toLowerCase()).toContain("persisted weekly sessions");
+    expect(milestone.available.toLowerCase()).toContain("safety");
+    expect(milestone.deferred).toContain("onboarding");
+    expect(milestone.deferred).toContain("workout logging");
   });
 });

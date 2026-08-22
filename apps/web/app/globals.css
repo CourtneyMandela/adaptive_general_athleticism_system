@@ -1,98 +1,271 @@
 :root {
   color-scheme: light;
-  --ink: #12231e;
-  --muted: #52635e;
-  --paper: #f6f3e9;
-  --accent: #2f6d57;
-  --line: #cfd7cd;
+  --ink: #14241f;
+  --muted: #5d6b66;
+  --paper: #f5f2e8;
+  --surface: #fffdf7;
+  --accent: #25634f;
+  --accent-soft: #dce9df;
+  --line: #d5d9d0;
+  --danger: #8a352f;
+  --danger-soft: #f5e2df;
+  --shadow: 0 1.2rem 3.5rem rgb(25 55 45 / 8%);
 }
 
-* {
-  box-sizing: border-box;
-}
-
-html,
-body {
-  min-height: 100%;
-}
+* { box-sizing: border-box; }
+html, body { min-height: 100%; }
 
 body {
   margin: 0;
-  background:
-    radial-gradient(circle at 10% 15%, rgb(224 236 216 / 80%), transparent 28rem),
-    var(--paper);
+  background: radial-gradient(circle at 8% 5%, rgb(218 234 213 / 75%), transparent 28rem), linear-gradient(180deg, #f8f6ee 0%, var(--paper) 100%);
   color: var(--ink);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
-main {
+button, input { font: inherit; }
+button { cursor: pointer; }
+
+.eyebrow {
+  margin: 0;
+  color: var(--accent);
+  font-size: .74rem;
+  font-weight: 800;
+  letter-spacing: .11em;
+  text-transform: uppercase;
+}
+
+.setup-shell {
   display: grid;
   min-height: 100vh;
   place-items: center;
   padding: 2rem 1.25rem;
 }
 
-.shell {
-  width: min(100%, 46rem);
+.setup-card {
+  width: min(100%, 48rem);
+  padding: clamp(1.5rem, 5vw, 3.5rem);
+  border: 1px solid var(--line);
+  border-radius: 1.5rem;
+  background: rgb(255 253 247 / 88%);
+  box-shadow: var(--shadow);
 }
 
-.eyebrow {
-  color: var(--accent);
-  font-size: 0.78rem;
+.setup-card h1, .topbar h1, .week-summary h2, .state-card h2 {
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 500;
+  letter-spacing: -.035em;
+}
+
+.setup-card h1 {
+  max-width: 13ch;
+  margin: .7rem 0 1rem;
+  font-size: clamp(2.6rem, 7vw, 5.25rem);
+  line-height: .96;
+}
+
+.lede { max-width: 62ch; color: var(--muted); font-size: 1.08rem; line-height: 1.65; }
+.athlete-form { display: grid; gap: .55rem; margin-top: 2rem; }
+
+.athlete-form label, .week-nav label {
+  color: var(--muted);
+  font-size: .75rem;
   font-weight: 750;
-  letter-spacing: 0.11em;
+  letter-spacing: .06em;
   text-transform: uppercase;
 }
 
-h1 {
-  max-width: 13ch;
-  margin: 0.6rem 0 1rem;
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: clamp(2.8rem, 8vw, 5.8rem);
-  font-weight: 500;
-  letter-spacing: -0.055em;
-  line-height: 0.94;
+.athlete-form div { display: flex; gap: .65rem; }
+
+.athlete-form input, .week-nav input {
+  min-width: 0;
+  border: 1px solid #b9c2bb;
+  border-radius: .7rem;
+  background: #fff;
+  color: var(--ink);
 }
 
-.lede {
-  max-width: 62ch;
-  color: var(--muted);
-  font-size: clamp(1rem, 2.5vw, 1.2rem);
-  line-height: 1.65;
+.athlete-form input { flex: 1; padding: .85rem 1rem; }
+
+.athlete-form button, .state-card button {
+  border: 0;
+  border-radius: .7rem;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 750;
+  padding: .85rem 1.1rem;
 }
 
-.status-card {
-  display: grid;
-  gap: 1rem;
-  margin: 2.5rem 0 0;
+.form-error { color: var(--danger); font-weight: 650; }
+
+.dashboard-shell {
+  width: min(100%, 76rem);
+  min-height: 100vh;
+  margin: 0 auto;
   padding: 1.25rem;
+}
+
+.topbar, .week-summary, .session-card__header, .session-result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.topbar { padding: .75rem 0 1.5rem; }
+.topbar h1 { margin: .25rem 0 0; font-size: clamp(2rem, 5vw, 3.6rem); }
+
+.text-button, .week-nav button {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 58%);
+  color: var(--ink);
+  font-weight: 700;
+  padding: .65rem .95rem;
+}
+
+.week-nav {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: end;
+  gap: .75rem;
+  padding: 1rem;
   border: 1px solid var(--line);
   border-radius: 1rem;
-  background: rgb(255 255 255 / 58%);
-  box-shadow: 0 1rem 3rem rgb(27 58 47 / 8%);
+  background: rgb(255 255 255 / 52%);
 }
 
-.status-card div {
+.week-nav label { display: grid; gap: .4rem; justify-self: center; }
+.week-nav input { padding: .55rem .7rem; }
+.week-summary { margin: 2rem 0 1rem; }
+.week-summary h2 { margin: .2rem 0 0; font-size: clamp(1.8rem, 4vw, 2.8rem); }
+.week-stat { display: grid; text-align: right; }
+
+.week-stat strong {
+  color: var(--accent);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 2rem;
+  font-weight: 500;
+}
+
+.week-stat span { color: var(--muted); font-size: .82rem; }
+.session-grid { display: grid; gap: 1rem; padding-bottom: 3rem; }
+
+.session-card {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 1.15rem;
+  background: var(--surface);
+  box-shadow: 0 .7rem 2rem rgb(25 55 45 / 5%);
+}
+
+.session-card--today { border-color: #72a58d; box-shadow: 0 0 0 3px rgb(84 143 115 / 12%), var(--shadow); }
+.session-card__header { align-items: flex-start; padding: 1.15rem 1.15rem .9rem; }
+
+.session-card__time {
+  margin: 0 0 .25rem;
+  color: var(--accent);
+  font-size: .8rem;
+  font-weight: 750;
+}
+
+.session-card h3 { margin: 0; font-size: 1.25rem; }
+.session-card__meta, .exercise-copy > p, .session-pending { margin: .25rem 0 0; color: var(--muted); font-size: .86rem; }
+
+.status-badge {
+  flex: none;
+  padding: .4rem .65rem;
+  border-radius: 999px;
+  background: #eceeea;
+  color: #4c5b55;
+  font-size: .72rem;
+  font-weight: 800;
+}
+
+.status-badge--completed, .status-badge--cleared { background: var(--accent-soft); color: var(--accent); }
+.status-badge--held, .status-badge--needs_attention, .status-badge--stopped_safety { background: var(--danger-soft); color: var(--danger); }
+.status-badge--modified, .status-badge--partial { background: #f2e8c9; color: #765c13; }
+
+.safety-note {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0 1.15rem .9rem;
+  padding: .75rem;
+  border-radius: .7rem;
+  background: #f2e8c9;
+  color: #5e4a14;
+  font-size: .82rem;
+}
+
+.prescription-list { margin: 0; padding: 0; border-top: 1px solid var(--line); list-style: none; }
+
+.prescription-list li {
   display: grid;
-  gap: 0.25rem;
+  grid-template-columns: 2rem 1fr;
+  gap: .75rem;
+  padding: 1rem 1.15rem;
+  border-bottom: 1px solid var(--line);
 }
 
-dt {
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.exercise-order {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: .78rem;
+  font-weight: 850;
 }
 
-dd {
-  margin: 0;
-  line-height: 1.45;
+.exercise-line { display: flex; justify-content: space-between; gap: 1rem; }
+.exercise-line span { flex: none; font-weight: 800; }
+.exercise-copy details { margin-top: .65rem; color: var(--muted); font-size: .84rem; }
+.exercise-copy summary { color: var(--accent); cursor: pointer; font-weight: 750; }
+.exercise-copy details p { margin-bottom: 0; line-height: 1.5; }
+.completion-line { color: var(--accent) !important; font-weight: 750; }
+.session-result, .session-pending { padding: .85rem 1.15rem; background: #f3f5f0; }
+.session-result { color: var(--muted); font-size: .82rem; font-weight: 700; }
+.session-pending { margin: 0; }
+
+.state-card {
+  display: grid;
+  justify-items: start;
+  gap: .5rem;
+  margin-top: 2rem;
+  padding: 1.5rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--surface);
 }
 
-@media (min-width: 44rem) {
-  .status-card {
-    grid-template-columns: repeat(3, 1fr);
-  }
+.state-card h2, .state-card p { margin: 0; }
+.state-card--error { border-color: #d6aaa5; background: #fff8f6; }
+
+.loader {
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 2px solid var(--line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
 }
 
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@media (min-width: 54rem) {
+  .dashboard-shell { padding: 2rem; }
+  .session-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 38rem) {
+  .athlete-form div, .topbar, .week-summary { align-items: stretch; flex-direction: column; }
+  .week-nav { grid-template-columns: 1fr 1fr; }
+  .week-nav label { grid-column: 1 / -1; grid-row: 1; justify-self: stretch; }
+  .week-stat { text-align: left; }
+  .session-card__header, .exercise-line { align-items: flex-start; flex-direction: column; }
+  .status-badge { align-self: flex-start; }
+}
+
+@media (prefers-reduced-motion: reduce) { .loader { animation: none; } }

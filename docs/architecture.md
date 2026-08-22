@@ -329,6 +329,20 @@ appends the response/review chain in one transaction. One block has at most one 
 V1. The review remains descriptive and the existing replanning boundary is the only component that
 may derive a successor strategy.
 
+### Current-week read projection
+
+`CurrentWeekProjector` is a read-only application boundary for daily PWA use. An athlete ID and
+explicit date identify at most one persisted weekly plan. The projector joins immutable session
+containers and prescriptions with exercise/adaptation labels, the latest pre-session safety
+decision, any execution and adherence, all post-session safety outcomes, and any progression
+decision. It returns a purpose-built transport model rather than exposing persistence records or
+adding presentation fields to domain history.
+
+No matching plan is a valid empty-week result. Multiple plans covering the date are a conflict in
+V1 because plan supersession is not modeled; the query will not silently choose the newest record.
+Display status is a deterministic rendering of persisted execution or safety outcomes and is not a
+new training or safety decision.
+
 ### Evidence claims
 
 Evidence claims are reviewed, versioned interpretations linked to source identifiers. Evidence
@@ -385,9 +399,11 @@ Raw domain CRUD is intentionally absent because it could bypass invariants.
 
 ## Web
 
-The Next.js App Router shell is responsive and installable through a web app manifest. It
-communicates the session-container foundation honestly and does not present a workout generator,
-automatic athlete-state update, or a polished training workflow.
+The Next.js App Router PWA now has a connected current-week screen for an existing athlete. It
+renders dated session containers, prescription dose and intensity, a compact rationale disclosure,
+environment, safety status, execution, and adherence. Setup, loading, empty, conflict/error, and
+mobile layouts are explicit. It does not present workout generation, onboarding, safety submission,
+or performance logging that the web client cannot yet perform.
 
 ## Configuration
 

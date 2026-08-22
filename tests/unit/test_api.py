@@ -15,6 +15,27 @@ def test_health_reports_service_version() -> None:
     assert response.json() == {"status": "ok", "service": "agas-api", "version": "0.1.0"}
 
 
+def test_current_week_endpoint_reports_missing_athlete_and_requires_date(
+    session: Session,
+) -> None:
+    def override_session() -> Iterator[Session]:
+        yield session
+
+    path = f"/v1/athletes/{uuid4()}/current-week"
+    app.dependency_overrides[database_session_dependency] = override_session
+    try:
+        missing_athlete_response = TestClient(app).get(path, params={"on": "2026-08-24"})
+        missing_date_response = TestClient(app).get(path)
+        invalid_date_response = TestClient(app).get(path, params={"on": "not-a-date"})
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert missing_athlete_response.status_code == 404
+    assert missing_athlete_response.json() == {"detail": "athlete does not exist"}
+    assert missing_date_response.status_code == 422
+    assert invalid_date_response.status_code == 422
+
+
 def test_replanning_endpoint_reports_missing_review_without_creating_state(
     session: Session,
 ) -> None:

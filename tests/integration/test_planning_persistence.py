@@ -4,6 +4,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from agas_api.block_review_application import BlockReviewCreationResult
+from agas_api.current_week import CurrentWeekProjection
 from agas_api.database import database_session_dependency
 from agas_api.main import app
 from agas_api.progression_application import ProgressionCreationResult
@@ -996,6 +997,115 @@ def persist_post_session_safety(
     repository.add_session_safety_decision(decision)
     session.commit()
     return decision
+
+
+def test_current_week_projection_exposes_schedule_and_persisted_completion(
+    session: Session,
+) -> None:
+    (
+        repository,
+        strategy,
+        _,
+        _,
+        _,
+        _,
+        _,
+        prescription,
+        session_template,
+        _,
+        _,
+        weekly_plan,
+    ) = build_and_persist_weekly_chain(session)
+    provenance = Provenance(
+        recorded_by="automated-test",
+        source_system="pytest",
+        ingestion_method="fixture",
+    )
+    safety_policy = SessionSafetyPolicy(
+        allowed_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        limited_readiness_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        unusual_soreness_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        sleep_disruption_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        schedule_limitation_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        evidence_claim_ids=strategy.evidence_claim_ids,
+        rationale="Synthetic current-week safety policy.",
+        policy_version="fixture-current-week-safety@1.0.0",
+    )
+    repository.add_session_safety_policy(safety_policy)
+    session.commit()
+
+    def override_session() -> Iterator[Session]:
+        yield session
+
+    path = f"/v1/athletes/{strategy.athlete_id}/current-week"
+    app.dependency_overrides[database_session_dependency] = override_session
+    try:
+        scheduled_response = TestClient(app).get(path, params={"on": "2026-08-25"})
+        no_plan_response = TestClient(app).get(path, params={"on": "2026-08-23"})
+        execution, adherence = build_and_persist_execution_for_planned_session(
+            session,
+            repository,
+            athlete_id=strategy.athlete_id,
+            weekly_plan=weekly_plan,
+            planned_session_index=0,
+            session_template=session_template,
+            prescription=prescription,
+            safety_policy=safety_policy,
+            provenance=provenance,
+        )
+        post_safety = persist_post_session_safety(
+            session,
+            repository,
+            weekly_plan=weekly_plan,
+            execution=execution,
+            safety_policy=safety_policy,
+            provenance=provenance,
+        )
+        completed_response = TestClient(app).get(path, params={"on": "2026-08-25"})
+
+        duplicate_plan = weekly_plan.model_copy(
+            update={
+                "id": uuid4(),
+                "sessions": tuple(
+                    item.model_copy(update={"id": uuid4()}) for item in weekly_plan.sessions
+                ),
+            }
+        )
+        repository.add_weekly_plan(duplicate_plan)
+        session.commit()
+        ambiguous_response = TestClient(app).get(path, params={"on": "2026-08-25"})
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert scheduled_response.status_code == 200
+    scheduled = CurrentWeekProjection.model_validate(scheduled_response.json())
+    assert scheduled.athlete_display_name == "Planning persistence athlete"
+    assert scheduled.week is not None
+    assert scheduled.week.week_start == weekly_plan.week_start
+    assert tuple(item.status for item in scheduled.week.sessions) == (
+        "scheduled",
+        "scheduled",
+    )
+    first_prescription = scheduled.week.sessions[0].prescriptions[0]
+    assert first_prescription.exercise_name == "Fixture dumbbell split squat"
+    assert first_prescription.adaptation_name == "Maximum strength"
+    assert first_prescription.intensity_targets == ("RPE 6-8",)
+    assert first_prescription.reason_for_inclusion == prescription.reason_for_inclusion
+    assert no_plan_response.status_code == 200
+    assert CurrentWeekProjection.model_validate(no_plan_response.json()).week is None
+
+    assert completed_response.status_code == 200
+    completed = CurrentWeekProjection.model_validate(completed_response.json())
+    assert completed.week is not None
+    completed_session = completed.week.sessions[0]
+    assert completed_session.status == "completed"
+    assert completed_session.execution is not None
+    assert completed_session.execution.execution_id == execution.id
+    assert completed_session.execution.post_session_safety_outcomes == (post_safety.outcome,)
+    assert completed_session.prescriptions[0].adherence is not None
+    assert completed_session.prescriptions[0].adherence.adherence_id == adherence.id
+    assert completed.week.sessions[1].status == "scheduled"
+    assert ambiguous_response.status_code == 409
 
 
 def test_completed_block_review_api_requires_full_history_and_is_atomic(

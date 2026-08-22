@@ -90,9 +90,10 @@ uvicorn agas_api.main:app --reload
 
 The health endpoint is available at `http://localhost:8000/health`.
 
-The planning write use cases are intentionally narrow:
+The application endpoints are intentionally narrow:
 
 ```text
+GET  /v1/athletes/{athlete_id}/current-week?on=YYYY-MM-DD
 POST /v1/block-reviews/{block_review_id}/replan
 POST /v1/blocks/{block_id}/reviews
 POST /v1/strategies/{strategy_id}/priorities/{priority_id}/resource-demands
@@ -136,6 +137,11 @@ explicit comparison directions and meaningful-change thresholds. The API derives
 responses, loads all safety history, and appends one immutable review atomically; it does not update
 athlete state or infer scientific thresholds.
 
+The current-week query is a read-only projection for daily use. It assembles athlete, weekly plan,
+session container, exercise, adaptation, safety, execution, adherence, and progression records
+without changing their meaning or persistence history. An explicit date keeps queries deterministic;
+multiple plans covering the same date are rejected until supersession semantics exist.
+
 ## Run the frontend
 
 ```bash
@@ -143,6 +149,10 @@ pnpm --filter @agas/web dev
 ```
 
 Open `http://localhost:3000`.
+
+The current PWA screen connects to `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`) and asks
+for an existing athlete ID. Set `NEXT_PUBLIC_AGAS_ATHLETE_ID` in `.env` to prefill that field for a
+local demo. Athlete onboarding and session-write controls are not yet exposed in the PWA.
 
 ## Run tests
 

@@ -1,5 +1,5 @@
 export const milestone = {
-  name: "Controlled ontology and travel-resolution foundation",
-  available: "Validated small seed catalog with explicit full, partial, and infeasible resolution",
-  deferred: "Production-approved training rules, automatic workout generation, and training UI",
+  name: "Connected current-week PWA slice",
+  available: "Persisted weekly sessions, prescription rationale, safety, and completion status",
+  deferred: "In-app onboarding, safety check submission, and workout logging",
 } as const;
