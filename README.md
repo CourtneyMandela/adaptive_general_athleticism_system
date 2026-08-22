@@ -96,6 +96,7 @@ The planning write use cases are intentionally narrow:
 POST /v1/block-reviews/{block_review_id}/replan
 POST /v1/strategies/{strategy_id}/priorities/{priority_id}/resource-demands
 POST /v1/strategies/{strategy_id}/blocks
+POST /v1/blocks/{block_id}/weekly-plans
 ```
 
 It accepts explicit replanning candidate contexts, reconstructs the persisted review chain, and
@@ -108,6 +109,11 @@ Resource-demand preparation bridges those use cases without exposing raw CRUD. A
 require an explicit stimulus specification, environment, candidate exercises, resolver policy,
 and resource amounts. Deferred priorities produce a provenance-bearing zero-resource demand.
 Partial or infeasible exercise resolution remains visible rather than being replaced silently.
+
+Weekly-plan creation accepts explicit prescription doses, explicit session composition, dated
+availability, and a persisted scheduling policy. It derives exercise and adaptation identity from
+the block, schedules deterministically, and atomically appends the complete chain. It does not
+generate a generic workout from an adaptation name.
 
 ## Run the frontend
 

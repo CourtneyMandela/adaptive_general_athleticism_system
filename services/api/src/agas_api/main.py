@@ -34,6 +34,14 @@ from agas_api.resource_preparation import (
     ResourcePreparationValidationError,
 )
 from agas_api.settings import get_settings
+from agas_api.weekly_planning import (
+    CreateWeeklyPlanCommand,
+    PersistedWeeklyPlanService,
+    WeeklyPlanConflictError,
+    WeeklyPlanCreationResult,
+    WeeklyPlanNotFoundError,
+    WeeklyPlanValidationError,
+)
 
 settings = get_settings()
 
@@ -139,6 +147,29 @@ def prepare_resource_demand(
     except ResourcePreparationConflictError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     except ResourcePreparationValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.post(
+    "/v1/blocks/{block_id}/weekly-plans",
+    tags=["planning"],
+    response_model=WeeklyPlanCreationResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_weekly_plan(
+    block_id: UUID,
+    command: CreateWeeklyPlanCommand,
+    session: Annotated[Session, Depends(database_session_dependency)],
+) -> WeeklyPlanCreationResult:
+    try:
+        return PersistedWeeklyPlanService(session).execute(block_id, command)
+    except WeeklyPlanNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except WeeklyPlanConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except WeeklyPlanValidationError as error:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
         ) from error

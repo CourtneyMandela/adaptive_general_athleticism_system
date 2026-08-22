@@ -6,6 +6,7 @@ import pytest
 from agas_api.database import database_session_dependency
 from agas_api.main import app
 from agas_api.resource_preparation import ResourceDemandPreparationResult
+from agas_api.weekly_planning import WeeklyPlanCreationResult
 from agas_domain import (
     Adaptation,
     AdaptationPlanningCandidate,
@@ -86,8 +87,11 @@ from agas_domain.persistence.models import (
     LongRangeStrategyRecord,
     SessionAdherenceRecord,
     SessionExecutionRecord,
+    SessionPrescriptionRecord,
+    SessionTemplateRecord,
     StimulusRequirementRecord,
     TrainingResponseRecord,
+    WeeklyAvailabilityRecord,
     WeeklyPlanRecord,
 )
 from agas_domain.persistence.repository import DomainIntegrityError, DomainRepository
@@ -834,6 +838,142 @@ def test_block_prescription_and_weekly_plan_round_trip_preserves_full_chain(
     record.rule_version = "silently rewritten"
     with pytest.raises(ImmutableHistoricalRecordError, match="append-only"):
         session.flush()
+
+
+def test_weekly_plan_endpoint_persists_explicit_session_chain_atomically(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (
+        repository,
+        strategy,
+        _,
+        resolution,
+        _,
+        _,
+        block,
+        prescription,
+        _,
+        weekly_availability,
+        scheduling_policy,
+        _,
+    ) = build_and_persist_weekly_chain(session)
+    allocation = block.allocations[0]
+    prepared_at = NOW + timedelta(minutes=1)
+    template_body: dict[str, object] = {
+        "name": "Explicit API session container",
+        "items": [
+            {
+                "resource_allocation_id": str(allocation.id),
+                "order_index": 1,
+                "section": "primary",
+            }
+        ],
+        "sessions_per_week": allocation.sessions_per_week,
+        "planned_duration_minutes": prescription.planned_duration_minutes,
+        "fatigue_cost": prescription.fatigue_cost.value,
+        "source_observation_ids": [str(item) for item in strategy.source_observation_ids],
+        "evidence_claim_ids": [str(item) for item in strategy.evidence_claim_ids],
+        "rule_version": "fixture-api-template@1.0.0",
+    }
+    request_body: dict[str, object] = {
+        "prescriptions": [
+            {
+                "resource_allocation_id": str(allocation.id),
+                "reason_for_inclusion": "Explicit API prescription fixture.",
+                "sets": prescription.sets,
+                "repetitions_per_set": prescription.repetitions_per_set,
+                "intensity_targets": [
+                    item.model_dump(mode="json") for item in prescription.intensity_targets
+                ],
+                "rest_seconds": prescription.rest_seconds,
+                "progression_rule_reference": prescription.progression_rule_reference,
+                "substitution_class": prescription.substitution_class,
+                "planned_duration_minutes": prescription.planned_duration_minutes,
+                "fatigue_cost": prescription.fatigue_cost.value,
+                "source_observation_ids": [str(item) for item in strategy.source_observation_ids],
+                "evidence_claim_ids": [str(item) for item in strategy.evidence_claim_ids],
+                "rule_version": "fixture-api-prescription@1.0.0",
+            }
+        ],
+        "session_templates": [template_body],
+        "availability": {
+            "week_start": weekly_availability.week_start.isoformat(),
+            "windows": [
+                {
+                    "environment_id": str(item.environment_id),
+                    "starts_at": item.starts_at.isoformat(),
+                    "ends_at": item.ends_at.isoformat(),
+                }
+                for item in weekly_availability.windows
+            ],
+            "source_observation_ids": [str(item) for item in strategy.source_observation_ids],
+            "rule_version": "fixture-api-availability@1.0.0",
+        },
+        "scheduling_policy_id": str(scheduling_policy.id),
+        "prepared_at": prepared_at.isoformat(),
+    }
+    record_types = (
+        SessionPrescriptionRecord,
+        SessionTemplateRecord,
+        WeeklyAvailabilityRecord,
+        WeeklyPlanRecord,
+    )
+    counts_before = tuple(
+        session.scalar(select(func.count()).select_from(record_type))
+        for record_type in record_types
+    )
+
+    def override_session() -> Iterator[Session]:
+        yield session
+
+    def reject_plan(_repository: DomainRepository, _plan: WeeklyPlan) -> None:
+        raise DomainIntegrityError("synthetic late weekly-plan persistence failure")
+
+    app.dependency_overrides[database_session_dependency] = override_session
+    path = f"/v1/blocks/{block.id}/weekly-plans"
+    try:
+        invalid_frequency_response = TestClient(app).post(
+            path,
+            json={
+                **request_body,
+                "session_templates": [{**template_body, "sessions_per_week": 1}],
+            },
+        )
+        with monkeypatch.context() as context:
+            context.setattr(DomainRepository, "add_weekly_plan", reject_plan)
+            late_failure_response = TestClient(app).post(path, json=request_body)
+        counts_after_failures = tuple(
+            session.scalar(select(func.count()).select_from(record_type))
+            for record_type in record_types
+        )
+        response = TestClient(app).post(path, json=request_body)
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert invalid_frequency_response.status_code == 422
+    assert late_failure_response.status_code == 422
+    assert counts_after_failures == counts_before
+    assert response.status_code == 201
+    result = WeeklyPlanCreationResult.model_validate(response.json())
+    assert result.weekly_plan.status is WeeklyPlanStatus.FEASIBLE
+    assert len(result.weekly_plan.sessions) == allocation.sessions_per_week
+    assert result.prescriptions[0].adaptation_id == allocation.adaptation_id
+    assert result.prescriptions[0].exercise_resolution_id == resolution.id
+    assert result.prescriptions[0].exercise_id == resolution.selected_exercise_id
+    assert result.session_templates[0].items[0].prescription_id == result.prescriptions[0].id
+    assert {item.environment_id for item in result.weekly_plan.sessions} == {
+        resolution.environment_id
+    }
+    session.expire_all()
+    assert (
+        repository.get_session_prescription(result.prescriptions[0].id) == result.prescriptions[0]
+    )
+    assert (
+        repository.get_session_template(result.session_templates[0].id)
+        == result.session_templates[0]
+    )
+    assert repository.get_weekly_availability(result.availability.id) == result.availability
+    assert repository.get_weekly_plan(result.weekly_plan.id) == result.weekly_plan
 
 
 def test_safety_execution_and_adherence_round_trip_preserves_provenance(

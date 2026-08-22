@@ -267,6 +267,21 @@ persisted and makes downstream block planning infeasible. A `DEFER` priority ins
 zero-resource demand with no stimulus or resolution. This makes absence of training intentional
 and traceable rather than ambiguous.
 
+### Transactional weekly-plan creation
+
+`PersistedWeeklyPlanService` is the boundary from an immutable block to one dated week. Transport
+drafts key prescriptions and session items by block allocation, allowing the service to derive
+athlete, adaptation, resolution, and selected-exercise identities from persisted state. The caller
+must still provide the actual dose, intensity targets, rest, progression reference, session
+composition, frequency, fatigue classification, dated availability, provenance, and rule versions.
+
+The service creates `SessionPrescription`, `SessionTemplate`, and `WeeklyAvailability` records,
+then delegates placement and feasibility to `WeeklyScheduler`. Prescriptions must cover every
+active allocation exactly, container frequencies must reproduce each allocation frequency, and
+container duration and fatigue must equal their item composition. The result is persisted whether
+feasible or infeasible so schedule limitations remain explicit. All records commit or roll back
+together.
+
 ### Evidence claims
 
 Evidence claims are reviewed, versioned interpretations linked to source identifiers. Evidence
@@ -312,9 +327,10 @@ the deterministic planner, and commits new capability needs plus exactly one suc
 atomically. A strategy-priority pair anchors resource-demand preparation; the service appends
 either an active stimulus-resolution-demand chain or one deferred zero-resource demand. A strategy
 ID anchors block creation; the service loads persisted demands, their resolutions, and the selected
-allocation policy before atomically appending a block. Missing dependencies, invalid planning
-inputs, and relational conflicts remain distinct transport errors. Raw domain CRUD is intentionally
-absent because it could bypass invariants.
+allocation policy before atomically appending a block. A block ID anchors explicit prescription,
+session-container, availability, and weekly scheduling creation. Missing dependencies, invalid
+planning inputs, and relational conflicts remain distinct transport errors. Raw domain CRUD is
+intentionally absent because it could bypass invariants.
 
 ## Web
 

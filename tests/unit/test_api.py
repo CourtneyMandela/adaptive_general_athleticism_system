@@ -149,3 +149,73 @@ def test_resource_preparation_endpoint_validates_transport_before_persistence(
     assert missing_strategy_response.json() == {"detail": "long-range strategy does not exist"}
     assert naive_time_response.status_code == 422
     assert duplicate_candidate_response.status_code == 422
+
+
+def test_weekly_plan_endpoint_reports_missing_block_and_rejects_naive_time(
+    session: Session,
+) -> None:
+    def override_session() -> Iterator[Session]:
+        yield session
+
+    allocation_id = uuid4()
+    source_observation_id = uuid4()
+    evidence_claim_id = uuid4()
+    request_body = {
+        "prescriptions": [
+            {
+                "resource_allocation_id": str(allocation_id),
+                "reason_for_inclusion": "Synthetic transport fixture.",
+                "sets": 3,
+                "repetitions_per_set": 5,
+                "intensity_targets": [{"kind": "effort_rpe", "minimum": 6, "maximum": 8}],
+                "rest_seconds": 120,
+                "progression_rule_reference": "fixture:no-progression@1.0.0",
+                "substitution_class": "fixture",
+                "planned_duration_minutes": 30,
+                "fatigue_cost": "moderate",
+                "source_observation_ids": [str(source_observation_id)],
+                "evidence_claim_ids": [str(evidence_claim_id)],
+                "rule_version": "fixture@1.0.0",
+            }
+        ],
+        "session_templates": [
+            {
+                "name": "Synthetic session",
+                "items": [
+                    {
+                        "resource_allocation_id": str(allocation_id),
+                        "order_index": 1,
+                        "section": "primary",
+                    }
+                ],
+                "sessions_per_week": 1,
+                "planned_duration_minutes": 30,
+                "fatigue_cost": "moderate",
+                "source_observation_ids": [str(source_observation_id)],
+                "evidence_claim_ids": [str(evidence_claim_id)],
+                "rule_version": "fixture@1.0.0",
+            }
+        ],
+        "availability": {
+            "week_start": "2026-08-24",
+            "windows": [],
+            "source_observation_ids": [str(source_observation_id)],
+            "rule_version": "fixture@1.0.0",
+        },
+        "scheduling_policy_id": str(uuid4()),
+        "prepared_at": datetime(2026, 8, 22, tzinfo=UTC).isoformat(),
+    }
+    block_id = uuid4()
+    path = f"/v1/blocks/{block_id}/weekly-plans"
+    app.dependency_overrides[database_session_dependency] = override_session
+    try:
+        missing_block_response = TestClient(app).post(path, json=request_body)
+        naive_time_response = TestClient(app).post(
+            path, json={**request_body, "prepared_at": "2026-08-22T00:00:00"}
+        )
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert missing_block_response.status_code == 404
+    assert missing_block_response.json() == {"detail": "block plan does not exist"}
+    assert naive_time_response.status_code == 422
