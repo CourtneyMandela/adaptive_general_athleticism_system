@@ -57,6 +57,11 @@ modification, then proceed. Pre- and post-session reports remain immutable obser
 provenance. A post-session decision references the completed execution and informs later review; it
 does not alter history or automatically modify the next session.
 
+Policy applicability is an explicit governed input. Each athlete's active policy is resolved from
+an immutable, sequenced assignment chain with reviewer/operator rationale. The browser cannot pick
+a policy per report, and policy replacement does not rewrite earlier assignments or safety
+decisions. An athlete without an assignment cannot submit an ordinary safety check.
+
 Execution authorization uses the latest persisted pre-session decision for the planned occurrence.
 An earlier `PROCEED` or `MODIFY` decision cannot be reused after a newer `HOLD` or
 `STOP_AND_ESCALATE`. A later decision requires a new explicit report; restrictive history is never

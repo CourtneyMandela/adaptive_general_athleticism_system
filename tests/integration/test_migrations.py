@@ -56,6 +56,10 @@ def test_baseline_migration_matches_current_metadata(
         assert "catalog_imports" in actual_tables
         assert "accounts" in actual_tables
         assert "athlete_ownerships" in actual_tables
+        assert "athlete_safety_policy_assignments" in actual_tables
+        assert "safety_policy_assignment_id" in {
+            column["name"] for column in inspector.get_columns("session_safety_decisions")
+        }
         assert any(
             constraint["name"] == "uq_account_issuer_subject"
             for constraint in inspector.get_unique_constraints("accounts")
@@ -63,6 +67,17 @@ def test_baseline_migration_matches_current_metadata(
         assert any(
             constraint["name"] == "uq_athlete_owner"
             for constraint in inspector.get_unique_constraints("athlete_ownerships")
+        )
+        safety_assignment_constraints = inspector.get_unique_constraints(
+            "athlete_safety_policy_assignments"
+        )
+        assert any(
+            constraint["name"] == "uq_athlete_safety_assignment_sequence"
+            for constraint in safety_assignment_constraints
+        )
+        assert any(
+            constraint["name"] == "uq_safety_assignment_superseded_once"
+            for constraint in safety_assignment_constraints
         )
         assert any(
             constraint["name"] == "uq_strategy_triggering_block_review"

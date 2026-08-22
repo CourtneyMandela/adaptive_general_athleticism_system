@@ -1554,12 +1554,41 @@ class SessionSafetyPolicy(VersionedRecord):
         return self
 
 
+class AthleteSafetyPolicyAssignment(VersionedRecord):
+    athlete_id: UUID
+    safety_policy_id: UUID
+    sequence_number: Annotated[int, Field(ge=1)]
+    supersedes_assignment_id: UUID | None = None
+    assigned_at: datetime
+    assigned_by: NonEmptyText
+    applicability_rationale: NonEmptyText
+    rule_version: NonEmptyText
+
+    @field_validator("assigned_at")
+    @classmethod
+    def require_aware_assignment_time(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("safety-policy assignment time must include a timezone")
+        return value
+
+    @model_validator(mode="after")
+    def validate_assignment_chain(self) -> AthleteSafetyPolicyAssignment:
+        if self.sequence_number == 1 and self.supersedes_assignment_id is not None:
+            raise ValueError("the first safety-policy assignment cannot supersede another record")
+        if self.sequence_number > 1 and self.supersedes_assignment_id is None:
+            raise ValueError("later safety-policy assignments must reference their predecessor")
+        if self.supersedes_assignment_id == self.id:
+            raise ValueError("a safety-policy assignment cannot supersede itself")
+        return self
+
+
 class SessionSafetyDecision(VersionedRecord):
     athlete_id: UUID
     weekly_plan_id: UUID
     planned_session_id: UUID
     related_session_execution_id: UUID | None = None
     safety_policy_id: UUID
+    safety_policy_assignment_id: UUID | None = None
     timing: SafetyGateTiming
     outcome: SafetyGateOutcome
     required_modifications: tuple[PrescriptionModification, ...] = ()

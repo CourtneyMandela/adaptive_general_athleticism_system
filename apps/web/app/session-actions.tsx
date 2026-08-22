@@ -35,13 +35,11 @@ function parseOptionalRpe(value: string): number | null {
 export function SafetyCheckForm({
   apiBaseUrl,
   weeklyPlanId,
-  safetyPolicyId,
   session,
   onSaved,
 }: {
   apiBaseUrl: string;
   weeklyPlanId: string;
-  safetyPolicyId: string;
   session: PlannedSessionProjection;
   onSaved: () => Promise<void>;
 }) {
@@ -63,7 +61,6 @@ export function SafetyCheckForm({
     const reportedAt = new Date();
     try {
       await submitSafetyCheck(apiBaseUrl, weeklyPlanId, session.planned_session_id, {
-        safety_policy_id: safetyPolicyId,
         timing: "pre_session",
         readiness,
         unusual_soreness: unusualSoreness,
@@ -250,13 +247,11 @@ export function WorkoutLogForm({
 export function PostSessionSafetyForm({
   apiBaseUrl,
   weeklyPlanId,
-  safetyPolicyId,
   session,
   onSaved,
 }: {
   apiBaseUrl: string;
   weeklyPlanId: string;
-  safetyPolicyId: string;
   session: PlannedSessionProjection;
   onSaved: () => Promise<void>;
 }) {
@@ -276,7 +271,6 @@ export function PostSessionSafetyForm({
     const reportedAt = new Date();
     try {
       await submitSafetyCheck(apiBaseUrl, weeklyPlanId, session.planned_session_id, {
-        safety_policy_id: safetyPolicyId,
         timing: "post_session",
         related_session_execution_id: execution.execution_id,
         readiness: null,

@@ -141,6 +141,16 @@ export interface CurrentWeekProjection {
   athlete_id: string;
   athlete_display_name: string;
   as_of: string;
+  safety_policy_assignment: {
+    assignment_id: string;
+    safety_policy_id: string;
+    policy_version: string;
+    sequence_number: number;
+    assigned_at: string;
+    assigned_by: string;
+    applicability_rationale: string;
+    rule_version: string;
+  } | null;
   week: WeekProjection | null;
 }
 
@@ -153,7 +163,6 @@ export interface ProvenanceInput {
 }
 
 interface SafetyCheckCommandBase {
-  safety_policy_id: string;
   unusual_soreness: boolean;
   major_sleep_disruption: boolean;
   major_schedule_limitation: boolean;

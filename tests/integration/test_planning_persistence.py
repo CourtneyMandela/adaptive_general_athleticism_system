@@ -21,6 +21,7 @@ from agas_domain import (
     AdaptationResourceDemand,
     Applicability,
     Athlete,
+    AthleteSafetyPolicyAssignment,
     AvailabilityWindow,
     BlockPlan,
     BlockPlanStatus,
@@ -1985,6 +1986,66 @@ def test_session_template_lineage_rejects_unrelated_prescription(
     assert repository.get_session_prescription(unrelated.id) is None
 
 
+def test_session_safety_endpoint_fails_closed_without_a_reviewed_assignment(
+    session: Session,
+) -> None:
+    (
+        repository,
+        strategy,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        weekly_plan,
+    ) = build_and_persist_weekly_chain(session)
+    planned_session = weekly_plan.sessions[0]
+    policy = SessionSafetyPolicy(
+        allowed_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        limited_readiness_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        unusual_soreness_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        sleep_disruption_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        schedule_limitation_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        evidence_claim_ids=strategy.evidence_claim_ids,
+        rationale="Synthetic unassigned API safety policy.",
+        policy_version="fixture-unassigned-safety@1.0.0",
+    )
+    repository.add_session_safety_policy(policy)
+    session.commit()
+
+    def override_session() -> Iterator[Session]:
+        yield session
+
+    app.dependency_overrides[database_session_dependency] = override_session
+    try:
+        response = TestClient(app).post(
+            f"/v1/weekly-plans/{weekly_plan.id}/sessions/{planned_session.id}/safety-checks",
+            json={
+                "timing": "pre_session",
+                "readiness": "ready",
+                "reported_at": (planned_session.starts_at - timedelta(minutes=10)).isoformat(),
+                "decided_at": (planned_session.starts_at - timedelta(minutes=9)).isoformat(),
+                "reliability": "moderate",
+                "provenance": {
+                    "recorded_by": "automated-test",
+                    "source_system": "pytest",
+                    "ingestion_method": "api-fixture",
+                },
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "athlete does not have a reviewed safety-policy assignment"
+    }
+
+
 def test_session_endpoints_enforce_latest_safety_and_persist_feedback_atomically(
     session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2014,6 +2075,18 @@ def test_session_endpoints_enforce_latest_safety_and_persist_feedback_atomically
         policy_version="fixture-api-safety@1.0.0",
     )
     repository.add_session_safety_policy(policy)
+    session.flush()
+    repository.add_athlete_safety_policy_assignment(
+        AthleteSafetyPolicyAssignment(
+            athlete_id=weekly_plan.athlete_id,
+            safety_policy_id=policy.id,
+            sequence_number=1,
+            assigned_at=NOW,
+            assigned_by="automated-test",
+            applicability_rationale="Synthetic API assignment for transaction coverage.",
+            rule_version="fixture-safety-assignment@1.0.0",
+        )
+    )
     session.commit()
     provenance = {
         "recorded_by": "automated-test",
@@ -2025,7 +2098,6 @@ def test_session_endpoints_enforce_latest_safety_and_persist_feedback_atomically
     def safety_body(*, readiness: str, minute_offset: int) -> dict[str, object]:
         reported_at = planned_session.starts_at - timedelta(minutes=minute_offset)
         return {
-            "safety_policy_id": str(policy.id),
             "timing": "pre_session",
             "readiness": readiness,
             "reported_at": reported_at.isoformat(),
@@ -2046,6 +2118,13 @@ def test_session_endpoints_enforce_latest_safety_and_persist_feedback_atomically
             safety_path, json=safety_body(readiness="not_ready", minute_offset=15)
         )
         first_safety = SessionSafetyCreationResult.model_validate(first_safety_response.json())
+        assignment = repository.get_current_athlete_safety_policy_assignment(weekly_plan.athlete_id)
+        assert assignment is not None
+        assert first_safety.decision.safety_policy_assignment_id == assignment.id
+        assert (
+            repository.get_session_safety_decision(first_safety.decision.id)
+            == first_safety.decision
+        )
         assert hold_response.status_code == 201
 
         performances = [
@@ -2119,7 +2198,6 @@ def test_session_endpoints_enforce_latest_safety_and_persist_feedback_atomically
         post_safety_response = TestClient(app).post(
             safety_path,
             json={
-                "safety_policy_id": str(policy.id),
                 "timing": "post_session",
                 "related_session_execution_id": str(execution_result.execution.id),
                 "signals": [

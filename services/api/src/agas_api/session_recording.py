@@ -37,7 +37,6 @@ from sqlalchemy.orm import Session
 class CreateSessionSafetyDecisionCommand(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    safety_policy_id: UUID
     timing: SafetyGateTiming
     related_session_execution_id: UUID | None = None
     readiness: ReadinessLevel | None = None
@@ -153,9 +152,16 @@ class PersistedSessionSafetyService:
         command: CreateSessionSafetyDecisionCommand,
     ) -> SessionSafetyCreationResult:
         plan, planned_session = self._load_plan_session(weekly_plan_id, planned_session_id)
-        policy = self.repository.get_session_safety_policy(command.safety_policy_id)
+        assignment = self.repository.get_current_athlete_safety_policy_assignment(plan.athlete_id)
+        if assignment is None:
+            raise SessionRecordingNotFoundError(
+                "athlete does not have a reviewed safety-policy assignment"
+            )
+        policy = self.repository.get_session_safety_policy(assignment.safety_policy_id)
         if policy is None:
-            raise SessionRecordingNotFoundError("session safety policy does not exist")
+            raise SessionRecordingConflictError(
+                "the athlete safety-policy assignment references a missing policy"
+            )
         related_execution = None
         if command.related_session_execution_id is not None:
             related_execution = self.repository.get_session_execution(
@@ -187,6 +193,9 @@ class PersistedSessionSafetyService:
             policy=policy,
             decided_at=command.decided_at,
             related_execution=related_execution,
+        )
+        decision = decision.model_copy(
+            update={"safety_policy_assignment_id": assignment.id},
         )
         return SessionSafetyCreationResult(observation=observation, decision=decision)
 
