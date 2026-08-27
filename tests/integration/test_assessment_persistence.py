@@ -176,11 +176,20 @@ def test_assessment_definition_and_selection_round_trip_with_provenance(
     repository.add_observation(result)
     estimate = ConservativeCapabilityEstimator().estimate(
         CapabilityEstimationPolicy(
+            assessment_definition_id=definition.id,
+            assessment_definition_review_id=approved_review.id,
+            decision=AssessmentReviewDecision.APPROVED,
+            sequence_number=1,
             domain=CapabilityDomain.AEROBIC_CAPACITY,
             observation_type=definition.observation_type,
             unit_or_scale="w",
             calculation_method="latest-matching-observation",
             valid_for_days=28,
+            evidence_claim_ids=approved_review.evidence_claim_ids,
+            reviewed_at=NOW,
+            reviewed_by="automated-test-reviewer",
+            applicability_notes="Software validation only.",
+            uncertainty="Not an operational estimation policy.",
             rule_version="latest-matching-observation@1.0.0",
         ),
         (result,),

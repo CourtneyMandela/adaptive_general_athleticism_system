@@ -23,6 +23,13 @@ export type AssessmentResultStatus =
   | "protocol_unavailable"
   | "eligibility_unavailable";
 
+export type AssessmentCapabilityEstimateStatus =
+  | "completed"
+  | "ready"
+  | "policy_unavailable"
+  | "policy_superseded"
+  | "stale";
+
 export interface AssessmentDecisionProjection {
   selection_id: string;
   decision: "selected" | "deferred" | "excluded";
@@ -54,6 +61,25 @@ export interface AssessmentDecisionProjection {
     rule_version: string;
     next_reassessment_at: string;
     reassessment_interval_source_review_id: string;
+    capability_estimate_status: AssessmentCapabilityEstimateStatus;
+    capability_estimate: {
+      estimate_id: string;
+      estimate: unknown;
+      unit_or_scale: string;
+      estimate_scope: string;
+      confidence: Confidence;
+      calculation_method: string;
+      source_observation_ids: string[];
+      estimated_at: string;
+      valid_until: string | null;
+      rule_version: string;
+      policy_id: string;
+      policy_reviewed_at: string;
+      policy_reviewed_by: string;
+      applicability_notes: string;
+      uncertainty: string;
+      evidence_claim_ids: string[];
+    } | null;
   } | null;
 }
 
@@ -315,6 +341,29 @@ export async function submitAssessmentResult(
   if (!response.ok) {
     throw new AssessmentRequestError(
       await responseDetail(response, "Unable to record the assessment result."),
+      response.status,
+    );
+  }
+  return response.json();
+}
+
+export async function submitAssessmentCapabilityEstimate(
+  apiBaseUrl: string,
+  athleteId: string,
+  performanceId: string,
+  fetcher: typeof fetch = fetch,
+): Promise<unknown> {
+  const response = await fetcher(
+    `${apiBaseUrl.replace(/\/$/, "")}/v1/athletes/${athleteId}` +
+      `/assessment-performances/${performanceId}/capability-estimate`,
+    {
+      method: "POST",
+      headers: authorizedHeaders({ Accept: "application/json" }),
+    },
+  );
+  if (!response.ok) {
+    throw new AssessmentRequestError(
+      await responseDetail(response, "Unable to create the capability estimate."),
       response.status,
     );
   }

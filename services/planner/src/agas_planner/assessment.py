@@ -349,6 +349,7 @@ class ConservativeCapabilityEstimator:
         policy: CapabilityEstimationPolicy,
         observations: Iterable[Observation],
         estimated_at: datetime,
+        triggering_assessment_performance_id: UUID | None = None,
     ) -> CapabilityEstimate:
         if estimated_at.tzinfo is None or estimated_at.utcoffset() is None:
             raise AssessmentError("estimated_at must include a timezone")
@@ -389,6 +390,10 @@ class ConservativeCapabilityEstimator:
             estimated_at=estimated_at,
             valid_until=valid_until,
             rule_version=policy.rule_version,
+            capability_estimation_policy_id=(
+                policy.id if triggering_assessment_performance_id is not None else None
+            ),
+            triggering_assessment_performance_id=triggering_assessment_performance_id,
         )
 
     def _confidence(self, observations: list[Observation]) -> Confidence:

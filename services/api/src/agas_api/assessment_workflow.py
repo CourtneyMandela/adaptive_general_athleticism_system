@@ -41,6 +41,13 @@ AssessmentResultStatus = Literal[
     "protocol_unavailable",
     "eligibility_unavailable",
 ]
+AssessmentCapabilityEstimateStatus = Literal[
+    "completed",
+    "ready",
+    "policy_unavailable",
+    "policy_superseded",
+    "stale",
+]
 
 
 class AssessmentWorkflowNotFoundError(LookupError):
@@ -77,6 +84,29 @@ class AssessmentResultProjection(BaseModel):
     rule_version: str
     next_reassessment_at: datetime
     reassessment_interval_source_review_id: UUID
+    capability_estimate_status: AssessmentCapabilityEstimateStatus
+    capability_estimate: AssessmentCapabilityEstimateProjection | None
+
+
+class AssessmentCapabilityEstimateProjection(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    estimate_id: UUID
+    estimate: JsonValue
+    unit_or_scale: str
+    estimate_scope: str
+    confidence: Confidence
+    calculation_method: str
+    source_observation_ids: tuple[UUID, ...]
+    estimated_at: datetime
+    valid_until: datetime | None
+    rule_version: str
+    policy_id: UUID
+    policy_reviewed_at: datetime
+    policy_reviewed_by: str
+    applicability_notes: str
+    uncertainty: str
+    evidence_claim_ids: tuple[UUID, ...]
 
 
 class AssessmentDecisionProjection(BaseModel):
@@ -195,6 +225,70 @@ def get_assessment_workflow_projection(
                     raise ValueError("assessment performance review has no reassessment interval")
                 observation = repository.get_observation(performance.result_observation_id)
                 if observation is not None:
+                    estimation_policy = repository.get_current_capability_estimation_policy(
+                        definition.id
+                    )
+                    stored_estimate = repository.get_latest_assessment_capability_estimate(
+                        performance.id
+                    )
+                    estimate_projection = None
+                    estimate_policy = (
+                        repository.get_capability_estimation_policy(
+                            stored_estimate.capability_estimation_policy_id
+                        )
+                        if stored_estimate
+                        and stored_estimate.capability_estimation_policy_id is not None
+                        else None
+                    )
+                    estimation_ready = bool(
+                        estimation_policy
+                        and estimation_policy.decision is AssessmentReviewDecision.APPROVED
+                        and current_review
+                        and current_review.id == estimation_policy.assessment_definition_review_id
+                        and current_review.decision is AssessmentReviewDecision.APPROVED
+                        and performance.assessment_definition_review_id
+                        == estimation_policy.assessment_definition_review_id
+                        and estimation_policy.reviewed_at <= instant
+                    )
+                    if stored_estimate is not None and estimate_policy is not None:
+                        estimate_projection = AssessmentCapabilityEstimateProjection(
+                            estimate_id=stored_estimate.id,
+                            estimate=stored_estimate.estimate,
+                            unit_or_scale=stored_estimate.unit_or_scale,
+                            estimate_scope=stored_estimate.estimate_scope,
+                            confidence=stored_estimate.confidence,
+                            calculation_method=stored_estimate.calculation_method,
+                            source_observation_ids=stored_estimate.source_observation_ids,
+                            estimated_at=stored_estimate.estimated_at,
+                            valid_until=stored_estimate.valid_until,
+                            rule_version=stored_estimate.rule_version,
+                            policy_id=estimate_policy.id,
+                            policy_reviewed_at=estimate_policy.reviewed_at,
+                            policy_reviewed_by=estimate_policy.reviewed_by,
+                            applicability_notes=estimate_policy.applicability_notes,
+                            uncertainty=estimate_policy.uncertainty,
+                            evidence_claim_ids=estimate_policy.evidence_claim_ids,
+                        )
+                    estimate_uses_current_policy = bool(
+                        stored_estimate
+                        and estimation_policy
+                        and stored_estimate.capability_estimation_policy_id == estimation_policy.id
+                    )
+                    if estimation_ready and not estimate_uses_current_policy:
+                        capability_estimate_status: AssessmentCapabilityEstimateStatus = "ready"
+                    elif (
+                        estimate_uses_current_policy
+                        and stored_estimate is not None
+                        and stored_estimate.valid_until is not None
+                        and stored_estimate.valid_until <= instant
+                    ):
+                        capability_estimate_status = "stale"
+                    elif estimate_uses_current_policy and estimation_ready:
+                        capability_estimate_status = "completed"
+                    elif stored_estimate is not None:
+                        capability_estimate_status = "policy_superseded"
+                    else:
+                        capability_estimate_status = "policy_unavailable"
                     result = AssessmentResultProjection(
                         performance_id=performance.id,
                         result_observation_id=observation.id,
@@ -207,6 +301,8 @@ def get_assessment_workflow_projection(
                         next_reassessment_at=performance.performed_at
                         + timedelta(days=review.recommended_reassessment_days),
                         reassessment_interval_source_review_id=review.id,
+                        capability_estimate_status=capability_estimate_status,
+                        capability_estimate=estimate_projection,
                     )
                 else:
                     raise ValueError("assessment performance references a missing observation")

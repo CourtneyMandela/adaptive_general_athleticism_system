@@ -348,6 +348,10 @@ button { cursor: pointer; }
 .assessment-decision ol { padding-left: 1.25rem; }
 .assessment-result { padding: .7rem; border-radius: .65rem; background: var(--accent-soft); color: var(--accent) !important; }
 .assessment-result--pending { background: #f2e8c9; color: #5e4a14 !important; }
+.assessment-capability { display: grid; gap: .55rem; margin-top: .65rem; padding: .75rem; border: 1px solid var(--line); border-radius: .65rem; background: #fff; }
+.assessment-capability p { margin: 0; }
+.assessment-capability button { justify-self: start; border: 0; border-radius: .6rem; background: var(--accent); color: #fff; padding: .7rem .85rem; font-weight: 750; }
+.assessment-capability button:disabled { cursor: not-allowed; opacity: .55; }
 .assessment-start { border-top: 1px solid var(--line); padding-top: 1rem; }
 .assessment-form { display: grid; gap: .85rem; padding-top: 1rem; }
 .assessment-form label { display: grid; gap: .35rem; color: var(--muted); font-size: .78rem; font-weight: 750; }

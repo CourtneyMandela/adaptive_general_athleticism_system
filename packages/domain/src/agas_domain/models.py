@@ -165,6 +165,8 @@ class CapabilityEstimate(VersionedRecord):
     estimated_at: datetime
     valid_until: datetime | None = None
     rule_version: NonEmptyText
+    capability_estimation_policy_id: UUID | None = None
+    triggering_assessment_performance_id: UUID | None = None
 
     @field_validator("estimated_at", "valid_until")
     @classmethod
@@ -179,6 +181,12 @@ class CapabilityEstimate(VersionedRecord):
             raise ValueError("source_observation_ids must not contain duplicates")
         if self.valid_until is not None and self.valid_until <= self.estimated_at:
             raise ValueError("valid_until must be later than estimated_at")
+        if (self.capability_estimation_policy_id is None) != (
+            self.triggering_assessment_performance_id is None
+        ):
+            raise ValueError(
+                "assessment estimate policy and triggering performance must be supplied together"
+            )
         return self
 
 
@@ -661,13 +669,44 @@ class AssessmentResultInput(DomainModel):
 
 
 class CapabilityEstimationPolicy(VersionedRecord):
+    assessment_definition_id: UUID
+    assessment_definition_review_id: UUID
+    decision: AssessmentReviewDecision
+    sequence_number: Annotated[int, Field(ge=1)]
+    supersedes_policy_id: UUID | None = None
     domain: CapabilityDomain
     observation_type: NonEmptyText
     unit_or_scale: NonEmptyText
     calculation_method: NonEmptyText
     valid_for_days: int = Field(ge=1)
     multi_observation_window_days: int = Field(default=90, ge=1)
+    evidence_claim_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
+    reviewed_at: datetime
+    reviewed_by: NonEmptyText
+    applicability_notes: NonEmptyText
+    uncertainty: NonEmptyText
     rule_version: NonEmptyText
+
+    @field_validator("reviewed_at")
+    @classmethod
+    def require_aware_reviewed_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("capability estimation policy review time must include a timezone")
+        return value
+
+    @model_validator(mode="after")
+    def validate_policy(self) -> CapabilityEstimationPolicy:
+        if len(set(self.evidence_claim_ids)) != len(self.evidence_claim_ids):
+            raise ValueError("evidence_claim_ids must not contain duplicates")
+        if self.sequence_number == 1 and self.supersedes_policy_id is not None:
+            raise ValueError("the first capability estimation policy cannot supersede another")
+        if self.sequence_number > 1 and self.supersedes_policy_id is None:
+            raise ValueError(
+                "later capability estimation policies must reference their predecessor"
+            )
+        if self.supersedes_policy_id == self.id:
+            raise ValueError("a capability estimation policy cannot supersede itself")
+        return self
 
 
 class CompetencyFloor(VersionedRecord):

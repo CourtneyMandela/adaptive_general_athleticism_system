@@ -68,6 +68,23 @@ def test_capability_estimate_requires_observation_provenance() -> None:
         )
 
 
+def test_assessment_estimate_requires_complete_policy_and_performance_lineage() -> None:
+    with pytest.raises(ValidationError, match="must be supplied together"):
+        CapabilityEstimate(
+            athlete_id=uuid4(),
+            domain=CapabilityDomain.EXPLOSIVE_POWER,
+            estimate=1.82,
+            unit_or_scale="m",
+            estimate_scope="assessment_specific:standing_broad_jump",
+            confidence=Confidence.LOW,
+            calculation_method="latest-matching-observation",
+            source_observation_ids=(uuid4(),),
+            estimated_at=NOW,
+            rule_version="latest-matching-observation@1.0.0",
+            capability_estimation_policy_id=uuid4(),
+        )
+
+
 def test_domain_timestamps_must_be_timezone_aware() -> None:
     with pytest.raises(ValidationError, match="timezone"):
         Observation(

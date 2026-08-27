@@ -34,6 +34,7 @@ from agas_domain.models import (
     BlockReview,
     BlockReviewPolicy,
     CapabilityEstimate,
+    CapabilityEstimationPolicy,
     CapabilityNeed,
     CatalogImport,
     CompetencyFloor,
@@ -114,6 +115,8 @@ from agas_domain.persistence.models import (
     BlockReviewSafetyRecord,
     CapabilityEstimateObservationRecord,
     CapabilityEstimateRecord,
+    CapabilityEstimationPolicyEvidenceClaimRecord,
+    CapabilityEstimationPolicyRecord,
     CapabilityNeedEvidenceClaimRecord,
     CapabilityNeedRecord,
     CatalogImportAdaptationRecord,
@@ -330,6 +333,60 @@ class DomainRepository:
             raise DomainIntegrityError(
                 "all source observations must belong to the same athlete as the estimate"
             )
+        if estimate.capability_estimation_policy_id is not None:
+            policy = self.get_capability_estimation_policy(estimate.capability_estimation_policy_id)
+            current_policy = (
+                self.get_current_capability_estimation_policy(policy.assessment_definition_id)
+                if policy is not None
+                else None
+            )
+            if (
+                policy is None
+                or current_policy is None
+                or current_policy.id != policy.id
+                or policy.decision is not AssessmentReviewDecision.APPROVED
+            ):
+                raise DomainIntegrityError(
+                    "assessment estimate requires the current approved estimation policy"
+                )
+            triggering_performance_id = estimate.triggering_assessment_performance_id
+            if triggering_performance_id is None:
+                raise DomainIntegrityError("assessment estimate requires a triggering performance")
+            performance = self.get_assessment_performance(triggering_performance_id)
+            if performance is None or performance.athlete_id != estimate.athlete_id:
+                raise DomainIntegrityError(
+                    "assessment estimate triggering performance belongs elsewhere"
+                )
+            if (
+                performance.assessment_definition_id != policy.assessment_definition_id
+                or performance.assessment_definition_review_id
+                != policy.assessment_definition_review_id
+            ):
+                raise DomainIntegrityError(
+                    "assessment estimate policy does not govern its triggering performance"
+                )
+            governed_observation_ids = {
+                item.result_observation_id
+                for item in self.list_assessment_performances(estimate.athlete_id)
+                if item.assessment_definition_id == policy.assessment_definition_id
+                and item.assessment_definition_review_id == policy.assessment_definition_review_id
+            }
+            if performance.result_observation_id not in estimate.source_observation_ids or not set(
+                estimate.source_observation_ids
+            ).issubset(governed_observation_ids):
+                raise DomainIntegrityError(
+                    "assessment estimate sources must be governed performances of its protocol"
+                )
+            if (
+                estimate.domain != policy.domain
+                or estimate.unit_or_scale != policy.unit_or_scale
+                or estimate.calculation_method != policy.calculation_method
+                or estimate.rule_version != policy.rule_version
+                or estimate.estimate_scope != f"assessment_specific:{policy.observation_type}"
+            ):
+                raise DomainIntegrityError(
+                    "assessment estimate output contract differs from its policy"
+                )
 
         record = CapabilityEstimateRecord(
             id=estimate.id,
@@ -346,6 +403,8 @@ class DomainRepository:
             estimated_at=estimate.estimated_at,
             valid_until=estimate.valid_until,
             rule_version=estimate.rule_version,
+            capability_estimation_policy_id=estimate.capability_estimation_policy_id,
+            triggering_assessment_performance_id=(estimate.triggering_assessment_performance_id),
         )
         record.source_links = [
             CapabilityEstimateObservationRecord(
@@ -3609,6 +3668,144 @@ class DomainRepository:
             review_version=record.review_version,
         )
 
+    def add_capability_estimation_policy(self, policy: CapabilityEstimationPolicy) -> None:
+        definition = self.get_assessment_definition(policy.assessment_definition_id)
+        if definition is None:
+            raise DomainIntegrityError("capability estimation policy definition does not exist")
+        review = self.get_assessment_definition_review(policy.assessment_definition_review_id)
+        if review is None or review.assessment_definition_id != definition.id:
+            raise DomainIntegrityError(
+                "capability estimation policy review does not govern its definition"
+            )
+        if (
+            policy.domain != definition.domain
+            or policy.observation_type != definition.observation_type
+            or policy.unit_or_scale != definition.unit_or_scale
+        ):
+            raise DomainIntegrityError(
+                "capability estimation policy contract differs from its definition"
+            )
+        self._require_ids_exist(
+            EvidenceClaimRecord.id,
+            policy.evidence_claim_ids,
+            "capability estimation policy evidence",
+        )
+        current = self.get_current_capability_estimation_policy(definition.id)
+        if current is None:
+            if policy.sequence_number != 1 or policy.supersedes_policy_id is not None:
+                raise DomainIntegrityError(
+                    "the first capability estimation policy must start sequence one"
+                )
+        else:
+            if policy.sequence_number != current.sequence_number + 1:
+                raise DomainIntegrityError(
+                    "a capability estimation policy replacement must use the next sequence number"
+                )
+            if policy.supersedes_policy_id != current.id:
+                raise DomainIntegrityError(
+                    "a capability estimation policy replacement must supersede the current policy"
+                )
+            if policy.reviewed_at < current.reviewed_at:
+                raise DomainIntegrityError(
+                    "a capability estimation policy replacement cannot predate the current policy"
+                )
+        current_review = self.get_current_assessment_definition_review(definition.id)
+        if policy.decision is AssessmentReviewDecision.APPROVED and (
+            current_review is None
+            or current_review.id != review.id
+            or review.decision is not AssessmentReviewDecision.APPROVED
+            or review.measurement_schema is None
+        ):
+            raise DomainIntegrityError(
+                "approved capability estimation policy requires the current approved "
+                "protocol review"
+            )
+        if policy.reviewed_at < review.reviewed_at:
+            raise DomainIntegrityError(
+                "capability estimation policy cannot predate its protocol review"
+            )
+
+        record = CapabilityEstimationPolicyRecord(
+            id=policy.id,
+            schema_version=policy.schema_version,
+            created_at=policy.created_at,
+            assessment_definition_id=policy.assessment_definition_id,
+            assessment_definition_review_id=policy.assessment_definition_review_id,
+            decision=policy.decision.value,
+            sequence_number=policy.sequence_number,
+            supersedes_policy_id=policy.supersedes_policy_id,
+            domain=policy.domain.value,
+            observation_type=policy.observation_type,
+            unit_or_scale=policy.unit_or_scale,
+            calculation_method=policy.calculation_method,
+            valid_for_days=policy.valid_for_days,
+            multi_observation_window_days=policy.multi_observation_window_days,
+            reviewed_at=policy.reviewed_at,
+            reviewed_by=policy.reviewed_by,
+            applicability_notes=policy.applicability_notes,
+            uncertainty=policy.uncertainty,
+            rule_version=policy.rule_version,
+        )
+        record.evidence_links = [
+            CapabilityEstimationPolicyEvidenceClaimRecord(
+                capability_estimation_policy_id=policy.id,
+                evidence_claim_id=evidence_claim_id,
+                position=position,
+            )
+            for position, evidence_claim_id in enumerate(policy.evidence_claim_ids)
+        ]
+        self.session.add(record)
+
+    def get_capability_estimation_policy(
+        self, policy_id: UUID
+    ) -> CapabilityEstimationPolicy | None:
+        record = self.session.get(CapabilityEstimationPolicyRecord, policy_id)
+        return self._capability_estimation_policy_from_record(record) if record else None
+
+    def get_current_capability_estimation_policy(
+        self, assessment_definition_id: UUID
+    ) -> CapabilityEstimationPolicy | None:
+        record = self.session.scalar(
+            select(CapabilityEstimationPolicyRecord)
+            .where(
+                CapabilityEstimationPolicyRecord.assessment_definition_id
+                == assessment_definition_id
+            )
+            .order_by(
+                CapabilityEstimationPolicyRecord.sequence_number.desc(),
+                CapabilityEstimationPolicyRecord.id.desc(),
+            )
+            .limit(1)
+        )
+        return self._capability_estimation_policy_from_record(record) if record else None
+
+    @staticmethod
+    def _capability_estimation_policy_from_record(
+        record: CapabilityEstimationPolicyRecord,
+    ) -> CapabilityEstimationPolicy:
+        return CapabilityEstimationPolicy(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            assessment_definition_id=record.assessment_definition_id,
+            assessment_definition_review_id=record.assessment_definition_review_id,
+            decision=record.decision,
+            sequence_number=record.sequence_number,
+            supersedes_policy_id=record.supersedes_policy_id,
+            domain=record.domain,
+            observation_type=record.observation_type,
+            unit_or_scale=record.unit_or_scale,
+            calculation_method=record.calculation_method,
+            valid_for_days=record.valid_for_days,
+            multi_observation_window_days=record.multi_observation_window_days,
+            evidence_claim_ids=tuple(link.evidence_claim_id for link in record.evidence_links),
+            reviewed_at=record.reviewed_at,
+            reviewed_by=record.reviewed_by,
+            applicability_notes=record.applicability_notes,
+            uncertainty=record.uncertainty,
+            rule_version=record.rule_version,
+        )
+
     def add_assessment_selection(self, selection: AssessmentSelection) -> None:
         self._require_athlete(selection.athlete_id)
         if self.session.get(AssessmentDefinitionRecord, selection.assessment_definition_id) is None:
@@ -4092,7 +4289,37 @@ class DomainRepository:
             estimated_at=record.estimated_at,
             valid_until=record.valid_until,
             rule_version=record.rule_version,
+            capability_estimation_policy_id=record.capability_estimation_policy_id,
+            triggering_assessment_performance_id=(record.triggering_assessment_performance_id),
         )
+
+    def get_assessment_capability_estimate(
+        self, performance_id: UUID, policy_id: UUID
+    ) -> CapabilityEstimate | None:
+        record = self.session.scalar(
+            select(CapabilityEstimateRecord)
+            .where(
+                CapabilityEstimateRecord.triggering_assessment_performance_id == performance_id,
+                CapabilityEstimateRecord.capability_estimation_policy_id == policy_id,
+            )
+            .limit(1)
+        )
+        return self.get_capability_estimate(record.id) if record else None
+
+    def get_latest_assessment_capability_estimate(
+        self, performance_id: UUID
+    ) -> CapabilityEstimate | None:
+        record = self.session.scalar(
+            select(CapabilityEstimateRecord)
+            .where(CapabilityEstimateRecord.triggering_assessment_performance_id == performance_id)
+            .order_by(
+                CapabilityEstimateRecord.estimated_at.desc(),
+                CapabilityEstimateRecord.created_at.desc(),
+                CapabilityEstimateRecord.id.desc(),
+            )
+            .limit(1)
+        )
+        return self.get_capability_estimate(record.id) if record else None
 
     def get_evidence_claim(self, claim_id: UUID) -> EvidenceClaim | None:
         record = self.session.get(EvidenceClaimRecord, claim_id)

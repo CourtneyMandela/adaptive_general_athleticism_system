@@ -15,6 +15,13 @@ from agas_api.assessment_catalog import (
     ReviewedAssessmentCatalogItem,
     list_reviewed_assessment_catalog,
 )
+from agas_api.assessment_estimation import (
+    AssessmentCapabilityEstimateResult,
+    AssessmentCapabilityEstimationConflictError,
+    AssessmentCapabilityEstimationNotFoundError,
+    AssessmentCapabilityEstimationValidationError,
+    PersistedAssessmentCapabilityEstimationService,
+)
 from agas_api.assessment_performance import (
     AssessmentPerformanceConflictError,
     AssessmentPerformanceNotFoundError,
@@ -256,6 +263,33 @@ def record_assessment_performance(
     except AssessmentPerformanceConflictError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     except AssessmentPerformanceValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.post(
+    "/v1/athletes/{athlete_id}/assessment-performances/{performance_id}/capability-estimate",
+    tags=["assessment"],
+    response_model=AssessmentCapabilityEstimateResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_assessment_capability_estimate(
+    athlete_id: UUID,
+    performance_id: UUID,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authorizer: Annotated[OwnershipAuthorizer, Depends(ownership_authorizer_dependency)],
+) -> AssessmentCapabilityEstimateResult:
+    authorizer.require_athlete(athlete_id)
+    try:
+        return PersistedAssessmentCapabilityEstimationService(session).execute(
+            athlete_id, performance_id
+        )
+    except AssessmentCapabilityEstimationNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except AssessmentCapabilityEstimationConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except AssessmentCapabilityEstimationValidationError as error:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
         ) from error

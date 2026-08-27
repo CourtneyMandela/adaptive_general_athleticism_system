@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import agas_api.assessment_estimation as assessment_estimation_module
 import agas_api.assessment_performance as assessment_performance_module
 import agas_api.assessment_selection as assessment_selection_module
 import pytest
@@ -22,6 +23,7 @@ from agas_domain import (
     AssessmentReviewDecision,
     Athlete,
     CapabilityDomain,
+    CapabilityEstimationPolicy,
     Confidence,
     Environment,
     Equipment,
@@ -37,6 +39,8 @@ from agas_domain.persistence.models import (
     AssessmentPerformanceRecord,
     AssessmentSelectionRecord,
     AssessmentSelectionRunRecord,
+    CapabilityEstimateRecord,
+    CapabilityEstimationPolicyRecord,
     ImmutableHistoricalRecordError,
     ObservationRecord,
 )
@@ -599,6 +603,153 @@ def test_duplicate_result_rolls_back_its_extra_observation(
     assert duplicate.status_code == 409
     assert session.scalar(select(func.count()).select_from(ObservationRecord)) == observation_count
     assert session.scalar(select(func.count()).select_from(AssessmentPerformanceRecord)) == 1
+
+
+def test_reviewed_policy_creates_one_traceable_capability_estimate(
+    session: Session, monkeypatch: MonkeyPatch
+) -> None:
+    athlete, run_result = create_run(session)
+    selected = run_result.decisions[0].selection
+    monkeypatch.setattr(assessment_performance_module, "_utc_now", lambda: NOW + timedelta(hours=1))
+    result_path = (
+        f"/v1/athletes/{athlete.id}/assessment-runs/{run_result.run.id}"
+        f"/selections/{selected.id}/result"
+    )
+    app.dependency_overrides[database_session_dependency] = lambda: session
+    try:
+        client = TestClient(app)
+        result_response = client.post(result_path, json=result_body())
+        assert result_response.status_code == 201
+        performance = AssessmentPerformanceResult.model_validate(result_response.json()).performance
+
+        unavailable = client.get(f"/v1/athletes/{athlete.id}/assessment-workflow")
+        assert unavailable.status_code == 200
+        unavailable_result = unavailable.json()["latest_run"]["decisions"][0]["result"]
+        assert unavailable_result["capability_estimate_status"] == "policy_unavailable"
+        assert unavailable_result["capability_estimate"] is None
+
+        repository = DomainRepository(session)
+        definition_record = repository.get_assessment_definition(selected.assessment_definition_id)
+        review = repository.get_current_assessment_definition_review(
+            selected.assessment_definition_id
+        )
+        assert definition_record is not None
+        assert review is not None
+        policy = CapabilityEstimationPolicy(
+            assessment_definition_id=definition_record.id,
+            assessment_definition_review_id=review.id,
+            decision=AssessmentReviewDecision.APPROVED,
+            sequence_number=1,
+            domain=definition_record.domain,
+            observation_type=definition_record.observation_type,
+            unit_or_scale=definition_record.unit_or_scale,
+            calculation_method="latest-matching-observation",
+            valid_for_days=28,
+            multi_observation_window_days=90,
+            evidence_claim_ids=review.evidence_claim_ids,
+            reviewed_at=NOW,
+            reviewed_by="automated-test-reviewer",
+            applicability_notes="Software validation only.",
+            uncertainty="Not an operational estimation policy.",
+            rule_version="latest-matching-observation@1.0.0",
+        )
+        repository.add_capability_estimation_policy(policy)
+        repository.add_observation(
+            Observation(
+                athlete_id=athlete.id,
+                observed_at=NOW,
+                observation_type=definition_record.observation_type,
+                measurement=99,
+                unit=definition_record.unit_or_scale,
+                source=ObservationSource.USER_REPORT,
+                reliability=Confidence.HIGH,
+                provenance=provenance(),
+            )
+        )
+        session.commit()
+
+        ready = client.get(f"/v1/athletes/{athlete.id}/assessment-workflow")
+        assert (
+            ready.json()["latest_run"]["decisions"][0]["result"]["capability_estimate_status"]
+            == "ready"
+        )
+        monkeypatch.setattr(
+            assessment_estimation_module, "_utc_now", lambda: NOW + timedelta(hours=1)
+        )
+        estimate_path = (
+            f"/v1/athletes/{athlete.id}/assessment-performances/{performance.id}"
+            "/capability-estimate"
+        )
+        first = client.post(estimate_path)
+        second = client.post(estimate_path)
+        completed = client.get(f"/v1/athletes/{athlete.id}/assessment-workflow")
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert first.json()["created"] is True
+    assert second.json()["created"] is False
+    assert second.json()["estimate"]["id"] == first.json()["estimate"]["id"]
+    assert first.json()["estimate"]["estimate"] == 42.5
+    assert first.json()["estimate"]["confidence"] == "low"
+    assert first.json()["estimate"]["source_observation_ids"] == [
+        str(performance.result_observation_id)
+    ]
+    assert first.json()["estimate"]["capability_estimation_policy_id"] == str(policy.id)
+    assert first.json()["estimate"]["triggering_assessment_performance_id"] == str(performance.id)
+    assert session.scalar(select(func.count()).select_from(CapabilityEstimateRecord)) == 1
+    assert session.scalar(select(func.count()).select_from(CapabilityEstimationPolicyRecord)) == 1
+    completed_result = completed.json()["latest_run"]["decisions"][0]["result"]
+    assert completed_result["measurement"] == 42.5
+    assert completed_result["capability_estimate_status"] == "completed"
+    assert completed_result["capability_estimate"]["estimate"] == 42.5
+    assert completed_result["capability_estimate"]["policy_id"] == str(policy.id)
+
+    policy_record = session.get(CapabilityEstimationPolicyRecord, policy.id)
+    assert policy_record is not None
+    policy_record.reviewed_by = "silently-rewritten"
+    with pytest.raises(ImmutableHistoricalRecordError):
+        session.commit()
+    session.rollback()
+
+    withdrawn = CapabilityEstimationPolicy(
+        assessment_definition_id=policy.assessment_definition_id,
+        assessment_definition_review_id=policy.assessment_definition_review_id,
+        decision=AssessmentReviewDecision.REJECTED,
+        sequence_number=2,
+        supersedes_policy_id=policy.id,
+        domain=policy.domain,
+        observation_type=policy.observation_type,
+        unit_or_scale=policy.unit_or_scale,
+        calculation_method=policy.calculation_method,
+        valid_for_days=policy.valid_for_days,
+        multi_observation_window_days=policy.multi_observation_window_days,
+        evidence_claim_ids=policy.evidence_claim_ids,
+        reviewed_at=NOW + timedelta(hours=2),
+        reviewed_by="automated-test-reviewer",
+        applicability_notes="Software policy withdrawn for a regression fixture.",
+        uncertainty="Not operational.",
+        rule_version="latest-matching-observation@2.0.0",
+    )
+    repository.add_capability_estimation_policy(withdrawn)
+    session.commit()
+    app.dependency_overrides[database_session_dependency] = lambda: session
+    try:
+        client = TestClient(app)
+        blocked = client.post(estimate_path)
+        withdrawn_projection = client.get(f"/v1/athletes/{athlete.id}/assessment-workflow")
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert blocked.status_code == 409
+    assert (
+        withdrawn_projection.json()["latest_run"]["decisions"][0]["result"][
+            "capability_estimate_status"
+        ]
+        == "policy_superseded"
+    )
+    assert session.scalar(select(func.count()).select_from(CapabilityEstimateRecord)) == 1
 
 
 def test_deferred_assessment_and_wrong_units_fail_without_result_history(

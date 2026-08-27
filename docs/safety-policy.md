@@ -31,6 +31,11 @@ contract, unit mismatches, and duplicates without retaining partial observations
 do not replace server enforcement. The result is historical reported evidence, not a safety
 decision, diagnosis, medical clearance, or capability estimate.
 
+Capability interpretation remains a separate action and requires a current evidence-linked policy
+for the exact current protocol review. It cannot admit manual same-type observations, accept a
+browser-supplied formula, or reinterpret a withdrawn protocol. Its output remains a bounded,
+protocol-specific derived record and is not a diagnosis, medical clearance, or safety decision.
+
 Ordinary self-service reassessment is unavailable until the exact historical protocol review's
 recommended interval ends. This is a conservative cadence boundary, not a medical judgment or a
 claim that earlier testing is universally unsafe. Any early-retest path requires separate governed

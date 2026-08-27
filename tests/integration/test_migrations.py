@@ -67,6 +67,13 @@ def test_baseline_migration_matches_current_metadata(
         assert "assessment_selection_runs" in actual_tables
         assert "assessment_selection_run_items" in actual_tables
         assert "assessment_performances" in actual_tables
+        assert "capability_estimation_policies" in actual_tables
+        assert "capability_estimation_policy_evidence_claims" in actual_tables
+        estimate_columns = {
+            column["name"] for column in inspector.get_columns("capability_estimates")
+        }
+        assert "capability_estimation_policy_id" in estimate_columns
+        assert "triggering_assessment_performance_id" in estimate_columns
         assert "safety_policy_assignment_id" in {
             column["name"] for column in inspector.get_columns("session_safety_decisions")
         }
@@ -127,6 +134,30 @@ def test_baseline_migration_matches_current_metadata(
         assert any(
             constraint["name"] == "uq_assessment_performance_observation"
             for constraint in performance_constraints
+        )
+        policy_constraints = inspector.get_unique_constraints("capability_estimation_policies")
+        assert any(
+            constraint["name"] == "uq_capability_estimation_policy_definition_sequence"
+            for constraint in policy_constraints
+        )
+        assert any(
+            constraint["name"] == "uq_capability_estimation_policy_superseded_once"
+            for constraint in policy_constraints
+        )
+        policy_index_names = {
+            index["name"] for index in inspector.get_indexes("capability_estimation_policies")
+        }
+        assert {
+            "ix_cap_estimation_policy_definition",
+            "ix_cap_estimation_policy_definition_review",
+            "ix_cap_estimation_policy_decision",
+            "ix_cap_estimation_policy_supersedes",
+            "ix_cap_estimation_policy_domain",
+            "ix_cap_estimation_policy_reviewed_at",
+        }.issubset(policy_index_names)
+        assert any(
+            constraint["name"] == "uq_assessment_estimate_performance_policy"
+            for constraint in inspector.get_unique_constraints("capability_estimates")
         )
         assert any(
             constraint["name"] == "uq_strategy_triggering_block_review"

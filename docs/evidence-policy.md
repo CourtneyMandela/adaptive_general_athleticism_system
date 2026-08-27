@@ -77,6 +77,18 @@ establish reliability or interpret meaning. Reliability judgments, estimation fo
 windows, and norm interpretation require separate reviewed policies before they can become
 operational.
 
+An operational `CapabilityEstimationPolicy` must be linked to evidence and to the exact approved
+protocol review it interprets. Its append-only history retains decision, reviewer, review time,
+applicability, uncertainty, observation window, validity window, calculation method, and rule
+version. Only the current approved policy can authorize a new estimate. Matching observation type
+alone is insufficient: assessment-derived sources must be persisted performances of that exact
+definition. The initial calculation preserves the latest protocol-specific measurement and grades
+confidence conservatively; it is not a population norm or whole-domain athletic score.
+
+No estimation policy is shipped as production evidence. Synthetic test policies prove software
+lineage only. A real deployment must supply qualified policy review before the PWA will offer
+capability interpretation.
+
 ## Exercise resolution
 
 Exercise ontology metadata and resolver scores are not evidence of exercise equivalence. A full

@@ -7,8 +7,9 @@ validated seed boundary. A tested full-gym/travel/return scenario re-resolves ex
 current environment without changing the athlete, strategy, block, adaptation, or stimulus.
 Existing immutable session, execution, response, and block-review behavior remains in place;
 reviewed capability estimates can now drive a lineage-linked replacement strategy. Automatic
-capability estimation from raw results, candidate-context inference, workout generation, and
-next-block generation remain deferred.
+interpretation of arbitrary raw results, candidate-context inference, workout generation, and
+next-block generation remain deferred. Governed assessment performances can create a bounded
+protocol-specific estimate only through a current reviewed estimation policy.
 
 ## Shape
 
@@ -49,6 +50,14 @@ Assessment-derived estimates also declare an `estimate_scope`. The first policy 
 matching result inside a versioned time window, preserves all qualifying source observations in
 chronological order, and caps confidence at moderate. It does not convert results into population
 norms, athletic labels, or unsupported composite scores.
+
+An operational `CapabilityEstimationPolicy` is an immutable governance record bound to one exact
+assessment definition and approved definition review. Linear predecessor history preserves policy
+withdrawal and replacement; evidence claims, reviewer, applicability, uncertainty, validity and
+source windows, method, and rule version remain explicit. New assessment estimates cite both this
+policy and the performance that triggered derivation. The repository restricts their sources to
+governed performances of that exact definition review and enforces one interpretation per
+performance-policy pair.
 
 ### Adaptive assessment
 
@@ -94,6 +103,12 @@ accepts no free-form medical context, verifies the definition unit and exact rev
 schema, and rolls back its observation if lineage persistence fails. Deferred and duplicate results
 fail closed. Selection and performance runs do not create estimates, apply norms, or generate
 workouts.
+
+The separate assessment-capability-estimation service resolves the current approved policy on the
+server, admits only exact-definition performance observations, and invokes the conservative
+estimator. The request contains no scientific decision fields. Repeating it is idempotent; a future
+policy may append a new interpretation without rewriting the older estimate. A withdrawn policy or
+changed protocol review blocks new interpretation while preserving historical results and estimates.
 
 An authenticated `AssessmentWorkflowProjection` derives the athlete-facing state from those
 append-only records rather than persisting a mutable status flag. It exposes safe eligibility
@@ -520,6 +535,11 @@ the workflow projection and creates result controls only when the exact approved
 supported versioned measurement schema. Browser validation is usability support, not authority;
 the API reloads the current review and validates type, range, step, category, unit, and lineage
 before appending a performance and direct observation.
+
+For a completed result, the panel separately reports capability interpretation as unavailable,
+ready, completed, superseded, or stale. It may request interpretation when ready, but never chooses
+the policy or calculation. Estimate method, confidence, validity, applicability, uncertainty, and
+evidence provenance come back from the backend.
 
 After an execution, the PWA appends a structured post-session safety report linked to that exact
 execution and then presents persisted per-prescription progression outcomes. It does not select a

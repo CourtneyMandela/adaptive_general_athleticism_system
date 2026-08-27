@@ -78,6 +78,30 @@ def approved_review(
     )
 
 
+def estimation_policy(
+    *, valid_for_days: int = 42, multi_observation_window_days: int = 90
+) -> CapabilityEstimationPolicy:
+    assessment = definition()
+    return CapabilityEstimationPolicy(
+        assessment_definition_id=assessment.id,
+        assessment_definition_review_id=uuid4(),
+        decision=AssessmentReviewDecision.APPROVED,
+        sequence_number=1,
+        domain=CapabilityDomain.AEROBIC_CAPACITY,
+        observation_type="six_minute_walk_distance",
+        unit_or_scale="m",
+        calculation_method="latest-matching-observation",
+        valid_for_days=valid_for_days,
+        multi_observation_window_days=multi_observation_window_days,
+        evidence_claim_ids=(uuid4(),),
+        reviewed_at=NOW,
+        reviewed_by="automated-test-reviewer",
+        applicability_notes="Software validation only.",
+        uncertainty="Not an operational estimation policy.",
+        rule_version="latest-matching-observation@1.0.0",
+    )
+
+
 def test_result_recorder_creates_a_direct_observation_with_protocol_provenance() -> None:
     assessment = definition()
     result = AssessmentResultInput(
@@ -299,14 +323,7 @@ def test_estimator_is_assessment_specific_and_preserves_ordered_sources() -> Non
         )
         for offset, value in ((-14, 580), (-1, 612))
     )
-    policy = CapabilityEstimationPolicy(
-        domain=CapabilityDomain.AEROBIC_CAPACITY,
-        observation_type="six_minute_walk_distance",
-        unit_or_scale="m",
-        calculation_method="latest-matching-observation",
-        valid_for_days=42,
-        rule_version="latest-matching-observation@1.0.0",
-    )
+    policy = estimation_policy()
 
     estimate = ConservativeCapabilityEstimator().estimate(policy, reversed(observations), NOW)
 
@@ -318,29 +335,14 @@ def test_estimator_is_assessment_specific_and_preserves_ordered_sources() -> Non
 
 
 def test_estimator_rejects_absent_matching_observations() -> None:
-    policy = CapabilityEstimationPolicy(
-        domain=CapabilityDomain.AEROBIC_CAPACITY,
-        observation_type="six_minute_walk_distance",
-        unit_or_scale="m",
-        calculation_method="latest-matching-observation",
-        valid_for_days=42,
-        rule_version="latest-matching-observation@1.0.0",
-    )
+    policy = estimation_policy()
 
     with pytest.raises(AssessmentError, match="no matching observations"):
         ConservativeCapabilityEstimator().estimate(policy, (), NOW)
 
 
 def test_estimator_rejects_an_observation_that_is_inside_the_window_but_stale() -> None:
-    policy = CapabilityEstimationPolicy(
-        domain=CapabilityDomain.AEROBIC_CAPACITY,
-        observation_type="six_minute_walk_distance",
-        unit_or_scale="m",
-        calculation_method="latest-matching-observation",
-        valid_for_days=7,
-        multi_observation_window_days=90,
-        rule_version="latest-matching-observation@1.0.0",
-    )
+    policy = estimation_policy(valid_for_days=7)
     stale = Observation(
         athlete_id=uuid4(),
         observed_at=NOW - timedelta(days=8),

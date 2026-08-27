@@ -18,6 +18,9 @@ Assessment definitions now have a separate, append-only evidence review history.
 whose latest review is approved can appear in the API catalog or be persisted in an athlete
 selection. Operational self-service selection additionally requires a reviewed, versioned
 measurement schema; no real assessment protocols are seeded yet.
+Assessment interpretation policies are now append-only, evidence-linked records bound to exact
+reviewed protocols. An authenticated, idempotent boundary can derive a protocol-specific estimate
+from governed performances without treating a result as a direct capability fact or applying norms.
 
 ## Architecture at a glance
 
@@ -110,6 +113,7 @@ POST /v1/onboarding/athletes
 GET  /v1/athletes/{athlete_id}/assessment-workflow
 POST /v1/athletes/{athlete_id}/assessment-runs
 POST /v1/athletes/{athlete_id}/assessment-runs/{run_id}/selections/{selection_id}/result
+POST /v1/athletes/{athlete_id}/assessment-performances/{performance_id}/capability-estimate
 GET  /v1/athletes/{athlete_id}/current-week?on=YYYY-MM-DD
 POST /v1/block-reviews/{block_review_id}/replan
 POST /v1/blocks/{block_id}/reviews
@@ -183,6 +187,12 @@ direct test-result observation.
 Deferred decisions, duplicate submissions, future performance times, and stale authority fail
 closed. Result recording does not interpret the value or create a capability estimate.
 
+Capability interpretation is a separate request. The server resolves the current approved
+`CapabilityEstimationPolicy`; the client cannot send a formula, confidence, source list, or derived
+value. Sources are restricted to governed performances of the same exact protocol. Retries under
+the same performance and policy return the existing immutable estimate. If no policy exists, the
+direct observation remains valid and the workflow reports interpretation as unavailable.
+
 After recording, the backend derives the next self-service reassessment time from the exact review
 that authorized the latest performance. Protocols with no performance are due immediately; tested
 protocols are withheld until their reviewed interval ends. Early runs and competing runs with a
@@ -196,7 +206,9 @@ authorizes it. It shows reviewed instructions, uncertainty, and evidence identif
 result entry is rendered only for selected protocols with reviewed number, integer, or categorical
 measurement schemas; the server validates the same versioned contract again before persistence.
 The panel shows due/not-due reassessment state and the next reviewed interval end without treating
-that schedule as a capability interpretation.
+that schedule as a capability interpretation. It presents recorded measurement and derived
+protocol-specific estimate as separate records, including confidence, validity, method, rule
+version, applicability, uncertainty, and evidence count.
 
 It accepts explicit replanning candidate contexts, reconstructs the persisted review chain, and
 atomically appends capability needs and one replacement strategy. Raw strategy/need CRUD is not
@@ -281,8 +293,9 @@ hold, review-required, missing-policy, and unsupported-policy states remain visi
 
 This setup is provisional: there is no verified production identity provider, account recovery,
 consent/export/deletion workflow, sensitive health intake, assessment correction/attempt workflow,
-qualified protocol-review workflow, authenticated reviewer workflow, or protocol-specific
-structured/duration assessment-result controls or early-retest override yet.
+qualified protocol-review workflow, authenticated reviewer workflow, protocol-specific
+structured/duration assessment-result controls, estimation-policy authoring UI, or early-retest
+override yet.
 No real assessment protocol is seeded, so production assessment runs and result entry remain
 unavailable. Do not use it for sensitive or production athlete data.
 The browser does not classify raw symptoms. Selecting a concerning symptom pauses the ordinary

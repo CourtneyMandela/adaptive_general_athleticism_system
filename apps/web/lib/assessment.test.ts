@@ -5,6 +5,7 @@ import {
   buildAssessmentResultCommand,
   buildAssessmentRunCommand,
   fetchAssessmentWorkflow,
+  submitAssessmentCapabilityEstimate,
   submitAssessmentRun,
   submitAssessmentResult,
   type AssessmentDecisionProjection,
@@ -229,5 +230,31 @@ describe("assessment workflow client", () => {
       method: "POST",
       body: JSON.stringify(command),
     });
+  });
+
+  it("requests server-governed capability interpretation without sending a formula", async () => {
+    const performanceId = "00000000-0000-4000-8000-000000000007";
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ estimate: { id: performanceId } }), { status: 201 }),
+    );
+
+    await submitAssessmentCapabilityEstimate(
+      "http://localhost:8000/",
+      athleteId,
+      performanceId,
+      fetcher,
+    );
+
+    expect(fetcher).toHaveBeenCalledWith(
+      `http://localhost:8000/v1/athletes/${athleteId}` +
+        `/assessment-performances/${performanceId}/capability-estimate`,
+      {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          Authorization: "Bearer dev.local-browser",
+        },
+      },
+    );
   });
 });

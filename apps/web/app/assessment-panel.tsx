@@ -6,6 +6,7 @@ import {
   buildAssessmentResultCommand,
   buildAssessmentRunCommand,
   fetchAssessmentWorkflow,
+  submitAssessmentCapabilityEstimate,
   submitAssessmentResult,
   submitAssessmentRun,
   type AssessmentDecisionProjection,
@@ -210,6 +211,20 @@ export function AssessmentPanel({
     }
   }
 
+  async function createCapabilityEstimate(performanceId: string) {
+    setState("saving");
+    setMessage("");
+    try {
+      await submitAssessmentCapabilityEstimate(apiBaseUrl, athleteId, performanceId);
+      await load();
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Unable to create the capability estimate.",
+      );
+      setState("error");
+    }
+  }
+
   return (
     <section className="assessment-panel" aria-labelledby="assessment-title">
       <header className="assessment-panel__heading">
@@ -282,11 +297,58 @@ export function AssessmentPanel({
               </header>
               <p>{item.rationale.join(" ")}</p>
               {item.result ? (
-                <p className="assessment-result">
-                  <strong>Recorded observation:</strong> {displayValue(item.result.measurement)}{" "}
-                  {item.result.unit ?? ""} · {item.result.reliability} reliability · next reviewed
-                  interval ends {new Date(item.result.next_reassessment_at).toLocaleDateString()}
-                </p>
+                <>
+                  <p className="assessment-result">
+                    <strong>Recorded observation:</strong> {displayValue(item.result.measurement)}{" "}
+                    {item.result.unit ?? ""} · {item.result.reliability} reliability · next reviewed
+                    interval ends {new Date(item.result.next_reassessment_at).toLocaleDateString()}
+                  </p>
+                  <div className="assessment-capability">
+                    {item.result.capability_estimate ? (
+                      <p>
+                        <strong>Derived protocol-specific estimate:</strong>{" "}
+                        {displayValue(item.result.capability_estimate.estimate)}{" "}
+                        {item.result.capability_estimate.unit_or_scale} ·{" "}
+                        {item.result.capability_estimate.confidence} confidence ·{" "}
+                        {statusLabel(item.result.capability_estimate_status)}
+                      </p>
+                    ) : (
+                      <p>
+                        <strong>Capability interpretation:</strong>{" "}
+                        {item.result.capability_estimate_status === "ready"
+                          ? "A current reviewed policy is available."
+                          : "Unavailable until an evidence-linked policy is approved."}
+                      </p>
+                    )}
+                    {item.result.capability_estimate_status === "ready" ? (
+                      <button
+                        type="button"
+                        disabled={state === "saving"}
+                        onClick={() => void createCapabilityEstimate(item.result!.performance_id)}
+                      >
+                        {state === "saving" ? "Interpreting…" : "Create reviewed estimate"}
+                      </button>
+                    ) : null}
+                    {item.result.capability_estimate ? (
+                      <details>
+                        <summary>Estimate method and policy</summary>
+                        <p>
+                          Method {item.result.capability_estimate.calculation_method} · rule{" "}
+                          {item.result.capability_estimate.rule_version} · source observations{" "}
+                          {item.result.capability_estimate.source_observation_ids.length}
+                        </p>
+                        <p>
+                          <strong>Applicability:</strong>{" "}
+                          {item.result.capability_estimate.applicability_notes}
+                        </p>
+                        <p>
+                          <strong>Uncertainty:</strong>{" "}
+                          {item.result.capability_estimate.uncertainty}
+                        </p>
+                      </details>
+                    ) : null}
+                  </div>
+                </>
               ) : item.result_status === "ready" ? (
                 <AssessmentResultForm
                   apiBaseUrl={apiBaseUrl}
