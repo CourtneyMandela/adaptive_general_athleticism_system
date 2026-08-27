@@ -2,13 +2,46 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   AssessmentRequestError,
+  buildAssessmentResultCommand,
   buildAssessmentRunCommand,
   fetchAssessmentWorkflow,
   submitAssessmentRun,
+  submitAssessmentResult,
+  type AssessmentDecisionProjection,
 } from "./assessment";
 
 const athleteId = "00000000-0000-4000-8000-000000000001";
 const environmentId = "00000000-0000-4000-8000-000000000002";
+const decision: AssessmentDecisionProjection = {
+  selection_id: "00000000-0000-4000-8000-000000000003",
+  decision: "selected",
+  reason_codes: ["eligible"],
+  rationale: ["Fixture eligibility."],
+  assessment_definition_id: "00000000-0000-4000-8000-000000000004",
+  assessment_definition_review_id: "00000000-0000-4000-8000-000000000005",
+  name: "Fixture assessment",
+  domain: "aerobic_capacity",
+  intensity: "low",
+  unit_or_scale: "fixture_unit",
+  protocol_version: "fixture@1.0.0",
+  protocol_instructions: ["Follow fixture instructions."],
+  result_entry_instructions: "Enter fixture result.",
+  measurement_schema: {
+    measurement_type: "number",
+    label: "Fixture value",
+    minimum: 0,
+    maximum: 10,
+    step: 0.5,
+    allowed_values: [],
+    measurement_schema_version: "fixture-schema@1.0.0",
+  },
+  applicability_notes: "Fixture only.",
+  uncertainty: "Not operational.",
+  evidence_claim_ids: ["00000000-0000-4000-8000-000000000006"],
+  review_version: "fixture-review@1.0.0",
+  result_status: "ready",
+  result: null,
+};
 
 describe("assessment workflow client", () => {
   it("builds a narrow non-medical selection command with explicit provenance", () => {
@@ -62,6 +95,45 @@ describe("assessment workflow client", () => {
     expect(() =>
       buildAssessmentRunCommand({ ...base, exerciseSkillTags: ["Cycle", "cycle"] }),
     ).toThrow("duplicates");
+  });
+
+  it("builds only results allowed by the reviewed measurement schema", () => {
+    expect(
+      buildAssessmentResultCommand(
+        decision,
+        "7.5",
+        "moderate",
+        new Date("2026-08-27T12:30:00Z"),
+      ),
+    ).toEqual({
+      performed_at: "2026-08-27T12:30:00.000Z",
+      measurement: 7.5,
+      unit: "fixture_unit",
+      reliability: "moderate",
+      provenance: {
+        recorded_by: "unverified-athlete-user",
+        source_system: "agas-web",
+        ingestion_method: "assessment-result-form",
+      },
+    });
+    expect(() => buildAssessmentResultCommand(decision, "7.3", "low")).toThrow("increments");
+    expect(() => buildAssessmentResultCommand(decision, "11", "low")).toThrow("at most");
+    const categorical = {
+      ...decision,
+      measurement_schema: {
+        measurement_type: "category" as const,
+        label: "Fixture category",
+        minimum: null,
+        maximum: null,
+        step: null,
+        allowed_values: ["complete", "incomplete"],
+        measurement_schema_version: "fixture-category@1.0.0",
+      },
+    };
+    expect(buildAssessmentResultCommand(categorical, "complete", "high").measurement).toBe(
+      "complete",
+    );
+    expect(() => buildAssessmentResultCommand(categorical, "other", "high")).toThrow("allowed");
   });
 
   it("loads the owned workflow with a development bearer", async () => {
@@ -126,5 +198,33 @@ describe("assessment workflow client", () => {
     await expect(
       submitAssessmentRun("http://localhost:8000", athleteId, command, conflict),
     ).rejects.toEqual(new AssessmentRequestError("eligibility is not active", 409));
+  });
+
+  it("posts a schema-governed result beneath its exact run and selection", async () => {
+    const command = buildAssessmentResultCommand(
+      decision,
+      "5",
+      "moderate",
+      new Date("2026-08-27T12:30:00Z"),
+    );
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ performance: { id: athleteId } }), { status: 201 }),
+    );
+    await submitAssessmentResult(
+      "http://localhost:8000",
+      athleteId,
+      environmentId,
+      decision.selection_id,
+      command,
+      fetcher,
+    );
+    expect(fetcher.mock.calls[0]?.[0]).toBe(
+      `http://localhost:8000/v1/athletes/${athleteId}/assessment-runs/${environmentId}` +
+        `/selections/${decision.selection_id}/result`,
+    );
+    expect(fetcher.mock.calls[0]?.[1]).toMatchObject({
+      method: "POST",
+      body: JSON.stringify(command),
+    });
   });
 });

@@ -59,6 +59,9 @@ def test_baseline_migration_matches_current_metadata(
         assert "athlete_safety_policy_assignments" in actual_tables
         assert "assessment_definition_reviews" in actual_tables
         assert "assessment_definition_review_evidence_claims" in actual_tables
+        assert "measurement_schema" in {
+            column["name"] for column in inspector.get_columns("assessment_definition_reviews")
+        }
         assert "assessment_eligibility_reviews" in actual_tables
         assert "assessment_eligibility_review_observations" in actual_tables
         assert "assessment_selection_runs" in actual_tables

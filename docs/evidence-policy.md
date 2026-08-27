@@ -45,6 +45,12 @@ uncertainty, reviewer identity, review time, and version. A new review is append
 changes; prior decisions are not edited or deleted. A later rejection or needs-revision decision
 removes the definition from the operational catalog.
 
+Self-service selection also requires the current review to contain a machine-readable measurement
+schema. Its label, type, allowed values, bounds, and step are protocol claims, not neutral UI
+metadata. They require the same qualified evidence and applicability review as the instructions and
+must receive a new schema/review version when changed. A schema-less approval remains readable but
+cannot enter the self-service workflow.
+
 The repository ships no fabricated assessment protocol or norm. Software tests may use explicitly
 labeled non-scientific fixtures in isolated databases. Protocol evidence, population validity,
 measurement reliability, result interpretation, and self-administration suitability require
@@ -61,9 +67,10 @@ the historical decision was permitted.
 Recording a selected assessment result preserves the reported measurement as a direct observation
 and repeats the exact protocol and eligibility authorities in relational lineage. Unit agreement is
 not scientific interpretation. The recording boundary does not apply population norms or create a
-capability estimate. Machine-readable measurement constraints, reliability judgments, estimation
-formulas, validity windows, and norm interpretation require separate reviewed policies before they
-can become operational.
+capability estimate. The reviewed measurement schema validates entry shape only; it does not
+establish reliability or interpret meaning. Reliability judgments, estimation formulas, validity
+windows, and norm interpretation require separate reviewed policies before they can become
+operational.
 
 ## Exercise resolution
 

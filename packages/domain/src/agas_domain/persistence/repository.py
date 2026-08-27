@@ -3513,6 +3513,11 @@ class DomainRepository:
             supersedes_review_id=review.supersedes_review_id,
             protocol_instructions=list(review.protocol_instructions),
             result_entry_instructions=review.result_entry_instructions,
+            measurement_schema=(
+                review.measurement_schema.model_dump(mode="json")
+                if review.measurement_schema
+                else None
+            ),
             recommended_reassessment_days=review.recommended_reassessment_days,
             self_administered=review.self_administered,
             reviewed_at=review.reviewed_at,
@@ -3593,6 +3598,7 @@ class DomainRepository:
             supersedes_review_id=record.supersedes_review_id,
             protocol_instructions=tuple(record.protocol_instructions),
             result_entry_instructions=record.result_entry_instructions,
+            measurement_schema=record.measurement_schema,
             recommended_reassessment_days=record.recommended_reassessment_days,
             self_administered=record.self_administered,
             evidence_claim_ids=tuple(link.evidence_claim_id for link in record.evidence_links),
@@ -3611,6 +3617,7 @@ class DomainRepository:
         if (
             review is None
             or review.decision is not AssessmentReviewDecision.APPROVED
+            or review.measurement_schema is None
             or selection.assessment_definition_review_id != review.id
         ):
             raise DomainIntegrityError(
@@ -3935,6 +3942,7 @@ class DomainRepository:
             or review.id != performance.assessment_definition_review_id
             or review.decision is not AssessmentReviewDecision.APPROVED
             or not review.self_administered
+            or review.measurement_schema is None
         ):
             raise DomainIntegrityError(
                 "assessment performance requires the current approved self-administered review"
@@ -3970,6 +3978,7 @@ class DomainRepository:
             raise DomainIntegrityError(
                 "assessment performance result observation does not match its governed lineage"
             )
+        review.measurement_schema.validate_measurement(observation.measurement)
         self.session.add(
             AssessmentPerformanceRecord(
                 id=performance.id,

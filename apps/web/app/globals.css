@@ -356,6 +356,13 @@ button { cursor: pointer; }
 .assessment-form textarea { resize: vertical; }
 .assessment-form button { justify-self: start; border: 0; border-radius: .7rem; background: var(--accent); color: #fff; padding: .85rem 1.1rem; font-weight: 750; }
 .assessment-form button:disabled { cursor: not-allowed; opacity: .55; }
+.assessment-result-form { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(10rem, .7fr) auto; align-items: end; gap: .65rem; margin-top: .8rem; padding: .8rem; border-radius: .7rem; background: #f2e8c9; }
+.assessment-result-form label { display: grid; gap: .3rem; color: #5e4a14; font-size: .76rem; font-weight: 750; }
+.assessment-result-form input, .assessment-result-form select { width: 100%; min-width: 0; padding: .6rem .65rem; border: 1px solid #cbbd8b; border-radius: .55rem; background: #fff; color: var(--ink); }
+.assessment-result-form button { border: 0; border-radius: .6rem; background: var(--accent); color: #fff; padding: .7rem .8rem; font-weight: 750; }
+.assessment-result-form button:disabled { cursor: not-allowed; opacity: .55; }
+.assessment-result-form .form-help, .assessment-result-form .form-error { grid-column: 1 / -1; }
+.assessment-unit { align-self: center; color: #5e4a14; font-weight: 800; }
 .assessment-history { padding: .8rem; border: 1px solid var(--line); border-radius: .7rem; }
 .assessment-history__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .65rem; padding-top: .8rem; }
 
@@ -411,6 +418,8 @@ button { cursor: pointer; }
   .review-counts, .availability-fields { grid-template-columns: 1fr; }
   .paired-fields, .equipment-options, .compact-section { grid-template-columns: 1fr; }
   .assessment-summary, .assessment-history__grid { grid-template-columns: 1fr; }
+  .assessment-result-form { grid-template-columns: 1fr; align-items: stretch; }
+  .assessment-unit { align-self: auto; }
   .assessment-panel__heading, .assessment-decision > header { flex-direction: column; }
   .section-heading { align-items: flex-start; flex-direction: column; }
 }

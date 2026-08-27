@@ -3,9 +3,12 @@
 import { FormEvent, useEffect, useState } from "react";
 
 import {
+  buildAssessmentResultCommand,
   buildAssessmentRunCommand,
   fetchAssessmentWorkflow,
+  submitAssessmentResult,
   submitAssessmentRun,
+  type AssessmentDecisionProjection,
   type AssessmentWorkflowProjection,
 } from "@/lib/assessment";
 import type { Confidence } from "@/lib/current-week";
@@ -37,6 +40,95 @@ function displayValue(value: unknown): string {
 
 function statusLabel(status: string): string {
   return status.replaceAll("_", " ");
+}
+
+function AssessmentResultForm({
+  apiBaseUrl,
+  athleteId,
+  runId,
+  decision,
+  onSaved,
+}: {
+  apiBaseUrl: string;
+  athleteId: string;
+  runId: string;
+  decision: AssessmentDecisionProjection;
+  onSaved: () => Promise<void>;
+}) {
+  const schema = decision.measurement_schema;
+  const [value, setValue] = useState(
+    schema?.measurement_type === "category" ? (schema.allowed_values[0] ?? "") : "",
+  );
+  const [reliability, setReliability] = useState<Confidence>("moderate");
+  const [state, setState] = useState<"idle" | "saving" | "error">("idle");
+  const [message, setMessage] = useState("");
+
+  if (!schema) {
+    return null;
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setState("saving");
+    setMessage("");
+    try {
+      const command = buildAssessmentResultCommand(decision, value, reliability);
+      await submitAssessmentResult(
+        apiBaseUrl,
+        athleteId,
+        runId,
+        decision.selection_id,
+        command,
+      );
+      await onSaved();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to record this result.");
+      setState("error");
+    }
+  }
+
+  return (
+    <form className="assessment-result-form" onSubmit={submit}>
+      <label>
+        {schema.label}
+        {schema.measurement_type === "category" ? (
+          <select value={value} onChange={(event) => setValue(event.target.value)}>
+            {schema.allowed_values.map((option) => (
+              <option key={option} value={option}>{option}</option>
+            ))}
+          </select>
+        ) : (
+          <input
+            type="number"
+            required
+            min={schema.minimum ?? undefined}
+            max={schema.maximum ?? undefined}
+            step={schema.step ?? (schema.measurement_type === "integer" ? 1 : "any")}
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+          />
+        )}
+      </label>
+      <span className="assessment-unit">{decision.unit_or_scale}</span>
+      <label>
+        Report reliability
+        <select value={reliability} onChange={(event) => setReliability(event.target.value as Confidence)}>
+          <option value="moderate">Reasonably certain</option>
+          <option value="high">Very certain</option>
+          <option value="low">Some uncertainty</option>
+          <option value="unknown">Unknown</option>
+        </select>
+      </label>
+      <button type="submit" disabled={state === "saving"}>
+        {state === "saving" ? "Recording…" : "Record result observation"}
+      </button>
+      <p className="form-help">
+        Schema {schema.measurement_schema_version}. Recording does not create or display a capability
+        score.
+      </p>
+      {message ? <p className="form-error" role="alert">{message}</p> : null}
+    </form>
+  );
 }
 
 export function AssessmentPanel({
@@ -179,10 +271,13 @@ export function AssessmentPanel({
                   {item.result.unit ?? ""} · {item.result.reliability} reliability
                 </p>
               ) : item.result_status === "ready" ? (
-                <p className="assessment-result assessment-result--pending">
-                  Result entry is authorized, but the PWA will wait for a reviewed machine-readable
-                  measurement schema instead of guessing the correct input control.
-                </p>
+                <AssessmentResultForm
+                  apiBaseUrl={apiBaseUrl}
+                  athleteId={athleteId}
+                  runId={workflow.latest_run!.run_id}
+                  decision={item}
+                  onSaved={load}
+                />
               ) : null}
               <details>
                 <summary>Instructions and provenance</summary>

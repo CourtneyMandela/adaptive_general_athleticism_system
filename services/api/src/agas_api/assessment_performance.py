@@ -147,6 +147,10 @@ class PersistedAssessmentPerformanceService:
             raise AssessmentPerformanceConflictError(
                 "selected protocol is no longer approved for self-administration"
             )
+        if review.measurement_schema is None:
+            raise AssessmentPerformanceConflictError(
+                "selected protocol has no reviewed measurement schema"
+            )
         eligibility = self.repository.get_current_assessment_eligibility_review(athlete_id)
         if (
             eligibility is None
@@ -158,6 +162,10 @@ class PersistedAssessmentPerformanceService:
                 "assessment eligibility is no longer active for this selection"
             )
 
+        try:
+            review.measurement_schema.validate_measurement(command.measurement)
+        except ValueError as error:
+            raise AssessmentPerformanceValidationError(str(error)) from error
         result_input = AssessmentResultInput(
             athlete_id=athlete_id,
             assessment_definition_id=definition.id,

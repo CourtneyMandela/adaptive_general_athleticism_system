@@ -11,6 +11,8 @@ from agas_domain import (
     AssessmentDefinition,
     AssessmentDefinitionReview,
     AssessmentIntensity,
+    AssessmentMeasurementSchema,
+    AssessmentMeasurementType,
     AssessmentReviewDecision,
     CapabilityDomain,
     EvidenceClaim,
@@ -70,6 +72,7 @@ def review(
     sequence_number: int = 1,
     supersedes_review_id: UUID | None = None,
     reviewed_at: datetime = NOW,
+    include_measurement_schema: bool = True,
 ) -> AssessmentDefinitionReview:
     return AssessmentDefinitionReview(
         assessment_definition_id=assessment.id,
@@ -78,6 +81,18 @@ def review(
         supersedes_review_id=supersedes_review_id,
         protocol_instructions=("Follow the isolated software-test fixture protocol.",),
         result_entry_instructions="Enter the synthetic fixture value.",
+        measurement_schema=(
+            AssessmentMeasurementSchema(
+                measurement_type=AssessmentMeasurementType.NUMBER,
+                label="Synthetic fixture value",
+                minimum=0,
+                maximum=100,
+                step=1,
+                measurement_schema_version="fixture-measurement@1.0.0",
+            )
+            if decision is AssessmentReviewDecision.APPROVED and include_measurement_schema
+            else None
+        ),
         recommended_reassessment_days=(
             28 if decision is AssessmentReviewDecision.APPROVED else None
         ),
@@ -97,14 +112,27 @@ def test_catalog_exposes_only_definitions_with_a_current_approved_review(
     repository = DomainRepository(session)
     evidence = evidence_fixture()
     approved_definition = definition("approved_fixture")
+    schema_less_definition = definition("approved_without_schema_fixture")
     unreviewed_definition = definition("unreviewed_fixture")
     withdrawn_definition = definition("withdrawn_fixture")
     repository.add_evidence_claim(evidence)
-    for assessment in (approved_definition, unreviewed_definition, withdrawn_definition):
+    for assessment in (
+        approved_definition,
+        schema_less_definition,
+        unreviewed_definition,
+        withdrawn_definition,
+    ):
         repository.add_assessment_definition(assessment)
     first_approved = review(approved_definition, evidence, AssessmentReviewDecision.APPROVED)
+    schema_less_approved = review(
+        schema_less_definition,
+        evidence,
+        AssessmentReviewDecision.APPROVED,
+        include_measurement_schema=False,
+    )
     withdrawn_approval = review(withdrawn_definition, evidence, AssessmentReviewDecision.APPROVED)
     repository.add_assessment_definition_review(first_approved)
+    repository.add_assessment_definition_review(schema_less_approved)
     repository.add_assessment_definition_review(withdrawn_approval)
     repository.add_assessment_definition_review(
         review(
@@ -130,9 +158,14 @@ def test_catalog_exposes_only_definitions_with_a_current_approved_review(
 
     assert response.status_code == 200
     catalog = tuple(ReviewedAssessmentCatalogItem.model_validate(item) for item in response.json())
-    assert tuple(item.definition.id for item in catalog) == (approved_definition.id,)
+    assert tuple(item.definition.id for item in catalog) == (
+        approved_definition.id,
+        schema_less_definition.id,
+    )
     assert catalog[0].current_review == first_approved
     assert catalog[0].current_review.evidence_claim_ids == (evidence.id,)
+    assert catalog[1].current_review == schema_less_approved
+    assert catalog[1].current_review.measurement_schema is None
     assert repository.get_assessment_definition_review(first_approved.id) == first_approved
 
 

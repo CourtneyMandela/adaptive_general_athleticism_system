@@ -324,6 +324,7 @@ class AssessmentDefinitionReviewRecord(VersionedRecordMixin, Base):
     )
     protocol_instructions: Mapped[list[str]] = mapped_column(JsonType, nullable=False)
     result_entry_instructions: Mapped[str] = mapped_column(Text(), nullable=False)
+    measurement_schema: Mapped[dict[str, Any] | None] = mapped_column(JsonType, nullable=True)
     recommended_reassessment_days: Mapped[int | None] = mapped_column(Integer(), nullable=True)
     self_administered: Mapped[bool] = mapped_column(Boolean(), nullable=False, default=False)
     reviewed_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)

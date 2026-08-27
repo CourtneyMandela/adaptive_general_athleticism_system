@@ -8,6 +8,7 @@ from agas_domain import (
     AssessmentDecision,
     AssessmentEligibilityOutcome,
     AssessmentIntensity,
+    AssessmentMeasurementSchema,
     AssessmentReviewDecision,
     CapabilityDomain,
     Confidence,
@@ -88,6 +89,7 @@ class AssessmentDecisionProjection(BaseModel):
     protocol_version: str
     protocol_instructions: tuple[str, ...]
     result_entry_instructions: str
+    measurement_schema: AssessmentMeasurementSchema | None
     applicability_notes: str
     uncertainty: str
     evidence_claim_ids: tuple[UUID, ...]
@@ -140,7 +142,7 @@ def get_assessment_workflow_projection(
     reviewed_definitions = tuple(
         (definition, review)
         for definition, review in repository.list_approved_assessment_definitions()
-        if review.self_administered
+        if review.self_administered and review.measurement_schema is not None
     )
     eligibility_active = bool(
         eligibility
@@ -198,6 +200,7 @@ def get_assessment_workflow_projection(
                 or current_review.id != selection.assessment_definition_review_id
                 or current_review.decision is not AssessmentReviewDecision.APPROVED
                 or not current_review.self_administered
+                or current_review.measurement_schema is None
             ):
                 result_status = "protocol_unavailable"
             elif (
@@ -223,6 +226,7 @@ def get_assessment_workflow_projection(
                     protocol_version=definition.protocol_version,
                     protocol_instructions=review.protocol_instructions,
                     result_entry_instructions=review.result_entry_instructions,
+                    measurement_schema=review.measurement_schema,
                     applicability_notes=review.applicability_notes,
                     uncertainty=review.uncertainty,
                     evidence_claim_ids=review.evidence_claim_ids,

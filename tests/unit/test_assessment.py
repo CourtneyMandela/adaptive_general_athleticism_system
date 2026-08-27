@@ -3,11 +3,14 @@ from uuid import uuid4
 
 import pytest
 from agas_domain import (
+    AssessmentContext,
     AssessmentDefinition,
     AssessmentDefinitionReview,
     AssessmentEligibilityOutcome,
     AssessmentEligibilityReview,
     AssessmentIntensity,
+    AssessmentMeasurementSchema,
+    AssessmentMeasurementType,
     AssessmentResultInput,
     AssessmentReviewDecision,
     AssessmentSelectionRun,
@@ -18,7 +21,12 @@ from agas_domain import (
     ObservationSource,
     Provenance,
 )
-from agas_planner import AssessmentError, AssessmentResultRecorder, ConservativeCapabilityEstimator
+from agas_planner import (
+    AdaptiveAssessmentSelector,
+    AssessmentError,
+    AssessmentResultRecorder,
+    ConservativeCapabilityEstimator,
+)
 
 NOW = datetime(2026, 8, 19, 14, 0, tzinfo=UTC)
 
@@ -62,6 +70,98 @@ def test_result_recorder_creates_a_direct_observation_with_protocol_provenance()
     assert observation.measurement == 612
     assert observation.context["protocol_version"] == "six-minute-walk@1.0.0"
     assert observation.provenance == result.provenance
+
+
+def test_numeric_measurement_schema_enforces_type_range_and_step() -> None:
+    schema = AssessmentMeasurementSchema(
+        measurement_type=AssessmentMeasurementType.NUMBER,
+        label="Synthetic test value",
+        minimum=-1,
+        maximum=10,
+        step=0.5,
+        measurement_schema_version="software-fixture@1.0.0",
+    )
+
+    schema.validate_measurement(7.5)
+    schema.validate_measurement(-0.5)
+    for unsupported in (True, "7.5", 7.3, -1.5, 10.5, 10**400):
+        with pytest.raises(ValueError):
+            schema.validate_measurement(unsupported)
+
+
+def test_integer_and_category_measurement_schemas_are_explicit() -> None:
+    integer_schema = AssessmentMeasurementSchema(
+        measurement_type=AssessmentMeasurementType.INTEGER,
+        label="Synthetic count",
+        minimum=0,
+        maximum=10,
+        step=1,
+        measurement_schema_version="software-integer-fixture@1.0.0",
+    )
+    category_schema = AssessmentMeasurementSchema(
+        measurement_type=AssessmentMeasurementType.CATEGORY,
+        label="Synthetic category",
+        allowed_values=("first", "second"),
+        measurement_schema_version="software-category-fixture@1.0.0",
+    )
+
+    integer_schema.validate_measurement(7)
+    category_schema.validate_measurement("second")
+    with pytest.raises(ValueError, match="integer"):
+        integer_schema.validate_measurement(7.0)
+    with pytest.raises(ValueError, match="allowed category"):
+        category_schema.validate_measurement("third")
+
+
+def test_measurement_schema_rejects_ambiguous_contracts() -> None:
+    with pytest.raises(ValueError, match="allowed values"):
+        AssessmentMeasurementSchema(
+            measurement_type=AssessmentMeasurementType.CATEGORY,
+            label="Synthetic category",
+            measurement_schema_version="software-category-fixture@1.0.0",
+        )
+    with pytest.raises(ValueError, match="categorical values"):
+        AssessmentMeasurementSchema(
+            measurement_type=AssessmentMeasurementType.NUMBER,
+            label="Synthetic numeric value",
+            allowed_values=("one",),
+            measurement_schema_version="software-number-fixture@1.0.0",
+        )
+    with pytest.raises(ValueError, match="whole numbers"):
+        AssessmentMeasurementSchema(
+            measurement_type=AssessmentMeasurementType.INTEGER,
+            label="Synthetic count",
+            step=0.5,
+            measurement_schema_version="software-integer-fixture@1.0.0",
+        )
+
+
+def test_reviewed_selection_fails_closed_without_a_measurement_schema() -> None:
+    assessment = definition()
+    review = AssessmentDefinitionReview(
+        assessment_definition_id=assessment.id,
+        decision=AssessmentReviewDecision.APPROVED,
+        sequence_number=1,
+        protocol_instructions=("Follow the test-only fixture protocol.",),
+        result_entry_instructions="Enter the observed fixture value.",
+        recommended_reassessment_days=28,
+        self_administered=True,
+        evidence_claim_ids=(uuid4(),),
+        reviewed_at=NOW,
+        reviewer="test-reviewer",
+        applicability_notes="Software validation fixture only.",
+        uncertainty="Not an operational assessment protocol.",
+        review_version="assessment-review-test@1.0.0",
+    )
+    context = AssessmentContext(
+        athlete_id=uuid4(),
+        source_observation_ids=(uuid4(),),
+        health_screening_completed=True,
+        evaluated_at=NOW,
+    )
+
+    with pytest.raises(AssessmentError, match="no measurement schema"):
+        AdaptiveAssessmentSelector().select_reviewed(context, ((assessment, review),), uuid4())
 
 
 def test_estimator_is_assessment_specific_and_preserves_ordered_sources() -> None:

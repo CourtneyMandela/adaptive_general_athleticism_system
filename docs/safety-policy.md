@@ -26,9 +26,10 @@ state.
 
 Result recording is allowed only for a selected decision while its exact self-administered protocol
 approval and athlete eligibility remain current and active. It rejects future performance times,
-deferred decisions, unit mismatches, and duplicates without retaining partial observations. The
-result is historical reported evidence, not a safety decision, diagnosis, medical clearance, or
-capability estimate.
+deferred decisions, missing or invalid reviewed measurement schemas, values outside the reviewed
+contract, unit mismatches, and duplicates without retaining partial observations. Browser controls
+do not replace server enforcement. The result is historical reported evidence, not a safety
+decision, diagnosis, medical clearance, or capability estimate.
 
 ## Policy classes
 

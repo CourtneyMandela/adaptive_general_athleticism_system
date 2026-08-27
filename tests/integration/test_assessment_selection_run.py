@@ -16,6 +16,8 @@ from agas_domain import (
     AssessmentEligibilityOutcome,
     AssessmentEligibilityReview,
     AssessmentIntensity,
+    AssessmentMeasurementSchema,
+    AssessmentMeasurementType,
     AssessmentReviewDecision,
     Athlete,
     CapabilityDomain,
@@ -106,6 +108,7 @@ def approve(
     evidence: EvidenceClaim,
     *,
     self_administered: bool = True,
+    include_measurement_schema: bool = True,
 ) -> AssessmentDefinitionReview:
     review = AssessmentDefinitionReview(
         assessment_definition_id=assessment.id,
@@ -113,6 +116,18 @@ def approve(
         sequence_number=1,
         protocol_instructions=("Follow the isolated software-test fixture protocol.",),
         result_entry_instructions="Enter the synthetic fixture value.",
+        measurement_schema=(
+            AssessmentMeasurementSchema(
+                measurement_type=AssessmentMeasurementType.NUMBER,
+                label="Synthetic fixture value",
+                minimum=0,
+                maximum=100,
+                step=0.5,
+                measurement_schema_version="fixture-measurement@1.0.0",
+            )
+            if include_measurement_schema
+            else None
+        ),
         recommended_reassessment_days=28,
         self_administered=self_administered,
         evidence_claim_ids=(evidence.id,),
@@ -157,6 +172,7 @@ def setup_run_state(
         AssessmentEligibilityOutcome.SELECTION_ALLOWED
     ),
     self_administered: bool = True,
+    include_measurement_schema: bool = True,
 ) -> tuple[Athlete, Environment, AssessmentEligibilityReview]:
     repository = DomainRepository(session)
     athlete = Athlete(display_name="Assessment run athlete")
@@ -178,6 +194,7 @@ def setup_run_state(
             assessment,
             evidence,
             self_administered=self_administered,
+            include_measurement_schema=include_measurement_schema,
         )
     repository.add_equipment_availability(
         EquipmentAvailability(
@@ -301,6 +318,8 @@ def test_assessment_workflow_projects_readiness_decisions_and_completion(
     first = projected.latest_run.decisions[0]
     assert first.protocol_instructions == ("Follow the isolated software-test fixture protocol.",)
     assert first.result_entry_instructions == "Enter the synthetic fixture value."
+    assert first.measurement_schema is not None
+    assert first.measurement_schema.measurement_type is AssessmentMeasurementType.NUMBER
     assert first.evidence_claim_ids
     assert "reviewed_by" not in projected_response.text
     assert "screening_process_reference" not in projected_response.text
@@ -341,6 +360,26 @@ def test_assessment_workflow_exposes_honest_blocked_and_empty_states(session: Se
     assert empty_response.json()["can_start_run"] is False
 
 
+def test_schema_less_approvals_are_not_operational_for_self_service(session: Session) -> None:
+    athlete, environment, _eligibility = setup_run_state(session, include_measurement_schema=False)
+    workflow_path = f"/v1/athletes/{athlete.id}/assessment-workflow"
+    app.dependency_overrides[database_session_dependency] = lambda: session
+    try:
+        client = TestClient(app)
+        workflow_response = client.get(workflow_path, params={"at": NOW.isoformat()})
+        run_response = client.post(
+            f"/v1/athletes/{athlete.id}/assessment-runs", json=request_body(environment)
+        )
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert workflow_response.status_code == 200
+    assert workflow_response.json()["status"] == "protocol_catalog_empty"
+    assert workflow_response.json()["approved_self_administered_protocol_count"] == 0
+    assert run_response.status_code == 409
+    assert "measurement schemas" in run_response.json()["detail"]
+
+
 def create_run(session: Session) -> tuple[Athlete, AssessmentSelectionRunResult]:
     athlete, environment, _eligibility = setup_run_state(session)
     app.dependency_overrides[database_session_dependency] = lambda: session
@@ -354,10 +393,12 @@ def create_run(session: Session) -> tuple[Athlete, AssessmentSelectionRunResult]
     return athlete, AssessmentSelectionRunResult.model_validate(response.json())
 
 
-def result_body(*, unit: str = "test_fixture_unit") -> dict[str, Any]:
+def result_body(
+    *, unit: str = "test_fixture_unit", measurement: int | float = 42.5
+) -> dict[str, Any]:
     return {
         "performed_at": (NOW + timedelta(minutes=10)).isoformat(),
-        "measurement": 42.5,
+        "measurement": measurement,
         "unit": unit,
         "reliability": "moderate",
         "provenance": provenance().model_dump(mode="json"),
@@ -456,6 +497,12 @@ def test_deferred_assessment_and_wrong_units_fail_without_result_history(
         missing_measurement_response = client.post(
             f"{base}/{selected.id}/result", json=missing_measurement_body
         )
+        above_maximum_response = client.post(
+            f"{base}/{selected.id}/result", json=result_body(measurement=101)
+        )
+        invalid_step_response = client.post(
+            f"{base}/{selected.id}/result", json=result_body(measurement=42.3)
+        )
     finally:
         app.dependency_overrides.pop(database_session_dependency, None)
 
@@ -463,6 +510,8 @@ def test_deferred_assessment_and_wrong_units_fail_without_result_history(
     assert wrong_unit_response.status_code == 422
     assert future_response.status_code == 422
     assert missing_measurement_response.status_code == 422
+    assert above_maximum_response.status_code == 422
+    assert invalid_step_response.status_code == 422
     assert session.scalar(select(func.count()).select_from(AssessmentPerformanceRecord)) == 0
     assert session.scalar(select(func.count()).select_from(ObservationRecord)) == 2
 
@@ -483,6 +532,7 @@ def test_withdrawn_protocol_fails_closed_before_result_history(
             supersedes_review_id=current.id,
             protocol_instructions=current.protocol_instructions,
             result_entry_instructions=current.result_entry_instructions,
+            measurement_schema=current.measurement_schema,
             self_administered=False,
             evidence_claim_ids=current.evidence_claim_ids,
             reviewed_at=NOW + timedelta(minutes=1),
@@ -554,7 +604,10 @@ def test_professionally_administered_catalog_fails_closed(session: Session) -> N
 
     assert response.status_code == 409
     assert response.json() == {
-        "detail": "no approved self-administered assessment definitions are available"
+        "detail": (
+            "no approved self-administered assessment definitions with measurement schemas "
+            "are available"
+        )
     }
 
 

@@ -148,11 +148,12 @@ class PersistedAssessmentSelectionRunService:
         reviewed_definitions = tuple(
             (definition, review)
             for definition, review in self.repository.list_approved_assessment_definitions()
-            if review.self_administered
+            if review.self_administered and review.measurement_schema is not None
         )
         if not reviewed_definitions:
             raise AssessmentSelectionRunConflictError(
-                "no approved self-administered assessment definitions are available"
+                "no approved self-administered assessment definitions with measurement schemas "
+                "are available"
             )
 
         availability = self.repository.list_equipment_availability(environment.id)

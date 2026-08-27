@@ -35,6 +35,7 @@ export interface AssessmentDecisionProjection {
   protocol_version: string;
   protocol_instructions: string[];
   result_entry_instructions: string;
+  measurement_schema: AssessmentMeasurementSchema | null;
   applicability_notes: string;
   uncertainty: string;
   evidence_claim_ids: string[];
@@ -50,6 +51,16 @@ export interface AssessmentDecisionProjection {
     provenance: Record<string, unknown>;
     rule_version: string;
   } | null;
+}
+
+export interface AssessmentMeasurementSchema {
+  measurement_type: "number" | "integer" | "category";
+  label: string;
+  minimum: number | null;
+  maximum: number | null;
+  step: number | null;
+  allowed_values: string[];
+  measurement_schema_version: string;
 }
 
 export interface AssessmentWorkflowProjection {
@@ -100,10 +111,24 @@ export interface AssessmentRunCommand {
   provenance: ProvenanceInput;
 }
 
+export interface AssessmentResultCommand {
+  performed_at: string;
+  measurement: number | string;
+  unit: string;
+  reliability: Confidence;
+  provenance: ProvenanceInput;
+}
+
 export const assessmentProvenance: ProvenanceInput = {
   recorded_by: "unverified-athlete-user",
   source_system: "agas-web",
   ingestion_method: "assessment-context-form",
+};
+
+export const assessmentResultProvenance: ProvenanceInput = {
+  recorded_by: "unverified-athlete-user",
+  source_system: "agas-web",
+  ingestion_method: "assessment-result-form",
 };
 
 export class AssessmentRequestError extends Error {
@@ -158,6 +183,55 @@ export function buildAssessmentRunCommand(input: AssessmentRunInput): Assessment
   };
 }
 
+export function buildAssessmentResultCommand(
+  decision: AssessmentDecisionProjection,
+  rawValue: string,
+  reliability: Confidence,
+  performedAt: Date = new Date(),
+): AssessmentResultCommand {
+  const schema = decision.measurement_schema;
+  if (!schema) {
+    throw new Error("This protocol has no reviewed measurement schema.");
+  }
+  if (!Number.isFinite(performedAt.valueOf())) {
+    throw new Error("The performance time is invalid.");
+  }
+  let measurement: number | string;
+  if (schema.measurement_type === "category") {
+    if (!schema.allowed_values.includes(rawValue)) {
+      throw new Error("Choose an allowed result.");
+    }
+    measurement = rawValue;
+  } else {
+    measurement = Number(rawValue);
+    if (!rawValue.trim() || !Number.isFinite(measurement)) {
+      throw new Error("Enter a numeric result.");
+    }
+    if (schema.measurement_type === "integer" && !Number.isInteger(measurement)) {
+      throw new Error("Enter a whole-number result.");
+    }
+    if (schema.minimum !== null && measurement < schema.minimum) {
+      throw new Error(`Result must be at least ${schema.minimum}.`);
+    }
+    if (schema.maximum !== null && measurement > schema.maximum) {
+      throw new Error(`Result must be at most ${schema.maximum}.`);
+    }
+    if (schema.step !== null) {
+      const steps = (measurement - (schema.minimum ?? 0)) / schema.step;
+      if (Math.abs(steps - Math.round(steps)) > 1e-9) {
+        throw new Error(`Result must use increments of ${schema.step}.`);
+      }
+    }
+  }
+  return {
+    performed_at: performedAt.toISOString(),
+    measurement,
+    unit: decision.unit_or_scale,
+    reliability,
+    provenance: assessmentResultProvenance,
+  };
+}
+
 async function responseDetail(response: Response, fallback: string): Promise<string> {
   try {
     const body = (await response.json()) as { detail?: unknown };
@@ -205,6 +279,35 @@ export async function submitAssessmentRun(
   if (!response.ok) {
     throw new AssessmentRequestError(
       await responseDetail(response, "Unable to create assessment selection."),
+      response.status,
+    );
+  }
+  return response.json();
+}
+
+export async function submitAssessmentResult(
+  apiBaseUrl: string,
+  athleteId: string,
+  runId: string,
+  selectionId: string,
+  command: AssessmentResultCommand,
+  fetcher: typeof fetch = fetch,
+): Promise<unknown> {
+  const response = await fetcher(
+    `${apiBaseUrl.replace(/\/$/, "")}/v1/athletes/${athleteId}/assessment-runs/${runId}` +
+      `/selections/${selectionId}/result`,
+    {
+      method: "POST",
+      headers: authorizedHeaders({
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      }),
+      body: JSON.stringify(command),
+    },
+  );
+  if (!response.ok) {
+    throw new AssessmentRequestError(
+      await responseDetail(response, "Unable to record the assessment result."),
       response.status,
     );
   }

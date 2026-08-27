@@ -191,6 +191,12 @@ class AssessmentEligibilityOutcome(StrEnum):
     REVIEW_REQUIRED = "review_required"
 
 
+class AssessmentMeasurementType(StrEnum):
+    NUMBER = "number"
+    INTEGER = "integer"
+    CATEGORY = "category"
+
+
 class AssessmentReason(StrEnum):
     ELIGIBLE = "eligible"
     MISSING_EQUIPMENT = "missing_equipment"

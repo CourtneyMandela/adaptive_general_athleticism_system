@@ -51,6 +51,8 @@ class AdaptiveAssessmentSelector:
                 raise AssessmentError("assessment review does not match its definition")
             if review.decision is not AssessmentReviewDecision.APPROVED:
                 raise AssessmentError("assessment review is not approved")
+            if review.measurement_schema is None:
+                raise AssessmentError("assessment review has no measurement schema")
             selections.append(self._evaluate(context, definition, review.id, eligibility_review_id))
         return tuple(selections)
 

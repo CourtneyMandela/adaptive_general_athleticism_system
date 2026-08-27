@@ -16,7 +16,8 @@ An initial or revised strategy can then create a persisted block only from alrea
 resource demands, exercise resolutions, and an explicit allocation policy.
 Assessment definitions now have a separate, append-only evidence review history. Only definitions
 whose latest review is approved can appear in the API catalog or be persisted in an athlete
-selection; no real assessment protocols are seeded yet.
+selection. Operational self-service selection additionally requires a reviewed, versioned
+measurement schema; no real assessment protocols are seeded yet.
 
 ## Architecture at a glance
 
@@ -177,7 +178,8 @@ health-classification, or equipment-category fields through this endpoint.
 
 A selected decision can record one initial result through its run-scoped endpoint. The server
 requires the exact protocol and eligibility authorities to remain current, verifies the definition
-unit, and atomically stores an `AssessmentPerformance` plus a direct test-result observation.
+unit and reviewed measurement schema, and atomically stores an `AssessmentPerformance` plus a
+direct test-result observation.
 Deferred decisions, duplicate submissions, future performance times, and stale authority fail
 closed. Result recording does not interpret the value or create a capability estimate.
 
@@ -185,7 +187,8 @@ The authenticated assessment-workflow projection derives readiness and latest-ru
 immutable history. The PWA renders prerequisite, empty-catalog, deferred, result-ready, blocked,
 and completed states and can submit a new non-medical selection context only when the backend
 authorizes it. It shows reviewed instructions, uncertainty, and evidence identifiers. Generic PWA
-result entry remains disabled until protocols have reviewed machine-readable measurement schemas.
+result entry is rendered only for selected protocols with reviewed number, integer, or categorical
+measurement schemas; the server validates the same versioned contract again before persistence.
 
 It accepts explicit replanning candidate contexts, reconstructs the persisted review chain, and
 atomically appends capability needs and one replacement strategy. Raw strategy/need CRUD is not
@@ -271,7 +274,7 @@ hold, review-required, missing-policy, and unsupported-policy states remain visi
 This setup is provisional: there is no verified production identity provider, account recovery,
 consent/export/deletion workflow, sensitive health intake, assessment correction/attempt workflow,
 qualified protocol-review workflow, authenticated reviewer workflow, or protocol-specific
-assessment-result PWA yet.
+structured/duration assessment-result controls yet.
 No real assessment protocol is seeded, so production assessment runs and result entry remain
 unavailable. Do not use it for sensitive or production athlete data.
 The browser does not classify raw symptoms. Selecting a concerning symptom pauses the ordinary

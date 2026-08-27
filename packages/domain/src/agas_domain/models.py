@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from itertools import pairwise
 from typing import Annotated, Literal
 from uuid import UUID, uuid4
@@ -14,6 +15,7 @@ from agas_domain.enums import (
     AssessmentDecision,
     AssessmentEligibilityOutcome,
     AssessmentIntensity,
+    AssessmentMeasurementType,
     AssessmentReason,
     AssessmentReviewDecision,
     BlockIssueCode,
@@ -432,6 +434,58 @@ class AssessmentDefinition(VersionedRecord):
     blocked_by_health_screening_flags: tuple[NonEmptyText, ...] = ()
 
 
+class AssessmentMeasurementSchema(DomainModel):
+    measurement_type: AssessmentMeasurementType
+    label: NonEmptyText
+    minimum: float | None = Field(default=None, allow_inf_nan=False)
+    maximum: float | None = Field(default=None, allow_inf_nan=False)
+    step: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    allowed_values: tuple[NonEmptyText, ...] = ()
+    measurement_schema_version: NonEmptyText
+
+    @model_validator(mode="after")
+    def validate_measurement_contract(self) -> AssessmentMeasurementSchema:
+        if self.minimum is not None and self.maximum is not None and self.maximum < self.minimum:
+            raise ValueError("measurement maximum cannot be below minimum")
+        if self.measurement_type is AssessmentMeasurementType.CATEGORY:
+            if not self.allowed_values:
+                raise ValueError("categorical measurements require allowed values")
+            if self.minimum is not None or self.maximum is not None or self.step is not None:
+                raise ValueError("categorical measurements cannot define numeric constraints")
+        elif self.allowed_values:
+            raise ValueError("numeric measurements cannot define categorical values")
+        if self.measurement_type is AssessmentMeasurementType.INTEGER:
+            constraints = (self.minimum, self.maximum, self.step)
+            if any(
+                value is not None and Decimal(str(value)) % Decimal(1) != 0 for value in constraints
+            ):
+                raise ValueError("integer measurement constraints must use whole numbers")
+        if len(set(self.allowed_values)) != len(self.allowed_values):
+            raise ValueError("measurement allowed values must not contain duplicates")
+        return self
+
+    def validate_measurement(self, value: JsonValue) -> None:
+        if self.measurement_type is AssessmentMeasurementType.CATEGORY:
+            if not isinstance(value, str) or value not in self.allowed_values:
+                raise ValueError("measurement is not an allowed category")
+            return
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError("measurement must be numeric")
+        if self.measurement_type is AssessmentMeasurementType.INTEGER and type(value) is not int:
+            raise ValueError("measurement must be an integer")
+        numeric = Decimal(str(value))
+        if not numeric.is_finite():
+            raise ValueError("measurement must be finite")
+        if self.minimum is not None and numeric < Decimal(str(self.minimum)):
+            raise ValueError("measurement is below the reviewed minimum")
+        if self.maximum is not None and numeric > Decimal(str(self.maximum)):
+            raise ValueError("measurement is above the reviewed maximum")
+        if self.step is not None:
+            origin = self.minimum if self.minimum is not None else 0
+            if (numeric - Decimal(str(origin))) % Decimal(str(self.step)) != 0:
+                raise ValueError("measurement does not match the reviewed step")
+
+
 class AssessmentDefinitionReview(VersionedRecord):
     assessment_definition_id: UUID
     decision: AssessmentReviewDecision
@@ -439,6 +493,7 @@ class AssessmentDefinitionReview(VersionedRecord):
     supersedes_review_id: UUID | None = None
     protocol_instructions: Annotated[tuple[NonEmptyText, ...], Field(min_length=1)]
     result_entry_instructions: NonEmptyText
+    measurement_schema: AssessmentMeasurementSchema | None = None
     recommended_reassessment_days: Annotated[int, Field(ge=1)] | None = None
     self_administered: bool = False
     evidence_claim_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]

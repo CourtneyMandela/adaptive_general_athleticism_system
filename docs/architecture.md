@@ -57,11 +57,14 @@ requirement, equipment, training-history, skill, recent-exposure, injury, sympto
 health-screening constraints. Each definition has a separate append-only
 `AssessmentDefinitionReview` history. Reviews retain an explicit decision, ordered protocol and
 result-entry instructions, reassessment interval, self-administration status, evidence-claim
-links, applicability, uncertainty, reviewer, time, and version. Replacements form a linear
+links, applicability, uncertainty, reviewer, time, version, and an optional machine-readable
+measurement schema. The schema supports explicitly versioned number, integer, and categorical
+entry contracts with reviewed labels, ranges, steps, or allowed values. Replacements form a linear
 sequence; a later rejection or needs-revision decision withdraws a prior approval without erasing
 it. Only definitions whose latest review is approved appear in the read-only global assessment
-catalog, and persistence rejects athlete selections against any other definition. No operational
-assessment protocol is seeded by this boundary.
+catalog. A schema-less approval remains inspectable but is ineligible for self-service selection,
+and persistence rejects athlete selections against it. No operational assessment protocol is
+seeded by this boundary.
 
 Athlete-level authority is separate. `AssessmentEligibilityReview` is an append-only, linear,
 time-bounded operator decision that references the observations and screening process actually
@@ -87,17 +90,19 @@ performed assessment becomes a direct `Observation`. Any
 capability state created from it remains a separate derived `CapabilityEstimate`.
 One selected decision can append an `AssessmentPerformance` linked to its result observation, run,
 definition, exact protocol approval, and exact active eligibility review. The narrow result request
-accepts no free-form medical context, verifies the definition unit, and rolls back its observation
-if lineage persistence fails. Deferred and duplicate results fail closed. Selection and performance
-runs do not create estimates, apply norms, or generate workouts.
+accepts no free-form medical context, verifies the definition unit and exact review's measurement
+schema, and rolls back its observation if lineage persistence fails. Deferred and duplicate results
+fail closed. Selection and performance runs do not create estimates, apply norms, or generate
+workouts.
 
 An authenticated `AssessmentWorkflowProjection` derives the athlete-facing state from those
 append-only records rather than persisting a mutable status flag. It exposes safe eligibility
 timing, environment choices, reviewed protocol instructions and uncertainty, ordered deterministic
 decisions, exact versions and evidence identifiers, and completed result observations. It omits
 screening sources, operator identity, and screening-process details. The PWA can submit the narrow
-selection context when the projection permits it, but does not duplicate authority rules or render
-generic result controls without a reviewed measurement schema.
+selection context when the projection permits it. It renders number, integer, or categorical result
+controls directly from the exact reviewed schema and performs convenience validation, while the
+backend remains authoritative for the same contract and all lineage rules.
 
 ### Needs and long-range strategy
 
@@ -497,6 +502,12 @@ mobile layouts are explicit. It also submits structured pre-session self-reports
 set/dose/effort workout results through the existing transactional use-case endpoints, then reloads
 the read projection. The frontend derives only descriptive execution status from the entered work;
 the backend remains authoritative for safety, execution validation, and adherence.
+
+The assessment panel uses the same pattern. It renders protocol instructions and uncertainty from
+the workflow projection and creates result controls only when the exact approved review contains a
+supported versioned measurement schema. Browser validation is usability support, not authority;
+the API reloads the current review and validates type, range, step, category, unit, and lineage
+before appending a performance and direct observation.
 
 After an execution, the PWA appends a structured post-session safety report linked to that exact
 execution and then presents persisted per-prescription progression outcomes. It does not select a
