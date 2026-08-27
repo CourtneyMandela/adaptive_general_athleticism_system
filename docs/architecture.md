@@ -104,6 +104,18 @@ selection context when the projection permits it. It renders number, integer, or
 controls directly from the exact reviewed schema and performs convenience validation, while the
 backend remains authoritative for the same contract and all lineage rules.
 
+`AssessmentReassessmentScheduler` derives cadence from current operational definitions and the
+latest immutable performance for each definition. An unmeasured protocol is due immediately. A
+measured protocol uses the reassessment interval on the exact historical review that authorized its
+latest result; replacement review data does not rewrite that date. The selection service evaluates
+only due definitions, rejects premature requests and an unresolved selected run before any write,
+and records the material behavior change as `assessment-selection-run@2.0.0`.
+
+The workflow projection exposes due count, earliest future time, schedule-rule version, and each
+result's exact interval-source review. Due status remains derived rather than a mutable workflow
+record. Eligibility, environment, current protocol approval, and measurement-schema requirements
+still fail closed independently.
+
 ### Needs and long-range strategy
 
 A `CompetencyFloor` is a versioned, metric-scoped comparison target with explicit population,

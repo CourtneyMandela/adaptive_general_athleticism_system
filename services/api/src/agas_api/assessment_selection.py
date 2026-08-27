@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
 
 from agas_domain import (
     AssessmentContext,
+    AssessmentDecision,
     AssessmentDefinition,
     AssessmentDefinitionReview,
     AssessmentEligibilityOutcome,
@@ -23,7 +24,13 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from agas_api.assessment_schedule import resolve_assessment_reassessment_schedule
+
 NonEmptyText = Annotated[str, Field(min_length=1)]
+
+
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
 
 
 class CreateAssessmentSelectionRunCommand(BaseModel):
@@ -91,7 +98,7 @@ class AssessmentSelectionRunValidationError(AssessmentSelectionRunError):
 class PersistedAssessmentSelectionRunService:
     """Build one governed self-administered assessment selection snapshot atomically."""
 
-    rule_version = "assessment-selection-run@1.0.0"
+    rule_version = "assessment-selection-run@2.0.0"
 
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -127,6 +134,8 @@ class PersistedAssessmentSelectionRunService:
     ) -> AssessmentSelectionRunResult:
         if self.repository.get_athlete(athlete_id) is None:
             raise AssessmentSelectionRunNotFoundError("athlete does not exist")
+        if command.evaluated_at > _utc_now():
+            raise AssessmentSelectionRunValidationError("evaluated_at cannot be in the future")
         environment = self.repository.get_environment(command.environment_id)
         if environment is None or environment.athlete_id != athlete_id:
             raise AssessmentSelectionRunNotFoundError("environment does not exist")
@@ -154,6 +163,40 @@ class PersistedAssessmentSelectionRunService:
             raise AssessmentSelectionRunConflictError(
                 "no approved self-administered assessment definitions with measurement schemas "
                 "are available"
+            )
+
+        runs = self.repository.list_assessment_selection_runs(athlete_id)
+        if runs:
+            for selection_id in runs[0].selection_ids:
+                selection = self.repository.get_assessment_selection(selection_id)
+                if selection is None:
+                    raise AssessmentSelectionRunValidationError(
+                        "latest assessment run references a missing selection"
+                    )
+                if (
+                    selection.decision is AssessmentDecision.SELECTED
+                    and self.repository.get_assessment_performance_for_selection(selection.id)
+                    is None
+                ):
+                    raise AssessmentSelectionRunConflictError(
+                        "latest assessment run has selected results awaiting completion"
+                    )
+
+        reassessment_schedule = resolve_assessment_reassessment_schedule(
+            self.repository,
+            athlete_id,
+            reviewed_definitions,
+            command.evaluated_at,
+        )
+        due_definition_ids = set(reassessment_schedule.due_definition_ids)
+        reviewed_definitions = tuple(
+            item for item in reviewed_definitions if item[0].id in due_definition_ids
+        )
+        if not reviewed_definitions:
+            next_at = reassessment_schedule.next_reassessment_at
+            detail = f"; next reviewed interval ends at {next_at.isoformat()}" if next_at else ""
+            raise AssessmentSelectionRunConflictError(
+                f"no governed assessment protocol is due for self-service selection{detail}"
             )
 
         availability = self.repository.list_equipment_availability(environment.id)

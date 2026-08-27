@@ -51,6 +51,11 @@ metadata. They require the same qualified evidence and applicability review as t
 must receive a new schema/review version when changed. A schema-less approval remains readable but
 cannot enter the self-service workflow.
 
+`recommended_reassessment_days` is likewise a material protocol claim. Ordinary self-service
+retesting must not invent a default interval. The schedule uses the exact historical review attached
+to the latest performance, and a different interval requires a new review version. The software
+fixture intervals in tests are not scientific recommendations.
+
 The repository ships no fabricated assessment protocol or norm. Software tests may use explicitly
 labeled non-scientific fixtures in isolated databases. Protocol evidence, population validity,
 measurement reliability, result interpretation, and self-administration suitability require

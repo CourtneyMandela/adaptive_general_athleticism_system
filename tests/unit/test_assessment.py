@@ -1,5 +1,5 @@
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from agas_domain import (
@@ -11,6 +11,7 @@ from agas_domain import (
     AssessmentIntensity,
     AssessmentMeasurementSchema,
     AssessmentMeasurementType,
+    AssessmentPerformance,
     AssessmentResultInput,
     AssessmentReviewDecision,
     AssessmentSelectionRun,
@@ -24,6 +25,7 @@ from agas_domain import (
 from agas_planner import (
     AdaptiveAssessmentSelector,
     AssessmentError,
+    AssessmentReassessmentScheduler,
     AssessmentResultRecorder,
     ConservativeCapabilityEstimator,
 )
@@ -48,6 +50,31 @@ def provenance() -> Provenance:
         recorded_by="athlete",
         source_system="agas-web",
         ingestion_method="guided-assessment",
+    )
+
+
+def approved_review(
+    assessment: AssessmentDefinition,
+    *,
+    reassessment_days: int = 28,
+    sequence_number: int = 1,
+    supersedes_review_id: UUID | None = None,
+) -> AssessmentDefinitionReview:
+    return AssessmentDefinitionReview(
+        assessment_definition_id=assessment.id,
+        decision=AssessmentReviewDecision.APPROVED,
+        sequence_number=sequence_number,
+        supersedes_review_id=supersedes_review_id,
+        protocol_instructions=("Follow the test-only fixture protocol.",),
+        result_entry_instructions="Enter the observed fixture value.",
+        recommended_reassessment_days=reassessment_days,
+        self_administered=True,
+        evidence_claim_ids=(uuid4(),),
+        reviewed_at=NOW + timedelta(days=sequence_number - 1),
+        reviewer="test-reviewer",
+        applicability_notes="Software validation fixture only.",
+        uncertainty="Not an operational assessment protocol.",
+        review_version=f"assessment-review-test@{sequence_number}.0.0",
     )
 
 
@@ -162,6 +189,99 @@ def test_reviewed_selection_fails_closed_without_a_measurement_schema() -> None:
 
     with pytest.raises(AssessmentError, match="no measurement schema"):
         AdaptiveAssessmentSelector().select_reviewed(context, ((assessment, review),), uuid4())
+
+
+def test_unmeasured_protocol_is_immediately_due_for_assessment() -> None:
+    assessment = definition()
+    review = approved_review(assessment)
+
+    schedule = AssessmentReassessmentScheduler().schedule(
+        ((assessment, review),),
+        (),
+        {},
+        NOW,
+    )
+
+    assert schedule.due_definition_ids == (assessment.id,)
+    assert schedule.next_reassessment_at is None
+    assert schedule.timings[0].interval_source_review_id == review.id
+
+
+def test_reassessment_uses_latest_performance_and_its_exact_historical_interval() -> None:
+    assessment = definition()
+    historical_review = approved_review(assessment, reassessment_days=28)
+    current_review = approved_review(
+        assessment,
+        reassessment_days=7,
+        sequence_number=2,
+        supersedes_review_id=historical_review.id,
+    )
+    athlete_id = uuid4()
+    older = AssessmentPerformance(
+        athlete_id=athlete_id,
+        assessment_selection_run_id=uuid4(),
+        assessment_selection_id=uuid4(),
+        assessment_definition_id=assessment.id,
+        assessment_definition_review_id=historical_review.id,
+        assessment_eligibility_review_id=uuid4(),
+        result_observation_id=uuid4(),
+        performed_at=NOW - timedelta(days=10),
+        rule_version="assessment-performance-test@1.0.0",
+    )
+    latest = older.model_copy(
+        update={
+            "id": uuid4(),
+            "created_at": NOW,
+            "assessment_selection_run_id": uuid4(),
+            "assessment_selection_id": uuid4(),
+            "result_observation_id": uuid4(),
+            "performed_at": NOW,
+        }
+    )
+    scheduler = AssessmentReassessmentScheduler()
+
+    early = scheduler.schedule(
+        ((assessment, current_review),),
+        (older, latest),
+        {historical_review.id: historical_review},
+        NOW + timedelta(days=27),
+    )
+    due = scheduler.schedule(
+        ((assessment, current_review),),
+        (latest, older),
+        {historical_review.id: historical_review},
+        NOW + timedelta(days=28),
+    )
+
+    assert early.due_definition_ids == ()
+    assert early.next_reassessment_at == NOW + timedelta(days=28)
+    assert early.timings[0].latest_performance_id == latest.id
+    assert early.timings[0].interval_source_review_id == historical_review.id
+    assert due.due_definition_ids == (assessment.id,)
+
+
+def test_reassessment_rejects_missing_historical_interval_authority() -> None:
+    assessment = definition()
+    review = approved_review(assessment)
+    performance = AssessmentPerformance(
+        athlete_id=uuid4(),
+        assessment_selection_run_id=uuid4(),
+        assessment_selection_id=uuid4(),
+        assessment_definition_id=assessment.id,
+        assessment_definition_review_id=review.id,
+        assessment_eligibility_review_id=uuid4(),
+        result_observation_id=uuid4(),
+        performed_at=NOW,
+        rule_version="assessment-performance-test@1.0.0",
+    )
+
+    with pytest.raises(AssessmentError, match="interval-source review"):
+        AssessmentReassessmentScheduler().schedule(
+            ((assessment, review),),
+            (performance,),
+            {},
+            NOW + timedelta(days=28),
+        )
 
 
 def test_estimator_is_assessment_specific_and_preserves_ordered_sources() -> None:

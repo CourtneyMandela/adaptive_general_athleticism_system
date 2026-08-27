@@ -4025,6 +4025,34 @@ class DomainRepository:
         )
         return self.get_assessment_performance(record.id) if record else None
 
+    def list_assessment_performances(self, athlete_id: UUID) -> tuple[AssessmentPerformance, ...]:
+        records = self.session.scalars(
+            select(AssessmentPerformanceRecord)
+            .where(AssessmentPerformanceRecord.athlete_id == athlete_id)
+            .order_by(
+                AssessmentPerformanceRecord.performed_at.desc(),
+                AssessmentPerformanceRecord.created_at.desc(),
+                AssessmentPerformanceRecord.id.desc(),
+            )
+        )
+        return tuple(
+            AssessmentPerformance(
+                id=record.id,
+                schema_version=record.schema_version,
+                created_at=record.created_at,
+                athlete_id=record.athlete_id,
+                assessment_selection_run_id=record.assessment_selection_run_id,
+                assessment_selection_id=record.assessment_selection_id,
+                assessment_definition_id=record.assessment_definition_id,
+                assessment_definition_review_id=record.assessment_definition_review_id,
+                assessment_eligibility_review_id=record.assessment_eligibility_review_id,
+                result_observation_id=record.result_observation_id,
+                performed_at=record.performed_at,
+                rule_version=record.rule_version,
+            )
+            for record in records
+        )
+
     def get_observation(self, observation_id: UUID) -> Observation | None:
         record = self.session.get(ObservationRecord, observation_id)
         if record is None:

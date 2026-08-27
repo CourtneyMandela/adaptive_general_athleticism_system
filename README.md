@@ -183,12 +183,20 @@ direct test-result observation.
 Deferred decisions, duplicate submissions, future performance times, and stale authority fail
 closed. Result recording does not interpret the value or create a capability estimate.
 
+After recording, the backend derives the next self-service reassessment time from the exact review
+that authorized the latest performance. Protocols with no performance are due immediately; tested
+protocols are withheld until their reviewed interval ends. Early runs and competing runs with a
+selected result still awaiting completion fail before a new context observation is stored. Future
+selection timestamps cannot be used to bypass the interval.
+
 The authenticated assessment-workflow projection derives readiness and latest-run status from that
 immutable history. The PWA renders prerequisite, empty-catalog, deferred, result-ready, blocked,
 and completed states and can submit a new non-medical selection context only when the backend
 authorizes it. It shows reviewed instructions, uncertainty, and evidence identifiers. Generic PWA
 result entry is rendered only for selected protocols with reviewed number, integer, or categorical
 measurement schemas; the server validates the same versioned contract again before persistence.
+The panel shows due/not-due reassessment state and the next reviewed interval end without treating
+that schedule as a capability interpretation.
 
 It accepts explicit replanning candidate contexts, reconstructs the persisted review chain, and
 atomically appends capability needs and one replacement strategy. Raw strategy/need CRUD is not
@@ -274,7 +282,7 @@ hold, review-required, missing-policy, and unsupported-policy states remain visi
 This setup is provisional: there is no verified production identity provider, account recovery,
 consent/export/deletion workflow, sensitive health intake, assessment correction/attempt workflow,
 qualified protocol-review workflow, authenticated reviewer workflow, or protocol-specific
-structured/duration assessment-result controls yet.
+structured/duration assessment-result controls or early-retest override yet.
 No real assessment protocol is seeded, so production assessment runs and result entry remain
 unavailable. Do not use it for sensitive or production athlete data.
 The browser does not classify raw symptoms. Selecting a concerning symptom pauses the ordinary

@@ -12,7 +12,9 @@ export type AssessmentWorkflowStatus =
   | "selection_deferred"
   | "result_entry_ready"
   | "run_blocked"
-  | "complete";
+  | "complete"
+  | "reassessment_due"
+  | "reassessment_not_due";
 
 export type AssessmentResultStatus =
   | "completed"
@@ -50,6 +52,8 @@ export interface AssessmentDecisionProjection {
     reliability: Confidence;
     provenance: Record<string, unknown>;
     rule_version: string;
+    next_reassessment_at: string;
+    reassessment_interval_source_review_id: string;
   } | null;
 }
 
@@ -72,6 +76,9 @@ export interface AssessmentWorkflowProjection {
   can_start_run: boolean;
   can_record_results: boolean;
   approved_self_administered_protocol_count: number;
+  due_protocol_count: number;
+  next_reassessment_at: string | null;
+  reassessment_rule_version: string;
   eligibility: {
     eligibility_review_id: string;
     outcome: "selection_allowed" | "selection_blocked" | "review_required";

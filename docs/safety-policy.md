@@ -31,6 +31,12 @@ contract, unit mismatches, and duplicates without retaining partial observations
 do not replace server enforcement. The result is historical reported evidence, not a safety
 decision, diagnosis, medical clearance, or capability estimate.
 
+Ordinary self-service reassessment is unavailable until the exact historical protocol review's
+recommended interval ends. This is a conservative cadence boundary, not a medical judgment or a
+claim that earlier testing is universally unsafe. Any early-retest path requires separate governed
+authority; browser input cannot override the interval. A selected result awaiting completion also
+blocks a competing run.
+
 ## Policy classes
 
 ### Escalation

@@ -244,7 +244,23 @@ export function AssessmentPanel({
             <dt>Reviewed self-administered protocols</dt>
             <dd>{workflow.approved_self_administered_protocol_count}</dd>
           </div>
+          <div>
+            <dt>Reassessment</dt>
+            <dd>
+              {workflow.due_protocol_count
+                ? `${workflow.due_protocol_count} due now`
+                : workflow.next_reassessment_at
+                  ? `Next ${new Date(workflow.next_reassessment_at).toLocaleDateString()}`
+                  : "No current due date"}
+            </dd>
+          </div>
         </dl>
+      ) : null}
+      {workflow ? (
+        <p className="form-help">
+          Reassessment cadence {workflow.reassessment_rule_version}; interval values come from
+          reviewed protocol history.
+        </p>
       ) : null}
 
       {workflow?.latest_run ? (
@@ -268,7 +284,8 @@ export function AssessmentPanel({
               {item.result ? (
                 <p className="assessment-result">
                   <strong>Recorded observation:</strong> {displayValue(item.result.measurement)}{" "}
-                  {item.result.unit ?? ""} · {item.result.reliability} reliability
+                  {item.result.unit ?? ""} · {item.result.reliability} reliability · next reviewed
+                  interval ends {new Date(item.result.next_reassessment_at).toLocaleDateString()}
                 </p>
               ) : item.result_status === "ready" ? (
                 <AssessmentResultForm
@@ -293,6 +310,12 @@ export function AssessmentPanel({
                   Protocol {item.protocol_version} · review {item.review_version} ·{" "}
                   {item.evidence_claim_ids.length} linked evidence claim(s)
                 </p>
+                {item.result ? (
+                  <p className="form-help">
+                    Reassessment interval source review{" "}
+                    {item.result.reassessment_interval_source_review_id}
+                  </p>
+                ) : null}
               </details>
             </article>
           ))}

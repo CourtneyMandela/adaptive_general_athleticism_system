@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import agas_api.assessment_performance as assessment_performance_module
+import agas_api.assessment_selection as assessment_selection_module
 import pytest
 from agas_api.assessment_eligibility_admin import record_assessment_eligibility_review
 from agas_api.assessment_performance import AssessmentPerformanceResult
@@ -147,6 +148,7 @@ def allow(
     source: Observation,
     *,
     outcome: AssessmentEligibilityOutcome = AssessmentEligibilityOutcome.SELECTION_ALLOWED,
+    valid_for_days: int = 7,
 ) -> AssessmentEligibilityReview:
     review = AssessmentEligibilityReview(
         athlete_id=athlete.id,
@@ -154,7 +156,7 @@ def allow(
         sequence_number=1,
         source_observation_ids=(source.id,),
         reviewed_at=NOW - timedelta(hours=1),
-        valid_until=NOW + timedelta(days=7),
+        valid_until=NOW + timedelta(days=valid_for_days),
         reviewed_by="automated-test-reviewer",
         screening_process_reference="software-test-screening@1.0.0",
         rationale="Software fixture only; not an athlete screening decision.",
@@ -173,6 +175,8 @@ def setup_run_state(
     ),
     self_administered: bool = True,
     include_measurement_schema: bool = True,
+    include_deferred_definition: bool = True,
+    eligibility_valid_for_days: int = 7,
 ) -> tuple[Athlete, Environment, AssessmentEligibilityReview]:
     repository = DomainRepository(session)
     athlete = Athlete(display_name="Assessment run athlete")
@@ -187,7 +191,8 @@ def setup_run_state(
     repository.add_equipment(cycle)
     repository.add_observation(source)
     repository.add_evidence_claim(evidence)
-    for assessment in (first, second):
+    assessments = (first, second) if include_deferred_definition else (first,)
+    for assessment in assessments:
         repository.add_assessment_definition(assessment)
         approve(
             repository,
@@ -205,19 +210,25 @@ def setup_run_state(
             reason="software fixture",
         )
     )
-    eligibility = allow(repository, athlete, source, outcome=eligibility_outcome)
+    eligibility = allow(
+        repository,
+        athlete,
+        source,
+        outcome=eligibility_outcome,
+        valid_for_days=eligibility_valid_for_days,
+    )
     session.commit()
     return athlete, environment, eligibility
 
 
-def request_body(environment: Environment) -> dict[str, Any]:
+def request_body(environment: Environment, *, evaluated_at: datetime = NOW) -> dict[str, Any]:
     return {
         "environment_id": str(environment.id),
         "body_mass_kg": 78.5,
         "training_age_months_by_domain": {"aerobic_capacity": 6},
         "exercise_skill_tags": [],
         "recent_exposure_tags": [],
-        "evaluated_at": NOW.isoformat(),
+        "evaluated_at": evaluated_at.isoformat(),
         "reliability": "low",
         "provenance": provenance().model_dump(mode="json"),
     }
@@ -326,11 +337,126 @@ def test_assessment_workflow_projects_readiness_decisions_and_completion(
     assert result_response.status_code == 201
     assert completed_response.status_code == 200
     completed = AssessmentWorkflowProjection.model_validate(completed_response.json())
-    assert completed.status == "complete"
+    assert completed.status == "reassessment_due"
     assert completed.can_record_results is False
+    assert completed.can_start_run is True
+    assert completed.due_protocol_count == 1
     assert completed.latest_run is not None
     assert completed.latest_run.decisions[0].result is not None
     assert completed.latest_run.decisions[0].result.measurement == 42.5
+
+
+def test_completed_assessment_blocks_early_retesting_and_opens_when_due(
+    session: Session, monkeypatch: MonkeyPatch
+) -> None:
+    athlete, environment, _eligibility = setup_run_state(
+        session,
+        include_deferred_definition=False,
+        eligibility_valid_for_days=60,
+    )
+    monkeypatch.setattr(assessment_selection_module, "_utc_now", lambda: NOW + timedelta(days=60))
+    workflow_path = f"/v1/athletes/{athlete.id}/assessment-workflow"
+    app.dependency_overrides[database_session_dependency] = lambda: session
+    try:
+        client = TestClient(app)
+        run_response = client.post(
+            f"/v1/athletes/{athlete.id}/assessment-runs", json=request_body(environment)
+        )
+        run_result = AssessmentSelectionRunResult.model_validate(run_response.json())
+        selected = run_result.decisions[0].selection
+        performed_at = NOW + timedelta(minutes=10)
+        monkeypatch.setattr(
+            assessment_performance_module, "_utc_now", lambda: performed_at + timedelta(hours=1)
+        )
+        result_response = client.post(
+            f"/v1/athletes/{athlete.id}/assessment-runs/{run_result.run.id}"
+            f"/selections/{selected.id}/result",
+            json=result_body(),
+        )
+        completed_response = client.get(workflow_path, params={"at": performed_at.isoformat()})
+        observation_count = session.scalar(select(func.count()).select_from(ObservationRecord))
+        assert observation_count is not None
+        early_response = client.post(
+            f"/v1/athletes/{athlete.id}/assessment-runs",
+            json=request_body(environment, evaluated_at=performed_at + timedelta(days=1)),
+        )
+        after_early_observation_count = session.scalar(
+            select(func.count()).select_from(ObservationRecord)
+        )
+        due_at = performed_at + timedelta(days=28)
+        due_workflow_response = client.get(workflow_path, params={"at": due_at.isoformat()})
+        reassessment_response = client.post(
+            f"/v1/athletes/{athlete.id}/assessment-runs",
+            json=request_body(environment, evaluated_at=due_at),
+        )
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert run_response.status_code == 201
+    assert run_result.run.rule_version == "assessment-selection-run@2.0.0"
+    assert result_response.status_code == 201
+    completed = AssessmentWorkflowProjection.model_validate(completed_response.json())
+    assert completed.status == "reassessment_not_due"
+    assert completed.can_start_run is False
+    assert completed.due_protocol_count == 0
+    assert completed.next_reassessment_at == due_at
+    assert completed.latest_run is not None
+    assert completed.latest_run.decisions[0].result is not None
+    assert completed.latest_run.decisions[0].result.next_reassessment_at == due_at
+    assert early_response.status_code == 409
+    assert "no governed assessment protocol is due" in early_response.json()["detail"]
+    assert after_early_observation_count == observation_count
+    assert session.scalar(select(func.count()).select_from(ObservationRecord)) == (
+        observation_count + 1
+    )
+    due_workflow = AssessmentWorkflowProjection.model_validate(due_workflow_response.json())
+    assert due_workflow.status == "reassessment_due"
+    assert due_workflow.can_start_run is True
+    assert due_workflow.due_protocol_count == 1
+    assert reassessment_response.status_code == 201
+    reassessment = AssessmentSelectionRunResult.model_validate(reassessment_response.json())
+    assert tuple(item.definition.id for item in reassessment.decisions) == (
+        run_result.decisions[0].definition.id,
+    )
+
+
+def test_new_run_is_blocked_while_a_selected_result_is_pending(session: Session) -> None:
+    athlete, environment, _eligibility = setup_run_state(session)
+    app.dependency_overrides[database_session_dependency] = lambda: session
+    try:
+        client = TestClient(app)
+        first = client.post(
+            f"/v1/athletes/{athlete.id}/assessment-runs", json=request_body(environment)
+        )
+        observation_count = session.scalar(select(func.count()).select_from(ObservationRecord))
+        duplicate = client.post(
+            f"/v1/athletes/{athlete.id}/assessment-runs", json=request_body(environment)
+        )
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert first.status_code == 201
+    assert duplicate.status_code == 409
+    assert "awaiting completion" in duplicate.json()["detail"]
+    assert session.scalar(select(func.count()).select_from(ObservationRecord)) == observation_count
+
+
+def test_future_selection_time_cannot_bypass_reassessment_cadence(
+    session: Session, monkeypatch: MonkeyPatch
+) -> None:
+    athlete, environment, _eligibility = setup_run_state(session, eligibility_valid_for_days=60)
+    monkeypatch.setattr(assessment_selection_module, "_utc_now", lambda: NOW)
+    app.dependency_overrides[database_session_dependency] = lambda: session
+    try:
+        response = TestClient(app).post(
+            f"/v1/athletes/{athlete.id}/assessment-runs",
+            json=request_body(environment, evaluated_at=NOW + timedelta(days=28)),
+        )
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "evaluated_at cannot be in the future"
 
 
 def test_assessment_workflow_exposes_honest_blocked_and_empty_states(session: Session) -> None:
@@ -437,6 +563,7 @@ def test_selected_assessment_records_one_direct_result_without_creating_an_estim
     )
     repository = DomainRepository(session)
     assert repository.get_assessment_performance(result.performance.id) == result.performance
+    assert repository.list_assessment_performances(athlete.id) == (result.performance,)
     assert repository.get_observation(result.result_observation.id) == result.result_observation
     assert session.scalar(select(func.count()).select_from(AssessmentPerformanceRecord)) == 1
     assert session.scalar(select(func.count()).select_from(ObservationRecord)) == 3

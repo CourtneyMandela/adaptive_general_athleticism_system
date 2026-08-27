@@ -1,6 +1,9 @@
 from agas_planner.assessment import (
     AdaptiveAssessmentSelector,
     AssessmentError,
+    AssessmentReassessmentSchedule,
+    AssessmentReassessmentScheduler,
+    AssessmentReassessmentTiming,
     AssessmentResultRecorder,
     ConservativeCapabilityEstimator,
 )
@@ -30,6 +33,9 @@ from agas_planner.review import BlockReviewEngine, BlockReviewError, TrainingRes
 __all__ = [
     "AdaptiveAssessmentSelector",
     "AssessmentError",
+    "AssessmentReassessmentSchedule",
+    "AssessmentReassessmentScheduler",
+    "AssessmentReassessmentTiming",
     "AssessmentResultRecorder",
     "BlockPlanner",
     "BlockPlanningError",

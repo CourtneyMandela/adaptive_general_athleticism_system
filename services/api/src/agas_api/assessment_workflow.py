@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 from uuid import UUID
 
@@ -17,6 +17,8 @@ from agas_domain.persistence.repository import DomainRepository
 from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy.orm import Session
 
+from agas_api.assessment_schedule import resolve_assessment_reassessment_schedule
+
 AssessmentWorkflowStatus = Literal[
     "eligibility_required",
     "eligibility_review_required",
@@ -29,6 +31,8 @@ AssessmentWorkflowStatus = Literal[
     "result_entry_ready",
     "run_blocked",
     "complete",
+    "reassessment_due",
+    "reassessment_not_due",
 ]
 AssessmentResultStatus = Literal[
     "completed",
@@ -71,6 +75,8 @@ class AssessmentResultProjection(BaseModel):
     reliability: Confidence
     provenance: dict[str, JsonValue]
     rule_version: str
+    next_reassessment_at: datetime
+    reassessment_interval_source_review_id: UUID
 
 
 class AssessmentDecisionProjection(BaseModel):
@@ -120,6 +126,9 @@ class AssessmentWorkflowProjection(BaseModel):
     can_start_run: bool
     can_record_results: bool
     approved_self_administered_protocol_count: int
+    due_protocol_count: int
+    next_reassessment_at: datetime | None
+    reassessment_rule_version: str
     eligibility: AssessmentEligibilityProjection | None
     environments: tuple[AssessmentEnvironmentProjection, ...]
     latest_run: AssessmentRunProjection | None
@@ -144,14 +153,19 @@ def get_assessment_workflow_projection(
         for definition, review in repository.list_approved_assessment_definitions()
         if review.self_administered and review.measurement_schema is not None
     )
+    reassessment_schedule = resolve_assessment_reassessment_schedule(
+        repository,
+        athlete_id,
+        reviewed_definitions,
+        instant,
+    )
+    due_definition_ids = set(reassessment_schedule.due_definition_ids)
     eligibility_active = bool(
         eligibility
         and eligibility.outcome is AssessmentEligibilityOutcome.SELECTION_ALLOWED
         and eligibility.reviewed_at <= instant < eligibility.valid_until
     )
-    selection_prerequisites_ready = bool(
-        environments and reviewed_definitions and eligibility_active
-    )
+    selection_prerequisites_ready = bool(environments and due_definition_ids and eligibility_active)
 
     runs = repository.list_assessment_selection_runs(athlete_id)
     latest_run = runs[0] if runs else None
@@ -177,6 +191,8 @@ def get_assessment_workflow_projection(
             performance = repository.get_assessment_performance_for_selection(selection.id)
             result = None
             if performance is not None:
+                if review.recommended_reassessment_days is None:
+                    raise ValueError("assessment performance review has no reassessment interval")
                 observation = repository.get_observation(performance.result_observation_id)
                 if observation is not None:
                     result = AssessmentResultProjection(
@@ -188,6 +204,9 @@ def get_assessment_workflow_projection(
                         reliability=observation.reliability,
                         provenance=observation.provenance.model_dump(mode="json"),
                         rule_version=performance.rule_version,
+                        next_reassessment_at=performance.performed_at
+                        + timedelta(days=review.recommended_reassessment_days),
+                        reassessment_interval_source_review_id=review.id,
                     )
                 else:
                     raise ValueError("assessment performance references a missing observation")
@@ -253,19 +272,28 @@ def get_assessment_workflow_projection(
     selected_results = tuple(
         item for item in decision_projections if item.decision is AssessmentDecision.SELECTED
     )
-    if selected_results and all(item.result_status == "completed" for item in selected_results):
-        status: AssessmentWorkflowStatus = "complete"
+    latest_run_complete = bool(
+        selected_results and all(item.result_status == "completed" for item in selected_results)
+    )
+    if latest_run_complete and not reviewed_definitions:
+        status: AssessmentWorkflowStatus = "protocol_catalog_empty"
+        message = "No currently approved self-administered assessment protocol is available."
+    elif latest_run_complete and not due_definition_ids:
+        status = "reassessment_not_due"
+        next_at = reassessment_schedule.next_reassessment_at
         message = (
-            "Assessment results are recorded as observations. No capability interpretation has "
-            "been applied."
+            "Assessment results remain direct observations. The next reviewed reassessment "
+            f"interval ends at {next_at.isoformat()}."
+            if next_at
+            else "Assessment results are recorded; no current protocol is due for reassessment."
         )
     elif ready_results:
         status = "result_entry_ready"
         message = "A governed selected assessment is ready for result entry."
-    elif selected_results:
+    elif selected_results and not latest_run_complete:
         status = "run_blocked"
         message = "The latest selected assessment cannot accept a result under current authority."
-    elif latest_run is not None:
+    elif latest_run is not None and not latest_run_complete:
         status = "selection_deferred"
         message = "The latest run selected no protocol; review its explicit decision reasons."
     elif eligibility is None:
@@ -286,6 +314,9 @@ def get_assessment_workflow_projection(
     elif not environments:
         status = "environment_required"
         message = "At least one persisted environment is required for assessment selection."
+    elif latest_run_complete:
+        status = "reassessment_due"
+        message = "A reviewed reassessment interval has ended; reassessment is now available."
     else:
         status = "ready_to_start"
         message = "Governed assessment selection is ready to start."
@@ -297,9 +328,12 @@ def get_assessment_workflow_projection(
         status=status,
         message=message,
         can_start_run=selection_prerequisites_ready
-        and status in ("ready_to_start", "selection_deferred"),
+        and status in ("ready_to_start", "selection_deferred", "reassessment_due"),
         can_record_results=ready_results > 0,
         approved_self_administered_protocol_count=len(reviewed_definitions),
+        due_protocol_count=len(due_definition_ids),
+        next_reassessment_at=reassessment_schedule.next_reassessment_at,
+        reassessment_rule_version=reassessment_schedule.rule_version,
         eligibility=(
             AssessmentEligibilityProjection(
                 eligibility_review_id=eligibility.id,
