@@ -15,6 +15,14 @@ from agas_api.assessment_catalog import (
     ReviewedAssessmentCatalogItem,
     list_reviewed_assessment_catalog,
 )
+from agas_api.assessment_selection import (
+    AssessmentSelectionRunConflictError,
+    AssessmentSelectionRunNotFoundError,
+    AssessmentSelectionRunResult,
+    AssessmentSelectionRunValidationError,
+    CreateAssessmentSelectionRunCommand,
+    PersistedAssessmentSelectionRunService,
+)
 from agas_api.block_creation import (
     BlockCreationConflictError,
     BlockCreationNotFoundError,
@@ -162,6 +170,31 @@ def get_reviewed_assessment_catalog(
     session: Annotated[Session, Depends(database_session_dependency)],
 ) -> tuple[ReviewedAssessmentCatalogItem, ...]:
     return list_reviewed_assessment_catalog(session)
+
+
+@app.post(
+    "/v1/athletes/{athlete_id}/assessment-runs",
+    tags=["assessment"],
+    response_model=AssessmentSelectionRunResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_assessment_selection_run(
+    athlete_id: UUID,
+    command: CreateAssessmentSelectionRunCommand,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authorizer: Annotated[OwnershipAuthorizer, Depends(ownership_authorizer_dependency)],
+) -> AssessmentSelectionRunResult:
+    authorizer.require_athlete(athlete_id)
+    try:
+        return PersistedAssessmentSelectionRunService(session).execute(athlete_id, command)
+    except AssessmentSelectionRunNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except AssessmentSelectionRunConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except AssessmentSelectionRunValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
 
 
 @app.post(

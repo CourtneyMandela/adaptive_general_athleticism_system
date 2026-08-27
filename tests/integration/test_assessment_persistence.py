@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from agas_domain import (
@@ -6,6 +6,8 @@ from agas_domain import (
     AssessmentContext,
     AssessmentDefinition,
     AssessmentDefinitionReview,
+    AssessmentEligibilityOutcome,
+    AssessmentEligibilityReview,
     AssessmentIntensity,
     AssessmentResultInput,
     AssessmentReviewDecision,
@@ -100,6 +102,26 @@ def approve(
     return review
 
 
+def allow_selection(
+    repository: DomainRepository, athlete: Athlete, source: Observation
+) -> AssessmentEligibilityReview:
+    review = AssessmentEligibilityReview(
+        athlete_id=athlete.id,
+        outcome=AssessmentEligibilityOutcome.SELECTION_ALLOWED,
+        sequence_number=1,
+        source_observation_ids=(source.id,),
+        reviewed_at=NOW,
+        valid_until=NOW + timedelta(days=7),
+        reviewed_by="automated-test-reviewer",
+        screening_process_reference="software-test-fixture@1.0.0",
+        rationale="Software validation only; not an athlete screening decision.",
+        uncertainty="This fixture has no operational applicability.",
+        rule_version="assessment-eligibility-fixture@1.0.0",
+    )
+    repository.add_assessment_eligibility_review(review)
+    return review
+
+
 def test_assessment_definition_and_selection_round_trip_with_provenance(
     session: Session,
 ) -> None:
@@ -111,6 +133,7 @@ def test_assessment_definition_and_selection_round_trip_with_provenance(
     repository.add_observation(source)
     repository.add_assessment_definition(definition)
     approved_review = approve(repository, definition)
+    eligibility = allow_selection(repository, athlete, source)
     session.flush()
     context = AssessmentContext(
         athlete_id=athlete.id,
@@ -120,7 +143,7 @@ def test_assessment_definition_and_selection_round_trip_with_provenance(
         evaluated_at=NOW,
     )
     selection = AdaptiveAssessmentSelector().select_reviewed(
-        context, ((definition, approved_review),)
+        context, ((definition, approved_review),), eligibility.id
     )[0]
     repository.add_assessment_selection(selection)
     result = AssessmentResultRecorder().record(
@@ -168,12 +191,15 @@ def test_selection_rejects_a_foreign_athlete_source_observation(session: Session
     first = Athlete(display_name="First")
     second = Athlete(display_name="Second")
     source = intake(first)
+    eligibility_source = intake(second)
     definition = assessment()
     repository.add_athlete(first)
     repository.add_athlete(second)
     repository.add_observation(source)
+    repository.add_observation(eligibility_source)
     repository.add_assessment_definition(definition)
     approved_review = approve(repository, definition)
+    eligibility = allow_selection(repository, second, eligibility_source)
     session.flush()
     context = AssessmentContext(
         athlete_id=second.id,
@@ -183,7 +209,7 @@ def test_selection_rejects_a_foreign_athlete_source_observation(session: Session
         evaluated_at=NOW,
     )
     selection = AdaptiveAssessmentSelector().select_reviewed(
-        context, ((definition, approved_review),)
+        context, ((definition, approved_review),), eligibility.id
     )[0]
 
     with pytest.raises(DomainIntegrityError, match="same athlete"):

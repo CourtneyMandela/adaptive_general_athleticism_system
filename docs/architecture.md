@@ -63,17 +63,29 @@ it. Only definitions whose latest review is approved appear in the read-only glo
 catalog, and persistence rejects athlete selections against any other definition. No operational
 assessment protocol is seeded by this boundary.
 
-The selector
-uses exact tag matching and a versioned deterministic rule. Each selected, deferred, or excluded
+Athlete-level authority is separate. `AssessmentEligibilityReview` is an append-only, linear,
+time-bounded operator decision that references the observations and screening process actually
+reviewed. Its outcomes allow selection, block selection, or require further review; the record is
+not a diagnosis or medical clearance. Athlete-facing services cannot create this authority.
+
+The persisted assessment-run service loads the athlete's current allowed eligibility decision and
+the catalog's current approved, self-administered definitions. It derives equipment categories from
+the effective-dated state of an owned environment, records the non-medical context as a direct
+observation, and atomically appends decisions, selections, and an `AssessmentSelectionRun`.
+Athlete input cannot supply injury, symptom, health-classification, or equipment-category fields.
+
+The selector uses exact tag matching and a versioned deterministic rule. Each selected, deferred, or excluded
 decision records reason codes, human-readable rationale, and the immutable intake observations it
 used. Persisted selections also name the exact approved review that authorized evaluation, so a
-later withdrawal does not make historical authority ambiguous. Legacy selections may have a null
-review reference after migration, but new repository writes fail closed without the current one.
+later withdrawal does not make historical authority ambiguous. Every new persisted selection also
+names its exact athlete eligibility review. Legacy selections may have null authority references
+after migration, but new repository writes fail closed without both current authorities.
 
 Incomplete health screening excludes assessment. Health, injury, and symptom tags are constraints
 supplied by intake/safety workflows; the selector does not diagnose or infer medical meaning. A
 performed assessment becomes a direct `Observation`. Any
 capability state created from it remains a separate derived `CapabilityEstimate`.
+Selection runs do not record results, create estimates, apply norms, or generate workouts.
 
 ### Needs and long-range strategy
 

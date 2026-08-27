@@ -17,6 +17,13 @@ screening. The repository currently seeds no assessment protocols and exposes no
 screening workflow. Unreviewed or withdrawn definitions fail closed, and future intake must not
 infer health, injury, or symptom classifications from free text.
 
+Assessment selection additionally requires a current, time-bounded operator eligibility review
+linked to the observations and process actually reviewed. Allowed, blocked, and review-required
+outcomes are preserved as append-only history. This authority controls selection only; it is not a
+diagnosis or medical clearance. The athlete-facing assessment-run request contains no health,
+injury, symptom, or raw screening fields and cannot override its eligibility or persisted equipment
+state.
+
 ## Policy classes
 
 ### Escalation

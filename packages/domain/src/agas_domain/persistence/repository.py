@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
-from agas_domain.enums import AssessmentReviewDecision
+from agas_domain.enums import AssessmentEligibilityOutcome, AssessmentReviewDecision
 from agas_domain.models import (
     Account,
     Adaptation,
@@ -17,7 +17,9 @@ from agas_domain.models import (
     AdaptationResourceDemand,
     AssessmentDefinition,
     AssessmentDefinitionReview,
+    AssessmentEligibilityReview,
     AssessmentSelection,
+    AssessmentSelectionRun,
     Athlete,
     AthleteOwnership,
     AthleteSafetyPolicyAssignment,
@@ -83,8 +85,12 @@ from agas_domain.persistence.models import (
     AssessmentDefinitionRecord,
     AssessmentDefinitionReviewEvidenceClaimRecord,
     AssessmentDefinitionReviewRecord,
+    AssessmentEligibilityReviewObservationRecord,
+    AssessmentEligibilityReviewRecord,
     AssessmentSelectionObservationRecord,
     AssessmentSelectionRecord,
+    AssessmentSelectionRunItemRecord,
+    AssessmentSelectionRunRecord,
     AthleteOwnershipRecord,
     AthleteRecord,
     AthleteSafetyPolicyAssignmentRecord,
@@ -3604,6 +3610,17 @@ class DomainRepository:
             raise DomainIntegrityError(
                 "assessment selection requires the current approved definition review"
             )
+        eligibility = self.get_current_assessment_eligibility_review(selection.athlete_id)
+        if (
+            eligibility is None
+            or eligibility.id != selection.assessment_eligibility_review_id
+            or eligibility.outcome is not AssessmentEligibilityOutcome.SELECTION_ALLOWED
+            or selection.evaluated_at < eligibility.reviewed_at
+            or selection.evaluated_at >= eligibility.valid_until
+        ):
+            raise DomainIntegrityError(
+                "assessment selection requires a current active eligibility review"
+            )
         observations = self._observations_by_id(selection.source_observation_ids)
         found_ids = {item.id for item in observations}
         missing = set(selection.source_observation_ids) - found_ids
@@ -3621,6 +3638,7 @@ class DomainRepository:
             athlete_id=selection.athlete_id,
             assessment_definition_id=selection.assessment_definition_id,
             assessment_definition_review_id=selection.assessment_definition_review_id,
+            assessment_eligibility_review_id=selection.assessment_eligibility_review_id,
             decision=selection.decision.value,
             reason_codes=[item.value for item in selection.reason_codes],
             rationale=list(selection.rationale),
@@ -3673,10 +3691,178 @@ class DomainRepository:
             athlete_id=record.athlete_id,
             assessment_definition_id=record.assessment_definition_id,
             assessment_definition_review_id=record.assessment_definition_review_id,
+            assessment_eligibility_review_id=record.assessment_eligibility_review_id,
             decision=record.decision,
             reason_codes=tuple(record.reason_codes),
             rationale=tuple(record.rationale),
             source_observation_ids=tuple(link.observation_id for link in record.source_links),
+            evaluated_at=record.evaluated_at,
+            rule_version=record.rule_version,
+        )
+
+    def add_assessment_eligibility_review(self, review: AssessmentEligibilityReview) -> None:
+        self._require_athlete(review.athlete_id)
+        observations = self._observations_by_id(review.source_observation_ids)
+        found_ids = {item.id for item in observations}
+        missing = set(review.source_observation_ids) - found_ids
+        if missing:
+            raise DomainIntegrityError(
+                f"unknown eligibility observations: {sorted(map(str, missing))}"
+            )
+        if any(item.athlete_id != review.athlete_id for item in observations):
+            raise DomainIntegrityError(
+                "eligibility observations must belong to the reviewed athlete"
+            )
+        current = self.get_current_assessment_eligibility_review(review.athlete_id)
+        if current is None:
+            if review.sequence_number != 1 or review.supersedes_review_id is not None:
+                raise DomainIntegrityError("the first eligibility review must start sequence one")
+        else:
+            if review.sequence_number != current.sequence_number + 1:
+                raise DomainIntegrityError(
+                    "an eligibility replacement must use the next sequence number"
+                )
+            if review.supersedes_review_id != current.id:
+                raise DomainIntegrityError(
+                    "an eligibility replacement must supersede the current review"
+                )
+            if review.reviewed_at < current.reviewed_at:
+                raise DomainIntegrityError(
+                    "an eligibility replacement cannot predate the current review"
+                )
+
+        record = AssessmentEligibilityReviewRecord(
+            id=review.id,
+            schema_version=review.schema_version,
+            created_at=review.created_at,
+            athlete_id=review.athlete_id,
+            outcome=review.outcome.value,
+            sequence_number=review.sequence_number,
+            supersedes_review_id=review.supersedes_review_id,
+            reviewed_at=review.reviewed_at,
+            valid_until=review.valid_until,
+            reviewed_by=review.reviewed_by,
+            screening_process_reference=review.screening_process_reference,
+            rationale=review.rationale,
+            uncertainty=review.uncertainty,
+            rule_version=review.rule_version,
+        )
+        record.source_links = [
+            AssessmentEligibilityReviewObservationRecord(
+                eligibility_review_id=review.id,
+                observation_id=observation_id,
+                position=position,
+            )
+            for position, observation_id in enumerate(review.source_observation_ids)
+        ]
+        self.session.add(record)
+
+    def get_assessment_eligibility_review(
+        self, review_id: UUID
+    ) -> AssessmentEligibilityReview | None:
+        record = self.session.get(AssessmentEligibilityReviewRecord, review_id)
+        return self._assessment_eligibility_review_from_record(record) if record else None
+
+    def get_current_assessment_eligibility_review(
+        self, athlete_id: UUID
+    ) -> AssessmentEligibilityReview | None:
+        record = self.session.scalar(
+            select(AssessmentEligibilityReviewRecord)
+            .where(AssessmentEligibilityReviewRecord.athlete_id == athlete_id)
+            .order_by(
+                AssessmentEligibilityReviewRecord.sequence_number.desc(),
+                AssessmentEligibilityReviewRecord.id.desc(),
+            )
+            .limit(1)
+        )
+        return self._assessment_eligibility_review_from_record(record) if record else None
+
+    @staticmethod
+    def _assessment_eligibility_review_from_record(
+        record: AssessmentEligibilityReviewRecord,
+    ) -> AssessmentEligibilityReview:
+        return AssessmentEligibilityReview(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            athlete_id=record.athlete_id,
+            outcome=record.outcome,
+            sequence_number=record.sequence_number,
+            supersedes_review_id=record.supersedes_review_id,
+            source_observation_ids=tuple(link.observation_id for link in record.source_links),
+            reviewed_at=record.reviewed_at,
+            valid_until=record.valid_until,
+            reviewed_by=record.reviewed_by,
+            screening_process_reference=record.screening_process_reference,
+            rationale=record.rationale,
+            uncertainty=record.uncertainty,
+            rule_version=record.rule_version,
+        )
+
+    def add_assessment_selection_run(self, run: AssessmentSelectionRun) -> None:
+        self._require_athlete(run.athlete_id)
+        environment = self.session.get(EnvironmentRecord, run.environment_id)
+        if environment is None or environment.athlete_id != run.athlete_id:
+            raise DomainIntegrityError("assessment run environment belongs to another athlete")
+        eligibility = self.get_assessment_eligibility_review(run.assessment_eligibility_review_id)
+        if eligibility is None or eligibility.athlete_id != run.athlete_id:
+            raise DomainIntegrityError("assessment run eligibility review belongs elsewhere")
+        context = self.session.get(ObservationRecord, run.context_observation_id)
+        if context is None or context.athlete_id != run.athlete_id:
+            raise DomainIntegrityError("assessment run context observation belongs elsewhere")
+        selections = list(
+            self.session.scalars(
+                select(AssessmentSelectionRecord).where(
+                    AssessmentSelectionRecord.id.in_(run.selection_ids)
+                )
+            )
+        )
+        if {item.id for item in selections} != set(run.selection_ids):
+            raise DomainIntegrityError("one or more assessment run selections do not exist")
+        if any(
+            item.athlete_id != run.athlete_id
+            or item.assessment_eligibility_review_id != eligibility.id
+            or item.evaluated_at != run.evaluated_at
+            or run.context_observation_id not in {link.observation_id for link in item.source_links}
+            for item in selections
+        ):
+            raise DomainIntegrityError(
+                "assessment run selections do not match its athlete, authority, context, and time"
+            )
+        record = AssessmentSelectionRunRecord(
+            id=run.id,
+            schema_version=run.schema_version,
+            created_at=run.created_at,
+            athlete_id=run.athlete_id,
+            assessment_eligibility_review_id=run.assessment_eligibility_review_id,
+            environment_id=run.environment_id,
+            context_observation_id=run.context_observation_id,
+            evaluated_at=run.evaluated_at,
+            rule_version=run.rule_version,
+        )
+        record.selection_links = [
+            AssessmentSelectionRunItemRecord(
+                assessment_run_id=run.id,
+                selection_id=selection_id,
+                position=position,
+            )
+            for position, selection_id in enumerate(run.selection_ids)
+        ]
+        self.session.add(record)
+
+    def get_assessment_selection_run(self, run_id: UUID) -> AssessmentSelectionRun | None:
+        record = self.session.get(AssessmentSelectionRunRecord, run_id)
+        if record is None:
+            return None
+        return AssessmentSelectionRun(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            athlete_id=record.athlete_id,
+            assessment_eligibility_review_id=record.assessment_eligibility_review_id,
+            environment_id=record.environment_id,
+            context_observation_id=record.context_observation_id,
+            selection_ids=tuple(link.selection_id for link in record.selection_links),
             evaluated_at=record.evaluated_at,
             rule_version=record.rule_version,
         )

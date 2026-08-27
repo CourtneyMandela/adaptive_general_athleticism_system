@@ -5,9 +5,12 @@ import pytest
 from agas_domain import (
     AssessmentDefinition,
     AssessmentDefinitionReview,
+    AssessmentEligibilityOutcome,
+    AssessmentEligibilityReview,
     AssessmentIntensity,
     AssessmentResultInput,
     AssessmentReviewDecision,
+    AssessmentSelectionRun,
     CapabilityDomain,
     CapabilityEstimationPolicy,
     Confidence,
@@ -182,4 +185,50 @@ def test_assessment_review_requires_linear_history_and_unique_provenance() -> No
             applicability_notes="Software validation fixture only.",
             uncertainty="Not an operational assessment protocol.",
             review_version="assessment-review-test@1.0.0",
+        )
+
+
+def test_assessment_eligibility_is_time_bounded_and_predecessor_linked() -> None:
+    with pytest.raises(ValueError, match="later than reviewed_at"):
+        AssessmentEligibilityReview(
+            athlete_id=uuid4(),
+            outcome=AssessmentEligibilityOutcome.SELECTION_ALLOWED,
+            sequence_number=1,
+            source_observation_ids=(uuid4(),),
+            reviewed_at=NOW,
+            valid_until=NOW,
+            reviewed_by="test-reviewer",
+            screening_process_reference="test-process@1.0.0",
+            rationale="Software fixture only.",
+            uncertainty="Not operational.",
+            rule_version="test-eligibility@1.0.0",
+        )
+
+    with pytest.raises(ValueError, match="reference their predecessor"):
+        AssessmentEligibilityReview(
+            athlete_id=uuid4(),
+            outcome=AssessmentEligibilityOutcome.REVIEW_REQUIRED,
+            sequence_number=2,
+            source_observation_ids=(uuid4(),),
+            reviewed_at=NOW,
+            valid_until=NOW + timedelta(days=1),
+            reviewed_by="test-reviewer",
+            screening_process_reference="test-process@1.0.0",
+            rationale="Software fixture only.",
+            uncertainty="Not operational.",
+            rule_version="test-eligibility@1.0.0",
+        )
+
+
+def test_assessment_selection_run_requires_unique_decisions() -> None:
+    selection_id = uuid4()
+    with pytest.raises(ValueError, match="selection_ids"):
+        AssessmentSelectionRun(
+            athlete_id=uuid4(),
+            assessment_eligibility_review_id=uuid4(),
+            environment_id=uuid4(),
+            context_observation_id=uuid4(),
+            selection_ids=(selection_id, selection_id),
+            evaluated_at=NOW,
+            rule_version="assessment-selection-run-test@1.0.0",
         )

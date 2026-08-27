@@ -185,6 +185,12 @@ class AssessmentReviewDecision(StrEnum):
     REJECTED = "rejected"
 
 
+class AssessmentEligibilityOutcome(StrEnum):
+    SELECTION_ALLOWED = "selection_allowed"
+    SELECTION_BLOCKED = "selection_blocked"
+    REVIEW_REQUIRED = "review_required"
+
+
 class AssessmentReason(StrEnum):
     ELIGIBLE = "eligible"
     MISSING_EQUIPMENT = "missing_equipment"

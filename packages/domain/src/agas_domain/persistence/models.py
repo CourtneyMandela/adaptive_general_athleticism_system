@@ -358,6 +358,67 @@ class AssessmentDefinitionReviewEvidenceClaimRecord(Base):
     position: Mapped[int] = mapped_column(Integer(), nullable=False)
 
 
+class AssessmentEligibilityReviewRecord(VersionedRecordMixin, Base):
+    __tablename__ = "assessment_eligibility_reviews"
+    __table_args__ = (
+        CheckConstraint(
+            "outcome IN ('selection_allowed', 'selection_blocked', 'review_required')",
+            name="ck_assessment_eligibility_outcome",
+        ),
+        CheckConstraint("sequence_number >= 1", name="ck_assessment_eligibility_sequence_positive"),
+        CheckConstraint("valid_until > reviewed_at", name="ck_assessment_eligibility_valid_window"),
+        UniqueConstraint(
+            "athlete_id",
+            "sequence_number",
+            name="uq_assessment_eligibility_athlete_sequence",
+        ),
+        UniqueConstraint("supersedes_review_id", name="uq_assessment_eligibility_superseded_once"),
+    )
+
+    athlete_id: Mapped[UUID] = mapped_column(
+        ForeignKey("athletes.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    outcome: Mapped[str] = mapped_column(String(40), index=True, nullable=False)
+    sequence_number: Mapped[int] = mapped_column(Integer(), nullable=False)
+    supersedes_review_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("assessment_eligibility_reviews.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=True,
+    )
+    reviewed_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)
+    valid_until: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)
+    reviewed_by: Mapped[str] = mapped_column(String(160), nullable=False)
+    screening_process_reference: Mapped[str] = mapped_column(String(160), nullable=False)
+    rationale: Mapped[str] = mapped_column(Text(), nullable=False)
+    uncertainty: Mapped[str] = mapped_column(Text(), nullable=False)
+    rule_version: Mapped[str] = mapped_column(String(120), nullable=False)
+
+    source_links: Mapped[list[AssessmentEligibilityReviewObservationRecord]] = relationship(
+        cascade="save-update, merge",
+        lazy="selectin",
+        order_by="AssessmentEligibilityReviewObservationRecord.position",
+    )
+
+
+class AssessmentEligibilityReviewObservationRecord(Base):
+    __tablename__ = "assessment_eligibility_review_observations"
+    __table_args__ = (
+        UniqueConstraint(
+            "eligibility_review_id",
+            "position",
+            name="uq_assessment_eligibility_observation_order",
+        ),
+    )
+
+    eligibility_review_id: Mapped[UUID] = mapped_column(
+        ForeignKey("assessment_eligibility_reviews.id", ondelete="RESTRICT"), primary_key=True
+    )
+    observation_id: Mapped[UUID] = mapped_column(
+        ForeignKey("observations.id", ondelete="RESTRICT"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer(), nullable=False)
+
+
 class AssessmentSelectionRecord(VersionedRecordMixin, Base):
     __tablename__ = "assessment_selections"
 
@@ -369,6 +430,11 @@ class AssessmentSelectionRecord(VersionedRecordMixin, Base):
     )
     assessment_definition_review_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("assessment_definition_reviews.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=True,
+    )
+    assessment_eligibility_review_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("assessment_eligibility_reviews.id", ondelete="RESTRICT"),
         index=True,
         nullable=True,
     )
@@ -400,6 +466,52 @@ class AssessmentSelectionObservationRecord(Base):
     )
     source_order: Mapped[int] = mapped_column(Integer(), nullable=False)
     selection: Mapped[AssessmentSelectionRecord] = relationship(back_populates="source_links")
+
+
+class AssessmentSelectionRunRecord(VersionedRecordMixin, Base):
+    __tablename__ = "assessment_selection_runs"
+    __table_args__ = (
+        UniqueConstraint("context_observation_id", name="uq_assessment_run_context_observation"),
+    )
+
+    athlete_id: Mapped[UUID] = mapped_column(
+        ForeignKey("athletes.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    assessment_eligibility_review_id: Mapped[UUID] = mapped_column(
+        ForeignKey("assessment_eligibility_reviews.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=False,
+    )
+    environment_id: Mapped[UUID] = mapped_column(
+        ForeignKey("environments.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    context_observation_id: Mapped[UUID] = mapped_column(
+        ForeignKey("observations.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    evaluated_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)
+    rule_version: Mapped[str] = mapped_column(String(120), nullable=False)
+
+    selection_links: Mapped[list[AssessmentSelectionRunItemRecord]] = relationship(
+        cascade="save-update, merge",
+        lazy="selectin",
+        order_by="AssessmentSelectionRunItemRecord.position",
+    )
+
+
+class AssessmentSelectionRunItemRecord(Base):
+    __tablename__ = "assessment_selection_run_items"
+    __table_args__ = (
+        UniqueConstraint("assessment_run_id", "position", name="uq_assessment_run_selection_order"),
+        UniqueConstraint("selection_id", name="uq_assessment_selection_one_run"),
+    )
+
+    assessment_run_id: Mapped[UUID] = mapped_column(
+        ForeignKey("assessment_selection_runs.id", ondelete="RESTRICT"), primary_key=True
+    )
+    selection_id: Mapped[UUID] = mapped_column(
+        ForeignKey("assessment_selections.id", ondelete="RESTRICT"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer(), nullable=False)
 
 
 class CompetencyFloorRecord(VersionedRecordMixin, Base):
@@ -2369,8 +2481,12 @@ for _record_type in (
     AssessmentDefinitionRecord,
     AssessmentDefinitionReviewRecord,
     AssessmentDefinitionReviewEvidenceClaimRecord,
+    AssessmentEligibilityReviewRecord,
+    AssessmentEligibilityReviewObservationRecord,
     AssessmentSelectionRecord,
     AssessmentSelectionObservationRecord,
+    AssessmentSelectionRunRecord,
+    AssessmentSelectionRunItemRecord,
     CompetencyFloorRecord,
     CompetencyFloorEvidenceClaimRecord,
     CapabilityNeedRecord,

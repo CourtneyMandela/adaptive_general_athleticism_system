@@ -106,6 +106,7 @@ The application endpoints are intentionally narrow:
 GET  /v1/onboarding/equipment
 GET  /v1/assessments/catalog
 POST /v1/onboarding/athletes
+POST /v1/athletes/{athlete_id}/assessment-runs
 GET  /v1/athletes/{athlete_id}/current-week?on=YYYY-MM-DD
 POST /v1/block-reviews/{block_review_id}/replan
 POST /v1/blocks/{block_id}/reviews
@@ -149,6 +150,28 @@ python -m agas_api.safety_policy_admin assign \
 
 Replacements append a sequenced predecessor-linked assignment. The PWA and session API resolve the
 current assignment from the athlete; clients cannot choose a policy ID per safety report.
+
+Assessment eligibility is likewise governed outside the athlete-facing API. After reviewing direct
+observations through an appropriate process, a local operator can append a time-bounded decision:
+
+```bash
+python -m agas_api.assessment_eligibility_admin \
+  --athlete-id YOUR_ATHLETE_UUID \
+  --outcome selection_allowed \
+  --source-observation-id REVIEWED_OBSERVATION_UUID \
+  --valid-until 2026-09-30T12:00:00Z \
+  --reviewed-by "REVIEWER_OR_OPERATOR" \
+  --screening-process-reference "REVIEWED_PROCESS_REFERENCE" \
+  --rationale "WHY_ASSESSMENT_SELECTION_IS_ALLOWED" \
+  --uncertainty "KNOWN_LIMITS_OF_THIS_REVIEW"
+```
+
+This record authorizes assessment selection only; it is not a diagnosis or medical clearance. The
+authenticated assessment-run endpoint accepts non-medical body-mass, training-history, skill, and
+exposure context plus an owned environment. It derives current equipment availability from the
+database and persists the direct context observation, deterministic decisions, exact protocol and
+eligibility authorities, and selection run atomically. Clients cannot submit injury, symptom,
+health-classification, or equipment-category fields through this endpoint.
 
 It accepts explicit replanning candidate contexts, reconstructs the persisted review chain, and
 atomically appends capability needs and one replacement strategy. Raw strategy/need CRUD is not
@@ -232,9 +255,10 @@ confirm or edit those actual times, and prepares exactly one consecutive success
 hold, review-required, missing-policy, and unsupported-policy states remain visibly blocked.
 
 This setup is provisional: there is no verified production identity provider, account recovery,
-consent/export/deletion workflow, sensitive health intake, assessment orchestration, qualified
-protocol-review workflow, or authenticated reviewer workflow yet. Do not use it for sensitive or
-production athlete data.
+consent/export/deletion workflow, sensitive health intake, guided assessment-result entry,
+qualified protocol-review workflow, or authenticated reviewer workflow yet. No real assessment
+protocol is seeded, so production assessment runs remain unavailable. Do not use it for sensitive
+or production athlete data.
 The browser does not classify raw symptoms. Selecting a concerning symptom pauses the ordinary
 workout flow instead of fabricating a safety signal.
 Progression remains backend-governed: the PWA never chooses among policies or invents exposure

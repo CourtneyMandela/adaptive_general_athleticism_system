@@ -12,6 +12,7 @@ from agas_domain.enums import (
     AdaptationRelationshipType,
     Applicability,
     AssessmentDecision,
+    AssessmentEligibilityOutcome,
     AssessmentIntensity,
     AssessmentReason,
     AssessmentReviewDecision,
@@ -474,10 +475,47 @@ class AssessmentDefinitionReview(VersionedRecord):
         return self
 
 
+class AssessmentEligibilityReview(VersionedRecord):
+    athlete_id: UUID
+    outcome: AssessmentEligibilityOutcome
+    sequence_number: Annotated[int, Field(ge=1)]
+    supersedes_review_id: UUID | None = None
+    source_observation_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
+    reviewed_at: datetime
+    valid_until: datetime
+    reviewed_by: NonEmptyText
+    screening_process_reference: NonEmptyText
+    rationale: NonEmptyText
+    uncertainty: NonEmptyText
+    rule_version: NonEmptyText
+
+    @field_validator("reviewed_at", "valid_until")
+    @classmethod
+    def require_aware_eligibility_times(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("assessment eligibility timestamps must include a timezone")
+        return value
+
+    @model_validator(mode="after")
+    def validate_eligibility_review(self) -> AssessmentEligibilityReview:
+        if len(set(self.source_observation_ids)) != len(self.source_observation_ids):
+            raise ValueError("source_observation_ids must not contain duplicates")
+        if self.valid_until <= self.reviewed_at:
+            raise ValueError("eligibility valid_until must be later than reviewed_at")
+        if self.sequence_number == 1 and self.supersedes_review_id is not None:
+            raise ValueError("the first eligibility review cannot supersede another record")
+        if self.sequence_number > 1 and self.supersedes_review_id is None:
+            raise ValueError("later eligibility reviews must reference their predecessor")
+        if self.supersedes_review_id == self.id:
+            raise ValueError("an eligibility review cannot supersede itself")
+        return self
+
+
 class AssessmentSelection(VersionedRecord):
     athlete_id: UUID
     assessment_definition_id: UUID
     assessment_definition_review_id: UUID | None = None
+    assessment_eligibility_review_id: UUID | None = None
     decision: AssessmentDecision
     reason_codes: Annotated[tuple[AssessmentReason, ...], Field(min_length=1)]
     rationale: Annotated[tuple[NonEmptyText, ...], Field(min_length=1)]
@@ -504,6 +542,29 @@ class AssessmentSelection(VersionedRecord):
             AssessmentReason.ELIGIBLE,
         ):
             raise ValueError("selected assessments must use the eligible reason")
+        return self
+
+
+class AssessmentSelectionRun(VersionedRecord):
+    athlete_id: UUID
+    assessment_eligibility_review_id: UUID
+    environment_id: UUID
+    context_observation_id: UUID
+    selection_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
+    evaluated_at: datetime
+    rule_version: NonEmptyText
+
+    @field_validator("evaluated_at")
+    @classmethod
+    def require_aware_run_time(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("assessment run time must include a timezone")
+        return value
+
+    @model_validator(mode="after")
+    def validate_selection_ids(self) -> AssessmentSelectionRun:
+        if len(set(self.selection_ids)) != len(self.selection_ids):
+            raise ValueError("selection_ids must not contain duplicates")
         return self
 
 

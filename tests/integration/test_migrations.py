@@ -59,10 +59,17 @@ def test_baseline_migration_matches_current_metadata(
         assert "athlete_safety_policy_assignments" in actual_tables
         assert "assessment_definition_reviews" in actual_tables
         assert "assessment_definition_review_evidence_claims" in actual_tables
+        assert "assessment_eligibility_reviews" in actual_tables
+        assert "assessment_eligibility_review_observations" in actual_tables
+        assert "assessment_selection_runs" in actual_tables
+        assert "assessment_selection_run_items" in actual_tables
         assert "safety_policy_assignment_id" in {
             column["name"] for column in inspector.get_columns("session_safety_decisions")
         }
         assert "assessment_definition_review_id" in {
+            column["name"] for column in inspector.get_columns("assessment_selections")
+        }
+        assert "assessment_eligibility_review_id" in {
             column["name"] for column in inspector.get_columns("assessment_selections")
         }
         assert any(
@@ -94,6 +101,19 @@ def test_baseline_migration_matches_current_metadata(
         assert any(
             constraint["name"] == "uq_assessment_review_superseded_once"
             for constraint in assessment_review_constraints
+        )
+        eligibility_constraints = inspector.get_unique_constraints("assessment_eligibility_reviews")
+        assert any(
+            constraint["name"] == "uq_assessment_eligibility_athlete_sequence"
+            for constraint in eligibility_constraints
+        )
+        assert any(
+            constraint["name"] == "uq_assessment_eligibility_superseded_once"
+            for constraint in eligibility_constraints
+        )
+        assert any(
+            constraint["name"] == "uq_assessment_run_context_observation"
+            for constraint in inspector.get_unique_constraints("assessment_selection_runs")
         )
         assert any(
             constraint["name"] == "uq_strategy_triggering_block_review"

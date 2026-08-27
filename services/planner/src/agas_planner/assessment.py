@@ -43,6 +43,7 @@ class AdaptiveAssessmentSelector:
         self,
         context: AssessmentContext,
         reviewed_definitions: Iterable[tuple[AssessmentDefinition, AssessmentDefinitionReview]],
+        eligibility_review_id: UUID,
     ) -> tuple[AssessmentSelection, ...]:
         selections: list[AssessmentSelection] = []
         for definition, review in reviewed_definitions:
@@ -50,7 +51,7 @@ class AdaptiveAssessmentSelector:
                 raise AssessmentError("assessment review does not match its definition")
             if review.decision is not AssessmentReviewDecision.APPROVED:
                 raise AssessmentError("assessment review is not approved")
-            selections.append(self._evaluate(context, definition, review.id))
+            selections.append(self._evaluate(context, definition, review.id, eligibility_review_id))
         return tuple(selections)
 
     def _evaluate(
@@ -58,6 +59,7 @@ class AdaptiveAssessmentSelector:
         context: AssessmentContext,
         definition: AssessmentDefinition,
         definition_review_id: UUID | None,
+        eligibility_review_id: UUID | None = None,
     ) -> AssessmentSelection:
         exclusion_reasons: list[tuple[AssessmentReason, str]] = []
         deferral_reasons: list[tuple[AssessmentReason, str]] = []
@@ -174,6 +176,7 @@ class AdaptiveAssessmentSelector:
             athlete_id=context.athlete_id,
             assessment_definition_id=definition.id,
             assessment_definition_review_id=definition_review_id,
+            assessment_eligibility_review_id=eligibility_review_id,
             decision=decision,
             reason_codes=tuple(reason for reason, _ in reasons),
             rationale=tuple(rationale for _, rationale in reasons),

@@ -50,6 +50,14 @@ labeled non-scientific fixtures in isolated databases. Protocol evidence, popula
 measurement reliability, result interpretation, and self-administration suitability require
 qualified review before production use.
 
+Athlete eligibility is a separate authority from protocol approval. A current, approved definition
+does not establish that it should be selected for a particular athlete, while an eligibility review
+does not validate a protocol's scientific basis. Eligibility decisions must retain their source
+observations, process reference, reviewer, rationale, uncertainty, review time, validity window, and
+rule version. They authorize selection only and must not be represented as diagnoses or medical
+clearance. Persisted selection requires both exact authorities so later changes do not rewrite why
+the historical decision was permitted.
+
 ## Exercise resolution
 
 Exercise ontology metadata and resolver scores are not evidence of exercise equivalence. A full
