@@ -1,6 +1,6 @@
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import date
+from datetime import date, datetime
 from typing import Annotated
 from uuid import UUID
 
@@ -30,6 +30,11 @@ from agas_api.assessment_selection import (
     AssessmentSelectionRunValidationError,
     CreateAssessmentSelectionRunCommand,
     PersistedAssessmentSelectionRunService,
+)
+from agas_api.assessment_workflow import (
+    AssessmentWorkflowNotFoundError,
+    AssessmentWorkflowProjection,
+    get_assessment_workflow_projection,
 )
 from agas_api.block_creation import (
     BlockCreationConflictError,
@@ -178,6 +183,28 @@ def get_reviewed_assessment_catalog(
     session: Annotated[Session, Depends(database_session_dependency)],
 ) -> tuple[ReviewedAssessmentCatalogItem, ...]:
     return list_reviewed_assessment_catalog(session)
+
+
+@app.get(
+    "/v1/athletes/{athlete_id}/assessment-workflow",
+    tags=["assessment"],
+    response_model=AssessmentWorkflowProjection,
+)
+def get_assessment_workflow(
+    athlete_id: UUID,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authorizer: Annotated[OwnershipAuthorizer, Depends(ownership_authorizer_dependency)],
+    at: Annotated[datetime | None, Query()] = None,
+) -> AssessmentWorkflowProjection:
+    authorizer.require_athlete(athlete_id)
+    try:
+        return get_assessment_workflow_projection(session, athlete_id, at)
+    except AssessmentWorkflowNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
 
 
 @app.post(

@@ -3873,6 +3873,34 @@ class DomainRepository:
             rule_version=record.rule_version,
         )
 
+    def list_assessment_selection_runs(
+        self, athlete_id: UUID
+    ) -> tuple[AssessmentSelectionRun, ...]:
+        records = self.session.scalars(
+            select(AssessmentSelectionRunRecord)
+            .where(AssessmentSelectionRunRecord.athlete_id == athlete_id)
+            .order_by(
+                AssessmentSelectionRunRecord.evaluated_at.desc(),
+                AssessmentSelectionRunRecord.created_at.desc(),
+                AssessmentSelectionRunRecord.id.desc(),
+            )
+        )
+        return tuple(
+            AssessmentSelectionRun(
+                id=record.id,
+                schema_version=record.schema_version,
+                created_at=record.created_at,
+                athlete_id=record.athlete_id,
+                assessment_eligibility_review_id=record.assessment_eligibility_review_id,
+                environment_id=record.environment_id,
+                context_observation_id=record.context_observation_id,
+                selection_ids=tuple(link.selection_id for link in record.selection_links),
+                evaluated_at=record.evaluated_at,
+                rule_version=record.rule_version,
+            )
+            for record in records
+        )
+
     def add_assessment_performance(self, performance: AssessmentPerformance) -> None:
         self._require_athlete(performance.athlete_id)
         run = self.get_assessment_selection_run(performance.assessment_selection_run_id)
@@ -3978,6 +4006,16 @@ class DomainRepository:
             rule_version=record.rule_version,
         )
 
+    def get_assessment_performance_for_selection(
+        self, selection_id: UUID
+    ) -> AssessmentPerformance | None:
+        record = self.session.scalar(
+            select(AssessmentPerformanceRecord).where(
+                AssessmentPerformanceRecord.assessment_selection_id == selection_id
+            )
+        )
+        return self.get_assessment_performance(record.id) if record else None
+
     def get_observation(self, observation_id: UUID) -> Observation | None:
         record = self.session.get(ObservationRecord, observation_id)
         if record is None:
@@ -4063,6 +4101,27 @@ class DomainRepository:
             noise_constraints=record.noise_constraints,
             max_noise_level=record.max_noise_level,
             outdoor_access=record.outdoor_access,
+        )
+
+    def list_environments(self, athlete_id: UUID) -> tuple[Environment, ...]:
+        records = self.session.scalars(
+            select(EnvironmentRecord)
+            .where(EnvironmentRecord.athlete_id == athlete_id)
+            .order_by(EnvironmentRecord.name, EnvironmentRecord.id)
+        )
+        return tuple(
+            Environment(
+                id=record.id,
+                schema_version=record.schema_version,
+                created_at=record.created_at,
+                athlete_id=record.athlete_id,
+                name=record.name,
+                space_constraints=record.space_constraints,
+                noise_constraints=record.noise_constraints,
+                max_noise_level=record.max_noise_level,
+                outdoor_access=record.outdoor_access,
+            )
+            for record in records
         )
 
     def get_equipment(self, equipment_id: UUID) -> Equipment | None:

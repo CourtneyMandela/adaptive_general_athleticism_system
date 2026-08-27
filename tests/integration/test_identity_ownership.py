@@ -70,9 +70,11 @@ def test_every_athlete_scoped_route_requires_authentication() -> None:
     current_week = TestClient(app).get(
         f"/v1/athletes/{identity}/current-week", params={"on": "2026-08-22"}
     )
+    assessment_workflow = TestClient(app).get(f"/v1/athletes/{identity}/assessment-workflow")
     post_responses = [TestClient(app).post(path, json={}) for path in protected_posts]
 
     assert current_week.status_code == 401
+    assert assessment_workflow.status_code == 401
     assert all(response.status_code == 401 for response in post_responses)
 
 
@@ -144,6 +146,10 @@ def test_cross_account_athlete_access_is_hidden_as_not_found(session: Session) -
             params={"on": "2026-08-22"},
             headers=development_header("owner-one"),
         )
+        forbidden_workflow = TestClient(app).get(
+            f"/v1/athletes/{second_athlete_id}/assessment-workflow",
+            headers=development_header("owner-one"),
+        )
         own = TestClient(app).get(
             f"/v1/athletes/{second_athlete_id}/current-week",
             params={"on": "2026-08-22"},
@@ -186,6 +192,8 @@ def test_cross_account_athlete_access_is_hidden_as_not_found(session: Session) -
     assert second.status_code == 201
     assert forbidden.status_code == 404
     assert forbidden.json() == {"detail": "athlete does not exist"}
+    assert forbidden_workflow.status_code == 404
+    assert forbidden_workflow.json() == {"detail": "athlete does not exist"}
     assert forbidden_assessment.status_code == 404
     assert forbidden_assessment.json() == {"detail": "athlete does not exist"}
     assert forbidden_result.status_code == 404

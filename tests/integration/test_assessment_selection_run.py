@@ -6,6 +6,7 @@ import pytest
 from agas_api.assessment_eligibility_admin import record_assessment_eligibility_review
 from agas_api.assessment_performance import AssessmentPerformanceResult
 from agas_api.assessment_selection import AssessmentSelectionRunResult
+from agas_api.assessment_workflow import AssessmentWorkflowProjection
 from agas_api.database import database_session_dependency
 from agas_api.main import app
 from agas_domain import (
@@ -250,6 +251,94 @@ def test_owned_athlete_creates_a_provenance_complete_assessment_selection_run(
     assert repository.get_assessment_selection_run(result.run.id) == result.run
     for item in result.decisions:
         assert repository.get_assessment_selection(item.selection.id) == item.selection
+
+
+def test_assessment_workflow_projects_readiness_decisions_and_completion(
+    session: Session, monkeypatch: MonkeyPatch
+) -> None:
+    athlete, environment, _eligibility = setup_run_state(session)
+    workflow_path = f"/v1/athletes/{athlete.id}/assessment-workflow"
+    app.dependency_overrides[database_session_dependency] = lambda: session
+    try:
+        client = TestClient(app)
+        ready_response = client.get(workflow_path, params={"at": NOW.isoformat()})
+        run_response = client.post(
+            f"/v1/athletes/{athlete.id}/assessment-runs", json=request_body(environment)
+        )
+        run_result = AssessmentSelectionRunResult.model_validate(run_response.json())
+        selected = run_result.decisions[0].selection
+        projected_response = client.get(workflow_path, params={"at": NOW.isoformat()})
+        monkeypatch.setattr(
+            assessment_performance_module, "_utc_now", lambda: NOW + timedelta(hours=1)
+        )
+        result_response = client.post(
+            f"/v1/athletes/{athlete.id}/assessment-runs/{run_result.run.id}"
+            f"/selections/{selected.id}/result",
+            json=result_body(),
+        )
+        completed_response = client.get(
+            workflow_path, params={"at": (NOW + timedelta(minutes=10)).isoformat()}
+        )
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert ready_response.status_code == 200
+    ready = AssessmentWorkflowProjection.model_validate(ready_response.json())
+    assert ready.status == "ready_to_start"
+    assert ready.can_start_run is True
+    assert ready.latest_run is None
+    assert ready.approved_self_administered_protocol_count == 2
+    assert run_response.status_code == 201
+    assert projected_response.status_code == 200
+    projected = AssessmentWorkflowProjection.model_validate(projected_response.json())
+    assert projected.status == "result_entry_ready"
+    assert projected.can_record_results is True
+    assert projected.latest_run is not None
+    assert tuple(item.result_status for item in projected.latest_run.decisions) == (
+        "ready",
+        "not_selected",
+    )
+    first = projected.latest_run.decisions[0]
+    assert first.protocol_instructions == ("Follow the isolated software-test fixture protocol.",)
+    assert first.result_entry_instructions == "Enter the synthetic fixture value."
+    assert first.evidence_claim_ids
+    assert "reviewed_by" not in projected_response.text
+    assert "screening_process_reference" not in projected_response.text
+    assert result_response.status_code == 201
+    assert completed_response.status_code == 200
+    completed = AssessmentWorkflowProjection.model_validate(completed_response.json())
+    assert completed.status == "complete"
+    assert completed.can_record_results is False
+    assert completed.latest_run is not None
+    assert completed.latest_run.decisions[0].result is not None
+    assert completed.latest_run.decisions[0].result.measurement == 42.5
+
+
+def test_assessment_workflow_exposes_honest_blocked_and_empty_states(session: Session) -> None:
+    repository = DomainRepository(session)
+    athlete = Athlete(display_name="Assessment workflow empty state")
+    environment = Environment(athlete_id=athlete.id, name="Empty environment")
+    source = source_observation(athlete)
+    repository.add_athlete(athlete)
+    repository.add_environment(environment)
+    repository.add_observation(source)
+    session.commit()
+    path = f"/v1/athletes/{athlete.id}/assessment-workflow"
+    app.dependency_overrides[database_session_dependency] = lambda: session
+    try:
+        client = TestClient(app)
+        missing_response = client.get(path, params={"at": NOW.isoformat()})
+        allow(repository, athlete, source)
+        session.commit()
+        empty_response = client.get(path, params={"at": NOW.isoformat()})
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert missing_response.status_code == 200
+    assert missing_response.json()["status"] == "eligibility_required"
+    assert empty_response.status_code == 200
+    assert empty_response.json()["status"] == "protocol_catalog_empty"
+    assert empty_response.json()["can_start_run"] is False
 
 
 def create_run(session: Session) -> tuple[Athlete, AssessmentSelectionRunResult]:

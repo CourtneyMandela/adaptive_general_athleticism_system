@@ -15,6 +15,7 @@ import {
   type PlannedSessionProjection,
 } from "@/lib/current-week";
 import { OnboardingForm } from "./onboarding-form";
+import { AssessmentPanel } from "./assessment-panel";
 import {
   PostSessionSafetyForm,
   ProgressionEvaluationButton,
@@ -319,6 +320,8 @@ export function CurrentWeekDashboard() {
           Change athlete
         </button>
       </header>
+
+      <AssessmentPanel apiBaseUrl={apiBaseUrl} athleteId={athleteId} />
 
       <nav className="week-nav" aria-label="Week navigation">
         <button type="button" onClick={() => selectDate(shiftIsoDate(asOf, -7))}>

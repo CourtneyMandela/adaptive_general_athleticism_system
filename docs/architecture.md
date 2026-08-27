@@ -91,6 +91,14 @@ accepts no free-form medical context, verifies the definition unit, and rolls ba
 if lineage persistence fails. Deferred and duplicate results fail closed. Selection and performance
 runs do not create estimates, apply norms, or generate workouts.
 
+An authenticated `AssessmentWorkflowProjection` derives the athlete-facing state from those
+append-only records rather than persisting a mutable status flag. It exposes safe eligibility
+timing, environment choices, reviewed protocol instructions and uncertainty, ordered deterministic
+decisions, exact versions and evidence identifiers, and completed result observations. It omits
+screening sources, operator identity, and screening-process details. The PWA can submit the narrow
+selection context when the projection permits it, but does not duplicate authority rules or render
+generic result controls without a reviewed measurement schema.
+
 ### Needs and long-range strategy
 
 A `CompetencyFloor` is a versioned, metric-scoped comparison target with explicit population,
