@@ -1,8 +1,10 @@
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import agas_api.assessment_performance as assessment_performance_module
 import pytest
 from agas_api.assessment_eligibility_admin import record_assessment_eligibility_review
+from agas_api.assessment_performance import AssessmentPerformanceResult
 from agas_api.assessment_selection import AssessmentSelectionRunResult
 from agas_api.database import database_session_dependency
 from agas_api.main import app
@@ -28,8 +30,10 @@ from agas_domain import (
     Provenance,
 )
 from agas_domain.persistence.models import (
+    AssessmentPerformanceRecord,
     AssessmentSelectionRecord,
     AssessmentSelectionRunRecord,
+    ImmutableHistoricalRecordError,
     ObservationRecord,
 )
 from agas_domain.persistence.repository import DomainIntegrityError, DomainRepository
@@ -246,6 +250,174 @@ def test_owned_athlete_creates_a_provenance_complete_assessment_selection_run(
     assert repository.get_assessment_selection_run(result.run.id) == result.run
     for item in result.decisions:
         assert repository.get_assessment_selection(item.selection.id) == item.selection
+
+
+def create_run(session: Session) -> tuple[Athlete, AssessmentSelectionRunResult]:
+    athlete, environment, _eligibility = setup_run_state(session)
+    app.dependency_overrides[database_session_dependency] = lambda: session
+    try:
+        response = TestClient(app).post(
+            f"/v1/athletes/{athlete.id}/assessment-runs", json=request_body(environment)
+        )
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+    assert response.status_code == 201
+    return athlete, AssessmentSelectionRunResult.model_validate(response.json())
+
+
+def result_body(*, unit: str = "test_fixture_unit") -> dict[str, Any]:
+    return {
+        "performed_at": (NOW + timedelta(minutes=10)).isoformat(),
+        "measurement": 42.5,
+        "unit": unit,
+        "reliability": "moderate",
+        "provenance": provenance().model_dump(mode="json"),
+    }
+
+
+def test_selected_assessment_records_one_direct_result_without_creating_an_estimate(
+    session: Session, monkeypatch: MonkeyPatch
+) -> None:
+    athlete, run_result = create_run(session)
+    selected = run_result.decisions[0].selection
+    monkeypatch.setattr(assessment_performance_module, "_utc_now", lambda: NOW + timedelta(hours=1))
+    app.dependency_overrides[database_session_dependency] = lambda: session
+    try:
+        response = TestClient(app).post(
+            f"/v1/athletes/{athlete.id}/assessment-runs/{run_result.run.id}"
+            f"/selections/{selected.id}/result",
+            json=result_body(),
+        )
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert response.status_code == 201
+    result = AssessmentPerformanceResult.model_validate(response.json())
+    assert result.performance.assessment_selection_id == selected.id
+    assert result.performance.assessment_definition_review_id == (
+        selected.assessment_definition_review_id
+    )
+    assert result.performance.assessment_eligibility_review_id == (
+        selected.assessment_eligibility_review_id
+    )
+    assert result.result_observation.source is ObservationSource.TEST_RESULT
+    assert result.result_observation.measurement == 42.5
+    assert result.result_observation.context["assessment_selection_run_id"] == str(
+        run_result.run.id
+    )
+    repository = DomainRepository(session)
+    assert repository.get_assessment_performance(result.performance.id) == result.performance
+    assert repository.get_observation(result.result_observation.id) == result.result_observation
+    assert session.scalar(select(func.count()).select_from(AssessmentPerformanceRecord)) == 1
+    assert session.scalar(select(func.count()).select_from(ObservationRecord)) == 3
+    performance_record = session.get(AssessmentPerformanceRecord, result.performance.id)
+    assert performance_record is not None
+    performance_record.rule_version = "silently-rewritten"
+    with pytest.raises(ImmutableHistoricalRecordError):
+        session.commit()
+    session.rollback()
+    assert repository.get_assessment_performance(result.performance.id) == result.performance
+
+
+def test_duplicate_result_rolls_back_its_extra_observation(
+    session: Session, monkeypatch: MonkeyPatch
+) -> None:
+    athlete, run_result = create_run(session)
+    selected = run_result.decisions[0].selection
+    monkeypatch.setattr(assessment_performance_module, "_utc_now", lambda: NOW + timedelta(hours=1))
+    path = (
+        f"/v1/athletes/{athlete.id}/assessment-runs/{run_result.run.id}"
+        f"/selections/{selected.id}/result"
+    )
+    app.dependency_overrides[database_session_dependency] = lambda: session
+    try:
+        client = TestClient(app)
+        first = client.post(path, json=result_body())
+        observation_count = session.scalar(select(func.count()).select_from(ObservationRecord))
+        duplicate = client.post(path, json=result_body())
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert first.status_code == 201
+    assert duplicate.status_code == 409
+    assert session.scalar(select(func.count()).select_from(ObservationRecord)) == observation_count
+    assert session.scalar(select(func.count()).select_from(AssessmentPerformanceRecord)) == 1
+
+
+def test_deferred_assessment_and_wrong_units_fail_without_result_history(
+    session: Session, monkeypatch: MonkeyPatch
+) -> None:
+    athlete, run_result = create_run(session)
+    selected = run_result.decisions[0].selection
+    deferred = run_result.decisions[1].selection
+    monkeypatch.setattr(assessment_performance_module, "_utc_now", lambda: NOW + timedelta(hours=1))
+    base = f"/v1/athletes/{athlete.id}/assessment-runs/{run_result.run.id}/selections"
+    app.dependency_overrides[database_session_dependency] = lambda: session
+    try:
+        client = TestClient(app)
+        deferred_response = client.post(f"{base}/{deferred.id}/result", json=result_body())
+        wrong_unit_response = client.post(
+            f"{base}/{selected.id}/result", json=result_body(unit="unsupported_unit")
+        )
+        future_body = result_body()
+        future_body["performed_at"] = (NOW + timedelta(hours=2)).isoformat()
+        future_response = client.post(f"{base}/{selected.id}/result", json=future_body)
+        missing_measurement_body = result_body()
+        missing_measurement_body["measurement"] = None
+        missing_measurement_response = client.post(
+            f"{base}/{selected.id}/result", json=missing_measurement_body
+        )
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert deferred_response.status_code == 409
+    assert wrong_unit_response.status_code == 422
+    assert future_response.status_code == 422
+    assert missing_measurement_response.status_code == 422
+    assert session.scalar(select(func.count()).select_from(AssessmentPerformanceRecord)) == 0
+    assert session.scalar(select(func.count()).select_from(ObservationRecord)) == 2
+
+
+def test_withdrawn_protocol_fails_closed_before_result_history(
+    session: Session, monkeypatch: MonkeyPatch
+) -> None:
+    athlete, run_result = create_run(session)
+    selected = run_result.decisions[0].selection
+    repository = DomainRepository(session)
+    current = repository.get_current_assessment_definition_review(selected.assessment_definition_id)
+    assert current is not None
+    repository.add_assessment_definition_review(
+        AssessmentDefinitionReview(
+            assessment_definition_id=selected.assessment_definition_id,
+            decision=AssessmentReviewDecision.REJECTED,
+            sequence_number=2,
+            supersedes_review_id=current.id,
+            protocol_instructions=current.protocol_instructions,
+            result_entry_instructions=current.result_entry_instructions,
+            self_administered=False,
+            evidence_claim_ids=current.evidence_claim_ids,
+            reviewed_at=NOW + timedelta(minutes=1),
+            reviewer="automated-test-reviewer",
+            applicability_notes="Withdrawn software fixture.",
+            uncertainty="Not operational.",
+            review_version="assessment-review-fixture@2.0.0",
+        )
+    )
+    session.commit()
+    monkeypatch.setattr(assessment_performance_module, "_utc_now", lambda: NOW + timedelta(hours=1))
+    app.dependency_overrides[database_session_dependency] = lambda: session
+    try:
+        response = TestClient(app).post(
+            f"/v1/athletes/{athlete.id}/assessment-runs/{run_result.run.id}"
+            f"/selections/{selected.id}/result",
+            json=result_body(),
+        )
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert response.status_code == 409
+    assert session.scalar(select(func.count()).select_from(AssessmentPerformanceRecord)) == 0
+    assert session.scalar(select(func.count()).select_from(ObservationRecord)) == 2
 
 
 @pytest.mark.parametrize(

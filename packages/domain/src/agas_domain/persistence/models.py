@@ -514,6 +514,42 @@ class AssessmentSelectionRunItemRecord(Base):
     position: Mapped[int] = mapped_column(Integer(), nullable=False)
 
 
+class AssessmentPerformanceRecord(VersionedRecordMixin, Base):
+    __tablename__ = "assessment_performances"
+    __table_args__ = (
+        UniqueConstraint("assessment_selection_id", name="uq_assessment_performance_selection"),
+        UniqueConstraint("result_observation_id", name="uq_assessment_performance_observation"),
+    )
+
+    athlete_id: Mapped[UUID] = mapped_column(
+        ForeignKey("athletes.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    assessment_selection_run_id: Mapped[UUID] = mapped_column(
+        ForeignKey("assessment_selection_runs.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    assessment_selection_id: Mapped[UUID] = mapped_column(
+        ForeignKey("assessment_selections.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    assessment_definition_id: Mapped[UUID] = mapped_column(
+        ForeignKey("assessment_definitions.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    assessment_definition_review_id: Mapped[UUID] = mapped_column(
+        ForeignKey("assessment_definition_reviews.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=False,
+    )
+    assessment_eligibility_review_id: Mapped[UUID] = mapped_column(
+        ForeignKey("assessment_eligibility_reviews.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=False,
+    )
+    result_observation_id: Mapped[UUID] = mapped_column(
+        ForeignKey("observations.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    performed_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)
+    rule_version: Mapped[str] = mapped_column(String(120), nullable=False)
+
+
 class CompetencyFloorRecord(VersionedRecordMixin, Base):
     __tablename__ = "competency_floors"
 
@@ -2487,6 +2523,7 @@ for _record_type in (
     AssessmentSelectionObservationRecord,
     AssessmentSelectionRunRecord,
     AssessmentSelectionRunItemRecord,
+    AssessmentPerformanceRecord,
     CompetencyFloorRecord,
     CompetencyFloorEvidenceClaimRecord,
     CapabilityNeedRecord,

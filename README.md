@@ -107,6 +107,7 @@ GET  /v1/onboarding/equipment
 GET  /v1/assessments/catalog
 POST /v1/onboarding/athletes
 POST /v1/athletes/{athlete_id}/assessment-runs
+POST /v1/athletes/{athlete_id}/assessment-runs/{run_id}/selections/{selection_id}/result
 GET  /v1/athletes/{athlete_id}/current-week?on=YYYY-MM-DD
 POST /v1/block-reviews/{block_review_id}/replan
 POST /v1/blocks/{block_id}/reviews
@@ -172,6 +173,12 @@ exposure context plus an owned environment. It derives current equipment availab
 database and persists the direct context observation, deterministic decisions, exact protocol and
 eligibility authorities, and selection run atomically. Clients cannot submit injury, symptom,
 health-classification, or equipment-category fields through this endpoint.
+
+A selected decision can record one initial result through its run-scoped endpoint. The server
+requires the exact protocol and eligibility authorities to remain current, verifies the definition
+unit, and atomically stores an `AssessmentPerformance` plus a direct test-result observation.
+Deferred decisions, duplicate submissions, future performance times, and stale authority fail
+closed. Result recording does not interpret the value or create a capability estimate.
 
 It accepts explicit replanning candidate contexts, reconstructs the persisted review chain, and
 atomically appends capability needs and one replacement strategy. Raw strategy/need CRUD is not
@@ -255,10 +262,10 @@ confirm or edit those actual times, and prepares exactly one consecutive success
 hold, review-required, missing-policy, and unsupported-policy states remain visibly blocked.
 
 This setup is provisional: there is no verified production identity provider, account recovery,
-consent/export/deletion workflow, sensitive health intake, guided assessment-result entry,
-qualified protocol-review workflow, or authenticated reviewer workflow yet. No real assessment
-protocol is seeded, so production assessment runs remain unavailable. Do not use it for sensitive
-or production athlete data.
+consent/export/deletion workflow, sensitive health intake, assessment correction/attempt workflow,
+qualified protocol-review workflow, authenticated reviewer workflow, or assessment-result PWA yet.
+No real assessment protocol is seeded, so production assessment runs and result entry remain
+unavailable. Do not use it for sensitive or production athlete data.
 The browser does not classify raw symptoms. Selecting a concerning symptom pauses the ordinary
 workout flow instead of fabricating a safety signal.
 Progression remains backend-governed: the PWA never chooses among policies or invents exposure

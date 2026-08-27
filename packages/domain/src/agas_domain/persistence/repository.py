@@ -8,7 +8,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
-from agas_domain.enums import AssessmentEligibilityOutcome, AssessmentReviewDecision
+from agas_domain.enums import (
+    AssessmentDecision,
+    AssessmentEligibilityOutcome,
+    AssessmentReviewDecision,
+)
 from agas_domain.models import (
     Account,
     Adaptation,
@@ -18,6 +22,7 @@ from agas_domain.models import (
     AssessmentDefinition,
     AssessmentDefinitionReview,
     AssessmentEligibilityReview,
+    AssessmentPerformance,
     AssessmentSelection,
     AssessmentSelectionRun,
     Athlete,
@@ -87,6 +92,7 @@ from agas_domain.persistence.models import (
     AssessmentDefinitionReviewRecord,
     AssessmentEligibilityReviewObservationRecord,
     AssessmentEligibilityReviewRecord,
+    AssessmentPerformanceRecord,
     AssessmentSelectionObservationRecord,
     AssessmentSelectionRecord,
     AssessmentSelectionRunItemRecord,
@@ -3864,6 +3870,111 @@ class DomainRepository:
             context_observation_id=record.context_observation_id,
             selection_ids=tuple(link.selection_id for link in record.selection_links),
             evaluated_at=record.evaluated_at,
+            rule_version=record.rule_version,
+        )
+
+    def add_assessment_performance(self, performance: AssessmentPerformance) -> None:
+        self._require_athlete(performance.athlete_id)
+        run = self.get_assessment_selection_run(performance.assessment_selection_run_id)
+        if run is None or run.athlete_id != performance.athlete_id:
+            raise DomainIntegrityError("assessment performance run belongs elsewhere")
+        if performance.assessment_selection_id not in run.selection_ids:
+            raise DomainIntegrityError("assessment performance selection is not in its run")
+        selection = self.get_assessment_selection(performance.assessment_selection_id)
+        if selection is None or selection.athlete_id != performance.athlete_id:
+            raise DomainIntegrityError("assessment performance selection belongs elsewhere")
+        if selection.decision is not AssessmentDecision.SELECTED:
+            raise DomainIntegrityError("only a selected assessment can record performance")
+        if (
+            performance.assessment_definition_id != selection.assessment_definition_id
+            or performance.assessment_definition_review_id
+            != selection.assessment_definition_review_id
+            or performance.assessment_eligibility_review_id
+            != selection.assessment_eligibility_review_id
+        ):
+            raise DomainIntegrityError(
+                "assessment performance authority differs from its selection"
+            )
+        if performance.performed_at < selection.evaluated_at:
+            raise DomainIntegrityError("assessment performance cannot predate selection")
+
+        definition = self.get_assessment_definition(performance.assessment_definition_id)
+        if definition is None:
+            raise DomainIntegrityError("assessment performance definition does not exist")
+        review = self.get_current_assessment_definition_review(performance.assessment_definition_id)
+        if (
+            review is None
+            or review.id != performance.assessment_definition_review_id
+            or review.decision is not AssessmentReviewDecision.APPROVED
+            or not review.self_administered
+        ):
+            raise DomainIntegrityError(
+                "assessment performance requires the current approved self-administered review"
+            )
+        eligibility = self.get_current_assessment_eligibility_review(performance.athlete_id)
+        if (
+            eligibility is None
+            or eligibility.id != performance.assessment_eligibility_review_id
+            or eligibility.outcome is not AssessmentEligibilityOutcome.SELECTION_ALLOWED
+            or not eligibility.reviewed_at <= performance.performed_at < eligibility.valid_until
+        ):
+            raise DomainIntegrityError(
+                "assessment performance requires the current active eligibility review"
+            )
+
+        observation = self.get_observation(performance.result_observation_id)
+        expected_context = {
+            "assessment_selection_run_id": str(run.id),
+            "assessment_selection_id": str(selection.id),
+            "assessment_definition_id": str(selection.assessment_definition_id),
+            "assessment_definition_review_id": str(performance.assessment_definition_review_id),
+            "assessment_eligibility_review_id": str(performance.assessment_eligibility_review_id),
+        }
+        if (
+            observation is None
+            or observation.athlete_id != performance.athlete_id
+            or observation.source.value != "test_result"
+            or observation.observed_at != performance.performed_at
+            or observation.observation_type != definition.observation_type
+            or observation.unit != definition.unit_or_scale
+            or any(observation.context.get(key) != value for key, value in expected_context.items())
+        ):
+            raise DomainIntegrityError(
+                "assessment performance result observation does not match its governed lineage"
+            )
+        self.session.add(
+            AssessmentPerformanceRecord(
+                id=performance.id,
+                schema_version=performance.schema_version,
+                created_at=performance.created_at,
+                athlete_id=performance.athlete_id,
+                assessment_selection_run_id=performance.assessment_selection_run_id,
+                assessment_selection_id=performance.assessment_selection_id,
+                assessment_definition_id=performance.assessment_definition_id,
+                assessment_definition_review_id=performance.assessment_definition_review_id,
+                assessment_eligibility_review_id=performance.assessment_eligibility_review_id,
+                result_observation_id=performance.result_observation_id,
+                performed_at=performance.performed_at,
+                rule_version=performance.rule_version,
+            )
+        )
+
+    def get_assessment_performance(self, performance_id: UUID) -> AssessmentPerformance | None:
+        record = self.session.get(AssessmentPerformanceRecord, performance_id)
+        if record is None:
+            return None
+        return AssessmentPerformance(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            athlete_id=record.athlete_id,
+            assessment_selection_run_id=record.assessment_selection_run_id,
+            assessment_selection_id=record.assessment_selection_id,
+            assessment_definition_id=record.assessment_definition_id,
+            assessment_definition_review_id=record.assessment_definition_review_id,
+            assessment_eligibility_review_id=record.assessment_eligibility_review_id,
+            result_observation_id=record.result_observation_id,
+            performed_at=record.performed_at,
             rule_version=record.rule_version,
         )
 

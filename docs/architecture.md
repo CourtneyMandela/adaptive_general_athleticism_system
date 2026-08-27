@@ -85,7 +85,11 @@ Incomplete health screening excludes assessment. Health, injury, and symptom tag
 supplied by intake/safety workflows; the selector does not diagnose or infer medical meaning. A
 performed assessment becomes a direct `Observation`. Any
 capability state created from it remains a separate derived `CapabilityEstimate`.
-Selection runs do not record results, create estimates, apply norms, or generate workouts.
+One selected decision can append an `AssessmentPerformance` linked to its result observation, run,
+definition, exact protocol approval, and exact active eligibility review. The narrow result request
+accepts no free-form medical context, verifies the definition unit, and rolls back its observation
+if lineage persistence fails. Deferred and duplicate results fail closed. Selection and performance
+runs do not create estimates, apply norms, or generate workouts.
 
 ### Needs and long-range strategy
 

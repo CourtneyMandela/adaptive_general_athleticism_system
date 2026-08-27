@@ -568,6 +568,25 @@ class AssessmentSelectionRun(VersionedRecord):
         return self
 
 
+class AssessmentPerformance(VersionedRecord):
+    athlete_id: UUID
+    assessment_selection_run_id: UUID
+    assessment_selection_id: UUID
+    assessment_definition_id: UUID
+    assessment_definition_review_id: UUID
+    assessment_eligibility_review_id: UUID
+    result_observation_id: UUID
+    performed_at: datetime
+    rule_version: NonEmptyText
+
+    @field_validator("performed_at")
+    @classmethod
+    def require_aware_performed_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("assessment performance time must include a timezone")
+        return value
+
+
 class AssessmentResultInput(DomainModel):
     athlete_id: UUID
     assessment_definition_id: UUID

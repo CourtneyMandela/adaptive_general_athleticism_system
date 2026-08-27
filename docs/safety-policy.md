@@ -24,6 +24,12 @@ diagnosis or medical clearance. The athlete-facing assessment-run request contai
 injury, symptom, or raw screening fields and cannot override its eligibility or persisted equipment
 state.
 
+Result recording is allowed only for a selected decision while its exact self-administered protocol
+approval and athlete eligibility remain current and active. It rejects future performance times,
+deferred decisions, unit mismatches, and duplicates without retaining partial observations. The
+result is historical reported evidence, not a safety decision, diagnosis, medical clearance, or
+capability estimate.
+
 ## Policy classes
 
 ### Escalation

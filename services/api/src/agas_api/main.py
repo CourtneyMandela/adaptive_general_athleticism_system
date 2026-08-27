@@ -15,6 +15,14 @@ from agas_api.assessment_catalog import (
     ReviewedAssessmentCatalogItem,
     list_reviewed_assessment_catalog,
 )
+from agas_api.assessment_performance import (
+    AssessmentPerformanceConflictError,
+    AssessmentPerformanceNotFoundError,
+    AssessmentPerformanceResult,
+    AssessmentPerformanceValidationError,
+    PersistedAssessmentPerformanceService,
+    RecordAssessmentPerformanceCommand,
+)
 from agas_api.assessment_selection import (
     AssessmentSelectionRunConflictError,
     AssessmentSelectionRunNotFoundError,
@@ -192,6 +200,35 @@ def create_assessment_selection_run(
     except AssessmentSelectionRunConflictError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     except AssessmentSelectionRunValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.post(
+    "/v1/athletes/{athlete_id}/assessment-runs/{run_id}/selections/{selection_id}/result",
+    tags=["assessment"],
+    response_model=AssessmentPerformanceResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def record_assessment_performance(
+    athlete_id: UUID,
+    run_id: UUID,
+    selection_id: UUID,
+    command: RecordAssessmentPerformanceCommand,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authorizer: Annotated[OwnershipAuthorizer, Depends(ownership_authorizer_dependency)],
+) -> AssessmentPerformanceResult:
+    authorizer.require_athlete(athlete_id)
+    try:
+        return PersistedAssessmentPerformanceService(session).execute(
+            athlete_id, run_id, selection_id, command
+        )
+    except AssessmentPerformanceNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except AssessmentPerformanceConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except AssessmentPerformanceValidationError as error:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
         ) from error

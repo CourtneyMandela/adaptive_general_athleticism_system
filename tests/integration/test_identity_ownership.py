@@ -54,6 +54,7 @@ def test_every_athlete_scoped_route_requires_authentication() -> None:
     protected_posts = (
         "/v1/onboarding/athletes",
         f"/v1/athletes/{identity}/assessment-runs",
+        f"/v1/athletes/{identity}/assessment-runs/{identity}/selections/{identity}/result",
         f"/v1/blocks/{identity}/reviews",
         f"/v1/block-reviews/{identity}/replan",
         f"/v1/strategies/{identity}/blocks",
@@ -162,6 +163,22 @@ def test_cross_account_athlete_access_is_hidden_as_not_found(session: Session) -
             },
             headers=development_header("owner-one"),
         )
+        forbidden_result = TestClient(app).post(
+            f"/v1/athletes/{second_athlete_id}/assessment-runs/{uuid4()}"
+            f"/selections/{uuid4()}/result",
+            json={
+                "performed_at": "2026-08-22T20:03:00Z",
+                "measurement": 1,
+                "unit": "fixture_unit",
+                "reliability": "low",
+                "provenance": {
+                    "recorded_by": "owner-one",
+                    "source_system": "agas-web",
+                    "ingestion_method": "assessment-result-form",
+                },
+            },
+            headers=development_header("owner-one"),
+        )
     finally:
         app.dependency_overrides.pop(database_session_dependency, None)
 
@@ -171,6 +188,8 @@ def test_cross_account_athlete_access_is_hidden_as_not_found(session: Session) -
     assert forbidden.json() == {"detail": "athlete does not exist"}
     assert forbidden_assessment.status_code == 404
     assert forbidden_assessment.json() == {"detail": "athlete does not exist"}
+    assert forbidden_result.status_code == 404
+    assert forbidden_result.json() == {"detail": "athlete does not exist"}
     assert own.status_code == 200
 
 

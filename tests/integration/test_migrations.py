@@ -63,6 +63,7 @@ def test_baseline_migration_matches_current_metadata(
         assert "assessment_eligibility_review_observations" in actual_tables
         assert "assessment_selection_runs" in actual_tables
         assert "assessment_selection_run_items" in actual_tables
+        assert "assessment_performances" in actual_tables
         assert "safety_policy_assignment_id" in {
             column["name"] for column in inspector.get_columns("session_safety_decisions")
         }
@@ -114,6 +115,15 @@ def test_baseline_migration_matches_current_metadata(
         assert any(
             constraint["name"] == "uq_assessment_run_context_observation"
             for constraint in inspector.get_unique_constraints("assessment_selection_runs")
+        )
+        performance_constraints = inspector.get_unique_constraints("assessment_performances")
+        assert any(
+            constraint["name"] == "uq_assessment_performance_selection"
+            for constraint in performance_constraints
+        )
+        assert any(
+            constraint["name"] == "uq_assessment_performance_observation"
+            for constraint in performance_constraints
         )
         assert any(
             constraint["name"] == "uq_strategy_triggering_block_review"

@@ -58,6 +58,13 @@ rule version. They authorize selection only and must not be represented as diagn
 clearance. Persisted selection requires both exact authorities so later changes do not rewrite why
 the historical decision was permitted.
 
+Recording a selected assessment result preserves the reported measurement as a direct observation
+and repeats the exact protocol and eligibility authorities in relational lineage. Unit agreement is
+not scientific interpretation. The recording boundary does not apply population norms or create a
+capability estimate. Machine-readable measurement constraints, reliability judgments, estimation
+formulas, validity windows, and norm interpretation require separate reviewed policies before they
+can become operational.
+
 ## Exercise resolution
 
 Exercise ontology metadata and resolver scores are not evidence of exercise equivalence. A full
