@@ -16,6 +16,9 @@ import {
 } from "@/lib/current-week";
 import { OnboardingForm } from "./onboarding-form";
 import { AssessmentPanel } from "./assessment-panel";
+import { AthleticDashboardPanel } from "./athletic-dashboard-panel";
+import { EnvironmentPanel } from "./environment-panel";
+import { PlanningStatusPanel } from "./planning-status-panel";
 import {
   PostSessionSafetyForm,
   ProgressionEvaluationButton,
@@ -155,15 +158,11 @@ function SessionCard({
                     ) : (
                       <>
                         <span>{prescription.progression_action.reason}</span>
-                        {prescription.progression_action.status === "ready" &&
-                        prescription.progression_action.progression_policy_id ? (
+                        {prescription.progression_action.status === "ready" ? (
                           <ProgressionEvaluationButton
                             apiBaseUrl={apiBaseUrl}
                             executionId={session.execution!.execution_id}
                             prescriptionId={prescription.prescription_id}
-                            progressionPolicyId={
-                              prescription.progression_action.progression_policy_id
-                            }
                             onSaved={onSaved}
                           />
                         ) : null}
@@ -322,6 +321,9 @@ export function CurrentWeekDashboard() {
       </header>
 
       <AssessmentPanel apiBaseUrl={apiBaseUrl} athleteId={athleteId} />
+      <AthleticDashboardPanel apiBaseUrl={apiBaseUrl} athleteId={athleteId} />
+      <EnvironmentPanel apiBaseUrl={apiBaseUrl} athleteId={athleteId} />
+      <PlanningStatusPanel apiBaseUrl={apiBaseUrl} athleteId={athleteId} />
 
       <nav className="week-nav" aria-label="Week navigation">
         <button type="button" onClick={() => selectDate(shiftIsoDate(asOf, -7))}>
@@ -419,6 +421,8 @@ export function CurrentWeekDashboard() {
             key={projection.week.weekly_plan_id}
             week={projection.week}
             apiBaseUrl={apiBaseUrl}
+            athleteId={athleteId}
+            onWeekUpdated={() => load(athleteId, asOf)}
             onWeekPrepared={async (nextWeekStart) => {
               setAsOf(nextWeekStart);
               await load(athleteId, nextWeekStart);

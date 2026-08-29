@@ -1,25 +1,101 @@
+import json
 from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
-from agas_api.block_review_application import BlockReviewCreationResult
+from agas_api.block_creation import (
+    BlockCreationNotFoundError,
+    BlockCreationValidationError,
+    CreateBlockPlanCommand,
+    PersistedBlockCreationService,
+)
+from agas_api.block_review_application import (
+    BlockReviewConflictError,
+    BlockReviewValidationError,
+    CreateBlockReviewCommand,
+    PersistedBlockReviewService,
+)
 from agas_api.current_week import CurrentWeekProjection, CurrentWeekProjector
 from agas_api.database import database_session_dependency
+from agas_api.environment_prescription_revision import (
+    CreateEnvironmentPrescriptionRevisionsCommand,
+    EnvironmentPrescriptionRevisionDraft,
+    EnvironmentPrescriptionRevisionResult,
+    EnvironmentPrescriptionRevisionValidationError,
+    PersistedEnvironmentPrescriptionRevisionService,
+)
+from agas_api.exercise_reresolution import (
+    ExerciseReResolutionNotFoundError,
+    ExerciseReResolutionResult,
+    ExerciseReResolutionValidationError,
+    PersistedExerciseReResolutionService,
+    ReResolveExerciseCommand,
+)
+from agas_api.identity import authenticated_principal_dependency
+from agas_api.identity_admin import set_account_role
 from agas_api.main import app
-from agas_api.progression_application import ProgressionCreationResult
-from agas_api.resource_preparation import ResourceDemandPreparationResult
+from agas_api.operator_review_queue import EnvironmentReviewQueueProjector
+from agas_api.planning_authoring_admin import (
+    load_block_plan_command,
+    load_exercise_reresolution_command,
+    load_resource_demand_command,
+)
+from agas_api.planning_governance_admin import record_weekly_scheduling_policy_review
+from agas_api.planning_status import get_planning_status_projection
+from agas_api.post_block_admin import load_block_review_command, load_replanning_command
+from agas_api.progression_application import (
+    CreateProgressionDecisionCommand,
+    PersistedProgressionService,
+    ProgressionConflictError,
+    ProgressionCreationResult,
+    ProgressionValidationError,
+)
+from agas_api.replanning import (
+    PersistedReplanningService,
+    PostBlockReplanningCommand,
+    ReplanningConflictError,
+    ReplanningValidationError,
+)
+from agas_api.resource_preparation import (
+    ActiveResourceDemandCommand,
+    DeferredResourceDemandCommand,
+    PersistedResourcePreparationService,
+    ResourcePreparationNotFoundError,
+    ResourcePreparationValidationError,
+)
 from agas_api.session_recording import (
     SessionExecutionCreationResult,
     SessionSafetyCreationResult,
 )
-from agas_api.weekly_planning import WeeklyPlanCreationResult
-from agas_api.weekly_roll_forward import WeeklyPlanRollForwardResult
+from agas_api.weekly_availability_confirmation import (
+    ConfirmWeeklyAvailabilityCommand,
+    PersistedWeeklyAvailabilityConfirmationService,
+    WeeklyAvailabilityConfirmationResult,
+)
+from agas_api.weekly_planning import (
+    CreateWeeklyPlanCommand,
+    PersistedWeeklyPlanService,
+    WeeklyPlanValidationError,
+)
+from agas_api.weekly_planning_admin import load_weekly_plan_command
+from agas_api.weekly_revision_admin import (
+    load_environment_prescription_revisions_command,
+)
+from agas_api.weekly_roll_forward import (
+    PersistedWeeklyPlanRollForwardService,
+    RollForwardWeeklyPlanCommand,
+    WeeklyPlanRollForwardResult,
+)
 from agas_domain import (
+    AccountRole,
+    AccountRoleStatus,
     Adaptation,
     AdaptationPlanningCandidate,
     AdaptationResourceDemand,
     Applicability,
+    AssessmentReviewDecision,
     Athlete,
     AthleteSafetyPolicyAssignment,
     AvailabilityWindow,
@@ -29,7 +105,6 @@ from agas_domain import (
     BlockReviewPolicy,
     CapabilityDomain,
     CapabilityEstimate,
-    ClosedLoopReplanningResult,
     ComparisonDirection,
     CompetencyFloor,
     Confidence,
@@ -57,6 +132,7 @@ from agas_domain import (
     PrescriptionModification,
     PriorityPolicy,
     ProgressionDimension,
+    ProgressionOutcome,
     ProgressionPolicy,
     Provenance,
     ReadinessLevel,
@@ -88,12 +164,14 @@ from agas_domain import (
     WeeklyPlan,
     WeeklyPlanStatus,
     WeeklySchedulingPolicy,
+    WeeklySchedulingPolicyReview,
 )
 from agas_domain.persistence.models import (
     AdaptationResourceDemandRecord,
     BlockPlanRecord,
     BlockReviewRecord,
     CapabilityNeedRecord,
+    DecisionRecordRecord,
     ExerciseResolutionRecord,
     ExposureEntryRecord,
     ExposureValidationDecisionRecord,
@@ -104,6 +182,7 @@ from agas_domain.persistence.models import (
     SessionAdherenceRecord,
     SessionExecutionRecord,
     SessionPrescriptionRecord,
+    SessionPrescriptionRevisionRecord,
     SessionSafetyDecisionRecord,
     SessionTemplateRecord,
     StimulusRequirementRecord,
@@ -440,6 +519,221 @@ def build_and_persist_resolution_chain(
     )
 
 
+def resource_demand_for(
+    strategy: LongRangeStrategy,
+    requirement: StimulusRequirement,
+    resolution: ExerciseResolution,
+) -> AdaptationResourceDemand:
+    priority = strategy.priorities[0]
+    return AdaptationResourceDemand(
+        long_range_strategy_id=strategy.id,
+        adaptation_priority_id=priority.id,
+        adaptation_id=priority.adaptation_id,
+        priority_state=priority.state,
+        stimulus_requirement_id=requirement.id,
+        exercise_resolution_id=resolution.id,
+        minimum_weekly_minutes=60,
+        target_weekly_minutes=60,
+        sessions_per_week=2,
+        source_observation_ids=strategy.source_observation_ids,
+        evidence_claim_ids=strategy.evidence_claim_ids,
+        rationale="Synthetic resource-readiness fixture.",
+        demand_version="fixture-resource-readiness@1.0.0",
+    )
+
+
+def test_planning_status_tracks_governed_first_block_readiness(session: Session) -> None:
+    repository, strategy, requirement, resolution, _, _, _, _ = build_and_persist_resolution_chain(
+        session
+    )
+
+    initial = get_planning_status_projection(session, strategy.athlete_id, NOW)
+    assert initial.status == "resource_demand_preparation_required"
+    assert initial.first_block_readiness is not None
+    assert initial.first_block_readiness.historical_resource_demand_count == 0
+
+    demand = resource_demand_for(strategy, requirement, resolution)
+    repository.add_adaptation_resource_demand(demand)
+    session.commit()
+
+    without_policy = get_planning_status_projection(session, strategy.athlete_id, NOW)
+    assert without_policy.status == "resource_allocation_policy_required"
+    assert without_policy.first_block_readiness is not None
+    assert without_policy.first_block_readiness.priorities_with_resource_demand_count == 1
+    assert without_policy.first_block_readiness.partial_resolution_count == 1
+    assert without_policy.first_block_readiness.block_eligible_priority_count == 0
+
+    strict_policy = ResourceAllocationPolicy(
+        develop_weight=1,
+        maintain_weight=1,
+        expose_weight=1,
+        allow_partial_exercise_resolution=False,
+        policy_version="fixture-resource-readiness@strict",
+    )
+    repository.add_resource_allocation_policy(strict_policy)
+    session.commit()
+
+    strict = get_planning_status_projection(session, strategy.athlete_id, NOW)
+    assert strict.status == "exercise_resolution_review_required"
+    assert strict.first_block_readiness is not None
+    assert strict.first_block_readiness.block_eligible_priority_count == 0
+
+    partial_policy = ResourceAllocationPolicy(
+        develop_weight=1,
+        maintain_weight=1,
+        expose_weight=1,
+        allow_partial_exercise_resolution=True,
+        policy_version="fixture-resource-readiness@partial",
+    )
+    repository.add_resource_allocation_policy(partial_policy)
+    session.commit()
+
+    ready = get_planning_status_projection(session, strategy.athlete_id, NOW)
+    assert ready.status == "block_context_review_required"
+    assert ready.first_block_readiness is not None
+    assert ready.first_block_readiness.block_eligible_priority_count == 1
+    assert ready.first_block_readiness.resource_allocation_policy_count == 2
+    assert [requirement.satisfied for requirement in ready.requirements] == [
+        True,
+        True,
+        True,
+        False,
+    ]
+
+    block = BlockPlanner().build(
+        strategy=strategy,
+        demands=(demand,),
+        resolutions=(resolution,),
+        policy=partial_policy,
+        weekly_budget_minutes=60,
+        starts_on=date(2026, 8, 24),
+        duration_weeks=4,
+        constraints=("Synthetic first-block readiness constraint",),
+        generated_at=NOW,
+    )
+    repository.add_block_plan(block)
+    session.commit()
+
+    created = get_planning_status_projection(session, strategy.athlete_id, NOW)
+    assert created.status == "weekly_scheduling_policy_required"
+    assert created.first_block_readiness is not None
+    assert created.first_block_readiness.block_plan_count == 1
+    assert created.first_block_readiness.block_plan is not None
+    assert created.first_block_readiness.block_plan.block_plan_id == block.id
+    assert created.first_block_readiness.block_plan.status is BlockPlanStatus.PARTIAL
+    assert created.first_week_readiness is not None
+    assert created.first_week_readiness.active_resource_allocation_count == 1
+    assert created.first_week_readiness.weekly_scheduling_policy_count == 0
+    assert created.first_week_readiness.first_week_plan_count == 0
+    assert [requirement.satisfied for requirement in created.requirements] == [
+        False,
+        False,
+        False,
+        False,
+    ]
+
+    scheduling_policy = WeeklySchedulingPolicy(
+        minimum_high_fatigue_recovery_hours=24,
+        maximum_sessions_per_day=1,
+        maximum_high_fatigue_sessions_per_day=1,
+        allow_partial_exercise_resolution=True,
+        policy_version="fixture-resource-readiness@scheduling",
+    )
+    repository.add_weekly_scheduling_policy(scheduling_policy)
+    session.commit()
+
+    unreviewed_policy = get_planning_status_projection(session, strategy.athlete_id, NOW)
+    assert unreviewed_policy.status == "weekly_scheduling_policy_required"
+    assert unreviewed_policy.first_week_readiness is not None
+    assert unreviewed_policy.first_week_readiness.weekly_scheduling_policy_count == 0
+
+    scheduling_review = WeeklySchedulingPolicyReview(
+        weekly_scheduling_policy_id=scheduling_policy.id,
+        decision=AssessmentReviewDecision.APPROVED,
+        sequence_number=1,
+        evidence_claim_ids=strategy.evidence_claim_ids,
+        reviewed_at=NOW - timedelta(minutes=1),
+        reviewed_by="automated-test-reviewer",
+        applicability_rationale="Reviewed only for software behavior testing.",
+        uncertainty="This approval is not operational training guidance.",
+        review_version="fixture-scheduling-review@1.0.0",
+    )
+    repository.add_weekly_scheduling_policy_review(scheduling_review)
+    session.commit()
+
+    weekly_context = get_planning_status_projection(session, strategy.athlete_id, NOW)
+    assert weekly_context.status == "weekly_plan_context_review_required"
+    assert weekly_context.first_week_readiness is not None
+    assert weekly_context.first_week_readiness.weekly_scheduling_policy_count == 1
+    assert [requirement.satisfied for requirement in weekly_context.requirements] == [
+        True,
+        False,
+        False,
+        False,
+    ]
+
+
+def test_planning_status_preserves_infeasible_and_ambiguous_block_states(
+    session: Session,
+) -> None:
+    repository, strategy, requirement, resolution, _, _, _, _ = build_and_persist_resolution_chain(
+        session
+    )
+    demand = resource_demand_for(strategy, requirement, resolution)
+    policy = ResourceAllocationPolicy(
+        develop_weight=1,
+        maintain_weight=1,
+        expose_weight=1,
+        allow_partial_exercise_resolution=True,
+        policy_version="fixture-resource-readiness@infeasible",
+    )
+    repository.add_adaptation_resource_demand(demand)
+    repository.add_resource_allocation_policy(policy)
+    session.flush()
+    infeasible_block = BlockPlanner().build(
+        strategy=strategy,
+        demands=(demand,),
+        resolutions=(resolution,),
+        policy=policy,
+        weekly_budget_minutes=30,
+        starts_on=date(2026, 8, 24),
+        duration_weeks=4,
+        constraints=("Budget intentionally below the synthetic minimum",),
+        generated_at=NOW,
+    )
+    repository.add_block_plan(infeasible_block)
+    session.commit()
+
+    infeasible = get_planning_status_projection(session, strategy.athlete_id, NOW)
+    assert infeasible.status == "block_infeasible"
+    assert infeasible.first_block_readiness is not None
+    assert infeasible.first_block_readiness.block_plan is not None
+    assert infeasible.first_block_readiness.block_plan.status is BlockPlanStatus.INFEASIBLE
+
+    alternate_block = BlockPlanner().build(
+        strategy=strategy,
+        demands=(demand,),
+        resolutions=(resolution,),
+        policy=policy,
+        weekly_budget_minutes=60,
+        starts_on=date(2026, 8, 31),
+        duration_weeks=4,
+        constraints=("Alternate historical block fixture",),
+        generated_at=NOW,
+    )
+    repository.add_block_plan(alternate_block)
+    session.commit()
+
+    ambiguous = get_planning_status_projection(session, strategy.athlete_id, NOW)
+    assert ambiguous.status == "block_selection_review_required"
+    assert ambiguous.first_block_readiness is not None
+    assert ambiguous.first_block_readiness.block_plan_count == 2
+    assert ambiguous.first_block_readiness.block_plan is None
+    assert len(ambiguous.requirements) == 1
+    assert ambiguous.requirements[0].code == "unambiguous_block_selection_required"
+    assert ambiguous.requirements[0].satisfied is False
+
+
 def test_stimulus_and_partial_exercise_resolution_round_trip_preserves_provenance(
     session: Session,
 ) -> None:
@@ -473,8 +767,8 @@ def test_stimulus_and_partial_exercise_resolution_round_trip_preserves_provenanc
         session.flush()
 
 
-def test_resource_preparation_endpoint_resolves_environment_and_persists_atomically(
-    session: Session, monkeypatch: pytest.MonkeyPatch
+def test_operator_resource_preparation_resolves_environment_and_persists_atomically(
+    session: Session, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     (
         repository,
@@ -515,16 +809,16 @@ def test_resource_preparation_endpoint_resolves_environment_and_persists_atomica
         "demand_rationale": "Explicit synthetic resource demand.",
         "demand_version": "fixture-resource-preparation@1.0.0",
         "prepared_at": prepared_at.isoformat(),
+        "reviewed_by": "fixture resource-demand reviewer",
+        "applicability_rationale": "Explicit synthetic inputs exercise the governed boundary.",
+        "uncertainty": "Software fixture only; no operational training claim is made.",
     }
-    requirement_count_before = session.scalar(
-        select(func.count()).select_from(StimulusRequirementRecord)
-    )
-    demand_count_before = session.scalar(
-        select(func.count()).select_from(AdaptationResourceDemandRecord)
-    )
-    resolution_count_before = session.scalar(
-        select(func.count()).select_from(ExerciseResolutionRecord)
-    )
+    with pytest.raises(ValueError, match="operator review metadata"):
+        ActiveResourceDemandCommand.model_validate({**request_body, "reviewed_by": "   "})
+    command = ActiveResourceDemandCommand.model_validate(request_body)
+    input_path = tmp_path / "reviewed-resource-demand.json"
+    input_path.write_text(json.dumps(command.model_dump(mode="json")), encoding="utf-8")
+    assert load_resource_demand_command(input_path) == command
 
     other_athlete = Athlete(display_name="Other environment owner")
     other_environment = Environment(athlete_id=other_athlete.id, name="Other gym")
@@ -533,69 +827,91 @@ def test_resource_preparation_endpoint_resolves_environment_and_persists_atomica
     repository.add_environment(other_environment)
     session.commit()
 
-    def override_session() -> Iterator[Session]:
-        yield session
+    record_types = (
+        StimulusRequirementRecord,
+        ExerciseResolutionRecord,
+        AdaptationResourceDemandRecord,
+        DecisionRecordRecord,
+    )
+    counts_before = tuple(
+        session.scalar(select(func.count()).select_from(record_type))
+        for record_type in record_types
+    )
 
-    app.dependency_overrides[database_session_dependency] = override_session
-    try:
-        missing_candidate_response = TestClient(app).post(
-            f"/v1/strategies/{strategy.id}/priorities/{priority.id}/resource-demands",
-            json={**request_body, "exercise_candidate_ids": [str(uuid4())]},
+    with pytest.raises(ResourcePreparationNotFoundError, match="exercise candidate"):
+        PersistedResourcePreparationService(session).execute(
+            strategy.id,
+            priority.id,
+            command.model_copy(update={"exercise_candidate_ids": (uuid4(),)}),
         )
-        foreign_environment_response = TestClient(app).post(
-            f"/v1/strategies/{strategy.id}/priorities/{priority.id}/resource-demands",
-            json={**request_body, "environment_id": str(other_environment.id)},
+    with pytest.raises(ResourcePreparationValidationError):
+        PersistedResourcePreparationService(session).execute(
+            strategy.id,
+            priority.id,
+            command.model_copy(update={"environment_id": other_environment.id}),
         )
-        deferred_mode_response = TestClient(app).post(
-            f"/v1/strategies/{strategy.id}/priorities/{priority.id}/resource-demands",
-            json={
-                "mode": "deferred",
-                "source_observation_ids": [str(item) for item in strategy.source_observation_ids],
-                "evidence_claim_ids": [str(item) for item in strategy.evidence_claim_ids],
-                "demand_rationale": "Invalid deferred request for an active priority.",
-                "demand_version": "fixture@1.0.0",
-            },
+    deferred_command = DeferredResourceDemandCommand(
+        mode="deferred",
+        source_observation_ids=strategy.source_observation_ids,
+        evidence_claim_ids=strategy.evidence_claim_ids,
+        demand_rationale="Invalid deferred request for an active priority.",
+        demand_version="fixture@1.0.0",
+        prepared_at=prepared_at,
+        reviewed_by="fixture resource-demand reviewer",
+        applicability_rationale="Exercise the state mismatch guard.",
+        uncertainty="Software fixture only.",
+    )
+    with pytest.raises(ResourcePreparationValidationError, match="DEFER priority"):
+        PersistedResourcePreparationService(session).execute(
+            strategy.id,
+            priority.id,
+            deferred_command,
         )
 
-        def reject_demand(_repository: DomainRepository, _demand: AdaptationResourceDemand) -> None:
-            raise DomainIntegrityError("synthetic late persistence failure")
+    def reject_demand(_repository: DomainRepository, _demand: AdaptationResourceDemand) -> None:
+        raise DomainIntegrityError("synthetic late persistence failure")
 
-        with monkeypatch.context() as context:
-            context.setattr(DomainRepository, "add_adaptation_resource_demand", reject_demand)
-            late_failure_response = TestClient(app).post(
-                f"/v1/strategies/{strategy.id}/priorities/{priority.id}/resource-demands",
-                json=request_body,
+    with monkeypatch.context() as context:
+        context.setattr(DomainRepository, "add_adaptation_resource_demand", reject_demand)
+        with pytest.raises(ResourcePreparationValidationError, match="synthetic late"):
+            PersistedResourcePreparationService(session).execute(
+                strategy.id,
+                priority.id,
+                command,
             )
-        requirement_count_after_invalid = session.scalar(
-            select(func.count()).select_from(StimulusRequirementRecord)
-        )
-        demand_count_after_invalid = session.scalar(
-            select(func.count()).select_from(AdaptationResourceDemandRecord)
-        )
-        resolution_count_after_invalid = session.scalar(
-            select(func.count()).select_from(ExerciseResolutionRecord)
-        )
-        response = TestClient(app).post(
-            f"/v1/strategies/{strategy.id}/priorities/{priority.id}/resource-demands",
-            json=request_body,
-        )
-    finally:
-        app.dependency_overrides.pop(database_session_dependency, None)
 
-    assert missing_candidate_response.status_code == 404
-    assert foreign_environment_response.status_code == 422
-    assert deferred_mode_response.status_code == 422
-    assert late_failure_response.status_code == 422
-    assert requirement_count_after_invalid == requirement_count_before
-    assert demand_count_after_invalid == demand_count_before
-    assert resolution_count_after_invalid == resolution_count_before
-    assert response.status_code == 201
-    result = ResourceDemandPreparationResult.model_validate(response.json())
+    def reject_decision(_repository: DomainRepository, _decision: object) -> None:
+        raise DomainIntegrityError("synthetic resource decision-audit failure")
+
+    with monkeypatch.context() as context:
+        context.setattr(DomainRepository, "add_decision_record", reject_decision)
+        with pytest.raises(ResourcePreparationValidationError, match="decision-audit"):
+            PersistedResourcePreparationService(session).execute(
+                strategy.id,
+                priority.id,
+                command,
+            )
+    counts_after_invalid = tuple(
+        session.scalar(select(func.count()).select_from(record_type))
+        for record_type in record_types
+    )
+    assert counts_after_invalid == counts_before
+
+    result = PersistedResourcePreparationService(session).execute(
+        strategy.id,
+        priority.id,
+        command,
+    )
     assert result.stimulus_requirement is not None
     assert result.exercise_resolution is not None
     assert result.exercise_resolution.status is ResolutionStatus.PARTIAL
     assert result.exercise_resolution.source_availability_ids == (availability.id,)
     assert result.resource_demand.exercise_resolution_id == result.exercise_resolution.id
+    assert result.decision_record.reason.startswith("Reviewed by fixture resource-demand reviewer.")
+    assert f"adaptation_resource_demand:{result.resource_demand.id}" in (
+        result.decision_record.evidence
+    )
+    assert f"equipment_availability:{availability.id}" in result.decision_record.evidence
     session.expire_all()
     assert repository.get_environment(environment.id) == environment
     assert repository.list_equipment_availability(environment.id) == (availability,)
@@ -611,6 +927,187 @@ def test_resource_preparation_endpoint_resolves_environment_and_persists_atomica
         repository.get_adaptation_resource_demand(result.resource_demand.id)
         == result.resource_demand
     )
+    assert session.get(DecisionRecordRecord, result.decision_record.id) is not None
+
+
+def test_operator_exercise_reresolution_preserves_stimulus_and_prior_history(
+    session: Session, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    (
+        repository,
+        strategy,
+        requirement,
+        prior_resolution,
+        policy,
+        _,
+        _,
+        partial_exercise,
+    ) = build_and_persist_resolution_chain(session)
+    equipment_id = partial_exercise.equipment_requirement_ids[0]
+    equipment = repository.get_equipment(equipment_id)
+    assert equipment is not None
+
+    travel_environment = Environment(
+        athlete_id=strategy.athlete_id,
+        name="Travel re-resolution fixture",
+        space_constraints={"floor_area_m2": 8},
+        max_noise_level=CostLevel.MODERATE,
+    )
+    unavailable = EquipmentAvailability(
+        environment_id=travel_environment.id,
+        equipment_id=equipment.id,
+        is_available=False,
+        effective_from=NOW + timedelta(minutes=1),
+        reason="Synthetic travel environment starts without the required equipment.",
+    )
+    available = EquipmentAvailability(
+        environment_id=travel_environment.id,
+        equipment_id=equipment.id,
+        is_available=True,
+        effective_from=NOW + timedelta(minutes=2),
+        load_limits={"maximum_total_kg": 100},
+        reason="Synthetic equipment becomes available later without changing the athlete.",
+    )
+    full_exercise = partial_exercise.model_copy(
+        update={
+            "id": uuid4(),
+            "name": "Fixture highly loadable travel split squat",
+            "loadability": Loadability.HIGH,
+        }
+    )
+    repository.add_environment(travel_environment)
+    repository.add_exercise(full_exercise)
+    session.flush()
+    repository.add_equipment_availability(unavailable)
+    repository.add_equipment_availability(available)
+    session.commit()
+
+    base_command = ReResolveExerciseCommand(
+        environment_id=travel_environment.id,
+        exercise_candidate_ids=(partial_exercise.id,),
+        exercise_resolver_policy_id=policy.id,
+        resolved_at=NOW + timedelta(minutes=1),
+        reviewed_by="fixture exercise-resolution reviewer",
+        applicability_rationale=(
+            "The original stimulus is fixed while the synthetic environment state changes."
+        ),
+        uncertainty="Software fixture only; no exercise is recommended to a real athlete.",
+    )
+    input_path = tmp_path / "reviewed-exercise-reresolution.json"
+    input_path.write_text(json.dumps(base_command.model_dump(mode="json")), encoding="utf-8")
+    assert load_exercise_reresolution_command(input_path) == base_command
+    with pytest.raises(ValueError, match="operator review metadata"):
+        ReResolveExerciseCommand.model_validate(
+            {**base_command.model_dump(), "applicability_rationale": "   "}
+        )
+    with pytest.raises(ValueError, match="duplicates"):
+        ReResolveExerciseCommand.model_validate(
+            {
+                **base_command.model_dump(),
+                "exercise_candidate_ids": (partial_exercise.id, partial_exercise.id),
+            }
+        )
+    with pytest.raises(ExerciseReResolutionNotFoundError, match="exercise candidate"):
+        PersistedExerciseReResolutionService(session).execute(
+            requirement.id,
+            base_command.model_copy(update={"exercise_candidate_ids": (uuid4(),)}),
+        )
+
+    other_athlete = Athlete(display_name="Other re-resolution owner")
+    other_environment = Environment(athlete_id=other_athlete.id, name="Other athlete gym")
+    repository.add_athlete(other_athlete)
+    session.flush()
+    repository.add_environment(other_environment)
+    session.commit()
+    with pytest.raises(ExerciseReResolutionValidationError, match="different athlete"):
+        PersistedExerciseReResolutionService(session).execute(
+            requirement.id,
+            base_command.model_copy(update={"environment_id": other_environment.id}),
+        )
+
+    resolution_count = session.scalar(select(func.count()).select_from(ExerciseResolutionRecord))
+    decision_count = session.scalar(select(func.count()).select_from(DecisionRecordRecord))
+
+    def reject_decision(_repository: DomainRepository, _decision: object) -> None:
+        raise DomainIntegrityError("synthetic re-resolution decision-audit failure")
+
+    with monkeypatch.context() as context:
+        context.setattr(DomainRepository, "add_decision_record", reject_decision)
+        with pytest.raises(ExerciseReResolutionValidationError, match="decision-audit"):
+            PersistedExerciseReResolutionService(session).execute(requirement.id, base_command)
+    assert session.scalar(select(func.count()).select_from(ExerciseResolutionRecord)) == (
+        resolution_count
+    )
+    assert session.scalar(select(func.count()).select_from(DecisionRecordRecord)) == decision_count
+
+    infeasible_result = PersistedExerciseReResolutionService(session).execute(
+        requirement.id,
+        base_command,
+    )
+    assert infeasible_result.exercise_resolution.status is ResolutionStatus.INFEASIBLE
+    assert infeasible_result.exercise_resolution.selected_exercise_id is None
+    assert infeasible_result.exercise_resolution.source_availability_ids == (unavailable.id,)
+    assert any(
+        issue.code is ResolutionIssueCode.MISSING_EQUIPMENT
+        for issue in infeasible_result.exercise_resolution.unresolved_issues
+    )
+
+    partial_result = PersistedExerciseReResolutionService(session).execute(
+        requirement.id,
+        base_command.model_copy(update={"resolved_at": NOW + timedelta(minutes=2)}),
+    )
+    assert partial_result.exercise_resolution.status is ResolutionStatus.PARTIAL
+    assert partial_result.exercise_resolution.selected_exercise_id == partial_exercise.id
+    assert partial_result.exercise_resolution.source_availability_ids == (available.id,)
+
+    full_result = PersistedExerciseReResolutionService(session).execute(
+        requirement.id,
+        base_command.model_copy(
+            update={
+                "exercise_candidate_ids": (full_exercise.id,),
+                "resolved_at": NOW + timedelta(minutes=3),
+            }
+        ),
+    )
+    assert full_result.exercise_resolution.status is ResolutionStatus.FULL
+    assert full_result.exercise_resolution.selected_exercise_id == full_exercise.id
+    assert full_result.exercise_resolution.stimulus_requirement_id == requirement.id
+    assert f"stimulus_requirement:{requirement.id}" in full_result.decision_record.evidence
+    assert f"adaptation:{requirement.adaptation_id}" in full_result.decision_record.evidence
+    assert f"observation:{requirement.source_observation_ids[0]}" in (
+        full_result.decision_record.evidence
+    )
+    assert f"evidence_claim:{requirement.evidence_claim_ids[0]}" in (
+        full_result.decision_record.evidence
+    )
+    assert f"equipment_availability:{available.id}" in full_result.decision_record.evidence
+    assert f"exercise_resolution:{full_result.exercise_resolution.id}" in (
+        full_result.decision_record.evidence
+    )
+
+    session.expire_all()
+    assert repository.get_stimulus_requirement(requirement.id) == requirement
+    assert repository.get_exercise_resolution(prior_resolution.id) == prior_resolution
+    assert repository.get_exercise_resolution(infeasible_result.exercise_resolution.id) == (
+        infeasible_result.exercise_resolution
+    )
+    assert repository.get_exercise_resolution(partial_result.exercise_resolution.id) == (
+        partial_result.exercise_resolution
+    )
+    assert repository.get_exercise_resolution(full_result.exercise_resolution.id) == (
+        full_result.exercise_resolution
+    )
+
+
+def test_athlete_api_cannot_request_exercise_reresolution() -> None:
+    identity = uuid4()
+
+    response = TestClient(app).post(
+        f"/v1/stimulus-requirements/{identity}/exercise-resolutions",
+        json={},
+    )
+
+    assert response.status_code == 404
 
 
 def test_deferred_priority_preparation_creates_zero_resource_demand(session: Session) -> None:
@@ -618,31 +1115,28 @@ def test_deferred_priority_preparation_creates_zero_resource_demand(session: Ses
     priority = strategy.priorities[0]
     assert priority.state.value == "defer"
 
-    def override_session() -> Iterator[Session]:
-        yield session
-
-    app.dependency_overrides[database_session_dependency] = override_session
-    try:
-        response = TestClient(app).post(
-            f"/v1/strategies/{strategy.id}/priorities/{priority.id}/resource-demands",
-            json={
-                "mode": "deferred",
-                "source_observation_ids": [str(item) for item in strategy.source_observation_ids],
-                "evidence_claim_ids": [str(item) for item in strategy.evidence_claim_ids],
-                "demand_rationale": "Explicitly deferred by the persisted safety constraint.",
-                "demand_version": "fixture-deferred-demand@1.0.0",
-            },
-        )
-    finally:
-        app.dependency_overrides.pop(database_session_dependency, None)
-
-    assert response.status_code == 201
-    result = ResourceDemandPreparationResult.model_validate(response.json())
+    command = DeferredResourceDemandCommand(
+        mode="deferred",
+        source_observation_ids=strategy.source_observation_ids,
+        evidence_claim_ids=strategy.evidence_claim_ids,
+        demand_rationale="Explicitly deferred by the persisted safety constraint.",
+        demand_version="fixture-deferred-demand@1.0.0",
+        prepared_at=NOW,
+        reviewed_by="fixture deferred-demand reviewer",
+        applicability_rationale="The persisted strategy explicitly marks this priority DEFER.",
+        uncertainty="Software fixture only.",
+    )
+    result = PersistedResourcePreparationService(session).execute(
+        strategy.id,
+        priority.id,
+        command,
+    )
     assert result.stimulus_requirement is None
     assert result.exercise_resolution is None
     assert result.resource_demand.minimum_weekly_minutes == 0
     assert result.resource_demand.target_weekly_minutes == 0
     assert result.resource_demand.sessions_per_week == 0
+    assert result.decision_record.decided_on == NOW.date()
     session.expire_all()
     assert (
         repository.get_adaptation_resource_demand(result.resource_demand.id)
@@ -650,8 +1144,29 @@ def test_deferred_priority_preparation_creates_zero_resource_demand(session: Ses
     )
 
 
+def test_athlete_api_cannot_submit_resource_or_block_authoring_inputs() -> None:
+    identity = uuid4()
+
+    demand_response = TestClient(app).post(
+        f"/v1/strategies/{identity}/priorities/{identity}/resource-demands",
+        json={},
+    )
+    block_response = TestClient(app).post(f"/v1/strategies/{identity}/blocks", json={})
+    environment_revision_response = TestClient(app).post(
+        f"/v1/weekly-plans/{identity}/environment-prescription-revisions",
+        json={},
+    )
+
+    assert demand_response.status_code == 404
+    assert block_response.status_code == 404
+    assert environment_revision_response.status_code == 404
+
+
 def build_and_persist_weekly_chain(
     session: Session,
+    *,
+    availability_window_count: int = 2,
+    allow_partial_reresolution: bool = True,
 ) -> tuple[
     DomainRepository,
     LongRangeStrategy,
@@ -767,7 +1282,7 @@ def build_and_persist_weekly_chain(
                 starts_at=datetime(2026, 8, 27, 18, 0, tzinfo=UTC),
                 ends_at=datetime(2026, 8, 27, 18, 30, tzinfo=UTC),
             ),
-        ),
+        )[:availability_window_count],
         source_observation_ids=strategy.source_observation_ids,
         recorded_at=NOW,
         rule_version="fixture@1.0.0",
@@ -776,10 +1291,21 @@ def build_and_persist_weekly_chain(
         minimum_high_fatigue_recovery_hours=24,
         maximum_sessions_per_day=1,
         maximum_high_fatigue_sessions_per_day=1,
-        allow_partial_exercise_resolution=True,
+        allow_partial_exercise_resolution=allow_partial_reresolution,
         policy_version="fixture@1.0.0",
     )
-    weekly_plan = WeeklyScheduler().schedule(
+    scheduling_policy_review = WeeklySchedulingPolicyReview(
+        weekly_scheduling_policy_id=scheduling_policy.id,
+        decision=AssessmentReviewDecision.APPROVED,
+        sequence_number=1,
+        evidence_claim_ids=strategy.evidence_claim_ids,
+        reviewed_at=NOW - timedelta(minutes=1),
+        reviewed_by="automated-test-reviewer",
+        applicability_rationale="Reviewed only for software behavior testing.",
+        uncertainty="This approval is not operational training guidance.",
+        review_version="fixture-weekly-scheduling-review@1.0.0",
+    )
+    scheduled = WeeklyScheduler().schedule(
         block=block,
         availability=weekly_availability,
         prescriptions=(prescription,),
@@ -788,7 +1314,13 @@ def build_and_persist_weekly_chain(
         policy=scheduling_policy,
         generated_at=NOW,
     )
-    assert weekly_plan.status is WeeklyPlanStatus.FEASIBLE
+    weekly_plan = scheduled.model_copy(
+        update={"scheduling_policy_review_id": scheduling_policy_review.id}
+    )
+    expected_status = (
+        WeeklyPlanStatus.FEASIBLE if availability_window_count == 2 else WeeklyPlanStatus.INFEASIBLE
+    )
+    assert weekly_plan.status is expected_status
 
     repository.add_adaptation_resource_demand(demand)
     repository.add_resource_allocation_policy(allocation_policy)
@@ -799,6 +1331,8 @@ def build_and_persist_weekly_chain(
     repository.add_session_template(session_template)
     repository.add_weekly_availability(weekly_availability)
     repository.add_weekly_scheduling_policy(scheduling_policy)
+    session.flush()
+    repository.add_weekly_scheduling_policy_review(scheduling_policy_review)
     session.flush()
     repository.add_weekly_plan(weekly_plan)
     session.commit()
@@ -818,6 +1352,86 @@ def build_and_persist_weekly_chain(
         scheduling_policy,
         weekly_plan,
     )
+
+
+def test_planning_status_projects_created_and_ambiguous_first_week(session: Session) -> None:
+    (
+        repository,
+        strategy,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        weekly_plan,
+    ) = build_and_persist_weekly_chain(session)
+
+    created = get_planning_status_projection(session, strategy.athlete_id, NOW)
+    assert created.status == "first_week_created"
+    assert created.first_week_readiness is not None
+    assert created.first_week_readiness.first_week_plan_count == 1
+    summary = created.first_week_readiness.first_week_plan
+    assert summary is not None
+    assert summary.weekly_plan_id == weekly_plan.id
+    assert summary.status is WeeklyPlanStatus.FEASIBLE
+    assert summary.prescription_count == 1
+    assert summary.session_template_count == 1
+    assert summary.availability_window_count == 2
+    assert summary.scheduled_session_count == 2
+    assert summary.scheduling_issue_count == 0
+
+    duplicate_plan = weekly_plan.model_copy(
+        update={
+            "id": uuid4(),
+            "sessions": tuple(
+                item.model_copy(update={"id": uuid4()}) for item in weekly_plan.sessions
+            ),
+        }
+    )
+    repository.add_weekly_plan(duplicate_plan)
+    session.commit()
+
+    ambiguous = get_planning_status_projection(session, strategy.athlete_id, NOW)
+    assert ambiguous.status == "first_week_selection_review_required"
+    assert ambiguous.first_week_readiness is not None
+    assert ambiguous.first_week_readiness.first_week_plan_count == 2
+    assert ambiguous.first_week_readiness.first_week_plan is None
+    assert len(ambiguous.requirements) == 1
+    assert ambiguous.requirements[0].code == "unambiguous_first_week_selection_required"
+
+
+def test_planning_status_preserves_infeasible_first_week(session: Session) -> None:
+    (
+        _,
+        strategy,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        weekly_plan,
+    ) = build_and_persist_weekly_chain(session, availability_window_count=1)
+
+    projection = get_planning_status_projection(session, strategy.athlete_id, NOW)
+    assert projection.status == "first_week_infeasible"
+    assert projection.first_week_readiness is not None
+    summary = projection.first_week_readiness.first_week_plan
+    assert summary is not None
+    assert summary.weekly_plan_id == weekly_plan.id
+    assert summary.status is WeeklyPlanStatus.INFEASIBLE
+    assert summary.prescription_count == 1
+    assert summary.session_template_count == 1
+    assert summary.availability_window_count == 1
+    assert summary.scheduled_session_count == 1
+    assert summary.scheduling_issue_count == 1
 
 
 def build_and_persist_execution_for_planned_session(
@@ -1086,11 +1700,7 @@ def test_current_week_projection_exposes_schedule_and_persisted_completion(
         progression_response = TestClient(app).post(
             f"/v1/session-executions/{execution.id}/prescriptions/{prescription.id}/progression",
             json={
-                "progression_policy_id": str(progression_policy.id),
                 "decided_at": (post_safety.decided_at + timedelta(minutes=1)).isoformat(),
-                "revision_prescribed_at": (
-                    post_safety.decided_at + timedelta(minutes=2)
-                ).isoformat(),
             },
         )
         progressed_response = TestClient(app).get(path, params={"on": "2026-08-25"})
@@ -1299,8 +1909,8 @@ def test_current_week_progression_action_fails_closed_for_exposure_and_ambiguity
     assert "multiple progression policies" in unavailable.reason
 
 
-def test_completed_block_review_api_requires_full_history_and_is_atomic(
-    session: Session, monkeypatch: pytest.MonkeyPatch
+def test_completed_block_review_requires_full_history_and_is_atomic(
+    session: Session, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     (
         repository,
@@ -1387,108 +1997,116 @@ def test_completed_block_review_api_requires_full_history_and_is_atomic(
         "response_drafts": [response_draft],
         "responses_calculated_at": (review_time + timedelta(minutes=1)).isoformat(),
         "reviewed_at": (review_time + timedelta(minutes=2)).isoformat(),
+        "reviewed_by": "fixture block-review operator",
+        "applicability_rationale": "Interpret the completed synthetic block history.",
+        "uncertainty": "Software fixture only; no causal or operational claim is made.",
     }
+    with pytest.raises(ValueError, match="operator review metadata"):
+        CreateBlockReviewCommand.model_validate({**request_body, "reviewed_by": "   "})
+    command = CreateBlockReviewCommand.model_validate(request_body)
+    input_path = tmp_path / "reviewed-block-review.json"
+    input_path.write_text(json.dumps(command.model_dump(mode="json")), encoding="utf-8")
+    assert load_block_review_command(input_path) == command
 
-    def override_session() -> Iterator[Session]:
-        yield session
-
-    path = f"/v1/blocks/{block.id}/reviews"
-    app.dependency_overrides[database_session_dependency] = override_session
-    try:
-        incomplete_weeks_response = TestClient(app).post(path, json=request_body)
-        weekly_plans = persist_remaining_weekly_plans(
-            session,
-            repository,
-            strategy=strategy,
-            block=block,
-            prescription=prescription,
-            session_template=session_template,
-            resolution=resolution,
-            first_availability=first_availability,
-            scheduling_policy=scheduling_policy,
-        )
-        executions = []
-        for weekly_plan in weekly_plans:
-            for session_index in range(len(weekly_plan.sessions)):
-                execution, _ = build_and_persist_execution_for_planned_session(
-                    session,
-                    repository,
-                    athlete_id=strategy.athlete_id,
-                    weekly_plan=weekly_plan,
-                    planned_session_index=session_index,
-                    session_template=session_template,
-                    prescription=prescription,
-                    safety_policy=safety_policy,
-                    provenance=provenance,
-                )
-                executions.append((weekly_plan, execution))
-        for weekly_plan, execution in executions[:-1]:
-            persist_post_session_safety(
+    with pytest.raises(BlockReviewValidationError, match="exactly one persisted weekly plan"):
+        PersistedBlockReviewService(session).execute(block.id, command)
+    weekly_plans = persist_remaining_weekly_plans(
+        session,
+        repository,
+        strategy=strategy,
+        block=block,
+        prescription=prescription,
+        session_template=session_template,
+        resolution=resolution,
+        first_availability=first_availability,
+        scheduling_policy=scheduling_policy,
+    )
+    executions = []
+    for weekly_plan in weekly_plans:
+        for session_index in range(len(weekly_plan.sessions)):
+            execution, _ = build_and_persist_execution_for_planned_session(
                 session,
                 repository,
+                athlete_id=strategy.athlete_id,
                 weekly_plan=weekly_plan,
-                execution=execution,
+                planned_session_index=session_index,
+                session_template=session_template,
+                prescription=prescription,
                 safety_policy=safety_policy,
                 provenance=provenance,
             )
-        missing_safety_response = TestClient(app).post(path, json=request_body)
-        final_plan, final_execution = executions[-1]
+            executions.append((weekly_plan, execution))
+    for weekly_plan, execution in executions[:-1]:
         persist_post_session_safety(
             session,
             repository,
-            weekly_plan=final_plan,
-            execution=final_execution,
+            weekly_plan=weekly_plan,
+            execution=execution,
             safety_policy=safety_policy,
             provenance=provenance,
         )
-        persist_post_session_safety(
-            session,
-            repository,
-            weekly_plan=executions[0][0],
-            execution=executions[0][1],
-            safety_policy=safety_policy,
-            provenance=provenance,
-        )
-        invalid_partition_response = TestClient(app).post(
-            path,
-            json={
-                **request_body,
-                "response_drafts": [
-                    {
-                        **response_draft,
-                        "prescription_ids": [str(prescription.id), str(uuid4())],
-                    }
-                ],
-            },
-        )
-        counts_before = (
-            session.scalar(select(func.count()).select_from(TrainingResponseRecord)),
-            session.scalar(select(func.count()).select_from(BlockReviewRecord)),
-        )
+    with pytest.raises(BlockReviewValidationError, match="post-session safety decision"):
+        PersistedBlockReviewService(session).execute(block.id, command)
+    final_plan, final_execution = executions[-1]
+    persist_post_session_safety(
+        session,
+        repository,
+        weekly_plan=final_plan,
+        execution=final_execution,
+        safety_policy=safety_policy,
+        provenance=provenance,
+    )
+    persist_post_session_safety(
+        session,
+        repository,
+        weekly_plan=executions[0][0],
+        execution=executions[0][1],
+        safety_policy=safety_policy,
+        provenance=provenance,
+    )
+    invalid_partition_command = CreateBlockReviewCommand.model_validate(
+        {
+            **request_body,
+            "response_drafts": [
+                {
+                    **response_draft,
+                    "prescription_ids": [str(prescription.id), str(uuid4())],
+                }
+            ],
+        }
+    )
+    with pytest.raises(BlockReviewValidationError, match="exactly partition"):
+        PersistedBlockReviewService(session).execute(block.id, invalid_partition_command)
+    record_types = (TrainingResponseRecord, BlockReviewRecord, DecisionRecordRecord)
+    counts_before = tuple(
+        session.scalar(select(func.count()).select_from(record_type))
+        for record_type in record_types
+    )
 
-        def reject_review(_repository: DomainRepository, _review: object) -> None:
-            raise DomainIntegrityError("synthetic late block-review persistence failure")
+    def reject_review(_repository: DomainRepository, _review: object) -> None:
+        raise DomainIntegrityError("synthetic late block-review persistence failure")
 
-        with monkeypatch.context() as context:
-            context.setattr(DomainRepository, "add_block_review", reject_review)
-            late_failure_response = TestClient(app).post(path, json=request_body)
-        counts_after_failure = (
-            session.scalar(select(func.count()).select_from(TrainingResponseRecord)),
-            session.scalar(select(func.count()).select_from(BlockReviewRecord)),
-        )
-        response = TestClient(app).post(path, json=request_body)
-        conflict_response = TestClient(app).post(path, json=request_body)
-    finally:
-        app.dependency_overrides.pop(database_session_dependency, None)
+    with monkeypatch.context() as patch_context:
+        patch_context.setattr(DomainRepository, "add_block_review", reject_review)
+        with pytest.raises(BlockReviewValidationError, match="late block-review"):
+            PersistedBlockReviewService(session).execute(block.id, command)
 
-    assert incomplete_weeks_response.status_code == 422
-    assert missing_safety_response.status_code == 422
-    assert invalid_partition_response.status_code == 422
-    assert late_failure_response.status_code == 422
+    def reject_decision(_repository: DomainRepository, _decision: object) -> None:
+        raise DomainIntegrityError("synthetic block-review decision-audit failure")
+
+    with monkeypatch.context() as patch_context:
+        patch_context.setattr(DomainRepository, "add_decision_record", reject_decision)
+        with pytest.raises(BlockReviewValidationError, match="decision-audit"):
+            PersistedBlockReviewService(session).execute(block.id, command)
+    counts_after_failure = tuple(
+        session.scalar(select(func.count()).select_from(record_type))
+        for record_type in record_types
+    )
     assert counts_after_failure == counts_before
-    assert response.status_code == 201
-    assert conflict_response.status_code == 409
-    result = BlockReviewCreationResult.model_validate(response.json())
+
+    result = PersistedBlockReviewService(session).execute(block.id, command)
+    with pytest.raises(BlockReviewConflictError, match="already has a completed review"):
+        PersistedBlockReviewService(session).execute(block.id, command)
     assert len(result.training_responses) == 1
     assert result.training_responses[0].prescribed_sessions == 8
     assert result.training_responses[0].session_execution_ids == tuple(
@@ -1496,12 +2114,18 @@ def test_completed_block_review_api_requires_full_history_and_is_atomic(
     )
     assert result.block_review.outcome is BlockReviewOutcome.SUPPORTED
     assert len(result.block_review.post_session_safety_decision_ids) == 9
+    assert result.decision_record.reason.startswith("Reviewed by fixture block-review operator.")
+    assert f"block_review:{result.block_review.id}" in result.decision_record.evidence
+    assert f"training_response:{result.training_responses[0].id}" in (
+        result.decision_record.evidence
+    )
     session.expire_all()
     assert (
         repository.get_training_response(result.training_responses[0].id)
         == (result.training_responses[0])
     )
     assert repository.get_block_review_by_block(block.id) == result.block_review
+    assert session.get(DecisionRecordRecord, result.decision_record.id) is not None
 
 
 def test_block_prescription_and_weekly_plan_round_trip_preserves_full_chain(
@@ -1541,8 +2165,8 @@ def test_block_prescription_and_weekly_plan_round_trip_preserves_full_chain(
         session.flush()
 
 
-def test_weekly_plan_endpoint_persists_explicit_session_chain_atomically(
-    session: Session, monkeypatch: pytest.MonkeyPatch
+def test_operator_weekly_plan_service_persists_explicit_session_chain_atomically(
+    session: Session, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     (
         repository,
@@ -1560,6 +2184,10 @@ def test_weekly_plan_endpoint_persists_explicit_session_chain_atomically(
     ) = build_and_persist_weekly_chain(session)
     allocation = block.allocations[0]
     prepared_at = NOW + timedelta(minutes=1)
+    scheduling_policy_review = repository.get_current_weekly_scheduling_policy_review(
+        scheduling_policy.id
+    )
+    assert scheduling_policy_review is not None
     template_body: dict[str, object] = {
         "name": "Explicit API session container",
         "items": [
@@ -1611,51 +2239,88 @@ def test_weekly_plan_endpoint_persists_explicit_session_chain_atomically(
             "rule_version": "fixture-api-availability@1.0.0",
         },
         "scheduling_policy_id": str(scheduling_policy.id),
+        "scheduling_policy_review_id": str(scheduling_policy_review.id),
         "prepared_at": prepared_at.isoformat(),
+        "reviewed_by": "fixture weekly-plan reviewer",
+        "applicability_rationale": (
+            "The synthetic prescriptions, composition, and availability are explicit "
+            "fixture inputs."
+        ),
+        "uncertainty": "Software fixture only; no operational training claim is made.",
     }
+    with pytest.raises(ValueError, match="operator review metadata"):
+        CreateWeeklyPlanCommand.model_validate({**request_body, "reviewed_by": "   "})
+    command = CreateWeeklyPlanCommand.model_validate(request_body)
+    input_path = tmp_path / "reviewed-weekly-plan.json"
+    input_path.write_text(json.dumps(command.model_dump(mode="json")), encoding="utf-8")
+    assert load_weekly_plan_command(input_path) == command
     record_types = (
         SessionPrescriptionRecord,
         SessionTemplateRecord,
         WeeklyAvailabilityRecord,
         WeeklyPlanRecord,
+        DecisionRecordRecord,
     )
     counts_before = tuple(
         session.scalar(select(func.count()).select_from(record_type))
         for record_type in record_types
     )
 
-    def override_session() -> Iterator[Session]:
-        yield session
-
     def reject_plan(_repository: DomainRepository, _plan: WeeklyPlan) -> None:
         raise DomainIntegrityError("synthetic late weekly-plan persistence failure")
 
-    app.dependency_overrides[database_session_dependency] = override_session
-    path = f"/v1/blocks/{block.id}/weekly-plans"
-    try:
-        invalid_frequency_response = TestClient(app).post(
-            path,
-            json={
-                **request_body,
-                "session_templates": [{**template_body, "sessions_per_week": 1}],
-            },
+    invalid_frequency = command.model_copy(
+        update={
+            "session_templates": (
+                command.session_templates[0].model_copy(update={"sessions_per_week": 1}),
+            )
+        }
+    )
+    with pytest.raises(WeeklyPlanValidationError):
+        PersistedWeeklyPlanService(session).execute(block.id, invalid_frequency)
+    later_week = command.model_copy(
+        update={
+            "availability": command.availability.model_copy(
+                update={"week_start": command.availability.week_start + timedelta(days=7)}
+            )
+        }
+    )
+    with pytest.raises(WeeklyPlanValidationError, match="requires block week one"):
+        PersistedWeeklyPlanService(session).execute(block.id, later_week)
+    other_policy = scheduling_policy.model_copy(
+        update={"id": uuid4(), "policy_version": "fixture-other-policy@1.0.0"}
+    )
+    other_review = WeeklySchedulingPolicyReview(
+        weekly_scheduling_policy_id=other_policy.id,
+        decision=AssessmentReviewDecision.APPROVED,
+        sequence_number=1,
+        evidence_claim_ids=scheduling_policy_review.evidence_claim_ids,
+        reviewed_at=prepared_at - timedelta(minutes=1),
+        reviewed_by="automated-test-reviewer",
+        applicability_rationale="Distinct policy used to test exact review matching.",
+        uncertainty="Software fixture only.",
+        review_version="fixture-other-policy-review@1.0.0",
+    )
+    repository.add_weekly_scheduling_policy(other_policy)
+    session.flush()
+    repository.add_weekly_scheduling_policy_review(other_review)
+    session.commit()
+    with pytest.raises(WeeklyPlanValidationError, match="exact current approved"):
+        PersistedWeeklyPlanService(session).execute(
+            block.id,
+            command.model_copy(update={"scheduling_policy_review_id": other_review.id}),
         )
-        with monkeypatch.context() as context:
-            context.setattr(DomainRepository, "add_weekly_plan", reject_plan)
-            late_failure_response = TestClient(app).post(path, json=request_body)
-        counts_after_failures = tuple(
-            session.scalar(select(func.count()).select_from(record_type))
-            for record_type in record_types
-        )
-        response = TestClient(app).post(path, json=request_body)
-    finally:
-        app.dependency_overrides.pop(database_session_dependency, None)
+    with monkeypatch.context() as context:
+        context.setattr(DomainRepository, "add_weekly_plan", reject_plan)
+        with pytest.raises(WeeklyPlanValidationError, match="synthetic late"):
+            PersistedWeeklyPlanService(session).execute(block.id, command)
+    counts_after_failures = tuple(
+        session.scalar(select(func.count()).select_from(record_type))
+        for record_type in record_types
+    )
 
-    assert invalid_frequency_response.status_code == 422
-    assert late_failure_response.status_code == 422
     assert counts_after_failures == counts_before
-    assert response.status_code == 201
-    result = WeeklyPlanCreationResult.model_validate(response.json())
+    result = PersistedWeeklyPlanService(session).execute(block.id, command)
     assert result.weekly_plan.status is WeeklyPlanStatus.FEASIBLE
     assert len(result.weekly_plan.sessions) == allocation.sessions_per_week
     assert result.prescriptions[0].adaptation_id == allocation.adaptation_id
@@ -1665,6 +2330,16 @@ def test_weekly_plan_endpoint_persists_explicit_session_chain_atomically(
     assert {item.environment_id for item in result.weekly_plan.sessions} == {
         resolution.environment_id
     }
+    assert result.decision_record.reason.startswith("Reviewed by fixture weekly-plan reviewer.")
+    assert f"weekly_plan:{result.weekly_plan.id}" in result.decision_record.evidence
+    assert f"block_plan:{block.id}" in result.decision_record.evidence
+    assert f"weekly_scheduling_policy:{scheduling_policy.id}" in result.decision_record.evidence
+    assert result.weekly_plan.scheduling_policy_review_id == command.scheduling_policy_review_id
+    assert (
+        f"weekly_scheduling_policy_review:{command.scheduling_policy_review_id}"
+        in result.decision_record.evidence
+    )
+    assert result.decision_record.decision_version.startswith("first-week-operator-review@1.0.0;")
     session.expire_all()
     assert (
         repository.get_session_prescription(result.prescriptions[0].id) == result.prescriptions[0]
@@ -1675,6 +2350,135 @@ def test_weekly_plan_endpoint_persists_explicit_session_chain_atomically(
     )
     assert repository.get_weekly_availability(result.availability.id) == result.availability
     assert repository.get_weekly_plan(result.weekly_plan.id) == result.weekly_plan
+    assert session.get(DecisionRecordRecord, result.decision_record.id) is not None
+
+    future_review = WeeklySchedulingPolicyReview(
+        weekly_scheduling_policy_id=scheduling_policy.id,
+        decision=AssessmentReviewDecision.APPROVED,
+        sequence_number=scheduling_policy_review.sequence_number + 1,
+        supersedes_review_id=scheduling_policy_review.id,
+        evidence_claim_ids=scheduling_policy_review.evidence_claim_ids,
+        reviewed_at=prepared_at + timedelta(minutes=1),
+        reviewed_by="automated-test-reviewer",
+        applicability_rationale="Future review used to test time-aware authority.",
+        uncertainty="Software fixture only.",
+        review_version="fixture-future-policy-review@1.0.0",
+    )
+    repository.add_weekly_scheduling_policy_review(future_review)
+    session.commit()
+    with pytest.raises(WeeklyPlanValidationError, match="exact current approved"):
+        PersistedWeeklyPlanService(session).execute(
+            block.id,
+            command.model_copy(update={"scheduling_policy_review_id": future_review.id}),
+        )
+    assert repository.get_weekly_plan(result.weekly_plan.id) == result.weekly_plan
+
+
+def test_athlete_api_cannot_submit_first_week_authoring_inputs(session: Session) -> None:
+    _, _, _, _, _, _, block, _, _, _, _, _ = build_and_persist_weekly_chain(session)
+    app.dependency_overrides[database_session_dependency] = lambda: session
+    try:
+        response = TestClient(app).post(f"/v1/blocks/{block.id}/weekly-plans", json={})
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert response.status_code in {404, 405}
+
+
+def test_scheduling_policy_withdrawal_preserves_history_and_blocks_roll_forward(
+    session: Session,
+) -> None:
+    (
+        repository,
+        strategy,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        source_availability,
+        scheduling_policy,
+        source_plan,
+    ) = build_and_persist_weekly_chain(session)
+    approved_review = repository.get_current_weekly_scheduling_policy_review(scheduling_policy.id)
+    assert approved_review is not None
+    assert source_plan.scheduling_policy_review_id == approved_review.id
+
+    withdrawal = record_weekly_scheduling_policy_review(
+        session,
+        weekly_scheduling_policy_id=scheduling_policy.id,
+        decision=AssessmentReviewDecision.NEEDS_REVISION,
+        evidence_claim_ids=approved_review.evidence_claim_ids,
+        reviewed_at=NOW + timedelta(minutes=1),
+        reviewed_by="automated-test-reviewer",
+        applicability_rationale="Withdrawn only to verify governed software behavior.",
+        uncertainty="Software fixture only; no operational training claim is made.",
+        review_version="fixture-scheduling-withdrawal@1.0.0",
+    )
+    assert withdrawal.supersedes_review_id == approved_review.id
+    assert repository.get_weekly_scheduling_policy_review(approved_review.id) == approved_review
+    assert (
+        repository.get_current_weekly_scheduling_policy_review(scheduling_policy.id) == withdrawal
+    )
+    assert repository.get_weekly_plan(source_plan.id) == source_plan
+
+    confirmation_observation = Observation(
+        athlete_id=strategy.athlete_id,
+        observed_at=NOW + timedelta(minutes=2),
+        observation_type="weekly_availability_confirmation",
+        measurement={"week_start": (source_plan.week_start + timedelta(days=7)).isoformat()},
+        source=ObservationSource.USER_REPORT,
+        reliability=Confidence.HIGH,
+        provenance=Provenance(
+            recorded_by="automated-test",
+            source_system="pytest",
+            ingestion_method="fixture",
+        ),
+    )
+    confirmed_availability = WeeklyAvailability(
+        athlete_id=strategy.athlete_id,
+        source_weekly_plan_id=source_plan.id,
+        week_start=source_plan.week_start + timedelta(days=7),
+        windows=tuple(
+            window.model_copy(
+                update={
+                    "id": uuid4(),
+                    "starts_at": window.starts_at + timedelta(days=7),
+                    "ends_at": window.ends_at + timedelta(days=7),
+                }
+            )
+            for window in source_availability.windows
+        ),
+        source_observation_ids=(confirmation_observation.id,),
+        recorded_at=confirmation_observation.observed_at,
+        rule_version="fixture-confirmed-availability@1.0.0",
+    )
+    repository.add_observation(confirmation_observation)
+    session.flush()
+    repository.add_weekly_availability(confirmed_availability)
+    session.commit()
+
+    def override_session() -> Iterator[Session]:
+        yield session
+
+    app.dependency_overrides[database_session_dependency] = override_session
+    try:
+        response = TestClient(app).post(
+            f"/v1/weekly-plans/{source_plan.id}/roll-forward",
+            json={
+                "weekly_availability_id": str(confirmed_availability.id),
+                "prepared_at": (NOW + timedelta(minutes=3)).isoformat(),
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert response.status_code == 422
+    assert "current approved scheduling policy review" in response.json()["detail"]
+    assert repository.get_weekly_plan(source_plan.id) == source_plan
+    assert repository.get_athlete(strategy.athlete_id) is not None
 
 
 def test_weekly_roll_forward_carries_progression_revision_with_immutable_lineage(
@@ -1748,8 +2552,26 @@ def test_weekly_roll_forward_carries_progression_revision_with_immutable_lineage
         provenance=provenance,
     )
     progression_decided_at = post_safety.decided_at + timedelta(minutes=1)
-    revision_prescribed_at = progression_decided_at + timedelta(minutes=1)
-    prepared_at = revision_prescribed_at + timedelta(minutes=1)
+    second_execution, _ = build_and_persist_execution_for_planned_session(
+        session,
+        repository,
+        athlete_id=strategy.athlete_id,
+        weekly_plan=source_plan,
+        planned_session_index=1,
+        session_template=source_template,
+        prescription=prescription,
+        safety_policy=safety_policy,
+        provenance=provenance,
+    )
+    second_post_safety = persist_post_session_safety(
+        session,
+        repository,
+        weekly_plan=source_plan,
+        execution=second_execution,
+        safety_policy=safety_policy,
+        provenance=provenance,
+    )
+    prepared_at = second_post_safety.decided_at + timedelta(minutes=1)
     next_week_start = source_plan.week_start + timedelta(days=7)
     environment_id = source_availability.windows[0].environment_id
     next_windows = (
@@ -1764,15 +2586,9 @@ def test_weekly_roll_forward_carries_progression_revision_with_immutable_lineage
             "ends_at": datetime(2026, 9, 3, 18, 30, tzinfo=UTC).isoformat(),
         },
     )
-    availability_body: dict[str, object] = {
-        "week_start": next_week_start.isoformat(),
+    confirmation_body: dict[str, object] = {
         "windows": list(next_windows),
-        "source_observation_ids": [str(item) for item in strategy.source_observation_ids],
-        "rule_version": "fixture-roll-forward-availability@1.0.0",
-    }
-    roll_forward_body: dict[str, object] = {
-        "availability": availability_body,
-        "prepared_at": prepared_at.isoformat(),
+        "confirmed_at": prepared_at.isoformat(),
         "reliability": "high",
         "provenance": provenance.model_dump(mode="json"),
     }
@@ -1787,19 +2603,42 @@ def test_weekly_roll_forward_carries_progression_revision_with_immutable_lineage
     progression_path = (
         f"/v1/session-executions/{execution.id}/prescriptions/{prescription.id}/progression"
     )
+    confirmation_path = f"/v1/weekly-plans/{source_plan.id}/availability-confirmations"
     roll_forward_path = f"/v1/weekly-plans/{source_plan.id}/roll-forward"
     try:
         progression_response = TestClient(app).post(
             progression_path,
             json={
-                "progression_policy_id": str(progression_policy.id),
                 "decided_at": progression_decided_at.isoformat(),
-                "revision_prescribed_at": revision_prescribed_at.isoformat(),
             },
         )
         progression_result = ProgressionCreationResult.model_validate(progression_response.json())
         assert progression_result.revised_prescription is not None
         revised = progression_result.revised_prescription
+        client_lineage_response = TestClient(app).post(
+            confirmation_path,
+            json={
+                **confirmation_body,
+                "week_start": next_week_start.isoformat(),
+                "source_observation_ids": [str(item) for item in strategy.source_observation_ids],
+                "rule_version": "client-authored-version@1.0.0",
+            },
+        )
+        confirmation_response = TestClient(app).post(
+            confirmation_path,
+            json=confirmation_body,
+        )
+        confirmation_result = WeeklyAvailabilityConfirmationResult.model_validate(
+            confirmation_response.json()
+        )
+        duplicate_confirmation_response = TestClient(app).post(
+            confirmation_path,
+            json=confirmation_body,
+        )
+        roll_forward_body: dict[str, object] = {
+            "weekly_availability_id": str(confirmation_result.availability.id),
+            "prepared_at": (prepared_at + timedelta(minutes=1)).isoformat(),
+        }
         record_types = (
             ObservationRecord,
             SessionPrescriptionRecord,
@@ -1810,16 +2649,6 @@ def test_weekly_roll_forward_carries_progression_revision_with_immutable_lineage
         counts_before = tuple(
             session.scalar(select(func.count()).select_from(record_type))
             for record_type in record_types
-        )
-        wrong_week_response = TestClient(app).post(
-            roll_forward_path,
-            json={
-                **roll_forward_body,
-                "availability": {
-                    **availability_body,
-                    "week_start": source_plan.week_start.isoformat(),
-                },
-            },
         )
         with monkeypatch.context() as context:
             context.setattr(DomainRepository, "add_weekly_plan", reject_plan)
@@ -1836,13 +2665,26 @@ def test_weekly_roll_forward_carries_progression_revision_with_immutable_lineage
     assert progression_response.status_code == 201
     assert prescription.repetitions_per_set is not None
     assert revised.repetitions_per_set == prescription.repetitions_per_set + 1
-    assert wrong_week_response.status_code == 422
+    assert client_lineage_response.status_code == 422
+    assert confirmation_response.status_code == 201
+    assert duplicate_confirmation_response.status_code == 409
     assert late_failure_response.status_code == 422
     assert counts_after_failures == counts_before
     assert response.status_code == 201
     result = WeeklyPlanRollForwardResult.model_validate(response.json())
-    assert result.availability_observation.observation_type == ("weekly_availability_confirmation")
-    assert result.availability_observation.id in result.availability.source_observation_ids
+    assert confirmation_result.availability_observation.observation_type == (
+        "weekly_availability_confirmation"
+    )
+    assert result.availability == confirmation_result.availability
+    assert result.availability.source_weekly_plan_id == source_plan.id
+    assert result.availability.source_observation_ids == (
+        confirmation_result.availability_observation.id,
+    )
+    assert result.availability.rule_version == "weekly-availability-confirmation@1.0.0"
+    assert confirmation_result.availability_observation.context == {
+        "source_weekly_plan_id": str(source_plan.id),
+        "source_weekly_availability_id": str(source_availability.id),
+    }
     assert result.prescriptions == (revised,)
     assert len(result.created_session_templates) == 1
     successor_template = result.created_session_templates[0]
@@ -1850,6 +2692,7 @@ def test_weekly_roll_forward_carries_progression_revision_with_immutable_lineage
     assert successor_template.items[0].prescription_id == revised.id
     assert result.session_templates == (successor_template,)
     assert result.weekly_plan.previous_weekly_plan_id == source_plan.id
+    assert result.weekly_plan.scheduling_policy_review_id == source_plan.scheduling_policy_review_id
     assert result.weekly_plan.block_week == source_plan.block_week + 1
     assert result.weekly_plan.week_start == next_week_start
     assert {item.session_template_id for item in result.weekly_plan.sessions} == {
@@ -1860,9 +2703,11 @@ def test_weekly_roll_forward_carries_progression_revision_with_immutable_lineage
     assert repository.get_session_template(source_template.id) == source_template
     assert repository.get_session_prescription(prescription.id) == prescription
     assert repository.get_session_prescription(revised.id) == revised
-    assert (
-        repository.get_observation(result.availability_observation.id)
-        == result.availability_observation
+    assert repository.get_observation(confirmation_result.availability_observation.id) == (
+        confirmation_result.availability_observation
+    )
+    assert repository.get_weekly_availability_by_source_plan(source_plan.id) == (
+        confirmation_result.availability
     )
     assert repository.get_session_template(successor_template.id) == successor_template
     assert repository.get_weekly_plan(result.weekly_plan.id) == result.weekly_plan
@@ -1886,48 +2731,132 @@ def test_weekly_roll_forward_reuses_unchanged_prescription_and_template(
         _,
         source_plan,
     ) = build_and_persist_weekly_chain(session)
-    next_week_start = source_plan.week_start + timedelta(days=7)
     environment_id = source_availability.windows[0].environment_id
+    provenance = Provenance(
+        recorded_by="automated-test",
+        source_system="pytest",
+        ingestion_method="fixture",
+    )
+    safety_policy = SessionSafetyPolicy(
+        allowed_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        limited_readiness_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        unusual_soreness_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        sleep_disruption_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        schedule_limitation_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        evidence_claim_ids=strategy.evidence_claim_ids,
+        rationale="Synthetic unchanged roll-forward safety policy.",
+        policy_version="fixture-unchanged-roll-forward-safety@1.0.0",
+    )
+    progression_policy = ProgressionPolicy(
+        reference=prescription.progression_rule_reference,
+        minimum_set_completion_ratio=1,
+        minimum_dose_completion_ratio=1,
+        maximum_session_rpe=6,
+        require_technique_constraint=True,
+        adjustment=PrescriptionAdjustment(
+            dimension=ProgressionDimension.REPETITIONS,
+            amount=1,
+            unit="repetitions_per_set",
+            description="add one repetition per set",
+        ),
+        evidence_claim_ids=strategy.evidence_claim_ids,
+        rationale="Synthetic policy configured to repeat the unchanged prescription.",
+        policy_version="fixture-unchanged-roll-forward-progression@1.0.0",
+    )
+    repository.add_session_safety_policy(safety_policy)
+    repository.add_progression_policy(progression_policy)
+    session.commit()
+    confirmed_at = datetime(2026, 8, 28, 18, 0, tzinfo=UTC)
+    confirmation_body = {
+        "windows": [
+            {
+                "environment_id": str(environment_id),
+                "starts_at": datetime(2026, 8, 31, 18, 0, tzinfo=UTC).isoformat(),
+                "ends_at": datetime(2026, 8, 31, 18, 30, tzinfo=UTC).isoformat(),
+            },
+            {
+                "environment_id": str(environment_id),
+                "starts_at": datetime(2026, 9, 3, 18, 0, tzinfo=UTC).isoformat(),
+                "ends_at": datetime(2026, 9, 3, 18, 30, tzinfo=UTC).isoformat(),
+            },
+        ],
+        "confirmed_at": confirmed_at.isoformat(),
+        "reliability": "moderate",
+        "provenance": provenance.model_dump(mode="json"),
+    }
 
     def override_session() -> Iterator[Session]:
         yield session
 
     app.dependency_overrides[database_session_dependency] = override_session
     try:
+        incomplete_response = TestClient(app).post(
+            f"/v1/weekly-plans/{source_plan.id}/availability-confirmations",
+            json=confirmation_body,
+        )
+        for session_index in range(len(source_plan.sessions)):
+            execution, _ = build_and_persist_execution_for_planned_session(
+                session,
+                repository,
+                athlete_id=strategy.athlete_id,
+                weekly_plan=source_plan,
+                planned_session_index=session_index,
+                session_template=source_template,
+                prescription=prescription,
+                safety_policy=safety_policy,
+                provenance=provenance,
+            )
+            post_safety = persist_post_session_safety(
+                session,
+                repository,
+                weekly_plan=source_plan,
+                execution=execution,
+                safety_policy=safety_policy,
+                provenance=provenance,
+            )
+            progression = PersistedProgressionService(session).execute(
+                execution.id,
+                prescription.id,
+                CreateProgressionDecisionCommand(
+                    progression_policy_id=progression_policy.id,
+                    decided_at=post_safety.decided_at + timedelta(minutes=1),
+                ),
+            )
+            assert progression.progression_decision.outcome is ProgressionOutcome.REPEAT
+            assert progression.revised_prescription is None
+        ready_to_confirm = CurrentWeekProjector(session).project_week(source_plan).review
+        stale_confirmation_response = TestClient(app).post(
+            f"/v1/weekly-plans/{source_plan.id}/availability-confirmations",
+            json={
+                **confirmation_body,
+                "confirmed_at": (source_plan.generated_at - timedelta(minutes=1)).isoformat(),
+            },
+        )
+        confirmation_response = TestClient(app).post(
+            f"/v1/weekly-plans/{source_plan.id}/availability-confirmations",
+            json=confirmation_body,
+        )
+        confirmation_result = WeeklyAvailabilityConfirmationResult.model_validate(
+            confirmation_response.json()
+        )
+        closed_review = CurrentWeekProjector(session).project_week(source_plan).review
         response = TestClient(app).post(
             f"/v1/weekly-plans/{source_plan.id}/roll-forward",
             json={
-                "availability": {
-                    "week_start": next_week_start.isoformat(),
-                    "windows": [
-                        {
-                            "environment_id": str(environment_id),
-                            "starts_at": datetime(2026, 8, 31, 18, 0, tzinfo=UTC).isoformat(),
-                            "ends_at": datetime(2026, 8, 31, 18, 30, tzinfo=UTC).isoformat(),
-                        },
-                        {
-                            "environment_id": str(environment_id),
-                            "starts_at": datetime(2026, 9, 3, 18, 0, tzinfo=UTC).isoformat(),
-                            "ends_at": datetime(2026, 9, 3, 18, 30, tzinfo=UTC).isoformat(),
-                        },
-                    ],
-                    "source_observation_ids": [
-                        str(item) for item in strategy.source_observation_ids
-                    ],
-                    "rule_version": "fixture-unchanged-availability@1.0.0",
-                },
-                "prepared_at": (NOW + timedelta(minutes=1)).isoformat(),
-                "reliability": "moderate",
-                "provenance": {
-                    "recorded_by": "automated-test",
-                    "source_system": "pytest",
-                    "ingestion_method": "fixture",
-                },
+                "weekly_availability_id": str(confirmation_result.availability.id),
+                "prepared_at": (confirmed_at + timedelta(minutes=1)).isoformat(),
             },
         )
     finally:
         app.dependency_overrides.pop(database_session_dependency, None)
 
+    assert incomplete_response.status_code == 422
+    assert "awaiting_sessions" in incomplete_response.json()["detail"]
+    assert ready_to_confirm.status == "ready_to_prepare_next_week"
+    assert stale_confirmation_response.status_code == 422
+    assert "cannot predate source-week closure" in stale_confirmation_response.json()["detail"]
+    assert confirmation_response.status_code == 201
+    assert closed_review.status == "ready_to_finalize_next_week"
     assert response.status_code == 201
     result = WeeklyPlanRollForwardResult.model_validate(response.json())
     assert result.prescriptions == (prescription,)
@@ -1939,6 +2868,422 @@ def test_weekly_roll_forward_reuses_unchanged_prescription_and_template(
     session.expire_all()
     assert repository.get_session_template(source_template.id) == source_template
     assert repository.get_weekly_plan(result.weekly_plan.id) == result.weekly_plan
+
+
+def test_reviewed_environment_revision_flows_into_next_week_without_rewriting_history(
+    session: Session, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    (
+        repository,
+        strategy,
+        requirement,
+        original_resolution,
+        _,
+        _,
+        block,
+        source_prescription,
+        source_template,
+        _,
+        _,
+        source_plan,
+    ) = build_and_persist_weekly_chain(session, allow_partial_reresolution=False)
+    source_exercise = repository.get_exercise(source_prescription.exercise_id)
+    assert source_exercise is not None
+    equipment_id = source_exercise.equipment_requirement_ids[0]
+    equipment = repository.get_equipment(equipment_id)
+    assert equipment is not None
+    reviewer_account, reviewer_assignment, _, _ = set_account_role(
+        session,
+        issuer="urn:agas:development",
+        subject="environment-reviewer",
+        role=AccountRole.PLANNING_REVIEWER,
+        status=AccountRoleStatus.ACTIVE,
+        assigned_at=datetime(2026, 8, 28, 14, 30, tzinfo=UTC),
+        rationale="Exercise authenticated environment-review writes.",
+    )
+    provenance = Provenance(
+        recorded_by="automated-test",
+        source_system="pytest",
+        ingestion_method="fixture",
+    )
+
+    travel_report = Observation(
+        athlete_id=strategy.athlete_id,
+        observed_at=datetime(2026, 8, 28, 14, 0, tzinfo=UTC),
+        observation_type="fixture_travel_equipment_report",
+        measurement={"equipment_id": str(equipment.id), "is_available": True},
+        source=ObservationSource.USER_REPORT,
+        reliability=Confidence.HIGH,
+        provenance=provenance,
+    )
+    travel_environment = Environment(
+        athlete_id=strategy.athlete_id,
+        name="Reviewed travel revision fixture",
+        space_constraints={"floor_area_m2": 8},
+        max_noise_level=CostLevel.MODERATE,
+    )
+    travel_availability = EquipmentAvailability(
+        environment_id=travel_environment.id,
+        equipment_id=equipment.id,
+        source_observation_id=travel_report.id,
+        is_available=True,
+        effective_from=travel_report.observed_at,
+        load_limits={"maximum_total_kg": 100},
+        reason="Synthetic travel equipment report.",
+    )
+    full_travel_exercise = source_exercise.model_copy(
+        update={
+            "id": uuid4(),
+            "name": "Fixture high-loadability travel split squat",
+            "loadability": Loadability.HIGH,
+        }
+    )
+    repository.add_observation(travel_report)
+    repository.add_environment(travel_environment)
+    repository.add_exercise(full_travel_exercise)
+    session.flush()
+    repository.add_equipment_availability(travel_availability)
+    session.commit()
+
+    resolver_policy = repository.get_exercise_resolver_policy(
+        original_resolution.resolver_policy_id
+    )
+    assert resolver_policy is not None
+    partial_resolution = (
+        PersistedExerciseReResolutionService(session)
+        .execute(
+            requirement.id,
+            ReResolveExerciseCommand(
+                environment_id=travel_environment.id,
+                exercise_candidate_ids=(source_exercise.id,),
+                exercise_resolver_policy_id=resolver_policy.id,
+                resolved_at=datetime(2026, 8, 28, 15, 0, tzinfo=UTC),
+                reviewed_by="fixture travel resolver",
+                applicability_rationale="Exercise the partial-fidelity policy guard.",
+                uncertainty="Software fixture only.",
+            ),
+        )
+        .exercise_resolution
+    )
+    reresolution_body = {
+        "environment_id": str(travel_environment.id),
+        "exercise_candidate_ids": [str(full_travel_exercise.id)],
+        "exercise_resolver_policy_id": str(resolver_policy.id),
+        "resolved_at": datetime(2026, 8, 28, 15, 1, tzinfo=UTC).isoformat(),
+        "applicability_rationale": "Exercise the full-fidelity replacement path.",
+        "uncertainty": "Software fixture only.",
+    }
+    with pytest.raises(
+        ExerciseReResolutionValidationError,
+        match="reviewed_by does not match",
+    ):
+        PersistedExerciseReResolutionService(session).execute(
+            requirement.id,
+            ReResolveExerciseCommand.model_validate(
+                {
+                    **reresolution_body,
+                    "reviewed_by": "spoofed core caller",
+                    "review_authority_assignment_id": reviewer_assignment.id,
+                }
+            ),
+        )
+
+    def override_session() -> Iterator[Session]:
+        yield session
+
+    app.dependency_overrides[database_session_dependency] = override_session
+    app.dependency_overrides.pop(authenticated_principal_dependency, None)
+    try:
+        spoofed_reresolution = TestClient(app).post(
+            f"/v1/operator/stimulus-requirements/{requirement.id}/exercise-reresolutions",
+            json={**reresolution_body, "reviewed_by": "spoofed reviewer"},
+            headers={"Authorization": "Bearer dev.environment-reviewer"},
+        )
+        predating_reresolution = TestClient(app).post(
+            f"/v1/operator/stimulus-requirements/{requirement.id}/exercise-reresolutions",
+            json={
+                **reresolution_body,
+                "resolved_at": datetime(2026, 8, 28, 14, 29, tzinfo=UTC).isoformat(),
+            },
+            headers={"Authorization": "Bearer dev.environment-reviewer"},
+        )
+        reresolution_response = TestClient(app).post(
+            f"/v1/operator/stimulus-requirements/{requirement.id}/exercise-reresolutions",
+            json=reresolution_body,
+            headers={"Authorization": "Bearer dev.environment-reviewer"},
+        )
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert spoofed_reresolution.status_code == 422
+    assert predating_reresolution.status_code == 422
+    assert "reviewer role assignment" in predating_reresolution.json()["detail"]
+    assert reresolution_response.status_code == 201
+    reresolution_result = ExerciseReResolutionResult.model_validate(reresolution_response.json())
+    full_resolution = reresolution_result.exercise_resolution
+    assert reresolution_result.decision_record.reason.startswith(
+        f"Reviewed by account:{reviewer_account.id}."
+    )
+    assert f"account_role_assignment:{reviewer_assignment.id}" in (
+        reresolution_result.decision_record.evidence
+    )
+    assert partial_resolution.status is ResolutionStatus.PARTIAL
+    assert full_resolution.status is ResolutionStatus.FULL
+
+    revision_time = datetime(2026, 8, 28, 16, 0, tzinfo=UTC)
+
+    def revision_command(resolution_id: UUID) -> CreateEnvironmentPrescriptionRevisionsCommand:
+        return CreateEnvironmentPrescriptionRevisionsCommand(
+            revisions=(
+                EnvironmentPrescriptionRevisionDraft(
+                    source_prescription_id=source_prescription.id,
+                    exercise_resolution_id=resolution_id,
+                    reason_for_inclusion=(
+                        "Preserve the same synthetic strength stimulus in the travel environment."
+                    ),
+                    sets=4,
+                    repetitions_per_set=6,
+                    intensity_targets=(EffortRpeTarget(minimum=6, maximum=8),),
+                    rest_seconds=90,
+                    progression_rule_reference=source_prescription.progression_rule_reference,
+                    substitution_class="reviewed_travel_resolution",
+                    planned_duration_minutes=30,
+                    fatigue_cost=CostLevel.MODERATE,
+                    rule_version="fixture-travel-prescription@1.0.0",
+                ),
+            ),
+            prepared_at=revision_time,
+            reviewed_by="fixture prescription reviewer",
+            applicability_rationale=(
+                "The reviewed resolution preserves the immutable adaptation and stimulus."
+            ),
+            uncertainty="Software fixture only; replacement dose is not operational guidance.",
+        )
+
+    full_command = revision_command(full_resolution.id)
+    input_path = tmp_path / "reviewed-environment-prescription-revision.json"
+    input_path.write_text(json.dumps(full_command.model_dump(mode="json")), encoding="utf-8")
+    assert load_environment_prescription_revisions_command(input_path) == full_command
+    with pytest.raises(ValueError, match="operator review metadata"):
+        CreateEnvironmentPrescriptionRevisionsCommand.model_validate(
+            {**full_command.model_dump(), "reviewed_by": "   "}
+        )
+    with pytest.raises(EnvironmentPrescriptionRevisionValidationError, match="not ready"):
+        PersistedEnvironmentPrescriptionRevisionService(session).execute(
+            source_plan.id,
+            full_command,
+        )
+
+    safety_policy = SessionSafetyPolicy(
+        allowed_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        limited_readiness_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        unusual_soreness_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        sleep_disruption_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        schedule_limitation_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        evidence_claim_ids=strategy.evidence_claim_ids,
+        rationale="Synthetic environment-revision safety policy.",
+        policy_version="fixture-environment-revision-safety@1.0.0",
+    )
+    progression_policy = ProgressionPolicy(
+        reference=source_prescription.progression_rule_reference,
+        minimum_set_completion_ratio=1,
+        minimum_dose_completion_ratio=1,
+        maximum_session_rpe=6,
+        require_technique_constraint=True,
+        adjustment=PrescriptionAdjustment(
+            dimension=ProgressionDimension.REPETITIONS,
+            amount=1,
+            unit="repetitions_per_set",
+            description="add one repetition per set",
+        ),
+        evidence_claim_ids=strategy.evidence_claim_ids,
+        rationale="Synthetic policy configured to repeat before travel.",
+        policy_version="fixture-environment-revision-progression@1.0.0",
+    )
+    repository.add_session_safety_policy(safety_policy)
+    repository.add_progression_policy(progression_policy)
+    session.commit()
+    for session_index in range(len(source_plan.sessions)):
+        execution, _ = build_and_persist_execution_for_planned_session(
+            session,
+            repository,
+            athlete_id=strategy.athlete_id,
+            weekly_plan=source_plan,
+            planned_session_index=session_index,
+            session_template=source_template,
+            prescription=source_prescription,
+            safety_policy=safety_policy,
+            provenance=provenance,
+        )
+        post_safety = persist_post_session_safety(
+            session,
+            repository,
+            weekly_plan=source_plan,
+            execution=execution,
+            safety_policy=safety_policy,
+            provenance=provenance,
+        )
+        progression = PersistedProgressionService(session).execute(
+            execution.id,
+            source_prescription.id,
+            CreateProgressionDecisionCommand(
+                progression_policy_id=progression_policy.id,
+                decided_at=post_safety.decided_at + timedelta(minutes=1),
+            ),
+        )
+        assert progression.progression_decision.outcome is ProgressionOutcome.REPEAT
+    assert CurrentWeekProjector(session).project_week(source_plan).review.status == (
+        "ready_to_prepare_next_week"
+    )
+    confirmation = PersistedWeeklyAvailabilityConfirmationService(session).execute(
+        source_plan.id,
+        ConfirmWeeklyAvailabilityCommand.model_validate(
+            {
+                "windows": [
+                    {
+                        "environment_id": travel_environment.id,
+                        "starts_at": datetime(2026, 8, 31, 18, 0, tzinfo=UTC),
+                        "ends_at": datetime(2026, 8, 31, 18, 30, tzinfo=UTC),
+                    },
+                    {
+                        "environment_id": travel_environment.id,
+                        "starts_at": datetime(2026, 9, 3, 18, 0, tzinfo=UTC),
+                        "ends_at": datetime(2026, 9, 3, 18, 30, tzinfo=UTC),
+                    },
+                ],
+                "confirmed_at": datetime(2026, 8, 28, 15, 30, tzinfo=UTC),
+                "reliability": Confidence.HIGH,
+                "provenance": provenance,
+            }
+        ),
+    )
+    confirmed_review = CurrentWeekProjector(session).project_week(source_plan).review
+    assert confirmed_review.status == "environment_revision_required"
+    assert confirmed_review.unresolved_environment_prescriptions == 1
+    assert confirmed_review.confirmed_availability is not None
+    assert (
+        confirmed_review.confirmed_availability.weekly_availability_id
+        == confirmation.availability.id
+    )
+    review_queue = EnvironmentReviewQueueProjector(session).project(
+        datetime(2026, 8, 28, 15, 31, tzinfo=UTC)
+    )
+    assert len(review_queue.items) == 1
+    queued = review_queue.items[0]
+    assert queued.source_weekly_plan_id == source_plan.id
+    assert queued.athlete_id == strategy.athlete_id
+    assert queued.confirmed_weekly_availability_id == confirmation.availability.id
+    assert {item.environment_id for item in queued.confirmed_windows} == {travel_environment.id}
+    assert len(queued.unresolved_prescriptions) == 1
+    queued_prescription = queued.unresolved_prescriptions[0]
+    assert queued_prescription.source_prescription_id == source_prescription.id
+    assert queued_prescription.effective_prescription_id == source_prescription.id
+    assert queued_prescription.stimulus_requirement_id == requirement.id
+    assert queued_prescription.exercise_resolution_id == original_resolution.id
+    assert queued_prescription.adaptation_id == source_prescription.adaptation_id
+
+    with pytest.raises(
+        EnvironmentPrescriptionRevisionValidationError,
+        match="partial exercise re-resolution is disabled",
+    ):
+        PersistedEnvironmentPrescriptionRevisionService(session).execute(
+            source_plan.id,
+            revision_command(partial_resolution.id),
+        )
+
+    decision_count = session.scalar(select(func.count()).select_from(DecisionRecordRecord))
+    prescription_count = session.scalar(select(func.count()).select_from(SessionPrescriptionRecord))
+
+    def reject_revision(_repository: DomainRepository, _prescription: object) -> None:
+        raise DomainIntegrityError("synthetic environment revision persistence failure")
+
+    with monkeypatch.context() as context:
+        context.setattr(DomainRepository, "add_session_prescription", reject_revision)
+        with pytest.raises(
+            EnvironmentPrescriptionRevisionValidationError,
+            match="synthetic environment revision",
+        ):
+            PersistedEnvironmentPrescriptionRevisionService(session).execute(
+                source_plan.id,
+                full_command,
+            )
+    assert session.scalar(select(func.count()).select_from(DecisionRecordRecord)) == decision_count
+    assert session.scalar(select(func.count()).select_from(SessionPrescriptionRecord)) == (
+        prescription_count
+    )
+
+    operator_revision_body = full_command.model_dump(
+        mode="json",
+        exclude={"reviewed_by", "review_authority_assignment_id"},
+    )
+    app.dependency_overrides[database_session_dependency] = override_session
+    try:
+        spoofed_revision = TestClient(app).post(
+            f"/v1/operator/weekly-plans/{source_plan.id}/environment-prescription-revisions",
+            json={**operator_revision_body, "reviewed_by": "spoofed reviewer"},
+            headers={"Authorization": "Bearer dev.environment-reviewer"},
+        )
+        revision_response = TestClient(app).post(
+            f"/v1/operator/weekly-plans/{source_plan.id}/environment-prescription-revisions",
+            json=operator_revision_body,
+            headers={"Authorization": "Bearer dev.environment-reviewer"},
+        )
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+    assert spoofed_revision.status_code == 422
+    assert revision_response.status_code == 201
+    revision_result = EnvironmentPrescriptionRevisionResult.model_validate(revision_response.json())
+    assert revision_result.decision_record.reason.startswith(
+        f"Reviewed by account:{reviewer_account.id}."
+    )
+    assert f"account_role_assignment:{reviewer_assignment.id}" in (
+        revision_result.decision_record.evidence
+    )
+    assert (
+        EnvironmentReviewQueueProjector(session).project(revision_time + timedelta(seconds=1)).items
+        == ()
+    )
+    revised = revision_result.revised_prescriptions[0]
+    assert revised.supersedes_prescription_id == source_prescription.id
+    assert revised.progression_decision_id is None
+    assert revised.planning_decision_record_id == revision_result.decision_record.id
+    assert revised.exercise_resolution_id == full_resolution.id
+    assert revised.exercise_id == full_travel_exercise.id
+    assert revised.adaptation_id == source_prescription.adaptation_id
+    assert travel_report.id in revised.source_observation_ids
+    assert revised.sets == 4
+    assert revised.repetitions_per_set == 6
+    assert f"weekly_plan:{source_plan.id}" in revision_result.decision_record.evidence
+    assert f"exercise_resolution:{full_resolution.id}" in (revision_result.decision_record.evidence)
+
+    revision_record = session.get(SessionPrescriptionRevisionRecord, revised.id)
+    assert revision_record is not None
+    assert revision_record.progression_decision_id is None
+    assert revision_record.planning_decision_record_id == revision_result.decision_record.id
+
+    next_week = PersistedWeeklyPlanRollForwardService(session).execute(
+        source_plan.id,
+        RollForwardWeeklyPlanCommand(
+            weekly_availability_id=confirmation.availability.id,
+            prepared_at=revision_time + timedelta(minutes=1),
+        ),
+    )
+    assert next_week.prescriptions == (revised,)
+    assert len(next_week.created_session_templates) == 1
+    assert next_week.created_session_templates[0].previous_template_id == source_template.id
+    assert next_week.created_session_templates[0].items[0].prescription_id == revised.id
+    assert next_week.weekly_plan.status is WeeklyPlanStatus.FEASIBLE
+    assert {item.environment_id for item in next_week.weekly_plan.sessions} == {
+        travel_environment.id
+    }
+    assert next_week.weekly_plan.block_plan_id == block.id
+    assert block.allocations[0].stimulus_requirement_id == requirement.id
+
+    session.expire_all()
+    assert repository.get_session_prescription(source_prescription.id) == source_prescription
+    assert repository.get_exercise_resolution(original_resolution.id) == original_resolution
+    assert repository.get_session_prescription(revised.id) == revised
+    assert repository.get_latest_session_prescription_revision(source_prescription.id) == revised
 
 
 def test_session_template_lineage_rejects_unrelated_prescription(
@@ -2248,7 +3593,7 @@ def test_session_endpoints_enforce_latest_safety_and_persist_feedback_atomically
     assert session.scalar(select(func.count()).select_from(SessionSafetyDecisionRecord)) == 4
 
 
-def test_progression_endpoint_applies_governed_exposure_and_revision_atomically(
+def test_progression_service_applies_governed_exposure_and_revision_atomically(
     session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     (
@@ -2319,7 +3664,6 @@ def test_progression_endpoint_applies_governed_exposure_and_revision_atomically(
     repository.add_exposure_definition(exposure_definition)
     repository.add_exposure_progression_policy(exposure_policy)
     repository.add_progression_policy(progression_policy)
-    repository.add_progression_policy(non_exposure_policy)
     session.commit()
     provenance = Provenance(
         recorded_by="automated-test",
@@ -2350,13 +3694,16 @@ def test_progression_endpoint_applies_governed_exposure_and_revision_atomically(
         "decided_at": target_time.isoformat(),
         "revision_prescribed_at": (target_time + timedelta(minutes=1)).isoformat(),
     }
+    command = CreateProgressionDecisionCommand.model_validate(request_body)
 
     def override_session() -> Iterator[Session]:
         yield session
 
     app.dependency_overrides[database_session_dependency] = override_session
     try:
-        missing_post_safety_response = TestClient(app).post(path, json=request_body)
+        athlete_policy_choice_response = TestClient(app).post(path, json=request_body)
+        with pytest.raises(ProgressionValidationError, match="post-session safety"):
+            PersistedProgressionService(session).execute(execution.id, prescription.id, command)
         post_decision = persist_post_session_safety(
             session,
             repository,
@@ -2364,6 +3711,16 @@ def test_progression_endpoint_applies_governed_exposure_and_revision_atomically(
             execution=execution,
             safety_policy=safety_policy,
             provenance=provenance,
+        )
+        automatic_exposure_response = TestClient(app).post(
+            path,
+            json={"decided_at": target_time.isoformat()},
+        )
+        repository.add_progression_policy(non_exposure_policy)
+        session.commit()
+        ambiguous_policy_response = TestClient(app).post(
+            path,
+            json={"decided_at": target_time.isoformat()},
         )
         record_types = (
             ExposureEntryRecord,
@@ -2381,15 +3738,19 @@ def test_progression_endpoint_applies_governed_exposure_and_revision_atomically(
         ) -> None:
             raise DomainIntegrityError("synthetic late prescription revision failure")
 
-        with monkeypatch.context() as context:
-            context.setattr(DomainRepository, "add_session_prescription", reject_revision)
-            late_failure_response = TestClient(app).post(path, json=request_body)
+        with monkeypatch.context() as patch_context:
+            patch_context.setattr(DomainRepository, "add_session_prescription", reject_revision)
+            with pytest.raises(ProgressionValidationError, match="late prescription revision"):
+                PersistedProgressionService(session).execute(execution.id, prescription.id, command)
         counts_after_failure = tuple(
             session.scalar(select(func.count()).select_from(record_type))
             for record_type in record_types
         )
-        response = TestClient(app).post(path, json=request_body)
-        duplicate_response = TestClient(app).post(path, json=request_body)
+        result = PersistedProgressionService(session).execute(
+            execution.id, prescription.id, command
+        )
+        with pytest.raises(ProgressionConflictError, match="already have a progression"):
+            PersistedProgressionService(session).execute(execution.id, prescription.id, command)
 
         second_execution, _ = build_and_persist_execution_for_planned_session(
             session,
@@ -2425,23 +3786,31 @@ def test_progression_endpoint_applies_governed_exposure_and_revision_atomically(
             ),
             reported_after_minutes=4,
         )
-        review_response = TestClient(app).post(
-            f"/v1/session-executions/{second_execution.id}/prescriptions/"
-            f"{prescription.id}/progression",
-            json={
+        review_command = CreateProgressionDecisionCommand.model_validate(
+            {
                 "progression_policy_id": str(non_exposure_policy.id),
                 "decided_at": (escalation.decided_at + timedelta(minutes=1)).isoformat(),
-            },
+            }
+        )
+        review_result = PersistedProgressionService(session).execute(
+            second_execution.id,
+            prescription.id,
+            review_command,
         )
     finally:
         app.dependency_overrides.pop(database_session_dependency, None)
 
-    assert missing_post_safety_response.status_code == 422
+    assert athlete_policy_choice_response.status_code == 422
+    assert automatic_exposure_response.status_code == 422
+    assert automatic_exposure_response.json() == {
+        "detail": "exposure-sensitive progression requires governed configuration"
+    }
+    assert ambiguous_policy_response.status_code == 422
+    assert ambiguous_policy_response.json() == {
+        "detail": "multiple progression policies match the prescription rule reference"
+    }
     assert post_decision.outcome is SafetyGateOutcome.PROCEED
-    assert late_failure_response.status_code == 422
     assert counts_after_failure == counts_before_failure
-    assert response.status_code == 201
-    result = ProgressionCreationResult.model_validate(response.json())
     assert result.exposure_entry is not None
     assert result.exposure_entry.dose_value == 15
     assert result.exposure_validation is not None
@@ -2466,9 +3835,6 @@ def test_progression_endpoint_applies_governed_exposure_and_revision_atomically(
         repository.get_session_prescription(result.revised_prescription.id)
         == result.revised_prescription
     )
-    assert duplicate_response.status_code == 409
-    assert review_response.status_code == 201
-    review_result = ProgressionCreationResult.model_validate(review_response.json())
     assert review_result.progression_decision.outcome.value == "review_required"
     assert review_result.revised_prescription is None
     assert review_result.progression_decision.post_session_safety_decision_ids == (
@@ -2650,7 +4016,9 @@ def test_safety_execution_and_adherence_round_trip_preserves_provenance(
         session.flush()
 
 
-def test_progression_exposure_and_revised_prescription_round_trip(session: Session) -> None:
+def test_progression_exposure_and_revised_prescription_round_trip(
+    session: Session, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     (
         repository,
         strategy,
@@ -2949,49 +4317,78 @@ def test_progression_exposure_and_revised_prescription_round_trip(session: Sessi
         evidence_claim_ids=claim_ids,
     )
 
-    def override_session() -> Iterator[Session]:
-        yield session
-
-    app.dependency_overrides[database_session_dependency] = override_session
     request_body = {
         "candidate_contexts": [context.model_dump(mode="json")],
         "generated_at": (review.reviewed_at + timedelta(minutes=1)).isoformat(),
         "review_after_days": 42,
+        "reviewed_by": "fixture replanning operator",
+        "applicability_rationale": "Revise the strategy from reviewed post-block state.",
+        "uncertainty": "Software fixture only; observed change does not establish causality.",
     }
-    invalid_context = context.model_copy(update={"evidence_claim_ids": (uuid4(),)})
-    invalid_request_body = {
-        **request_body,
-        "candidate_contexts": [invalid_context.model_dump(mode="json")],
-    }
-    needs_before_invalid_request = session.scalar(
-        select(func.count()).select_from(CapabilityNeedRecord)
+    with pytest.raises(ValueError, match="operator review metadata"):
+        PostBlockReplanningCommand.model_validate({**request_body, "uncertainty": "   "})
+    replanning_command = PostBlockReplanningCommand.model_validate(request_body)
+    replanning_input_path = tmp_path / "reviewed-replanning.json"
+    replanning_input_path.write_text(
+        json.dumps(replanning_command.model_dump(mode="json")),
+        encoding="utf-8",
     )
-    try:
-        invalid_response = TestClient(app).post(
-            f"/v1/block-reviews/{review.id}/replan", json=invalid_request_body
+    assert load_replanning_command(replanning_input_path) == replanning_command
+    invalid_context = context.model_copy(update={"evidence_claim_ids": (uuid4(),)})
+    invalid_command = replanning_command.model_copy(
+        update={"candidate_contexts": (invalid_context,)}
+    )
+    replanning_record_types = (
+        CapabilityNeedRecord,
+        LongRangeStrategyRecord,
+        DecisionRecordRecord,
+    )
+    counts_before_replanning = tuple(
+        session.scalar(select(func.count()).select_from(record_type))
+        for record_type in replanning_record_types
+    )
+    with pytest.raises(ReplanningValidationError, match="evidence claim"):
+        PersistedReplanningService(session).execute(review.id, invalid_command)
+    counts_after_invalid = tuple(
+        session.scalar(select(func.count()).select_from(record_type))
+        for record_type in replanning_record_types
+    )
+    assert counts_after_invalid == counts_before_replanning
+
+    def reject_replanning_decision(_repository: DomainRepository, _decision: object) -> None:
+        raise DomainIntegrityError("synthetic replanning decision-audit failure")
+
+    with monkeypatch.context() as patch_context:
+        patch_context.setattr(
+            DomainRepository,
+            "add_decision_record",
+            reject_replanning_decision,
         )
-        needs_after_invalid_request = session.scalar(
-            select(func.count()).select_from(CapabilityNeedRecord)
-        )
-        api_response = TestClient(app).post(
-            f"/v1/block-reviews/{review.id}/replan", json=request_body
-        )
-        conflict_response = TestClient(app).post(
-            f"/v1/block-reviews/{review.id}/replan", json=request_body
-        )
-    finally:
-        app.dependency_overrides.pop(database_session_dependency, None)
-    assert invalid_response.status_code == 422
-    assert needs_after_invalid_request == needs_before_invalid_request
-    assert api_response.status_code == 201
-    assert conflict_response.status_code == 409
-    replanning_result = ClosedLoopReplanningResult.model_validate(api_response.json())
+        with pytest.raises(ReplanningValidationError, match="decision-audit"):
+            PersistedReplanningService(session).execute(review.id, replanning_command)
+    counts_after_audit_failure = tuple(
+        session.scalar(select(func.count()).select_from(record_type))
+        for record_type in replanning_record_types
+    )
+    assert counts_after_audit_failure == counts_before_replanning
+
+    replanning_result = PersistedReplanningService(session).execute(review.id, replanning_command)
+    with pytest.raises(ReplanningConflictError, match="already has a strategy revision"):
+        PersistedReplanningService(session).execute(review.id, replanning_command)
     session.expire_all()
     assert (
         repository.get_long_range_strategy(replanning_result.strategy.id)
         == replanning_result.strategy
     )
     assert repository.get_long_range_strategy(strategy.id) == strategy
+    assert replanning_result.decision_record.reason.startswith(
+        "Reviewed by fixture replanning operator."
+    )
+    assert f"block_review:{review.id}" in replanning_result.decision_record.evidence
+    assert f"long_range_strategy:{replanning_result.strategy.id}" in (
+        replanning_result.decision_record.evidence
+    )
+    assert session.get(DecisionRecordRecord, replanning_result.decision_record.id) is not None
     revised_priority = replanning_result.strategy.priorities[0]
     assert block.allocations[0].priority_state.value == "develop"
     assert revised_priority.state.value == "maintain"
@@ -3053,37 +4450,62 @@ def test_progression_exposure_and_revised_prescription_round_trip(session: Sessi
         "duration_weeks": 4,
         "constraints": ["Synthetic dependent second-block fixture"],
         "generated_at": next_generated_at.isoformat(),
+        "reviewed_by": "fixture block reviewer",
+        "applicability_rationale": "Create the dependent block from the reviewed successor state.",
+        "uncertainty": "Software fixture only; no operational training claim is made.",
     }
-    blocks_before_invalid_request = session.scalar(
-        select(func.count()).select_from(BlockPlanRecord)
+    with pytest.raises(ValueError, match="operator review metadata"):
+        CreateBlockPlanCommand.model_validate({**block_request, "uncertainty": "   "})
+    block_command = CreateBlockPlanCommand.model_validate(block_request)
+    block_input_path = tmp_path / "reviewed-block-plan.json"
+    block_input_path.write_text(
+        json.dumps(block_command.model_dump(mode="json")),
+        encoding="utf-8",
     )
-    app.dependency_overrides[database_session_dependency] = override_session
-    try:
-        missing_demand_response = TestClient(app).post(
-            f"/v1/strategies/{replanning_result.strategy.id}/blocks",
-            json={**block_request, "resource_demand_ids": [str(uuid4())]},
+    assert load_block_plan_command(block_input_path) == block_command
+    record_types = (BlockPlanRecord, DecisionRecordRecord)
+    counts_before_invalid = tuple(
+        session.scalar(select(func.count()).select_from(record_type))
+        for record_type in record_types
+    )
+    with pytest.raises(BlockCreationNotFoundError, match="resource demand"):
+        PersistedBlockCreationService(session).execute(
+            replanning_result.strategy.id,
+            block_command.model_copy(update={"resource_demand_ids": (uuid4(),)}),
         )
-        stale_demand_response = TestClient(app).post(
-            f"/v1/strategies/{replanning_result.strategy.id}/blocks",
-            json={**block_request, "resource_demand_ids": [str(first_demand.id)]},
+    with pytest.raises(BlockCreationValidationError, match="strategy priority"):
+        PersistedBlockCreationService(session).execute(
+            replanning_result.strategy.id,
+            block_command.model_copy(update={"resource_demand_ids": (first_demand.id,)}),
         )
-        blocks_after_invalid_request = session.scalar(
-            select(func.count()).select_from(BlockPlanRecord)
-        )
-        block_response = TestClient(app).post(
-            f"/v1/strategies/{replanning_result.strategy.id}/blocks",
-            json=block_request,
-        )
-    finally:
-        app.dependency_overrides.pop(database_session_dependency, None)
-    assert missing_demand_response.status_code == 404
-    assert stale_demand_response.status_code == 422
-    assert "strategy priority" in stale_demand_response.json()["detail"]
-    assert blocks_after_invalid_request == blocks_before_invalid_request
-    assert block_response.status_code == 201
-    second_block = BlockPlan.model_validate(block_response.json())
+
+    def reject_block_decision(_repository: DomainRepository, _decision: object) -> None:
+        raise DomainIntegrityError("synthetic block decision-audit failure")
+
+    with monkeypatch.context() as patch_context:
+        patch_context.setattr(DomainRepository, "add_decision_record", reject_block_decision)
+        with pytest.raises(BlockCreationValidationError, match="decision-audit"):
+            PersistedBlockCreationService(session).execute(
+                replanning_result.strategy.id,
+                block_command,
+            )
+    counts_after_invalid = tuple(
+        session.scalar(select(func.count()).select_from(record_type))
+        for record_type in record_types
+    )
+    assert counts_after_invalid == counts_before_invalid
+
+    block_result = PersistedBlockCreationService(session).execute(
+        replanning_result.strategy.id,
+        block_command,
+    )
+    second_block = block_result.block_plan
+    assert block_result.decision_record.reason.startswith("Reviewed by fixture block reviewer.")
+    assert f"block_plan:{second_block.id}" in block_result.decision_record.evidence
+    assert f"adaptation_resource_demand:{next_demand.id}" in (block_result.decision_record.evidence)
     session.expire_all()
     assert repository.get_block_plan(second_block.id) == second_block
+    assert session.get(DecisionRecordRecord, block_result.decision_record.id) is not None
     assert second_block.long_range_strategy_id == replanning_result.strategy.id
     assert second_block.long_range_strategy_id != block.long_range_strategy_id
     assert second_block.allocations[0].adaptation_priority_id == revised_priority.id

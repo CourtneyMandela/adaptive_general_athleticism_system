@@ -6,9 +6,12 @@ from uuid import UUID
 
 from agas_domain import (
     AbsoluteLoadTarget,
+    AssessmentReviewDecision,
     AvailabilityWindow,
+    BlockPlan,
     BodyweightTarget,
     CostLevel,
+    DecisionRecord,
     EffortRpeTarget,
     HeartRateZoneTarget,
     PaceTarget,
@@ -24,7 +27,7 @@ from agas_domain import (
 )
 from agas_domain.persistence.repository import DomainIntegrityError, DomainRepository
 from agas_planner import BlockPlanningError, WeeklyScheduler
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -133,7 +136,19 @@ class CreateWeeklyPlanCommand(BaseModel):
     session_templates: Annotated[tuple[SessionTemplateDraft, ...], Field(min_length=1)]
     availability: WeeklyAvailabilityDraft
     scheduling_policy_id: UUID
+    scheduling_policy_review_id: UUID
     prepared_at: datetime
+    reviewed_by: NonEmptyText
+    applicability_rationale: NonEmptyText
+    uncertainty: NonEmptyText
+
+    @field_validator("reviewed_by", "applicability_rationale", "uncertainty")
+    @classmethod
+    def require_meaningful_review_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("operator review metadata must not be blank")
+        return normalized
 
     @model_validator(mode="after")
     def validate_command(self) -> CreateWeeklyPlanCommand:
@@ -152,6 +167,7 @@ class WeeklyPlanCreationResult(BaseModel):
     session_templates: Annotated[tuple[SessionTemplate, ...], Field(min_length=1)]
     availability: WeeklyAvailability
     weekly_plan: WeeklyPlan
+    decision_record: DecisionRecord
 
 
 class WeeklyPlanUseCaseError(RuntimeError):
@@ -188,6 +204,7 @@ class PersistedWeeklyPlanService:
             self.repository.add_weekly_availability(result.availability)
             self.session.flush()
             self.repository.add_weekly_plan(result.weekly_plan)
+            self.repository.add_decision_record(result.decision_record)
             self.session.commit()
             return result
         except WeeklyPlanUseCaseError:
@@ -206,9 +223,32 @@ class PersistedWeeklyPlanService:
         block = self.repository.get_block_plan(block_id)
         if block is None:
             raise WeeklyPlanNotFoundError("block plan does not exist")
+        if command.availability.week_start != block.starts_on:
+            raise WeeklyPlanValidationError(
+                "initial weekly-plan authoring requires block week one; later weeks use "
+                "the roll-forward boundary"
+            )
         policy = self.repository.get_weekly_scheduling_policy(command.scheduling_policy_id)
         if policy is None:
             raise WeeklyPlanNotFoundError("weekly scheduling policy does not exist")
+        policy_review = self.repository.get_weekly_scheduling_policy_review(
+            command.scheduling_policy_review_id
+        )
+        if policy_review is None:
+            raise WeeklyPlanNotFoundError("weekly scheduling policy review does not exist")
+        current_policy_review = self.repository.get_current_weekly_scheduling_policy_review(
+            policy.id
+        )
+        if (
+            policy_review.weekly_scheduling_policy_id != policy.id
+            or current_policy_review is None
+            or current_policy_review.id != policy_review.id
+            or policy_review.decision is not AssessmentReviewDecision.APPROVED
+            or policy_review.reviewed_at > command.prepared_at
+        ):
+            raise WeeklyPlanValidationError(
+                "weekly plan requires the exact current approved scheduling policy review"
+            )
 
         allocation_by_id = {item.id: item for item in block.allocations}
         prescriptions = []
@@ -307,7 +347,7 @@ class PersistedWeeklyPlanService:
             recorded_at=command.prepared_at,
             rule_version=command.availability.rule_version,
         )
-        plan = WeeklyScheduler().schedule(
+        scheduled = WeeklyScheduler().schedule(
             block=block,
             availability=availability,
             prescriptions=prescriptions,
@@ -316,9 +356,82 @@ class PersistedWeeklyPlanService:
             policy=policy,
             generated_at=command.prepared_at,
         )
+        plan = scheduled.model_copy(update={"scheduling_policy_review_id": policy_review.id})
+        decision_record = DecisionRecord(
+            decision=(
+                f"Create block week {plan.block_week} weekly plan {plan.id} for block {block.id}."
+            ),
+            reason=f"Reviewed by {command.reviewed_by}. {command.applicability_rationale}",
+            alternatives_considered=(
+                "Defer weekly-plan creation until different reviewed prescriptions, session "
+                "composition, availability, or scheduling policy are available.",
+            ),
+            evidence=self._decision_evidence(
+                block=block,
+                prescriptions=tuple(prescriptions),
+                templates=tuple(templates),
+                availability=availability,
+                scheduling_policy_id=policy.id,
+                scheduling_policy_review_id=policy_review.id,
+                weekly_plan=plan,
+            ),
+            uncertainty=command.uncertainty,
+            decision_version=(f"first-week-operator-review@1.0.0;scheduler={plan.rule_version}"),
+            decided_on=command.prepared_at.date(),
+        )
         return WeeklyPlanCreationResult(
             prescriptions=tuple(prescriptions),
             session_templates=tuple(templates),
             availability=availability,
             weekly_plan=plan,
+            decision_record=decision_record,
         )
+
+    @staticmethod
+    def _decision_evidence(
+        *,
+        block: BlockPlan,
+        prescriptions: tuple[SessionPrescription, ...],
+        templates: tuple[SessionTemplate, ...],
+        availability: WeeklyAvailability,
+        scheduling_policy_id: UUID,
+        scheduling_policy_review_id: UUID,
+        weekly_plan: WeeklyPlan,
+    ) -> tuple[str, ...]:
+        allocation_ids = tuple(item.resource_allocation_id for item in prescriptions)
+        values = [
+            f"long_range_strategy:{block.long_range_strategy_id}",
+            f"block_plan:{block.id}",
+            *(f"resource_allocation:{item}" for item in allocation_ids),
+            *(f"exercise_resolution:{item.exercise_resolution_id}" for item in prescriptions),
+            *(f"exercise:{item.exercise_id}" for item in prescriptions),
+            *(f"adaptation:{item.adaptation_id}" for item in prescriptions),
+            *(f"observation:{item}" for item in availability.source_observation_ids),
+            *(
+                f"observation:{item}"
+                for prescription in prescriptions
+                for item in prescription.source_observation_ids
+            ),
+            *(
+                f"observation:{item}"
+                for template in templates
+                for item in template.source_observation_ids
+            ),
+            *(
+                f"evidence_claim:{item}"
+                for prescription in prescriptions
+                for item in prescription.evidence_claim_ids
+            ),
+            *(
+                f"evidence_claim:{item}"
+                for template in templates
+                for item in template.evidence_claim_ids
+            ),
+            *(f"session_prescription:{item.id}" for item in prescriptions),
+            *(f"session_template:{item.id}" for item in templates),
+            f"weekly_availability:{availability.id}",
+            f"weekly_scheduling_policy:{scheduling_policy_id}",
+            f"weekly_scheduling_policy_review:{scheduling_policy_review_id}",
+            f"weekly_plan:{weekly_plan.id}",
+        ]
+        return tuple(dict.fromkeys(values))

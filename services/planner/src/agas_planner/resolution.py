@@ -44,33 +44,20 @@ class EnvironmentSnapshotBuilder:
         availability_history: Iterable[EquipmentAvailability],
         captured_at: datetime,
     ) -> EnvironmentSnapshot:
-        self._require_aware(captured_at)
         equipment_by_id = self._equipment_by_id(equipment)
-        events_by_equipment: dict[UUID, list[EquipmentAvailability]] = {
-            equipment_id: [] for equipment_id in equipment_by_id
-        }
-        for event in availability_history:
-            if event.environment_id != environment.id:
-                raise ResolutionError("availability record belongs to another environment")
-            if event.equipment_id not in equipment_by_id:
-                raise ResolutionError("availability record references unknown equipment")
-            events_by_equipment[event.equipment_id].append(event)
+        current_by_equipment = self.current_availability(
+            environment,
+            equipment_by_id.values(),
+            availability_history,
+            captured_at,
+        )
 
         available = []
         source_ids = []
         for equipment_id in sorted(equipment_by_id, key=str):
-            active_events = [
-                event
-                for event in events_by_equipment[equipment_id]
-                if event.effective_from <= captured_at
-                and (event.effective_until is None or captured_at < event.effective_until)
-            ]
-            if not active_events:
+            current = current_by_equipment.get(equipment_id)
+            if current is None:
                 continue
-            current = max(
-                active_events,
-                key=lambda event: (event.effective_from, event.created_at, str(event.id)),
-            )
             source_ids.append(current.id)
             if not current.is_available:
                 continue
@@ -94,6 +81,44 @@ class EnvironmentSnapshotBuilder:
             max_noise_level=environment.max_noise_level,
             outdoor_access=environment.outdoor_access,
         )
+
+    def current_availability(
+        self,
+        environment: Environment,
+        equipment: Iterable[Equipment],
+        availability_history: Iterable[EquipmentAvailability],
+        captured_at: datetime,
+    ) -> dict[UUID, EquipmentAvailability]:
+        """Resolve the controlling active event for each known equipment item."""
+
+        self._require_aware(captured_at)
+        equipment_by_id = self._equipment_by_id(equipment)
+        events_by_equipment: dict[UUID, list[EquipmentAvailability]] = {
+            equipment_id: [] for equipment_id in equipment_by_id
+        }
+        for event in availability_history:
+            if event.environment_id != environment.id:
+                raise ResolutionError("availability record belongs to another environment")
+            if event.equipment_id not in equipment_by_id:
+                raise ResolutionError("availability record references unknown equipment")
+            events_by_equipment[event.equipment_id].append(event)
+
+        current_by_equipment: dict[UUID, EquipmentAvailability] = {}
+        for equipment_id in sorted(equipment_by_id, key=str):
+            active_events = [
+                event
+                for event in events_by_equipment[equipment_id]
+                if event.effective_from <= captured_at
+                and (event.effective_until is None or captured_at < event.effective_until)
+            ]
+            if not active_events:
+                continue
+            current = max(
+                active_events,
+                key=lambda event: (event.effective_from, event.created_at, str(event.id)),
+            )
+            current_by_equipment[equipment_id] = current
+        return current_by_equipment
 
     @staticmethod
     def _equipment_by_id(equipment: Iterable[Equipment]) -> dict[UUID, Equipment]:

@@ -19,6 +19,7 @@ from agas_domain import (
     SessionExecutionStatus,
     SessionPrescription,
     TechniqueTarget,
+    WeeklyAvailability,
     WeeklyPlan,
     WeeklyPlanStatus,
 )
@@ -52,6 +53,8 @@ WeeklyReviewStatus = Literal[
     "awaiting_progression",
     "manual_configuration_required",
     "ready_to_prepare_next_week",
+    "environment_revision_required",
+    "ready_to_finalize_next_week",
     "next_week_already_prepared",
     "block_complete",
 ]
@@ -164,6 +167,12 @@ class WeeklyAvailabilityProjection(BaseModel):
     windows: tuple[AvailabilityWindowProjection, ...]
 
 
+class ConfirmedWeeklyAvailabilityProjection(WeeklyAvailabilityProjection):
+    weekly_availability_id: UUID
+    week_start: date
+    recorded_at: datetime
+
+
 class ProgressionOutcomeSummary(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -186,6 +195,8 @@ class WeeklyReviewProjection(BaseModel):
     resolved_progression_items: int
     progression_outcomes: ProgressionOutcomeSummary
     next_week_start: date | None
+    confirmed_availability: ConfirmedWeeklyAvailabilityProjection | None
+    unresolved_environment_prescriptions: int
 
 
 class WeekProjection(BaseModel):
@@ -274,7 +285,7 @@ class CurrentWeekProjector:
                 applicability_rationale=safety_assignment.applicability_rationale,
                 rule_version=safety_assignment.rule_version,
             )
-        week = self._project_week(matching_plans[0]) if matching_plans else None
+        week = self.project_week(matching_plans[0]) if matching_plans else None
         return CurrentWeekProjection(
             athlete_id=athlete.id,
             athlete_display_name=athlete.display_name,
@@ -283,7 +294,9 @@ class CurrentWeekProjector:
             week=week,
         )
 
-    def _project_week(self, plan: WeeklyPlan) -> WeekProjection:
+    def project_week(self, plan: WeeklyPlan) -> WeekProjection:
+        """Project one exact persisted plan, including its authoritative closure state."""
+
         block = self.repository.get_block_plan(plan.block_plan_id)
         availability = self.repository.get_weekly_availability(plan.weekly_availability_id)
         if block is None or availability is None:
@@ -310,6 +323,17 @@ class CurrentWeekProjector:
                 )
             )
         sessions = tuple(self._project_session(plan, item) for item in plan.sessions)
+        confirmed_availability = self.repository.get_weekly_availability_by_source_plan(plan.id)
+        confirmed_projection = (
+            self._project_confirmed_availability(plan, confirmed_availability)
+            if confirmed_availability is not None
+            else None
+        )
+        unresolved_environment_prescriptions = (
+            self._unresolved_environment_prescriptions(plan, confirmed_availability)
+            if confirmed_availability is not None
+            else 0
+        )
         return WeekProjection(
             weekly_plan_id=plan.id,
             block_plan_id=plan.block_plan_id,
@@ -327,6 +351,8 @@ class CurrentWeekProjector:
                 sessions=sessions,
                 block_duration_weeks=block.duration_weeks,
                 successor_exists=(self.repository.get_weekly_plan_successor(plan.id) is not None),
+                confirmed_availability=confirmed_projection,
+                unresolved_environment_prescriptions=(unresolved_environment_prescriptions),
             ),
             sessions=sessions,
         )
@@ -338,6 +364,8 @@ class CurrentWeekProjector:
         sessions: tuple[PlannedSessionProjection, ...],
         block_duration_weeks: int,
         successor_exists: bool,
+        confirmed_availability: ConfirmedWeeklyAvailabilityProjection | None,
+        unresolved_environment_prescriptions: int,
     ) -> WeeklyReviewProjection:
         scheduled = len(sessions)
         recorded = sum(item.execution is not None for item in sessions)
@@ -396,9 +424,18 @@ class CurrentWeekProjector:
         elif resolved < len(prescriptions):
             status = "awaiting_progression"
             reason = "resolve every prescription progression before preparing next week"
-        else:
+        elif confirmed_availability is None:
             status = "ready_to_prepare_next_week"
             reason = "the week is closed and next-week availability can be confirmed"
+        elif unresolved_environment_prescriptions:
+            status = "environment_revision_required"
+            reason = (
+                f"{unresolved_environment_prescriptions} prescription(s) require governed "
+                "environment review before next week can be finalized"
+            )
+        else:
+            status = "ready_to_finalize_next_week"
+            reason = "confirmed availability and current prescription environments are aligned"
 
         return WeeklyReviewProjection(
             status=status,
@@ -411,7 +448,80 @@ class CurrentWeekProjector:
             resolved_progression_items=resolved,
             progression_outcomes=ProgressionOutcomeSummary(**outcome_counts),
             next_week_start=next_week_start,
+            confirmed_availability=confirmed_availability,
+            unresolved_environment_prescriptions=unresolved_environment_prescriptions,
         )
+
+    def _project_confirmed_availability(
+        self,
+        plan: WeeklyPlan,
+        availability: WeeklyAvailability,
+    ) -> ConfirmedWeeklyAvailabilityProjection:
+        if (
+            availability.source_weekly_plan_id != plan.id
+            or availability.athlete_id != plan.athlete_id
+            or availability.week_start != plan.week_start + timedelta(days=7)
+        ):
+            raise CurrentWeekConflictError(
+                "confirmed next-week availability does not match its source plan"
+            )
+        windows = []
+        for window in availability.windows:
+            environment = self.repository.get_environment(window.environment_id)
+            if environment is None or environment.athlete_id != plan.athlete_id:
+                raise CurrentWeekConflictError(
+                    "confirmed availability references incomplete environment metadata"
+                )
+            windows.append(
+                AvailabilityWindowProjection(
+                    environment_id=environment.id,
+                    environment_name=environment.name,
+                    starts_at=window.starts_at,
+                    ends_at=window.ends_at,
+                )
+            )
+        return ConfirmedWeeklyAvailabilityProjection(
+            weekly_availability_id=availability.id,
+            week_start=availability.week_start,
+            recorded_at=availability.recorded_at,
+            source_observation_ids=availability.source_observation_ids,
+            rule_version=availability.rule_version,
+            windows=tuple(windows),
+        )
+
+    def _unresolved_environment_prescriptions(
+        self,
+        plan: WeeklyPlan,
+        availability: WeeklyAvailability,
+    ) -> int:
+        allowed_environment_ids = {item.environment_id for item in availability.windows}
+        template_ids = {
+            *(item.session_template_id for item in plan.sessions),
+            *(item.session_template_id for item in plan.issues),
+        }
+        unresolved: set[UUID] = set()
+        for template_id in template_ids:
+            template = self.repository.get_session_template(template_id)
+            if template is None:
+                raise CurrentWeekConflictError("weekly plan references a missing session template")
+            for item in template.items:
+                prescription = self.repository.get_latest_session_prescription_revision(
+                    item.prescription_id
+                )
+                if prescription is None:
+                    raise CurrentWeekConflictError(
+                        "session template references a missing prescription lineage"
+                    )
+                resolution = self.repository.get_exercise_resolution(
+                    prescription.exercise_resolution_id
+                )
+                if resolution is None:
+                    raise CurrentWeekConflictError(
+                        "prescription references a missing exercise resolution"
+                    )
+                if resolution.environment_id not in allowed_environment_ids:
+                    unresolved.add(prescription.id)
+        return len(unresolved)
 
     def _project_session(
         self, plan: WeeklyPlan, planned_session: PlannedSession
@@ -664,7 +774,9 @@ class CurrentWeekProjector:
         return ProgressionActionProjection(
             status="ready",
             progression_policy_id=policy.id,
-            reason="the exact assigned policy can be evaluated by the deterministic engine",
+            reason=(
+                "the server resolved exactly one policy from the immutable prescription reference"
+            ),
             **common,
         )
 

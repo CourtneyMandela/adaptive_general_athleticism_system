@@ -37,6 +37,9 @@ def test_baseline_migration_matches_current_metadata(
         assert "previous_weekly_plan_id" in {
             column["name"] for column in inspector.get_columns("weekly_plans")
         }
+        assert "scheduling_policy_review_id" in {
+            column["name"] for column in inspector.get_columns("weekly_plans")
+        }
         assert "session_item_executions" in actual_tables
         assert "laterality" in {column["name"] for column in inspector.get_columns("exercises")}
         assert "allowed_lateralities" in {
@@ -55,6 +58,7 @@ def test_baseline_migration_matches_current_metadata(
         assert "triggering_block_review_id" in strategy_columns
         assert "catalog_imports" in actual_tables
         assert "accounts" in actual_tables
+        assert "account_role_assignments" in actual_tables
         assert "athlete_ownerships" in actual_tables
         assert "athlete_safety_policy_assignments" in actual_tables
         assert "assessment_definition_reviews" in actual_tables
@@ -69,6 +73,30 @@ def test_baseline_migration_matches_current_metadata(
         assert "assessment_performances" in actual_tables
         assert "capability_estimation_policies" in actual_tables
         assert "capability_estimation_policy_evidence_claims" in actual_tables
+        assert "competency_floor_reviews" in actual_tables
+        assert "competency_floor_review_evidence_claims" in actual_tables
+        assert "priority_policy_reviews" in actual_tables
+        assert "priority_policy_review_evidence_claims" in actual_tables
+        assert "weekly_scheduling_policy_reviews" in actual_tables
+        assert "weekly_scheduling_policy_review_evidence_claims" in actual_tables
+        assert "source_observation_id" in {
+            column["name"] for column in inspector.get_columns("equipment_availability")
+        }
+        assert "source_weekly_plan_id" in {
+            column["name"] for column in inspector.get_columns("weekly_availabilities")
+        }
+        assert any(
+            constraint["name"] == "uq_weekly_availability_source_plan"
+            for constraint in inspector.get_unique_constraints("weekly_availabilities")
+        )
+        prescription_revision_columns = {
+            column["name"] for column in inspector.get_columns("session_prescription_revisions")
+        }
+        assert "planning_decision_record_id" in prescription_revision_columns
+        assert any(
+            constraint["name"] == "ck_prescription_revision_one_authorizer"
+            for constraint in inspector.get_check_constraints("session_prescription_revisions")
+        )
         estimate_columns = {
             column["name"] for column in inspector.get_columns("capability_estimates")
         }
@@ -86,6 +114,15 @@ def test_baseline_migration_matches_current_metadata(
         assert any(
             constraint["name"] == "uq_account_issuer_subject"
             for constraint in inspector.get_unique_constraints("accounts")
+        )
+        role_constraints = inspector.get_unique_constraints("account_role_assignments")
+        assert any(
+            constraint["name"] == "uq_account_role_assignment_sequence"
+            for constraint in role_constraints
+        )
+        assert any(
+            constraint["name"] == "uq_account_role_assignment_superseded_once"
+            for constraint in role_constraints
         )
         assert any(
             constraint["name"] == "uq_athlete_owner"
@@ -144,6 +181,35 @@ def test_baseline_migration_matches_current_metadata(
             constraint["name"] == "uq_capability_estimation_policy_superseded_once"
             for constraint in policy_constraints
         )
+        floor_review_constraints = inspector.get_unique_constraints("competency_floor_reviews")
+        assert any(
+            constraint["name"] == "uq_competency_floor_review_floor_sequence"
+            for constraint in floor_review_constraints
+        )
+        assert any(
+            constraint["name"] == "uq_competency_floor_review_superseded_once"
+            for constraint in floor_review_constraints
+        )
+        priority_review_constraints = inspector.get_unique_constraints("priority_policy_reviews")
+        assert any(
+            constraint["name"] == "uq_priority_policy_review_policy_sequence"
+            for constraint in priority_review_constraints
+        )
+        assert any(
+            constraint["name"] == "uq_priority_policy_review_superseded_once"
+            for constraint in priority_review_constraints
+        )
+        scheduling_review_constraints = inspector.get_unique_constraints(
+            "weekly_scheduling_policy_reviews"
+        )
+        assert any(
+            constraint["name"] == "uq_weekly_scheduling_policy_review_policy_sequence"
+            for constraint in scheduling_review_constraints
+        )
+        assert any(
+            constraint["name"] == "uq_weekly_scheduling_policy_review_superseded_once"
+            for constraint in scheduling_review_constraints
+        )
         policy_index_names = {
             index["name"] for index in inspector.get_indexes("capability_estimation_policies")
         }
@@ -163,6 +229,9 @@ def test_baseline_migration_matches_current_metadata(
             constraint["name"] == "uq_strategy_triggering_block_review"
             for constraint in inspector.get_unique_constraints("long_range_strategies")
         )
+        assert "uq_initial_strategy_athlete" in {
+            index["name"] for index in inspector.get_indexes("long_range_strategies")
+        }
         assert any(
             constraint["name"] == "uq_block_review_block_plan"
             for constraint in inspector.get_unique_constraints("block_reviews")

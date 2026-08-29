@@ -4,7 +4,6 @@ from datetime import date, datetime
 from typing import Annotated
 from uuid import UUID
 
-from agas_domain import BlockPlan, ClosedLoopReplanningResult
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
@@ -43,20 +42,10 @@ from agas_api.assessment_workflow import (
     AssessmentWorkflowProjection,
     get_assessment_workflow_projection,
 )
-from agas_api.block_creation import (
-    BlockCreationConflictError,
-    BlockCreationNotFoundError,
-    BlockCreationValidationError,
-    CreateBlockPlanCommand,
-    PersistedBlockCreationService,
-)
-from agas_api.block_review_application import (
-    BlockReviewConflictError,
-    BlockReviewCreationResult,
-    BlockReviewNotFoundError,
-    BlockReviewValidationError,
-    CreateBlockReviewCommand,
-    PersistedBlockReviewService,
+from agas_api.athletic_dashboard import (
+    AthleticDashboardNotFoundError,
+    AthleticDashboardProjection,
+    get_athletic_dashboard_projection,
 )
 from agas_api.current_week import (
     CurrentWeekConflictError,
@@ -65,11 +54,35 @@ from agas_api.current_week import (
     CurrentWeekProjector,
 )
 from agas_api.database import database_session, database_session_dependency
+from agas_api.environment_management import (
+    AthleteEnvironmentProjection,
+    EnvironmentManagementConflictError,
+    EnvironmentManagementNotFoundError,
+    EnvironmentManagementValidationError,
+    EquipmentStateReportResult,
+    PersistedEquipmentStateService,
+    RecordEquipmentStateCommand,
+    get_athlete_environment_projection,
+)
+from agas_api.environment_prescription_revision import (
+    EnvironmentPrescriptionRevisionConflictError,
+    EnvironmentPrescriptionRevisionNotFoundError,
+    EnvironmentPrescriptionRevisionResult,
+    EnvironmentPrescriptionRevisionValidationError,
+)
+from agas_api.exercise_reresolution import (
+    ExerciseReResolutionConflictError,
+    ExerciseReResolutionNotFoundError,
+    ExerciseReResolutionResult,
+    ExerciseReResolutionValidationError,
+)
 from agas_api.identity import (
     AuthenticatedPrincipal,
+    AuthorizedRole,
     OwnershipAuthorizer,
     authenticated_principal_dependency,
     ownership_authorizer_dependency,
+    planning_reviewer_dependency,
 )
 from agas_api.onboarding import (
     AthleteOnboardingConflictError,
@@ -81,28 +94,29 @@ from agas_api.onboarding import (
     PersistedAthleteOnboardingService,
     list_onboarding_equipment,
 )
+from agas_api.operator_environment_review import (
+    OperatorEnvironmentPrescriptionRevisionRequest,
+    OperatorExerciseReResolutionRequest,
+    execute_operator_environment_prescription_revision,
+    execute_operator_exercise_reresolution,
+)
+from agas_api.operator_review_queue import (
+    EnvironmentReviewQueueProjection,
+    EnvironmentReviewQueueProjector,
+    OperatorReviewQueueProjectionError,
+)
+from agas_api.planning_status import (
+    PlanningStatusNotFoundError,
+    PlanningStatusProjection,
+    get_planning_status_projection,
+)
 from agas_api.progression_application import (
-    CreateProgressionDecisionCommand,
+    AutomaticProgressionDecisionCommand,
     PersistedProgressionService,
     ProgressionConflictError,
     ProgressionCreationResult,
     ProgressionNotFoundError,
     ProgressionValidationError,
-)
-from agas_api.replanning import (
-    PersistedReplanningService,
-    PostBlockReplanningCommand,
-    ReplanningConflictError,
-    ReplanningNotFoundError,
-    ReplanningValidationError,
-)
-from agas_api.resource_preparation import (
-    PersistedResourcePreparationService,
-    ResourceDemandPreparationCommand,
-    ResourceDemandPreparationResult,
-    ResourcePreparationConflictError,
-    ResourcePreparationNotFoundError,
-    ResourcePreparationValidationError,
 )
 from agas_api.session_recording import (
     CreateSessionExecutionCommand,
@@ -116,13 +130,13 @@ from agas_api.session_recording import (
     SessionSafetyCreationResult,
 )
 from agas_api.settings import get_settings
-from agas_api.weekly_planning import (
-    CreateWeeklyPlanCommand,
-    PersistedWeeklyPlanService,
-    WeeklyPlanConflictError,
-    WeeklyPlanCreationResult,
-    WeeklyPlanNotFoundError,
-    WeeklyPlanValidationError,
+from agas_api.weekly_availability_confirmation import (
+    ConfirmWeeklyAvailabilityCommand,
+    PersistedWeeklyAvailabilityConfirmationService,
+    WeeklyAvailabilityConfirmationConflictError,
+    WeeklyAvailabilityConfirmationNotFoundError,
+    WeeklyAvailabilityConfirmationResult,
+    WeeklyAvailabilityConfirmationValidationError,
 )
 from agas_api.weekly_roll_forward import (
     PersistedWeeklyPlanRollForwardService,
@@ -163,6 +177,74 @@ def health() -> dict[str, str]:
     return {"status": "ok", "service": "agas-api", "version": __version__}
 
 
+@app.get(
+    "/v1/operator/environment-review-queue",
+    tags=["operator"],
+    response_model=EnvironmentReviewQueueProjection,
+)
+def get_environment_review_queue(
+    session: Annotated[Session, Depends(database_session_dependency)],
+    _authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+    projected_at: Annotated[datetime | None, Query()] = None,
+) -> EnvironmentReviewQueueProjection:
+    try:
+        return EnvironmentReviewQueueProjector(session).project(projected_at)
+    except (OperatorReviewQueueProjectionError, ValueError) as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+
+
+@app.post(
+    "/v1/operator/stimulus-requirements/{stimulus_requirement_id}/exercise-reresolutions",
+    tags=["operator"],
+    response_model=ExerciseReResolutionResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_operator_exercise_reresolution(
+    stimulus_requirement_id: UUID,
+    command: OperatorExerciseReResolutionRequest,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+) -> ExerciseReResolutionResult:
+    try:
+        return execute_operator_exercise_reresolution(
+            session, stimulus_requirement_id, command, authority
+        )
+    except ExerciseReResolutionNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except ExerciseReResolutionConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except ExerciseReResolutionValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.post(
+    "/v1/operator/weekly-plans/{source_weekly_plan_id}/environment-prescription-revisions",
+    tags=["operator"],
+    response_model=EnvironmentPrescriptionRevisionResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_operator_environment_prescription_revision(
+    source_weekly_plan_id: UUID,
+    command: OperatorEnvironmentPrescriptionRevisionRequest,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+) -> EnvironmentPrescriptionRevisionResult:
+    try:
+        return execute_operator_environment_prescription_revision(
+            session, source_weekly_plan_id, command, authority
+        )
+    except EnvironmentPrescriptionRevisionNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except EnvironmentPrescriptionRevisionConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except EnvironmentPrescriptionRevisionValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
 @app.get("/ready", tags=["system"])
 def ready() -> dict[str, str]:
     with _session_scope() as session:
@@ -190,6 +272,76 @@ def get_reviewed_assessment_catalog(
     session: Annotated[Session, Depends(database_session_dependency)],
 ) -> tuple[ReviewedAssessmentCatalogItem, ...]:
     return list_reviewed_assessment_catalog(session)
+
+
+@app.get(
+    "/v1/athletes/{athlete_id}/dashboard",
+    tags=["athlete"],
+    response_model=AthleticDashboardProjection,
+)
+def get_athletic_dashboard(
+    athlete_id: UUID,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authorizer: Annotated[OwnershipAuthorizer, Depends(ownership_authorizer_dependency)],
+    at: Annotated[datetime | None, Query()] = None,
+) -> AthleticDashboardProjection:
+    authorizer.require_athlete(athlete_id)
+    try:
+        return get_athletic_dashboard_projection(session, athlete_id, at)
+    except AthleticDashboardNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.get(
+    "/v1/athletes/{athlete_id}/environments",
+    tags=["athlete"],
+    response_model=AthleteEnvironmentProjection,
+)
+def get_athlete_environments(
+    athlete_id: UUID,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authorizer: Annotated[OwnershipAuthorizer, Depends(ownership_authorizer_dependency)],
+    at: Annotated[datetime | None, Query()] = None,
+) -> AthleteEnvironmentProjection:
+    authorizer.require_athlete(athlete_id)
+    try:
+        return get_athlete_environment_projection(session, athlete_id, at)
+    except EnvironmentManagementNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except (EnvironmentManagementValidationError, ValueError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.post(
+    "/v1/athletes/{athlete_id}/environments/{environment_id}/equipment-reports",
+    tags=["athlete"],
+    response_model=EquipmentStateReportResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def record_equipment_state(
+    athlete_id: UUID,
+    environment_id: UUID,
+    command: RecordEquipmentStateCommand,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authorizer: Annotated[OwnershipAuthorizer, Depends(ownership_authorizer_dependency)],
+) -> EquipmentStateReportResult:
+    authorizer.require_athlete(athlete_id)
+    try:
+        return PersistedEquipmentStateService(session).execute(athlete_id, environment_id, command)
+    except EnvironmentManagementNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except EnvironmentManagementConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except EnvironmentManagementValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
 
 
 @app.get(
@@ -319,6 +471,28 @@ def create_athlete_onboarding(
 
 
 @app.get(
+    "/v1/athletes/{athlete_id}/planning-status",
+    tags=["planning"],
+    response_model=PlanningStatusProjection,
+)
+def get_planning_status(
+    athlete_id: UUID,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authorizer: Annotated[OwnershipAuthorizer, Depends(ownership_authorizer_dependency)],
+    at: Annotated[datetime | None, Query()] = None,
+) -> PlanningStatusProjection:
+    authorizer.require_athlete(athlete_id)
+    try:
+        return get_planning_status_projection(session, athlete_id, at)
+    except PlanningStatusNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.get(
     "/v1/athletes/{athlete_id}/current-week",
     tags=["daily-use"],
     response_model=CurrentWeekProjection,
@@ -339,128 +513,27 @@ def get_current_week(
 
 
 @app.post(
-    "/v1/blocks/{block_id}/reviews",
+    "/v1/weekly-plans/{weekly_plan_id}/availability-confirmations",
     tags=["planning"],
-    response_model=BlockReviewCreationResult,
+    response_model=WeeklyAvailabilityConfirmationResult,
     status_code=status.HTTP_201_CREATED,
 )
-def create_block_review(
-    block_id: UUID,
-    command: CreateBlockReviewCommand,
+def confirm_next_week_availability(
+    weekly_plan_id: UUID,
+    command: ConfirmWeeklyAvailabilityCommand,
     session: Annotated[Session, Depends(database_session_dependency)],
     authorizer: Annotated[OwnershipAuthorizer, Depends(ownership_authorizer_dependency)],
-) -> BlockReviewCreationResult:
-    authorizer.require_block(block_id)
+) -> WeeklyAvailabilityConfirmationResult:
+    authorizer.require_weekly_plan(weekly_plan_id)
     try:
-        return PersistedBlockReviewService(session).execute(block_id, command)
-    except BlockReviewNotFoundError as error:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
-    except BlockReviewConflictError as error:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
-    except BlockReviewValidationError as error:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
-        ) from error
-
-
-@app.post(
-    "/v1/block-reviews/{block_review_id}/replan",
-    tags=["planning"],
-    response_model=ClosedLoopReplanningResult,
-    status_code=status.HTTP_201_CREATED,
-)
-def replan_after_block_review(
-    block_review_id: UUID,
-    command: PostBlockReplanningCommand,
-    session: Annotated[Session, Depends(database_session_dependency)],
-    authorizer: Annotated[OwnershipAuthorizer, Depends(ownership_authorizer_dependency)],
-) -> ClosedLoopReplanningResult:
-    authorizer.require_block_review(block_review_id)
-    try:
-        return PersistedReplanningService(session).execute(block_review_id, command)
-    except ReplanningNotFoundError as error:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
-    except ReplanningConflictError as error:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
-    except ReplanningValidationError as error:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
-        ) from error
-
-
-@app.post(
-    "/v1/strategies/{strategy_id}/blocks",
-    tags=["planning"],
-    response_model=BlockPlan,
-    status_code=status.HTTP_201_CREATED,
-)
-def create_block_plan(
-    strategy_id: UUID,
-    command: CreateBlockPlanCommand,
-    session: Annotated[Session, Depends(database_session_dependency)],
-    authorizer: Annotated[OwnershipAuthorizer, Depends(ownership_authorizer_dependency)],
-) -> BlockPlan:
-    authorizer.require_strategy(strategy_id)
-    try:
-        return PersistedBlockCreationService(session).execute(strategy_id, command)
-    except BlockCreationNotFoundError as error:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
-    except BlockCreationConflictError as error:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
-    except BlockCreationValidationError as error:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
-        ) from error
-
-
-@app.post(
-    "/v1/strategies/{strategy_id}/priorities/{priority_id}/resource-demands",
-    tags=["planning"],
-    response_model=ResourceDemandPreparationResult,
-    status_code=status.HTTP_201_CREATED,
-)
-def prepare_resource_demand(
-    strategy_id: UUID,
-    priority_id: UUID,
-    command: ResourceDemandPreparationCommand,
-    session: Annotated[Session, Depends(database_session_dependency)],
-    authorizer: Annotated[OwnershipAuthorizer, Depends(ownership_authorizer_dependency)],
-) -> ResourceDemandPreparationResult:
-    authorizer.require_strategy(strategy_id)
-    try:
-        return PersistedResourcePreparationService(session).execute(
-            strategy_id, priority_id, command
+        return PersistedWeeklyAvailabilityConfirmationService(session).execute(
+            weekly_plan_id, command
         )
-    except ResourcePreparationNotFoundError as error:
+    except WeeklyAvailabilityConfirmationNotFoundError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
-    except ResourcePreparationConflictError as error:
+    except WeeklyAvailabilityConfirmationConflictError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
-    except ResourcePreparationValidationError as error:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
-        ) from error
-
-
-@app.post(
-    "/v1/blocks/{block_id}/weekly-plans",
-    tags=["planning"],
-    response_model=WeeklyPlanCreationResult,
-    status_code=status.HTTP_201_CREATED,
-)
-def create_weekly_plan(
-    block_id: UUID,
-    command: CreateWeeklyPlanCommand,
-    session: Annotated[Session, Depends(database_session_dependency)],
-    authorizer: Annotated[OwnershipAuthorizer, Depends(ownership_authorizer_dependency)],
-) -> WeeklyPlanCreationResult:
-    authorizer.require_block(block_id)
-    try:
-        return PersistedWeeklyPlanService(session).execute(block_id, command)
-    except WeeklyPlanNotFoundError as error:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
-    except WeeklyPlanConflictError as error:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
-    except WeeklyPlanValidationError as error:
+    except WeeklyAvailabilityConfirmationValidationError as error:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
         ) from error
@@ -556,13 +629,13 @@ def create_session_execution(
 def create_progression_decision(
     session_execution_id: UUID,
     prescription_id: UUID,
-    command: CreateProgressionDecisionCommand,
+    command: AutomaticProgressionDecisionCommand,
     session: Annotated[Session, Depends(database_session_dependency)],
     authorizer: Annotated[OwnershipAuthorizer, Depends(ownership_authorizer_dependency)],
 ) -> ProgressionCreationResult:
     authorizer.require_session_execution(session_execution_id)
     try:
-        return PersistedProgressionService(session).execute(
+        return PersistedProgressionService(session).execute_automatic(
             session_execution_id, prescription_id, command
         )
     except ProgressionNotFoundError as error:

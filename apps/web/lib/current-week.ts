@@ -95,6 +95,8 @@ export type WeeklyReviewStatus =
   | "awaiting_progression"
   | "manual_configuration_required"
   | "ready_to_prepare_next_week"
+  | "environment_revision_required"
+  | "ready_to_finalize_next_week"
   | "next_week_already_prepared"
   | "block_complete";
 
@@ -133,6 +135,15 @@ export interface WeekProjection {
       review_required: number;
     };
     next_week_start: string | null;
+    confirmed_availability: {
+      weekly_availability_id: string;
+      week_start: string;
+      recorded_at: string;
+      source_observation_ids: string[];
+      rule_version: string;
+      windows: WeeklyAvailabilityWindowProjection[];
+    } | null;
+    unresolved_environment_prescriptions: number;
   };
   sessions: PlannedSessionProjection[];
 }
@@ -227,27 +238,23 @@ export interface PrescriptionLogDraft {
 }
 
 export interface ProgressionEvaluationCommand {
-  progression_policy_id: string;
-  exposure: null;
   decided_at: string;
-  revision_prescribed_at: string;
-  revised_planned_duration_minutes: null;
+}
+
+export interface WeeklyAvailabilityConfirmationCommand {
+  windows: Array<{
+    environment_id: string;
+    starts_at: string;
+    ends_at: string;
+  }>;
+  confirmed_at: string;
+  reliability: Confidence;
+  provenance: ProvenanceInput;
 }
 
 export interface WeeklyRollForwardCommand {
-  availability: {
-    week_start: string;
-    windows: Array<{
-      environment_id: string;
-      starts_at: string;
-      ends_at: string;
-    }>;
-    source_observation_ids: string[];
-    rule_version: string;
-  };
+  weekly_availability_id: string;
   prepared_at: string;
-  reliability: Confidence;
-  provenance: ProvenanceInput;
 }
 
 export interface WeeklyAvailabilityDraft {
@@ -377,6 +384,7 @@ async function postSessionCommand<T>(
     | SafetyCheckCommand
     | SessionExecutionCommand
     | ProgressionEvaluationCommand
+    | WeeklyAvailabilityConfirmationCommand
     | WeeklyRollForwardCommand,
   fetcher: typeof fetch,
 ): Promise<T> {
@@ -432,17 +440,11 @@ export async function submitSessionExecution(
 }
 
 export function buildProgressionEvaluationCommand(
-  progressionPolicyId: string,
   decidedAt = new Date(),
 ): ProgressionEvaluationCommand {
-  if (!isUuid(progressionPolicyId)) throw new Error("A valid assigned progression policy is required.");
   if (!Number.isFinite(decidedAt.getTime())) throw new Error("Progression time must be valid.");
   return {
-    progression_policy_id: progressionPolicyId,
-    exposure: null,
     decided_at: decidedAt.toISOString(),
-    revision_prescribed_at: new Date(decidedAt.getTime() + 1).toISOString(),
-    revised_planned_duration_minutes: null,
   };
 }
 
@@ -464,50 +466,66 @@ export async function submitProgressionEvaluation(
   );
 }
 
-export function buildWeeklyRollForwardCommand({
-  nextWeekStart,
-  sourceObservationIds,
+export function buildWeeklyAvailabilityConfirmationCommand({
   windows,
   reliability,
-  preparedAt = new Date(),
+  confirmedAt = new Date(),
 }: {
-  nextWeekStart: string;
-  sourceObservationIds: string[];
   windows: WeeklyAvailabilityDraft[];
   reliability: Confidence;
-  preparedAt?: Date;
-}): WeeklyRollForwardCommand {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(nextWeekStart)) {
-    throw new Error("Next week must have a valid start date.");
-  }
-  if (sourceObservationIds.length === 0 || sourceObservationIds.some((item) => !isUuid(item))) {
-    throw new Error("Next-week availability requires its persisted source observations.");
-  }
+  confirmedAt?: Date;
+}): WeeklyAvailabilityConfirmationCommand {
   if (windows.length === 0) throw new Error("Confirm at least one availability window.");
-  if (!Number.isFinite(preparedAt.getTime())) throw new Error("Confirmation time must be valid.");
+  if (!Number.isFinite(confirmedAt.getTime())) throw new Error("Confirmation time must be valid.");
   return {
-    availability: {
-      week_start: nextWeekStart,
-      windows: windows.map((window) => {
-        if (!isUuid(window.environmentId)) throw new Error("Availability environment must be valid.");
-        if (!Number.isFinite(window.startsAt.getTime()) || !Number.isFinite(window.endsAt.getTime())) {
-          throw new Error("Availability times must be valid.");
-        }
-        if (window.endsAt <= window.startsAt) {
-          throw new Error("Availability must end after it starts.");
-        }
-        return {
-          environment_id: window.environmentId,
-          starts_at: window.startsAt.toISOString(),
-          ends_at: window.endsAt.toISOString(),
-        };
-      }),
-      source_observation_ids: [...sourceObservationIds],
-      rule_version: "agas-web-availability-confirmation@1.0.0",
-    },
-    prepared_at: preparedAt.toISOString(),
+    windows: windows.map((window) => {
+      if (!isUuid(window.environmentId)) throw new Error("Availability environment must be valid.");
+      if (!Number.isFinite(window.startsAt.getTime()) || !Number.isFinite(window.endsAt.getTime())) {
+        throw new Error("Availability times must be valid.");
+      }
+      if (window.endsAt <= window.startsAt) {
+        throw new Error("Availability must end after it starts.");
+      }
+      return {
+        environment_id: window.environmentId,
+        starts_at: window.startsAt.toISOString(),
+        ends_at: window.endsAt.toISOString(),
+      };
+    }),
+    confirmed_at: confirmedAt.toISOString(),
     reliability,
     provenance: pwaProvenance,
+  };
+}
+
+export async function submitWeeklyAvailabilityConfirmation(
+  apiBaseUrl: string,
+  weeklyPlanId: string,
+  command: WeeklyAvailabilityConfirmationCommand,
+  fetcher: typeof fetch = fetch,
+): Promise<{ availability: { id: string; week_start: string } }> {
+  const baseUrl = apiBaseUrl.replace(/\/$/, "");
+  return postSessionCommand(
+    `${baseUrl}/v1/weekly-plans/${encodeURIComponent(weeklyPlanId)}/availability-confirmations`,
+    command,
+    fetcher,
+  );
+}
+
+export function buildWeeklyRollForwardCommand({
+  weeklyAvailabilityId,
+  preparedAt = new Date(),
+}: {
+  weeklyAvailabilityId: string;
+  preparedAt?: Date;
+}): WeeklyRollForwardCommand {
+  if (!isUuid(weeklyAvailabilityId)) {
+    throw new Error("Confirmed weekly availability must be valid.");
+  }
+  if (!Number.isFinite(preparedAt.getTime())) throw new Error("Preparation time must be valid.");
+  return {
+    weekly_availability_id: weeklyAvailabilityId,
+    prepared_at: preparedAt.toISOString(),
   };
 }
 

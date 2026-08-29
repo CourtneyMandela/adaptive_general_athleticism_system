@@ -10,6 +10,8 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 
 from agas_domain.enums import (
+    AccountRole,
+    AccountRoleStatus,
     AdaptationRelationshipType,
     Applicability,
     AssessmentDecision,
@@ -111,6 +113,43 @@ class Account(VersionedRecord):
         return normalized
 
 
+class AccountRoleAssignment(VersionedRecord):
+    account_id: UUID
+    role: AccountRole
+    status: AccountRoleStatus
+    sequence_number: Annotated[int, Field(ge=1)]
+    supersedes_assignment_id: UUID | None = None
+    assigned_at: datetime
+    assigned_by: NonEmptyText
+    rationale: NonEmptyText
+    rule_version: NonEmptyText
+
+    @field_validator("assigned_at")
+    @classmethod
+    def require_aware_assigned_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("account role assignment time must include a timezone")
+        return value
+
+    @field_validator("assigned_by", "rationale")
+    @classmethod
+    def normalize_assignment_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("account role assignment text must not be blank")
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_assignment_lineage(self) -> AccountRoleAssignment:
+        if self.sequence_number == 1 and self.supersedes_assignment_id is not None:
+            raise ValueError("the first account role assignment cannot supersede another")
+        if self.sequence_number > 1 and self.supersedes_assignment_id is None:
+            raise ValueError("later account role assignments require their predecessor")
+        if self.supersedes_assignment_id == self.id:
+            raise ValueError("an account role assignment cannot supersede itself")
+        return self
+
+
 class Athlete(VersionedRecord):
     display_name: Annotated[str, Field(min_length=1, max_length=120)]
     date_of_birth: date | None = None
@@ -208,6 +247,7 @@ class Equipment(VersionedRecord):
 class EquipmentAvailability(VersionedRecord):
     environment_id: UUID
     equipment_id: UUID
+    source_observation_id: UUID | None = None
     is_available: bool
     effective_from: datetime
     effective_until: datetime | None = None
@@ -728,6 +768,38 @@ class CompetencyFloor(VersionedRecord):
         return self
 
 
+class CompetencyFloorReview(VersionedRecord):
+    competency_floor_id: UUID
+    decision: AssessmentReviewDecision
+    sequence_number: Annotated[int, Field(ge=1)]
+    supersedes_review_id: UUID | None = None
+    evidence_claim_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
+    reviewed_at: datetime
+    reviewed_by: NonEmptyText
+    applicability_rationale: NonEmptyText
+    uncertainty: NonEmptyText
+    review_version: NonEmptyText
+
+    @field_validator("reviewed_at")
+    @classmethod
+    def require_aware_reviewed_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("competency floor review time must include a timezone")
+        return value
+
+    @model_validator(mode="after")
+    def validate_review(self) -> CompetencyFloorReview:
+        if len(set(self.evidence_claim_ids)) != len(self.evidence_claim_ids):
+            raise ValueError("evidence_claim_ids must not contain duplicates")
+        if self.sequence_number == 1 and self.supersedes_review_id is not None:
+            raise ValueError("the first competency floor review cannot supersede another")
+        if self.sequence_number > 1 and self.supersedes_review_id is None:
+            raise ValueError("later competency floor reviews must reference their predecessor")
+        if self.supersedes_review_id == self.id:
+            raise ValueError("a competency floor review cannot supersede itself")
+        return self
+
+
 class CapabilityNeed(VersionedRecord):
     athlete_id: UUID
     domain: CapabilityDomain
@@ -805,6 +877,38 @@ class PriorityPolicy(VersionedRecord):
         required_confidence = set(Confidence)
         if set(self.confidence_multipliers) != required_confidence:
             raise ValueError("confidence_multipliers must define every confidence level")
+        return self
+
+
+class PriorityPolicyReview(VersionedRecord):
+    priority_policy_id: UUID
+    decision: AssessmentReviewDecision
+    sequence_number: Annotated[int, Field(ge=1)]
+    supersedes_review_id: UUID | None = None
+    evidence_claim_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
+    reviewed_at: datetime
+    reviewed_by: NonEmptyText
+    applicability_rationale: NonEmptyText
+    uncertainty: NonEmptyText
+    review_version: NonEmptyText
+
+    @field_validator("reviewed_at")
+    @classmethod
+    def require_aware_reviewed_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("priority policy review time must include a timezone")
+        return value
+
+    @model_validator(mode="after")
+    def validate_review(self) -> PriorityPolicyReview:
+        if len(set(self.evidence_claim_ids)) != len(self.evidence_claim_ids):
+            raise ValueError("evidence_claim_ids must not contain duplicates")
+        if self.sequence_number == 1 and self.supersedes_review_id is not None:
+            raise ValueError("the first priority policy review cannot supersede another")
+        if self.sequence_number > 1 and self.supersedes_review_id is None:
+            raise ValueError("later priority policy reviews must reference their predecessor")
+        if self.supersedes_review_id == self.id:
+            raise ValueError("a priority policy review cannot supersede itself")
         return self
 
 
@@ -1474,6 +1578,7 @@ class SessionPrescription(VersionedRecord):
     rule_version: NonEmptyText
     supersedes_prescription_id: UUID | None = None
     progression_decision_id: UUID | None = None
+    planning_decision_record_id: UUID | None = None
 
     @field_validator("prescribed_at")
     @classmethod
@@ -1490,8 +1595,16 @@ class SessionPrescription(VersionedRecord):
             values = getattr(self, field_name)
             if len(set(values)) != len(values):
                 raise ValueError(f"{field_name} must not contain duplicates")
-        if (self.supersedes_prescription_id is None) != (self.progression_decision_id is None):
-            raise ValueError("prescription revisions require both superseded and decision ids")
+        revision_decision_count = sum(
+            item is not None
+            for item in (self.progression_decision_id, self.planning_decision_record_id)
+        )
+        if self.supersedes_prescription_id is None and revision_decision_count:
+            raise ValueError("an original prescription cannot have a revision decision")
+        if self.supersedes_prescription_id is not None and revision_decision_count != 1:
+            raise ValueError(
+                "a prescription revision requires exactly one progression or planning decision"
+            )
         if self.supersedes_prescription_id == self.id:
             raise ValueError("a prescription cannot supersede itself")
         target_kinds = [item.kind for item in self.intensity_targets]
@@ -1567,6 +1680,7 @@ class AvailabilityWindow(VersionedRecord):
 
 class WeeklyAvailability(VersionedRecord):
     athlete_id: UUID
+    source_weekly_plan_id: UUID | None = None
     week_start: date
     windows: tuple[AvailabilityWindow, ...] = ()
     source_observation_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
@@ -1582,6 +1696,8 @@ class WeeklyAvailability(VersionedRecord):
 
     @model_validator(mode="after")
     def validate_availability(self) -> WeeklyAvailability:
+        if self.source_weekly_plan_id == self.id:
+            raise ValueError("weekly availability cannot use itself as a source weekly plan")
         if len(set(self.source_observation_ids)) != len(self.source_observation_ids):
             raise ValueError("source_observation_ids must not contain duplicates")
         if len({item.id for item in self.windows}) != len(self.windows):
@@ -1606,6 +1722,40 @@ class WeeklySchedulingPolicy(VersionedRecord):
     maximum_high_fatigue_sessions_per_day: int = Field(ge=1)
     allow_partial_exercise_resolution: bool
     policy_version: NonEmptyText
+
+
+class WeeklySchedulingPolicyReview(VersionedRecord):
+    weekly_scheduling_policy_id: UUID
+    decision: AssessmentReviewDecision
+    sequence_number: Annotated[int, Field(ge=1)]
+    supersedes_review_id: UUID | None = None
+    evidence_claim_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
+    reviewed_at: datetime
+    reviewed_by: NonEmptyText
+    applicability_rationale: NonEmptyText
+    uncertainty: NonEmptyText
+    review_version: NonEmptyText
+
+    @field_validator("reviewed_at")
+    @classmethod
+    def require_aware_reviewed_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("weekly scheduling policy review time must include a timezone")
+        return value
+
+    @model_validator(mode="after")
+    def validate_review(self) -> WeeklySchedulingPolicyReview:
+        if len(set(self.evidence_claim_ids)) != len(self.evidence_claim_ids):
+            raise ValueError("evidence_claim_ids must not contain duplicates")
+        if self.sequence_number == 1 and self.supersedes_review_id is not None:
+            raise ValueError("the first weekly scheduling policy review cannot supersede another")
+        if self.sequence_number > 1 and self.supersedes_review_id is None:
+            raise ValueError(
+                "later weekly scheduling policy reviews must reference their predecessor"
+            )
+        if self.supersedes_review_id == self.id:
+            raise ValueError("a weekly scheduling policy review cannot supersede itself")
+        return self
 
 
 class SchedulingIssue(DomainModel):
@@ -1654,6 +1804,7 @@ class WeeklyPlan(VersionedRecord):
     generated_at: datetime
     rule_version: NonEmptyText
     previous_weekly_plan_id: UUID | None = None
+    scheduling_policy_review_id: UUID | None = None
 
     @field_validator("generated_at")
     @classmethod

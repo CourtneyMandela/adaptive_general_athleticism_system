@@ -16,6 +16,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     event,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -45,6 +46,50 @@ class AccountRecord(VersionedRecordMixin, Base):
 
     issuer: Mapped[str] = mapped_column(String(300), nullable=False)
     subject: Mapped[str] = mapped_column(String(255), nullable=False)
+
+
+class AccountRoleAssignmentRecord(VersionedRecordMixin, Base):
+    __tablename__ = "account_role_assignments"
+    __table_args__ = (
+        CheckConstraint(
+            "role IN ('planning_reviewer')",
+            name="ck_account_role_assignment_role",
+        ),
+        CheckConstraint(
+            "status IN ('active', 'revoked')",
+            name="ck_account_role_assignment_status",
+        ),
+        CheckConstraint(
+            "sequence_number >= 1",
+            name="ck_account_role_assignment_sequence_positive",
+        ),
+        UniqueConstraint(
+            "account_id",
+            "role",
+            "sequence_number",
+            name="uq_account_role_assignment_sequence",
+        ),
+        UniqueConstraint(
+            "supersedes_assignment_id",
+            name="uq_account_role_assignment_superseded_once",
+        ),
+    )
+
+    account_id: Mapped[UUID] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    role: Mapped[str] = mapped_column(String(80), index=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(40), index=True, nullable=False)
+    sequence_number: Mapped[int] = mapped_column(Integer(), nullable=False)
+    supersedes_assignment_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("account_role_assignments.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=True,
+    )
+    assigned_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)
+    assigned_by: Mapped[str] = mapped_column(String(160), nullable=False)
+    rationale: Mapped[str] = mapped_column(Text(), nullable=False)
+    rule_version: Mapped[str] = mapped_column(String(120), nullable=False)
 
 
 class AthleteRecord(VersionedRecordMixin, Base):
@@ -183,6 +228,9 @@ class EquipmentAvailabilityRecord(VersionedRecordMixin, Base):
     )
     equipment_id: Mapped[UUID] = mapped_column(
         ForeignKey("equipment.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    source_observation_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("observations.id", ondelete="RESTRICT"), index=True, nullable=True
     )
     is_available: Mapped[bool] = mapped_column(Boolean(), nullable=False)
     effective_from: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)
@@ -694,6 +742,66 @@ class CompetencyFloorEvidenceClaimRecord(Base):
     position: Mapped[int] = mapped_column(Integer(), nullable=False)
 
 
+class CompetencyFloorReviewRecord(VersionedRecordMixin, Base):
+    __tablename__ = "competency_floor_reviews"
+    __table_args__ = (
+        CheckConstraint(
+            "decision IN ('approved', 'needs_revision', 'rejected')",
+            name="ck_competency_floor_review_decision",
+        ),
+        CheckConstraint(
+            "sequence_number >= 1", name="ck_competency_floor_review_sequence_positive"
+        ),
+        UniqueConstraint(
+            "competency_floor_id",
+            "sequence_number",
+            name="uq_competency_floor_review_floor_sequence",
+        ),
+        UniqueConstraint("supersedes_review_id", name="uq_competency_floor_review_superseded_once"),
+    )
+
+    competency_floor_id: Mapped[UUID] = mapped_column(
+        ForeignKey("competency_floors.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    decision: Mapped[str] = mapped_column(String(40), index=True, nullable=False)
+    sequence_number: Mapped[int] = mapped_column(Integer(), nullable=False)
+    supersedes_review_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("competency_floor_reviews.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=True,
+    )
+    reviewed_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)
+    reviewed_by: Mapped[str] = mapped_column(String(160), nullable=False)
+    applicability_rationale: Mapped[str] = mapped_column(Text(), nullable=False)
+    uncertainty: Mapped[str] = mapped_column(Text(), nullable=False)
+    review_version: Mapped[str] = mapped_column(String(120), nullable=False)
+
+    evidence_links: Mapped[list[CompetencyFloorReviewEvidenceClaimRecord]] = relationship(
+        cascade="save-update, merge",
+        lazy="selectin",
+        order_by="CompetencyFloorReviewEvidenceClaimRecord.position",
+    )
+
+
+class CompetencyFloorReviewEvidenceClaimRecord(Base):
+    __tablename__ = "competency_floor_review_evidence_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "competency_floor_review_id",
+            "position",
+            name="uq_competency_floor_review_evidence_order",
+        ),
+    )
+
+    competency_floor_review_id: Mapped[UUID] = mapped_column(
+        ForeignKey("competency_floor_reviews.id", ondelete="RESTRICT"), primary_key=True
+    )
+    evidence_claim_id: Mapped[UUID] = mapped_column(
+        ForeignKey("evidence_claims.id", ondelete="RESTRICT"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer(), nullable=False)
+
+
 class CapabilityNeedRecord(VersionedRecordMixin, Base):
     __tablename__ = "capability_needs"
 
@@ -761,6 +869,64 @@ class PriorityPolicyRecord(VersionedRecordMixin, Base):
     policy_version: Mapped[str] = mapped_column(String(80), nullable=False)
 
 
+class PriorityPolicyReviewRecord(VersionedRecordMixin, Base):
+    __tablename__ = "priority_policy_reviews"
+    __table_args__ = (
+        CheckConstraint(
+            "decision IN ('approved', 'needs_revision', 'rejected')",
+            name="ck_priority_policy_review_decision",
+        ),
+        CheckConstraint("sequence_number >= 1", name="ck_priority_policy_review_sequence_positive"),
+        UniqueConstraint(
+            "priority_policy_id",
+            "sequence_number",
+            name="uq_priority_policy_review_policy_sequence",
+        ),
+        UniqueConstraint("supersedes_review_id", name="uq_priority_policy_review_superseded_once"),
+    )
+
+    priority_policy_id: Mapped[UUID] = mapped_column(
+        ForeignKey("priority_policies.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    decision: Mapped[str] = mapped_column(String(40), index=True, nullable=False)
+    sequence_number: Mapped[int] = mapped_column(Integer(), nullable=False)
+    supersedes_review_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("priority_policy_reviews.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=True,
+    )
+    reviewed_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)
+    reviewed_by: Mapped[str] = mapped_column(String(160), nullable=False)
+    applicability_rationale: Mapped[str] = mapped_column(Text(), nullable=False)
+    uncertainty: Mapped[str] = mapped_column(Text(), nullable=False)
+    review_version: Mapped[str] = mapped_column(String(120), nullable=False)
+
+    evidence_links: Mapped[list[PriorityPolicyReviewEvidenceClaimRecord]] = relationship(
+        cascade="save-update, merge",
+        lazy="selectin",
+        order_by="PriorityPolicyReviewEvidenceClaimRecord.position",
+    )
+
+
+class PriorityPolicyReviewEvidenceClaimRecord(Base):
+    __tablename__ = "priority_policy_review_evidence_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "priority_policy_review_id",
+            "position",
+            name="uq_priority_policy_review_evidence_order",
+        ),
+    )
+
+    priority_policy_review_id: Mapped[UUID] = mapped_column(
+        ForeignKey("priority_policy_reviews.id", ondelete="RESTRICT"), primary_key=True
+    )
+    evidence_claim_id: Mapped[UUID] = mapped_column(
+        ForeignKey("evidence_claims.id", ondelete="RESTRICT"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer(), nullable=False)
+
+
 class LongRangeStrategyRecord(VersionedRecordMixin, Base):
     __tablename__ = "long_range_strategies"
     __table_args__ = (
@@ -771,6 +937,13 @@ class LongRangeStrategyRecord(VersionedRecordMixin, Base):
             name="ck_strategy_revision_lineage_pair",
         ),
         UniqueConstraint("triggering_block_review_id", name="uq_strategy_triggering_block_review"),
+        Index(
+            "uq_initial_strategy_athlete",
+            "athlete_id",
+            unique=True,
+            postgresql_where=text("supersedes_strategy_id IS NULL"),
+            sqlite_where=text("supersedes_strategy_id IS NULL"),
+        ),
     )
 
     athlete_id: Mapped[UUID] = mapped_column(
@@ -1468,9 +1641,25 @@ class SessionTemplateEvidenceRecord(Base):
 
 class WeeklyAvailabilityRecord(VersionedRecordMixin, Base):
     __tablename__ = "weekly_availabilities"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_weekly_plan_id",
+            name="uq_weekly_availability_source_plan",
+        ),
+    )
 
     athlete_id: Mapped[UUID] = mapped_column(
         ForeignKey("athletes.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    source_weekly_plan_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey(
+            "weekly_plans.id",
+            name="fk_weekly_availability_source_plan",
+            ondelete="RESTRICT",
+            use_alter=True,
+        ),
+        index=True,
+        nullable=True,
     )
     week_start: Mapped[date] = mapped_column(Date(), index=True, nullable=False)
     recorded_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)
@@ -1530,6 +1719,72 @@ class WeeklySchedulingPolicyRecord(VersionedRecordMixin, Base):
     policy_version: Mapped[str] = mapped_column(String(80), nullable=False)
 
 
+class WeeklySchedulingPolicyReviewRecord(VersionedRecordMixin, Base):
+    __tablename__ = "weekly_scheduling_policy_reviews"
+    __table_args__ = (
+        CheckConstraint(
+            "decision IN ('approved', 'needs_revision', 'rejected')",
+            name="ck_weekly_scheduling_policy_review_decision",
+        ),
+        CheckConstraint(
+            "sequence_number >= 1",
+            name="ck_weekly_scheduling_policy_review_sequence_positive",
+        ),
+        UniqueConstraint(
+            "weekly_scheduling_policy_id",
+            "sequence_number",
+            name="uq_weekly_scheduling_policy_review_policy_sequence",
+        ),
+        UniqueConstraint(
+            "supersedes_review_id",
+            name="uq_weekly_scheduling_policy_review_superseded_once",
+        ),
+    )
+
+    weekly_scheduling_policy_id: Mapped[UUID] = mapped_column(
+        ForeignKey("weekly_scheduling_policies.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=False,
+    )
+    decision: Mapped[str] = mapped_column(String(40), index=True, nullable=False)
+    sequence_number: Mapped[int] = mapped_column(Integer(), nullable=False)
+    supersedes_review_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("weekly_scheduling_policy_reviews.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=True,
+    )
+    reviewed_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)
+    reviewed_by: Mapped[str] = mapped_column(String(160), nullable=False)
+    applicability_rationale: Mapped[str] = mapped_column(Text(), nullable=False)
+    uncertainty: Mapped[str] = mapped_column(Text(), nullable=False)
+    review_version: Mapped[str] = mapped_column(String(120), nullable=False)
+
+    evidence_links: Mapped[list[WeeklySchedulingPolicyReviewEvidenceClaimRecord]] = relationship(
+        cascade="save-update, merge",
+        lazy="selectin",
+        order_by="WeeklySchedulingPolicyReviewEvidenceClaimRecord.position",
+    )
+
+
+class WeeklySchedulingPolicyReviewEvidenceClaimRecord(Base):
+    __tablename__ = "weekly_scheduling_policy_review_evidence_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "weekly_scheduling_policy_review_id",
+            "position",
+            name="uq_weekly_scheduling_policy_review_evidence_order",
+        ),
+    )
+
+    weekly_scheduling_policy_review_id: Mapped[UUID] = mapped_column(
+        ForeignKey("weekly_scheduling_policy_reviews.id", ondelete="RESTRICT"), primary_key=True
+    )
+    evidence_claim_id: Mapped[UUID] = mapped_column(
+        ForeignKey("evidence_claims.id", ondelete="RESTRICT"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer(), nullable=False)
+
+
 class WeeklyPlanRecord(VersionedRecordMixin, Base):
     __tablename__ = "weekly_plans"
 
@@ -1550,6 +1805,11 @@ class WeeklyPlanRecord(VersionedRecordMixin, Base):
     )
     scheduling_policy_id: Mapped[UUID] = mapped_column(
         ForeignKey("weekly_scheduling_policies.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    scheduling_policy_review_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("weekly_scheduling_policy_reviews.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=True,
     )
     week_start: Mapped[date] = mapped_column(Date(), index=True, nullable=False)
     block_week: Mapped[int] = mapped_column(Integer(), nullable=False)
@@ -2110,14 +2370,24 @@ class ProgressionDecisionObservationRecord(Base):
 
 class SessionPrescriptionRevisionRecord(Base):
     __tablename__ = "session_prescription_revisions"
+    __table_args__ = (
+        CheckConstraint(
+            "(progression_decision_id IS NOT NULL AND planning_decision_record_id IS NULL) OR "
+            "(progression_decision_id IS NULL AND planning_decision_record_id IS NOT NULL)",
+            name="ck_prescription_revision_one_authorizer",
+        ),
+    )
     revised_prescription_id: Mapped[UUID] = mapped_column(
         ForeignKey("session_prescriptions.id", ondelete="RESTRICT"), primary_key=True
     )
     superseded_prescription_id: Mapped[UUID] = mapped_column(
         ForeignKey("session_prescriptions.id", ondelete="RESTRICT"), nullable=False, unique=True
     )
-    progression_decision_id: Mapped[UUID] = mapped_column(
-        ForeignKey("progression_decisions.id", ondelete="RESTRICT"), nullable=False, unique=True
+    progression_decision_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("progression_decisions.id", ondelete="RESTRICT"), nullable=True, unique=True
+    )
+    planning_decision_record_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("decision_records.id", ondelete="RESTRICT"), nullable=True, index=True
     )
 
 
@@ -2617,6 +2887,7 @@ def _reject_mutation(_mapper: object, _connection: object, target: object) -> No
 
 for _record_type in (
     AccountRecord,
+    AccountRoleAssignmentRecord,
     AthleteOwnershipRecord,
     ObservationRecord,
     CapabilityEstimateRecord,
@@ -2637,9 +2908,13 @@ for _record_type in (
     AssessmentPerformanceRecord,
     CompetencyFloorRecord,
     CompetencyFloorEvidenceClaimRecord,
+    CompetencyFloorReviewRecord,
+    CompetencyFloorReviewEvidenceClaimRecord,
     CapabilityNeedRecord,
     CapabilityNeedEvidenceClaimRecord,
     PriorityPolicyRecord,
+    PriorityPolicyReviewRecord,
+    PriorityPolicyReviewEvidenceClaimRecord,
     LongRangeStrategyRecord,
     AdaptationPriorityRecord,
     RoadmapItemRecord,

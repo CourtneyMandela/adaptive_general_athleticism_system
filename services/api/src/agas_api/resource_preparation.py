@@ -7,6 +7,7 @@ from uuid import UUID
 from agas_domain import (
     AdaptationPriority,
     AdaptationResourceDemand,
+    DecisionRecord,
     ExerciseResolution,
     LongRangeStrategy,
     StimulusRequirement,
@@ -20,17 +21,41 @@ from agas_planner import (
     ResolutionError,
     StimulusRequirementBuilder,
 )
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 NonEmptyText = Annotated[str, Field(min_length=1)]
 
 
-class ActiveResourceDemandCommand(BaseModel):
-    """Explicit scientific, environment, and resource inputs for an active priority."""
+class ReviewedResourceDemandCommand(BaseModel):
+    """Review metadata shared by active and deferred resource decisions."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+    prepared_at: datetime
+    reviewed_by: NonEmptyText
+    applicability_rationale: NonEmptyText
+    uncertainty: NonEmptyText
+
+    @field_validator("prepared_at")
+    @classmethod
+    def require_aware_prepared_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("prepared_at must include a timezone")
+        return value
+
+    @field_validator("reviewed_by", "applicability_rationale", "uncertainty")
+    @classmethod
+    def require_meaningful_review_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("operator review metadata must not be blank")
+        return normalized
+
+
+class ActiveResourceDemandCommand(ReviewedResourceDemandCommand):
+    """Explicit scientific, environment, and resource inputs for an active priority."""
 
     mode: Literal["active"]
     environment_id: UUID
@@ -42,21 +67,16 @@ class ActiveResourceDemandCommand(BaseModel):
     sessions_per_week: int = Field(gt=0)
     demand_rationale: NonEmptyText
     demand_version: NonEmptyText
-    prepared_at: datetime
 
     @model_validator(mode="after")
     def validate_active_command(self) -> ActiveResourceDemandCommand:
         if len(set(self.exercise_candidate_ids)) != len(self.exercise_candidate_ids):
             raise ValueError("exercise_candidate_ids must not contain duplicates")
-        if self.prepared_at.tzinfo is None or self.prepared_at.utcoffset() is None:
-            raise ValueError("prepared_at must include a timezone")
         return self
 
 
-class DeferredResourceDemandCommand(BaseModel):
+class DeferredResourceDemandCommand(ReviewedResourceDemandCommand):
     """Explicit provenance for a priority that currently receives no training resource."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
     mode: Literal["deferred"]
     source_observation_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
@@ -85,6 +105,7 @@ class ResourceDemandPreparationResult(BaseModel):
     stimulus_requirement: StimulusRequirement | None = None
     exercise_resolution: ExerciseResolution | None = None
     resource_demand: AdaptationResourceDemand
+    decision_record: DecisionRecord
 
     @model_validator(mode="after")
     def validate_result_shape(self) -> ResourceDemandPreparationResult:
@@ -134,6 +155,7 @@ class PersistedResourcePreparationService:
                 self.repository.add_exercise_resolution(result.exercise_resolution)
                 self.session.flush()
             self.repository.add_adaptation_resource_demand(result.resource_demand)
+            self.repository.add_decision_record(result.decision_record)
             self.session.commit()
             return result
         except ResourcePreparationUseCaseError:
@@ -167,20 +189,24 @@ class PersistedResourcePreparationService:
                 raise ResourcePreparationValidationError(
                     "only a DEFER priority can create a deferred resource demand"
                 )
-            return ResourceDemandPreparationResult(
-                resource_demand=AdaptationResourceDemand(
-                    long_range_strategy_id=strategy.id,
-                    adaptation_priority_id=priority.id,
-                    adaptation_id=priority.adaptation_id,
-                    priority_state=priority.state,
-                    minimum_weekly_minutes=0,
-                    target_weekly_minutes=0,
-                    sessions_per_week=0,
-                    source_observation_ids=command.source_observation_ids,
-                    evidence_claim_ids=command.evidence_claim_ids,
-                    rationale=command.demand_rationale,
-                    demand_version=command.demand_version,
-                )
+            demand = AdaptationResourceDemand(
+                long_range_strategy_id=strategy.id,
+                adaptation_priority_id=priority.id,
+                adaptation_id=priority.adaptation_id,
+                priority_state=priority.state,
+                minimum_weekly_minutes=0,
+                target_weekly_minutes=0,
+                sessions_per_week=0,
+                source_observation_ids=command.source_observation_ids,
+                evidence_claim_ids=command.evidence_claim_ids,
+                rationale=command.demand_rationale,
+                demand_version=command.demand_version,
+            )
+            return self._result(
+                strategy=strategy,
+                priority=priority,
+                command=command,
+                resource_demand=demand,
             )
         if priority.state is TrainingPriorityState.DEFER:
             raise ResourcePreparationValidationError(
@@ -254,8 +280,76 @@ class PersistedResourcePreparationService:
             rationale=command.demand_rationale,
             demand_version=command.demand_version,
         )
-        return ResourceDemandPreparationResult(
+        return self._result(
+            strategy=strategy,
+            priority=priority,
+            command=command,
             stimulus_requirement=requirement,
             exercise_resolution=resolution,
             resource_demand=demand,
+        )
+
+    @staticmethod
+    def _result(
+        *,
+        strategy: LongRangeStrategy,
+        priority: AdaptationPriority,
+        command: ActiveResourceDemandCommand | DeferredResourceDemandCommand,
+        resource_demand: AdaptationResourceDemand,
+        stimulus_requirement: StimulusRequirement | None = None,
+        exercise_resolution: ExerciseResolution | None = None,
+    ) -> ResourceDemandPreparationResult:
+        values = [
+            f"long_range_strategy:{strategy.id}",
+            f"adaptation_priority:{priority.id}",
+            f"adaptation:{priority.adaptation_id}",
+            *(f"observation:{item}" for item in resource_demand.source_observation_ids),
+            *(f"evidence_claim:{item}" for item in resource_demand.evidence_claim_ids),
+        ]
+        if isinstance(command, ActiveResourceDemandCommand):
+            values.extend(
+                [
+                    f"environment:{command.environment_id}",
+                    *(
+                        f"exercise_candidate:{exercise_id}"
+                        for exercise_id in command.exercise_candidate_ids
+                    ),
+                    f"exercise_resolver_policy:{command.exercise_resolver_policy_id}",
+                ]
+            )
+        if stimulus_requirement is not None:
+            values.append(f"stimulus_requirement:{stimulus_requirement.id}")
+        if exercise_resolution is not None:
+            values.extend(
+                [
+                    *(
+                        f"equipment_availability:{item}"
+                        for item in exercise_resolution.source_availability_ids
+                    ),
+                    f"exercise_resolution:{exercise_resolution.id}",
+                ]
+            )
+        values.append(f"adaptation_resource_demand:{resource_demand.id}")
+        decision = DecisionRecord(
+            decision=(
+                f"Prepare {command.mode} resource demand {resource_demand.id} for strategy "
+                f"priority {priority.id}."
+            ),
+            reason=f"Reviewed by {command.reviewed_by}. {command.applicability_rationale}",
+            alternatives_considered=(
+                "Defer resource-demand preparation until different reviewed stimulus, exercise, "
+                "environment, resource, or provenance inputs are available.",
+            ),
+            evidence=tuple(dict.fromkeys(values)),
+            uncertainty=command.uncertainty,
+            decision_version=(
+                f"resource-demand-operator-review@1.0.0;demand={resource_demand.demand_version}"
+            ),
+            decided_on=command.prepared_at.date(),
+        )
+        return ResourceDemandPreparationResult(
+            stimulus_requirement=stimulus_requirement,
+            exercise_resolution=exercise_resolution,
+            resource_demand=resource_demand,
+            decision_record=decision,
         )

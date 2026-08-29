@@ -1,6 +1,15 @@
 from enum import StrEnum
 
 
+class AccountRole(StrEnum):
+    PLANNING_REVIEWER = "planning_reviewer"
+
+
+class AccountRoleStatus(StrEnum):
+    ACTIVE = "active"
+    REVOKED = "revoked"
+
+
 class Confidence(StrEnum):
     UNKNOWN = "unknown"
     LOW = "low"

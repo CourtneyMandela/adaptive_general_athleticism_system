@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  buildWeeklyAvailabilityConfirmationCommand,
   buildWeeklyRollForwardCommand,
   buildProgressionEvaluationCommand,
   buildExecutionCommand,
@@ -15,6 +16,7 @@ import {
   submitSafetyCheck,
   submitSessionExecution,
   submitProgressionEvaluation,
+  submitWeeklyAvailabilityConfirmation,
   submitWeeklyRollForward,
   type PrescriptionProjection,
 } from "./current-week";
@@ -291,20 +293,16 @@ describe("current-week presentation", () => {
     await submitSessionExecution("http://localhost:8000", "plan", "session", execution, fetcher);
     expect(fetcher.mock.calls[2][0]).toBe("http://localhost:8000/v1/weekly-plans/plan/sessions/session/executions");
 
-    const progressionPolicyId = "00000000-0000-4000-8000-000000000022";
-    expect(() => buildProgressionEvaluationCommand("not-a-policy-id")).toThrow(
-      "A valid assigned progression policy is required.",
+    expect(() =>
+      buildProgressionEvaluationCommand(new Date("not-a-progression-time")),
+    ).toThrow(
+      "Progression time must be valid.",
     );
     const progressionCommand = buildProgressionEvaluationCommand(
-      progressionPolicyId,
       new Date("2026-08-24T15:03:00Z"),
     );
     expect(progressionCommand).toEqual({
-      progression_policy_id: progressionPolicyId,
-      exposure: null,
       decided_at: "2026-08-24T15:03:00.000Z",
-      revision_prescribed_at: "2026-08-24T15:03:00.001Z",
-      revised_planned_duration_minutes: null,
     });
     const executionId = "00000000-0000-4000-8000-000000000023";
     await submitProgressionEvaluation(
@@ -320,10 +318,7 @@ describe("current-week presentation", () => {
   });
 
   it("builds and submits an explicit, provenance-bearing availability confirmation", async () => {
-    const sourceObservationId = "00000000-0000-4000-8000-000000000024";
-    const command = buildWeeklyRollForwardCommand({
-      nextWeekStart: "2026-08-31",
-      sourceObservationIds: [sourceObservationId],
+    const command = buildWeeklyAvailabilityConfirmationCommand({
       windows: [
         {
           environmentId: session.environment_id,
@@ -332,23 +327,18 @@ describe("current-week presentation", () => {
         },
       ],
       reliability: "high",
-      preparedAt: new Date("2026-08-30T18:00:00Z"),
+      confirmedAt: new Date("2026-08-30T18:00:00Z"),
     });
 
     expect(command).toEqual({
-      availability: {
-        week_start: "2026-08-31",
-        windows: [
-          {
-            environment_id: session.environment_id,
-            starts_at: "2026-08-31T14:00:00.000Z",
-            ends_at: "2026-08-31T15:00:00.000Z",
-          },
-        ],
-        source_observation_ids: [sourceObservationId],
-        rule_version: "agas-web-availability-confirmation@1.0.0",
-      },
-      prepared_at: "2026-08-30T18:00:00.000Z",
+      windows: [
+        {
+          environment_id: session.environment_id,
+          starts_at: "2026-08-31T14:00:00.000Z",
+          ends_at: "2026-08-31T15:00:00.000Z",
+        },
+      ],
+      confirmed_at: "2026-08-30T18:00:00.000Z",
       reliability: "high",
       provenance: {
         recorded_by: "unverified-athlete-user",
@@ -360,10 +350,43 @@ describe("current-week presentation", () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(
         JSON.stringify({
-          weekly_plan: {
+          availability: {
             id: "00000000-0000-4000-8000-000000000025",
             week_start: "2026-08-31",
-            status: "draft",
+          },
+        }),
+        { status: 201 },
+      ),
+    );
+    await submitWeeklyAvailabilityConfirmation(
+      "http://localhost:8000/",
+      "source-plan",
+      command,
+      fetcher,
+    );
+    expect(fetcher.mock.calls[0][0]).toBe(
+      "http://localhost:8000/v1/weekly-plans/source-plan/availability-confirmations",
+    );
+    expect(JSON.parse(fetcher.mock.calls[0][1]!.body as string)).toEqual(command);
+  });
+
+  it("finalizes only an explicit persisted availability confirmation", async () => {
+    const weeklyAvailabilityId = "00000000-0000-4000-8000-000000000025";
+    const command = buildWeeklyRollForwardCommand({
+      weeklyAvailabilityId,
+      preparedAt: new Date("2026-08-30T18:01:00Z"),
+    });
+    expect(command).toEqual({
+      weekly_availability_id: weeklyAvailabilityId,
+      prepared_at: "2026-08-30T18:01:00.000Z",
+    });
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          weekly_plan: {
+            id: "00000000-0000-4000-8000-000000000026",
+            week_start: "2026-08-31",
+            status: "feasible",
           },
         }),
         { status: 201 },
@@ -383,17 +406,13 @@ describe("current-week presentation", () => {
       endsAt: new Date("2026-08-31T15:00:00Z"),
     };
     expect(() =>
-      buildWeeklyRollForwardCommand({
-        nextWeekStart: "2026-08-31",
-        sourceObservationIds: [],
-        windows: [validWindow],
+      buildWeeklyAvailabilityConfirmationCommand({
+        windows: [],
         reliability: "moderate",
       }),
-    ).toThrow("persisted source observations");
+    ).toThrow("Confirm at least one availability window");
     expect(() =>
-      buildWeeklyRollForwardCommand({
-        nextWeekStart: "2026-08-31",
-        sourceObservationIds: ["00000000-0000-4000-8000-000000000024"],
+      buildWeeklyAvailabilityConfirmationCommand({
         windows: [{ ...validWindow, endsAt: validWindow.startsAt }],
         reliability: "moderate",
       }),

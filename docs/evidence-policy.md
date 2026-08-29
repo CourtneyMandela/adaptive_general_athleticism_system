@@ -4,6 +4,10 @@
 
 Pretrained model knowledge is not scientific provenance. Any material scientific claim used by AGAS must be traceable to a structured, reviewed, versioned evidence claim.
 
+A versioned policy record is not approved merely because it exists. Where a governed policy-review
+boundary exists, new decisions must retain the exact current approved review and its evidence links.
+Withdrawal or supersession preserves historical decisions but cannot silently authorize new ones.
+
 ## Preferred sources
 
 1. Systematic reviews, meta-analyses, rigorous position stands, and transparent consensus statements.
@@ -35,6 +39,18 @@ floor must link to at least one reviewed `EvidenceClaim` and declare its populat
 uncertainty, metric scope, unit, and version. Priority policies are versioned heuristics rather than
 scientific facts. Tests may use clearly labeled software-only fixture claims, but those fixtures
 must never be shipped as training evidence or seed data.
+
+Initial planning must retain the selected floor evidence and every estimate's direct source
+observations. General relevance, goal relevance, prerequisite value, expected trainability,
+transfer value, and recovery-cost inputs are explicit governed context—not conclusions that may be
+invented from an assessment result or an LLM. Only the local operator workflow accepts these
+inputs. A floor or policy is not authorized merely because it exists: each has a linear,
+append-only review history, and the exact current review must be approved, evidence-linked, and no
+later than the strategy timestamp. Every floor review must include the claims cited by its floor.
+The operator command pins those review IDs, requires reviewer, rationale, and uncertainty metadata,
+and appends a decision audit in the strategy transaction; athlete-authenticated HTTP clients cannot
+submit them. Review records preserve governance provenance but do not turn software-fixture claims
+or heuristic policy weights into scientific evidence.
 
 ## Assessment protocols
 
