@@ -110,6 +110,10 @@ def test_onboarding_catalog_and_transaction_preserve_reported_profile_provenance
     assert result.environments[0].space_constraints == {"floor_area_m2": 12.0}
     assert len(result.equipment_availability) == 3
     assert all(
+        item.source_observation_id == result.intake_observation.id
+        for item in result.equipment_availability
+    )
+    assert all(
         str(result.intake_observation.id) in (item.reason or "")
         for item in result.equipment_availability
     )

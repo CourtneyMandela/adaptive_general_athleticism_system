@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from itertools import pairwise
 from typing import Annotated, Literal
 from uuid import UUID, uuid4
@@ -9,11 +10,16 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 
 from agas_domain.enums import (
+    AccountRole,
+    AccountRoleStatus,
     AdaptationRelationshipType,
     Applicability,
     AssessmentDecision,
+    AssessmentEligibilityOutcome,
     AssessmentIntensity,
+    AssessmentMeasurementType,
     AssessmentReason,
+    AssessmentReviewDecision,
     BlockIssueCode,
     BlockPlanStatus,
     BlockReviewOutcome,
@@ -107,6 +113,43 @@ class Account(VersionedRecord):
         return normalized
 
 
+class AccountRoleAssignment(VersionedRecord):
+    account_id: UUID
+    role: AccountRole
+    status: AccountRoleStatus
+    sequence_number: Annotated[int, Field(ge=1)]
+    supersedes_assignment_id: UUID | None = None
+    assigned_at: datetime
+    assigned_by: NonEmptyText
+    rationale: NonEmptyText
+    rule_version: NonEmptyText
+
+    @field_validator("assigned_at")
+    @classmethod
+    def require_aware_assigned_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("account role assignment time must include a timezone")
+        return value
+
+    @field_validator("assigned_by", "rationale")
+    @classmethod
+    def normalize_assignment_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("account role assignment text must not be blank")
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_assignment_lineage(self) -> AccountRoleAssignment:
+        if self.sequence_number == 1 and self.supersedes_assignment_id is not None:
+            raise ValueError("the first account role assignment cannot supersede another")
+        if self.sequence_number > 1 and self.supersedes_assignment_id is None:
+            raise ValueError("later account role assignments require their predecessor")
+        if self.supersedes_assignment_id == self.id:
+            raise ValueError("an account role assignment cannot supersede itself")
+        return self
+
+
 class Athlete(VersionedRecord):
     display_name: Annotated[str, Field(min_length=1, max_length=120)]
     date_of_birth: date | None = None
@@ -161,6 +204,8 @@ class CapabilityEstimate(VersionedRecord):
     estimated_at: datetime
     valid_until: datetime | None = None
     rule_version: NonEmptyText
+    capability_estimation_policy_id: UUID | None = None
+    triggering_assessment_performance_id: UUID | None = None
 
     @field_validator("estimated_at", "valid_until")
     @classmethod
@@ -175,6 +220,12 @@ class CapabilityEstimate(VersionedRecord):
             raise ValueError("source_observation_ids must not contain duplicates")
         if self.valid_until is not None and self.valid_until <= self.estimated_at:
             raise ValueError("valid_until must be later than estimated_at")
+        if (self.capability_estimation_policy_id is None) != (
+            self.triggering_assessment_performance_id is None
+        ):
+            raise ValueError(
+                "assessment estimate policy and triggering performance must be supplied together"
+            )
         return self
 
 
@@ -196,6 +247,7 @@ class Equipment(VersionedRecord):
 class EquipmentAvailability(VersionedRecord):
     environment_id: UUID
     equipment_id: UUID
+    source_observation_id: UUID | None = None
     is_available: bool
     effective_from: datetime
     effective_until: datetime | None = None
@@ -430,9 +482,143 @@ class AssessmentDefinition(VersionedRecord):
     blocked_by_health_screening_flags: tuple[NonEmptyText, ...] = ()
 
 
+class AssessmentMeasurementSchema(DomainModel):
+    measurement_type: AssessmentMeasurementType
+    label: NonEmptyText
+    minimum: float | None = Field(default=None, allow_inf_nan=False)
+    maximum: float | None = Field(default=None, allow_inf_nan=False)
+    step: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    allowed_values: tuple[NonEmptyText, ...] = ()
+    measurement_schema_version: NonEmptyText
+
+    @model_validator(mode="after")
+    def validate_measurement_contract(self) -> AssessmentMeasurementSchema:
+        if self.minimum is not None and self.maximum is not None and self.maximum < self.minimum:
+            raise ValueError("measurement maximum cannot be below minimum")
+        if self.measurement_type is AssessmentMeasurementType.CATEGORY:
+            if not self.allowed_values:
+                raise ValueError("categorical measurements require allowed values")
+            if self.minimum is not None or self.maximum is not None or self.step is not None:
+                raise ValueError("categorical measurements cannot define numeric constraints")
+        elif self.allowed_values:
+            raise ValueError("numeric measurements cannot define categorical values")
+        if self.measurement_type is AssessmentMeasurementType.INTEGER:
+            constraints = (self.minimum, self.maximum, self.step)
+            if any(
+                value is not None and Decimal(str(value)) % Decimal(1) != 0 for value in constraints
+            ):
+                raise ValueError("integer measurement constraints must use whole numbers")
+        if len(set(self.allowed_values)) != len(self.allowed_values):
+            raise ValueError("measurement allowed values must not contain duplicates")
+        return self
+
+    def validate_measurement(self, value: JsonValue) -> None:
+        if self.measurement_type is AssessmentMeasurementType.CATEGORY:
+            if not isinstance(value, str) or value not in self.allowed_values:
+                raise ValueError("measurement is not an allowed category")
+            return
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError("measurement must be numeric")
+        if self.measurement_type is AssessmentMeasurementType.INTEGER and type(value) is not int:
+            raise ValueError("measurement must be an integer")
+        numeric = Decimal(str(value))
+        if not numeric.is_finite():
+            raise ValueError("measurement must be finite")
+        if self.minimum is not None and numeric < Decimal(str(self.minimum)):
+            raise ValueError("measurement is below the reviewed minimum")
+        if self.maximum is not None and numeric > Decimal(str(self.maximum)):
+            raise ValueError("measurement is above the reviewed maximum")
+        if self.step is not None:
+            origin = self.minimum if self.minimum is not None else 0
+            if (numeric - Decimal(str(origin))) % Decimal(str(self.step)) != 0:
+                raise ValueError("measurement does not match the reviewed step")
+
+
+class AssessmentDefinitionReview(VersionedRecord):
+    assessment_definition_id: UUID
+    decision: AssessmentReviewDecision
+    sequence_number: Annotated[int, Field(ge=1)]
+    supersedes_review_id: UUID | None = None
+    protocol_instructions: Annotated[tuple[NonEmptyText, ...], Field(min_length=1)]
+    result_entry_instructions: NonEmptyText
+    measurement_schema: AssessmentMeasurementSchema | None = None
+    recommended_reassessment_days: Annotated[int, Field(ge=1)] | None = None
+    self_administered: bool = False
+    evidence_claim_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
+    reviewed_at: datetime
+    reviewer: NonEmptyText
+    applicability_notes: NonEmptyText
+    uncertainty: NonEmptyText
+    review_version: NonEmptyText
+
+    @field_validator("reviewed_at")
+    @classmethod
+    def require_aware_reviewed_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("assessment review time must include a timezone")
+        return value
+
+    @model_validator(mode="after")
+    def validate_review(self) -> AssessmentDefinitionReview:
+        if len(set(self.protocol_instructions)) != len(self.protocol_instructions):
+            raise ValueError("protocol_instructions must not contain duplicates")
+        if len(set(self.evidence_claim_ids)) != len(self.evidence_claim_ids):
+            raise ValueError("evidence_claim_ids must not contain duplicates")
+        if self.sequence_number == 1 and self.supersedes_review_id is not None:
+            raise ValueError("the first assessment review cannot supersede another record")
+        if self.sequence_number > 1 and self.supersedes_review_id is None:
+            raise ValueError("later assessment reviews must reference their predecessor")
+        if self.supersedes_review_id == self.id:
+            raise ValueError("an assessment review cannot supersede itself")
+        if (
+            self.decision is AssessmentReviewDecision.APPROVED
+            and self.recommended_reassessment_days is None
+        ):
+            raise ValueError("approved assessments require a reassessment interval")
+        return self
+
+
+class AssessmentEligibilityReview(VersionedRecord):
+    athlete_id: UUID
+    outcome: AssessmentEligibilityOutcome
+    sequence_number: Annotated[int, Field(ge=1)]
+    supersedes_review_id: UUID | None = None
+    source_observation_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
+    reviewed_at: datetime
+    valid_until: datetime
+    reviewed_by: NonEmptyText
+    screening_process_reference: NonEmptyText
+    rationale: NonEmptyText
+    uncertainty: NonEmptyText
+    rule_version: NonEmptyText
+
+    @field_validator("reviewed_at", "valid_until")
+    @classmethod
+    def require_aware_eligibility_times(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("assessment eligibility timestamps must include a timezone")
+        return value
+
+    @model_validator(mode="after")
+    def validate_eligibility_review(self) -> AssessmentEligibilityReview:
+        if len(set(self.source_observation_ids)) != len(self.source_observation_ids):
+            raise ValueError("source_observation_ids must not contain duplicates")
+        if self.valid_until <= self.reviewed_at:
+            raise ValueError("eligibility valid_until must be later than reviewed_at")
+        if self.sequence_number == 1 and self.supersedes_review_id is not None:
+            raise ValueError("the first eligibility review cannot supersede another record")
+        if self.sequence_number > 1 and self.supersedes_review_id is None:
+            raise ValueError("later eligibility reviews must reference their predecessor")
+        if self.supersedes_review_id == self.id:
+            raise ValueError("an eligibility review cannot supersede itself")
+        return self
+
+
 class AssessmentSelection(VersionedRecord):
     athlete_id: UUID
     assessment_definition_id: UUID
+    assessment_definition_review_id: UUID | None = None
+    assessment_eligibility_review_id: UUID | None = None
     decision: AssessmentDecision
     reason_codes: Annotated[tuple[AssessmentReason, ...], Field(min_length=1)]
     rationale: Annotated[tuple[NonEmptyText, ...], Field(min_length=1)]
@@ -462,6 +648,48 @@ class AssessmentSelection(VersionedRecord):
         return self
 
 
+class AssessmentSelectionRun(VersionedRecord):
+    athlete_id: UUID
+    assessment_eligibility_review_id: UUID
+    environment_id: UUID
+    context_observation_id: UUID
+    selection_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
+    evaluated_at: datetime
+    rule_version: NonEmptyText
+
+    @field_validator("evaluated_at")
+    @classmethod
+    def require_aware_run_time(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("assessment run time must include a timezone")
+        return value
+
+    @model_validator(mode="after")
+    def validate_selection_ids(self) -> AssessmentSelectionRun:
+        if len(set(self.selection_ids)) != len(self.selection_ids):
+            raise ValueError("selection_ids must not contain duplicates")
+        return self
+
+
+class AssessmentPerformance(VersionedRecord):
+    athlete_id: UUID
+    assessment_selection_run_id: UUID
+    assessment_selection_id: UUID
+    assessment_definition_id: UUID
+    assessment_definition_review_id: UUID
+    assessment_eligibility_review_id: UUID
+    result_observation_id: UUID
+    performed_at: datetime
+    rule_version: NonEmptyText
+
+    @field_validator("performed_at")
+    @classmethod
+    def require_aware_performed_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("assessment performance time must include a timezone")
+        return value
+
+
 class AssessmentResultInput(DomainModel):
     athlete_id: UUID
     assessment_definition_id: UUID
@@ -481,13 +709,44 @@ class AssessmentResultInput(DomainModel):
 
 
 class CapabilityEstimationPolicy(VersionedRecord):
+    assessment_definition_id: UUID
+    assessment_definition_review_id: UUID
+    decision: AssessmentReviewDecision
+    sequence_number: Annotated[int, Field(ge=1)]
+    supersedes_policy_id: UUID | None = None
     domain: CapabilityDomain
     observation_type: NonEmptyText
     unit_or_scale: NonEmptyText
     calculation_method: NonEmptyText
     valid_for_days: int = Field(ge=1)
     multi_observation_window_days: int = Field(default=90, ge=1)
+    evidence_claim_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
+    reviewed_at: datetime
+    reviewed_by: NonEmptyText
+    applicability_notes: NonEmptyText
+    uncertainty: NonEmptyText
     rule_version: NonEmptyText
+
+    @field_validator("reviewed_at")
+    @classmethod
+    def require_aware_reviewed_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("capability estimation policy review time must include a timezone")
+        return value
+
+    @model_validator(mode="after")
+    def validate_policy(self) -> CapabilityEstimationPolicy:
+        if len(set(self.evidence_claim_ids)) != len(self.evidence_claim_ids):
+            raise ValueError("evidence_claim_ids must not contain duplicates")
+        if self.sequence_number == 1 and self.supersedes_policy_id is not None:
+            raise ValueError("the first capability estimation policy cannot supersede another")
+        if self.sequence_number > 1 and self.supersedes_policy_id is None:
+            raise ValueError(
+                "later capability estimation policies must reference their predecessor"
+            )
+        if self.supersedes_policy_id == self.id:
+            raise ValueError("a capability estimation policy cannot supersede itself")
+        return self
 
 
 class CompetencyFloor(VersionedRecord):
@@ -506,6 +765,38 @@ class CompetencyFloor(VersionedRecord):
     def validate_evidence(self) -> CompetencyFloor:
         if len(set(self.evidence_claim_ids)) != len(self.evidence_claim_ids):
             raise ValueError("evidence_claim_ids must not contain duplicates")
+        return self
+
+
+class CompetencyFloorReview(VersionedRecord):
+    competency_floor_id: UUID
+    decision: AssessmentReviewDecision
+    sequence_number: Annotated[int, Field(ge=1)]
+    supersedes_review_id: UUID | None = None
+    evidence_claim_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
+    reviewed_at: datetime
+    reviewed_by: NonEmptyText
+    applicability_rationale: NonEmptyText
+    uncertainty: NonEmptyText
+    review_version: NonEmptyText
+
+    @field_validator("reviewed_at")
+    @classmethod
+    def require_aware_reviewed_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("competency floor review time must include a timezone")
+        return value
+
+    @model_validator(mode="after")
+    def validate_review(self) -> CompetencyFloorReview:
+        if len(set(self.evidence_claim_ids)) != len(self.evidence_claim_ids):
+            raise ValueError("evidence_claim_ids must not contain duplicates")
+        if self.sequence_number == 1 and self.supersedes_review_id is not None:
+            raise ValueError("the first competency floor review cannot supersede another")
+        if self.sequence_number > 1 and self.supersedes_review_id is None:
+            raise ValueError("later competency floor reviews must reference their predecessor")
+        if self.supersedes_review_id == self.id:
+            raise ValueError("a competency floor review cannot supersede itself")
         return self
 
 
@@ -586,6 +877,38 @@ class PriorityPolicy(VersionedRecord):
         required_confidence = set(Confidence)
         if set(self.confidence_multipliers) != required_confidence:
             raise ValueError("confidence_multipliers must define every confidence level")
+        return self
+
+
+class PriorityPolicyReview(VersionedRecord):
+    priority_policy_id: UUID
+    decision: AssessmentReviewDecision
+    sequence_number: Annotated[int, Field(ge=1)]
+    supersedes_review_id: UUID | None = None
+    evidence_claim_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
+    reviewed_at: datetime
+    reviewed_by: NonEmptyText
+    applicability_rationale: NonEmptyText
+    uncertainty: NonEmptyText
+    review_version: NonEmptyText
+
+    @field_validator("reviewed_at")
+    @classmethod
+    def require_aware_reviewed_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("priority policy review time must include a timezone")
+        return value
+
+    @model_validator(mode="after")
+    def validate_review(self) -> PriorityPolicyReview:
+        if len(set(self.evidence_claim_ids)) != len(self.evidence_claim_ids):
+            raise ValueError("evidence_claim_ids must not contain duplicates")
+        if self.sequence_number == 1 and self.supersedes_review_id is not None:
+            raise ValueError("the first priority policy review cannot supersede another")
+        if self.sequence_number > 1 and self.supersedes_review_id is None:
+            raise ValueError("later priority policy reviews must reference their predecessor")
+        if self.supersedes_review_id == self.id:
+            raise ValueError("a priority policy review cannot supersede itself")
         return self
 
 
@@ -1255,6 +1578,7 @@ class SessionPrescription(VersionedRecord):
     rule_version: NonEmptyText
     supersedes_prescription_id: UUID | None = None
     progression_decision_id: UUID | None = None
+    planning_decision_record_id: UUID | None = None
 
     @field_validator("prescribed_at")
     @classmethod
@@ -1271,8 +1595,16 @@ class SessionPrescription(VersionedRecord):
             values = getattr(self, field_name)
             if len(set(values)) != len(values):
                 raise ValueError(f"{field_name} must not contain duplicates")
-        if (self.supersedes_prescription_id is None) != (self.progression_decision_id is None):
-            raise ValueError("prescription revisions require both superseded and decision ids")
+        revision_decision_count = sum(
+            item is not None
+            for item in (self.progression_decision_id, self.planning_decision_record_id)
+        )
+        if self.supersedes_prescription_id is None and revision_decision_count:
+            raise ValueError("an original prescription cannot have a revision decision")
+        if self.supersedes_prescription_id is not None and revision_decision_count != 1:
+            raise ValueError(
+                "a prescription revision requires exactly one progression or planning decision"
+            )
         if self.supersedes_prescription_id == self.id:
             raise ValueError("a prescription cannot supersede itself")
         target_kinds = [item.kind for item in self.intensity_targets]
@@ -1348,6 +1680,7 @@ class AvailabilityWindow(VersionedRecord):
 
 class WeeklyAvailability(VersionedRecord):
     athlete_id: UUID
+    source_weekly_plan_id: UUID | None = None
     week_start: date
     windows: tuple[AvailabilityWindow, ...] = ()
     source_observation_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
@@ -1363,6 +1696,8 @@ class WeeklyAvailability(VersionedRecord):
 
     @model_validator(mode="after")
     def validate_availability(self) -> WeeklyAvailability:
+        if self.source_weekly_plan_id == self.id:
+            raise ValueError("weekly availability cannot use itself as a source weekly plan")
         if len(set(self.source_observation_ids)) != len(self.source_observation_ids):
             raise ValueError("source_observation_ids must not contain duplicates")
         if len({item.id for item in self.windows}) != len(self.windows):
@@ -1387,6 +1722,40 @@ class WeeklySchedulingPolicy(VersionedRecord):
     maximum_high_fatigue_sessions_per_day: int = Field(ge=1)
     allow_partial_exercise_resolution: bool
     policy_version: NonEmptyText
+
+
+class WeeklySchedulingPolicyReview(VersionedRecord):
+    weekly_scheduling_policy_id: UUID
+    decision: AssessmentReviewDecision
+    sequence_number: Annotated[int, Field(ge=1)]
+    supersedes_review_id: UUID | None = None
+    evidence_claim_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
+    reviewed_at: datetime
+    reviewed_by: NonEmptyText
+    applicability_rationale: NonEmptyText
+    uncertainty: NonEmptyText
+    review_version: NonEmptyText
+
+    @field_validator("reviewed_at")
+    @classmethod
+    def require_aware_reviewed_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("weekly scheduling policy review time must include a timezone")
+        return value
+
+    @model_validator(mode="after")
+    def validate_review(self) -> WeeklySchedulingPolicyReview:
+        if len(set(self.evidence_claim_ids)) != len(self.evidence_claim_ids):
+            raise ValueError("evidence_claim_ids must not contain duplicates")
+        if self.sequence_number == 1 and self.supersedes_review_id is not None:
+            raise ValueError("the first weekly scheduling policy review cannot supersede another")
+        if self.sequence_number > 1 and self.supersedes_review_id is None:
+            raise ValueError(
+                "later weekly scheduling policy reviews must reference their predecessor"
+            )
+        if self.supersedes_review_id == self.id:
+            raise ValueError("a weekly scheduling policy review cannot supersede itself")
+        return self
 
 
 class SchedulingIssue(DomainModel):
@@ -1435,6 +1804,7 @@ class WeeklyPlan(VersionedRecord):
     generated_at: datetime
     rule_version: NonEmptyText
     previous_weekly_plan_id: UUID | None = None
+    scheduling_policy_review_id: UUID | None = None
 
     @field_validator("generated_at")
     @classmethod

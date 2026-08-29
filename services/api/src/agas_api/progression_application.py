@@ -44,6 +44,8 @@ class ExposureProgressionDraft(BaseModel):
 
 
 class CreateProgressionDecisionCommand(BaseModel):
+    """Governed internal inputs; not an athlete-facing transport contract."""
+
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     progression_policy_id: UUID
@@ -56,6 +58,21 @@ class CreateProgressionDecisionCommand(BaseModel):
     @classmethod
     def require_aware_progression_time(cls, value: datetime | None) -> datetime | None:
         if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("progression timestamps must include a timezone")
+        return value
+
+
+class AutomaticProgressionDecisionCommand(BaseModel):
+    """Athlete request to evaluate history under server-resolved policy authority."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    decided_at: datetime
+
+    @field_validator("decided_at")
+    @classmethod
+    def require_aware_decided_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("progression timestamps must include a timezone")
         return value
 
@@ -100,6 +117,56 @@ class PersistedProgressionService:
     def __init__(self, session: Session) -> None:
         self.session = session
         self.repository = DomainRepository(session)
+
+    def execute_automatic(
+        self,
+        session_execution_id: UUID,
+        prescription_id: UUID,
+        command: AutomaticProgressionDecisionCommand,
+    ) -> ProgressionCreationResult:
+        """Resolve one simple policy from immutable prescription authority and evaluate it."""
+
+        execution = self.repository.get_session_execution(session_execution_id)
+        if execution is None:
+            raise ProgressionNotFoundError("session execution does not exist")
+        prescription = self.repository.get_session_prescription(prescription_id)
+        if prescription is None:
+            raise ProgressionNotFoundError("session prescription does not exist")
+        if not any(item.prescription_id == prescription.id for item in execution.items):
+            raise ProgressionValidationError(
+                "session prescription does not belong to the execution"
+            )
+        policies = self.repository.list_progression_policies_by_reference(
+            prescription.progression_rule_reference
+        )
+        if len(policies) != 1:
+            reason = (
+                "no progression policy matches the prescription rule reference"
+                if not policies
+                else "multiple progression policies match the prescription rule reference"
+            )
+            raise ProgressionValidationError(reason)
+        policy = policies[0]
+        if policy.exposure_type is not None:
+            raise ProgressionValidationError(
+                "exposure-sensitive progression requires governed configuration"
+            )
+        if policy.adjustment.dimension not in {
+            ProgressionDimension.LOAD,
+            ProgressionDimension.REPETITIONS,
+        }:
+            raise ProgressionValidationError(
+                f"{policy.adjustment.dimension.value} progression requires governed configuration"
+            )
+        return self.execute(
+            session_execution_id,
+            prescription_id,
+            CreateProgressionDecisionCommand(
+                progression_policy_id=policy.id,
+                decided_at=command.decided_at,
+                revision_prescribed_at=command.decided_at,
+            ),
+        )
 
     def execute(
         self,

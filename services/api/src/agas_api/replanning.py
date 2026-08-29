@@ -10,6 +10,8 @@ from agas_domain import (
     CapabilityEstimate,
     ClosedLoopReplanningResult,
     CompetencyFloor,
+    DecisionRecord,
+    LongRangeStrategy,
     ReplanningCandidateContext,
     TrainingResponse,
 )
@@ -28,6 +30,9 @@ class PostBlockReplanningCommand(BaseModel):
     candidate_contexts: Annotated[tuple[ReplanningCandidateContext, ...], Field(min_length=1)]
     generated_at: datetime
     review_after_days: int = Field(ge=1)
+    reviewed_by: Annotated[str, Field(min_length=1)]
+    applicability_rationale: Annotated[str, Field(min_length=1)]
+    uncertainty: Annotated[str, Field(min_length=1)]
 
     @field_validator("generated_at")
     @classmethod
@@ -35,6 +40,18 @@ class PostBlockReplanningCommand(BaseModel):
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("generated_at must include a timezone")
         return value
+
+    @field_validator("reviewed_by", "applicability_rationale", "uncertainty")
+    @classmethod
+    def require_meaningful_review_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("operator review metadata must not be blank")
+        return normalized
+
+
+class PostBlockReplanningResult(ClosedLoopReplanningResult):
+    decision_record: DecisionRecord
 
 
 class ReplanningUseCaseError(RuntimeError):
@@ -62,19 +79,20 @@ class PersistedReplanningService:
 
     def execute(
         self, block_review_id: UUID, command: PostBlockReplanningCommand
-    ) -> ClosedLoopReplanningResult:
+    ) -> PostBlockReplanningResult:
         try:
             result = self._build_result(block_review_id, command)
             for need in result.capability_needs:
                 self.repository.add_capability_need(need)
             self.session.flush()
             self.repository.add_long_range_strategy(result.strategy)
+            self.repository.add_decision_record(result.decision_record)
             self.session.commit()
             return result
         except ReplanningUseCaseError:
             self.session.rollback()
             raise
-        except (ClosedLoopReplanningError, DomainIntegrityError) as error:
+        except (ClosedLoopReplanningError, DomainIntegrityError, ValueError) as error:
             self.session.rollback()
             raise ReplanningValidationError(str(error)) from error
         except IntegrityError as error:
@@ -85,7 +103,7 @@ class PersistedReplanningService:
 
     def _build_result(
         self, block_review_id: UUID, command: PostBlockReplanningCommand
-    ) -> ClosedLoopReplanningResult:
+    ) -> PostBlockReplanningResult:
         if (
             self.repository.get_long_range_strategy_by_triggering_review(block_review_id)
             is not None
@@ -129,7 +147,7 @@ class PersistedReplanningService:
         floors = self._load_records(
             floor_ids, self.repository.get_competency_floor, "competency floor"
         )
-        return ClosedLoopReplanner().replan(
+        replanning = ClosedLoopReplanner().replan(
             previous_strategy=previous_strategy,
             completed_block=block,
             block_review=review,
@@ -141,6 +159,82 @@ class PersistedReplanningService:
             priority_policy=priority_policy,
             generated_at=command.generated_at,
             review_after_days=command.review_after_days,
+        )
+        return PostBlockReplanningResult(
+            capability_needs=replanning.capability_needs,
+            strategy=replanning.strategy,
+            decision_record=self._decision_record(
+                command=command,
+                previous_strategy=previous_strategy,
+                completed_block_id=block.id,
+                block_review_id=review.id,
+                training_responses=responses,
+                priority_policy_id=priority_policy.id,
+                replanning=replanning,
+            ),
+        )
+
+    @staticmethod
+    def _decision_record(
+        *,
+        command: PostBlockReplanningCommand,
+        previous_strategy: LongRangeStrategy,
+        completed_block_id: UUID,
+        block_review_id: UUID,
+        training_responses: tuple[TrainingResponse, ...],
+        priority_policy_id: UUID,
+        replanning: ClosedLoopReplanningResult,
+    ) -> DecisionRecord:
+        values = [
+            f"long_range_strategy:{previous_strategy.id}",
+            f"block_plan:{completed_block_id}",
+            f"block_review:{block_review_id}",
+            *(f"training_response:{item.id}" for item in training_responses),
+            f"priority_policy:{priority_policy_id}",
+            *(
+                "replanning_candidate:"
+                f"adaptation={item.adaptation_id}:floor={item.competency_floor_id}:"
+                f"estimate={item.capability_estimate_id}:general={item.general_relevance}:"
+                f"goal={item.goal_relevance}:prerequisite={item.prerequisite_value}:"
+                f"trainability={item.expected_trainability}:transfer={item.transfer_value}:"
+                f"fatigue={item.fatigue_cost}:time={item.time_cost}:"
+                f"interference={item.interference_cost}:safe={item.safe_to_train}:"
+                f"introductory={item.introductory_exposure_needed}:"
+                f"prerequisites_met={item.prerequisites_met}:"
+                f"comparative_advantage={item.cultivate_comparative_advantage}"
+                for item in command.candidate_contexts
+            ),
+            *(f"adaptation:{item.adaptation_id}" for item in command.candidate_contexts),
+            *(
+                f"competency_floor:{item.competency_floor_id}"
+                for item in command.candidate_contexts
+            ),
+            *(
+                f"capability_estimate:{item.capability_estimate_id}"
+                for item in command.candidate_contexts
+            ),
+            *(f"capability_need:{item.id}" for item in replanning.capability_needs),
+            *(f"observation:{item}" for item in replanning.strategy.source_observation_ids),
+            *(f"evidence_claim:{item}" for item in replanning.strategy.evidence_claim_ids),
+            f"long_range_strategy:{replanning.strategy.id}",
+        ]
+        return DecisionRecord(
+            decision=(
+                f"Create successor strategy {replanning.strategy.id} from block review "
+                f"{block_review_id}."
+            ),
+            reason=f"Reviewed by {command.reviewed_by}. {command.applicability_rationale}",
+            alternatives_considered=(
+                "Retain the prior strategy until different reviewed estimates, competency floors, "
+                "candidate contexts, policy authority, or review timing are available.",
+            ),
+            evidence=tuple(dict.fromkeys(values)),
+            uncertainty=command.uncertainty,
+            decision_version=(
+                "post-block-replanning-operator-review@1.0.0;"
+                f"planner={replanning.strategy.rule_version}"
+            ),
+            decided_on=command.generated_at.date(),
         )
 
     @staticmethod

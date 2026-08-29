@@ -8,14 +8,26 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
+from agas_domain.enums import (
+    AccountRole,
+    AccountRoleStatus,
+    AssessmentDecision,
+    AssessmentEligibilityOutcome,
+    AssessmentReviewDecision,
+)
 from agas_domain.models import (
     Account,
+    AccountRoleAssignment,
     Adaptation,
     AdaptationPriority,
     AdaptationRelationship,
     AdaptationResourceDemand,
     AssessmentDefinition,
+    AssessmentDefinitionReview,
+    AssessmentEligibilityReview,
+    AssessmentPerformance,
     AssessmentSelection,
+    AssessmentSelectionRun,
     Athlete,
     AthleteOwnership,
     AthleteSafetyPolicyAssignment,
@@ -25,9 +37,11 @@ from agas_domain.models import (
     BlockReview,
     BlockReviewPolicy,
     CapabilityEstimate,
+    CapabilityEstimationPolicy,
     CapabilityNeed,
     CatalogImport,
     CompetencyFloor,
+    CompetencyFloorReview,
     DecisionRecord,
     Environment,
     Equipment,
@@ -46,6 +60,7 @@ from agas_domain.models import (
     Observation,
     PlannedSession,
     PriorityPolicy,
+    PriorityPolicyReview,
     ProgressionDecision,
     ProgressionPolicy,
     Provenance,
@@ -69,9 +84,11 @@ from agas_domain.models import (
     WeeklyAvailability,
     WeeklyPlan,
     WeeklySchedulingPolicy,
+    WeeklySchedulingPolicyReview,
 )
 from agas_domain.persistence.models import (
     AccountRecord,
+    AccountRoleAssignmentRecord,
     AdaptationEvidenceClaimRecord,
     AdaptationPriorityRecord,
     AdaptationRecord,
@@ -79,8 +96,15 @@ from agas_domain.persistence.models import (
     AdaptationRelationshipRecord,
     AdaptationResourceDemandRecord,
     AssessmentDefinitionRecord,
+    AssessmentDefinitionReviewEvidenceClaimRecord,
+    AssessmentDefinitionReviewRecord,
+    AssessmentEligibilityReviewObservationRecord,
+    AssessmentEligibilityReviewRecord,
+    AssessmentPerformanceRecord,
     AssessmentSelectionObservationRecord,
     AssessmentSelectionRecord,
+    AssessmentSelectionRunItemRecord,
+    AssessmentSelectionRunRecord,
     AthleteOwnershipRecord,
     AthleteRecord,
     AthleteSafetyPolicyAssignmentRecord,
@@ -98,6 +122,8 @@ from agas_domain.persistence.models import (
     BlockReviewSafetyRecord,
     CapabilityEstimateObservationRecord,
     CapabilityEstimateRecord,
+    CapabilityEstimationPolicyEvidenceClaimRecord,
+    CapabilityEstimationPolicyRecord,
     CapabilityNeedEvidenceClaimRecord,
     CapabilityNeedRecord,
     CatalogImportAdaptationRecord,
@@ -107,6 +133,8 @@ from agas_domain.persistence.models import (
     CatalogImportRecord,
     CompetencyFloorEvidenceClaimRecord,
     CompetencyFloorRecord,
+    CompetencyFloorReviewEvidenceClaimRecord,
+    CompetencyFloorReviewRecord,
     DecisionRecordRecord,
     EnvironmentRecord,
     EquipmentAvailabilityRecord,
@@ -132,6 +160,8 @@ from agas_domain.persistence.models import (
     ObservationRecord,
     PlannedSessionRecord,
     PriorityPolicyRecord,
+    PriorityPolicyReviewEvidenceClaimRecord,
+    PriorityPolicyReviewRecord,
     ProgressionDecisionObservationRecord,
     ProgressionDecisionRecord,
     ProgressionDecisionSafetyRecord,
@@ -175,6 +205,8 @@ from agas_domain.persistence.models import (
     WeeklyAvailabilityRecord,
     WeeklyPlanRecord,
     WeeklySchedulingPolicyRecord,
+    WeeklySchedulingPolicyReviewEvidenceClaimRecord,
+    WeeklySchedulingPolicyReviewRecord,
 )
 
 
@@ -209,6 +241,82 @@ class DomainRepository:
             )
         )
         return self._account_from_record(record) if record is not None else None
+
+    def add_account_role_assignment(self, assignment: AccountRoleAssignment) -> None:
+        if self.get_account(assignment.account_id) is None:
+            raise DomainIntegrityError("role assignment account does not exist")
+        current = self.get_current_account_role_assignment(assignment.account_id, assignment.role)
+        if assignment.sequence_number == 1:
+            if current is not None:
+                raise DomainIntegrityError("account role already has assignment history")
+        else:
+            if current is None:
+                raise DomainIntegrityError("account role assignment predecessor does not exist")
+            if assignment.supersedes_assignment_id != current.id:
+                raise DomainIntegrityError(
+                    "account role assignment must supersede the current item"
+                )
+            if assignment.sequence_number != current.sequence_number + 1:
+                raise DomainIntegrityError("account role assignment sequence must be contiguous")
+            if assignment.assigned_at < current.assigned_at:
+                raise DomainIntegrityError("account role assignment cannot predate its predecessor")
+            if assignment.status is current.status:
+                raise DomainIntegrityError("account role assignment must change role status")
+        self.session.add(
+            AccountRoleAssignmentRecord(
+                id=assignment.id,
+                schema_version=assignment.schema_version,
+                created_at=assignment.created_at,
+                account_id=assignment.account_id,
+                role=assignment.role.value,
+                status=assignment.status.value,
+                sequence_number=assignment.sequence_number,
+                supersedes_assignment_id=assignment.supersedes_assignment_id,
+                assigned_at=assignment.assigned_at,
+                assigned_by=assignment.assigned_by,
+                rationale=assignment.rationale,
+                rule_version=assignment.rule_version,
+            )
+        )
+
+    def get_account_role_assignment(self, assignment_id: UUID) -> AccountRoleAssignment | None:
+        record = self.session.get(AccountRoleAssignmentRecord, assignment_id)
+        return self._account_role_assignment_from_record(record) if record else None
+
+    def list_account_role_assignments(
+        self, account_id: UUID, role: AccountRole
+    ) -> tuple[AccountRoleAssignment, ...]:
+        records = self.session.scalars(
+            select(AccountRoleAssignmentRecord)
+            .where(
+                AccountRoleAssignmentRecord.account_id == account_id,
+                AccountRoleAssignmentRecord.role == role.value,
+            )
+            .order_by(
+                AccountRoleAssignmentRecord.sequence_number,
+                AccountRoleAssignmentRecord.assigned_at,
+                AccountRoleAssignmentRecord.id,
+            )
+        ).all()
+        return tuple(self._account_role_assignment_from_record(record) for record in records)
+
+    def get_current_account_role_assignment(
+        self, account_id: UUID, role: AccountRole
+    ) -> AccountRoleAssignment | None:
+        record = self.session.scalar(
+            select(AccountRoleAssignmentRecord)
+            .where(
+                AccountRoleAssignmentRecord.account_id == account_id,
+                AccountRoleAssignmentRecord.role == role.value,
+            )
+            .order_by(
+                AccountRoleAssignmentRecord.sequence_number.desc(),
+                AccountRoleAssignmentRecord.assigned_at.desc(),
+                AccountRoleAssignmentRecord.id.desc(),
+            )
+            .limit(1)
+        )
+        return self._account_role_assignment_from_record(record) if record else None
 
     def add_athlete_ownership(self, ownership: AthleteOwnership) -> None:
         if self.get_account(ownership.account_id) is None:
@@ -255,6 +363,25 @@ class DomainRepository:
             created_at=record.created_at,
             issuer=record.issuer,
             subject=record.subject,
+        )
+
+    @staticmethod
+    def _account_role_assignment_from_record(
+        record: AccountRoleAssignmentRecord,
+    ) -> AccountRoleAssignment:
+        return AccountRoleAssignment(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            account_id=record.account_id,
+            role=AccountRole(record.role),
+            status=AccountRoleStatus(record.status),
+            sequence_number=record.sequence_number,
+            supersedes_assignment_id=record.supersedes_assignment_id,
+            assigned_at=record.assigned_at,
+            assigned_by=record.assigned_by,
+            rationale=record.rationale,
+            rule_version=record.rule_version,
         )
 
     def add_athlete(self, athlete: Athlete) -> None:
@@ -314,6 +441,60 @@ class DomainRepository:
             raise DomainIntegrityError(
                 "all source observations must belong to the same athlete as the estimate"
             )
+        if estimate.capability_estimation_policy_id is not None:
+            policy = self.get_capability_estimation_policy(estimate.capability_estimation_policy_id)
+            current_policy = (
+                self.get_current_capability_estimation_policy(policy.assessment_definition_id)
+                if policy is not None
+                else None
+            )
+            if (
+                policy is None
+                or current_policy is None
+                or current_policy.id != policy.id
+                or policy.decision is not AssessmentReviewDecision.APPROVED
+            ):
+                raise DomainIntegrityError(
+                    "assessment estimate requires the current approved estimation policy"
+                )
+            triggering_performance_id = estimate.triggering_assessment_performance_id
+            if triggering_performance_id is None:
+                raise DomainIntegrityError("assessment estimate requires a triggering performance")
+            performance = self.get_assessment_performance(triggering_performance_id)
+            if performance is None or performance.athlete_id != estimate.athlete_id:
+                raise DomainIntegrityError(
+                    "assessment estimate triggering performance belongs elsewhere"
+                )
+            if (
+                performance.assessment_definition_id != policy.assessment_definition_id
+                or performance.assessment_definition_review_id
+                != policy.assessment_definition_review_id
+            ):
+                raise DomainIntegrityError(
+                    "assessment estimate policy does not govern its triggering performance"
+                )
+            governed_observation_ids = {
+                item.result_observation_id
+                for item in self.list_assessment_performances(estimate.athlete_id)
+                if item.assessment_definition_id == policy.assessment_definition_id
+                and item.assessment_definition_review_id == policy.assessment_definition_review_id
+            }
+            if performance.result_observation_id not in estimate.source_observation_ids or not set(
+                estimate.source_observation_ids
+            ).issubset(governed_observation_ids):
+                raise DomainIntegrityError(
+                    "assessment estimate sources must be governed performances of its protocol"
+                )
+            if (
+                estimate.domain != policy.domain
+                or estimate.unit_or_scale != policy.unit_or_scale
+                or estimate.calculation_method != policy.calculation_method
+                or estimate.rule_version != policy.rule_version
+                or estimate.estimate_scope != f"assessment_specific:{policy.observation_type}"
+            ):
+                raise DomainIntegrityError(
+                    "assessment estimate output contract differs from its policy"
+                )
 
         record = CapabilityEstimateRecord(
             id=estimate.id,
@@ -330,6 +511,8 @@ class DomainRepository:
             estimated_at=estimate.estimated_at,
             valid_until=estimate.valid_until,
             rule_version=estimate.rule_version,
+            capability_estimation_policy_id=estimate.capability_estimation_policy_id,
+            triggering_assessment_performance_id=(estimate.triggering_assessment_performance_id),
         )
         record.source_links = [
             CapabilityEstimateObservationRecord(
@@ -370,10 +553,19 @@ class DomainRepository:
         )
 
     def add_equipment_availability(self, availability: EquipmentAvailability) -> None:
-        if self.session.get(EnvironmentRecord, availability.environment_id) is None:
+        environment = self.session.get(EnvironmentRecord, availability.environment_id)
+        if environment is None:
             raise DomainIntegrityError("environment does not exist")
         if self.session.get(EquipmentRecord, availability.equipment_id) is None:
             raise DomainIntegrityError("equipment does not exist")
+        if availability.source_observation_id is not None:
+            observation = self.session.get(ObservationRecord, availability.source_observation_id)
+            if observation is None:
+                raise DomainIntegrityError("equipment availability observation does not exist")
+            if observation.athlete_id != environment.athlete_id:
+                raise DomainIntegrityError(
+                    "equipment availability observation belongs to another athlete"
+                )
         self.session.add(
             EquipmentAvailabilityRecord(
                 id=availability.id,
@@ -381,6 +573,7 @@ class DomainRepository:
                 created_at=availability.created_at,
                 environment_id=availability.environment_id,
                 equipment_id=availability.equipment_id,
+                source_observation_id=availability.source_observation_id,
                 is_available=availability.is_available,
                 effective_from=availability.effective_from,
                 effective_until=availability.effective_until,
@@ -660,6 +853,63 @@ class DomainRepository:
         ]
         self.session.add(record)
 
+    def add_competency_floor_review(self, review: CompetencyFloorReview) -> None:
+        floor = self.get_competency_floor(review.competency_floor_id)
+        if floor is None:
+            raise DomainIntegrityError("competency floor review floor does not exist")
+        self._require_ids_exist(
+            EvidenceClaimRecord.id,
+            review.evidence_claim_ids,
+            "competency floor review evidence claims",
+        )
+        if not set(floor.evidence_claim_ids).issubset(review.evidence_claim_ids):
+            raise DomainIntegrityError(
+                "competency floor review must include every claim cited by the floor"
+            )
+        current = self.get_current_competency_floor_review(floor.id)
+        if current is None:
+            if review.sequence_number != 1 or review.supersedes_review_id is not None:
+                raise DomainIntegrityError(
+                    "the first competency floor review must start sequence one"
+                )
+        else:
+            if review.sequence_number != current.sequence_number + 1:
+                raise DomainIntegrityError(
+                    "a competency floor review replacement must use the next sequence number"
+                )
+            if review.supersedes_review_id != current.id:
+                raise DomainIntegrityError(
+                    "a competency floor review replacement must supersede the current review"
+                )
+            if review.reviewed_at < current.reviewed_at:
+                raise DomainIntegrityError(
+                    "a competency floor review replacement cannot predate the current review"
+                )
+
+        record = CompetencyFloorReviewRecord(
+            id=review.id,
+            schema_version=review.schema_version,
+            created_at=review.created_at,
+            competency_floor_id=review.competency_floor_id,
+            decision=review.decision.value,
+            sequence_number=review.sequence_number,
+            supersedes_review_id=review.supersedes_review_id,
+            reviewed_at=review.reviewed_at,
+            reviewed_by=review.reviewed_by,
+            applicability_rationale=review.applicability_rationale,
+            uncertainty=review.uncertainty,
+            review_version=review.review_version,
+        )
+        record.evidence_links = [
+            CompetencyFloorReviewEvidenceClaimRecord(
+                competency_floor_review_id=review.id,
+                evidence_claim_id=evidence_claim_id,
+                position=position,
+            )
+            for position, evidence_claim_id in enumerate(review.evidence_claim_ids)
+        ]
+        self.session.add(record)
+
     def add_capability_need(self, need: CapabilityNeed) -> None:
         self._require_athlete(need.athlete_id)
         if self.session.get(CompetencyFloorRecord, need.competency_floor_id) is None:
@@ -730,11 +980,66 @@ class DomainRepository:
             )
         )
 
+    def add_priority_policy_review(self, review: PriorityPolicyReview) -> None:
+        if self.get_priority_policy(review.priority_policy_id) is None:
+            raise DomainIntegrityError("priority policy review policy does not exist")
+        self._require_ids_exist(
+            EvidenceClaimRecord.id,
+            review.evidence_claim_ids,
+            "priority policy review evidence claims",
+        )
+        current = self.get_current_priority_policy_review(review.priority_policy_id)
+        if current is None:
+            if review.sequence_number != 1 or review.supersedes_review_id is not None:
+                raise DomainIntegrityError(
+                    "the first priority policy review must start sequence one"
+                )
+        else:
+            if review.sequence_number != current.sequence_number + 1:
+                raise DomainIntegrityError(
+                    "a priority policy review replacement must use the next sequence number"
+                )
+            if review.supersedes_review_id != current.id:
+                raise DomainIntegrityError(
+                    "a priority policy review replacement must supersede the current review"
+                )
+            if review.reviewed_at < current.reviewed_at:
+                raise DomainIntegrityError(
+                    "a priority policy review replacement cannot predate the current review"
+                )
+
+        record = PriorityPolicyReviewRecord(
+            id=review.id,
+            schema_version=review.schema_version,
+            created_at=review.created_at,
+            priority_policy_id=review.priority_policy_id,
+            decision=review.decision.value,
+            sequence_number=review.sequence_number,
+            supersedes_review_id=review.supersedes_review_id,
+            reviewed_at=review.reviewed_at,
+            reviewed_by=review.reviewed_by,
+            applicability_rationale=review.applicability_rationale,
+            uncertainty=review.uncertainty,
+            review_version=review.review_version,
+        )
+        record.evidence_links = [
+            PriorityPolicyReviewEvidenceClaimRecord(
+                priority_policy_review_id=review.id,
+                evidence_claim_id=evidence_claim_id,
+                position=position,
+            )
+            for position, evidence_claim_id in enumerate(review.evidence_claim_ids)
+        ]
+        self.session.add(record)
+
     def add_long_range_strategy(self, strategy: LongRangeStrategy) -> None:
         self._require_athlete(strategy.athlete_id)
         if self.session.get(PriorityPolicyRecord, strategy.priority_policy_id) is None:
             raise DomainIntegrityError("priority policy does not exist")
-        if strategy.supersedes_strategy_id is not None:
+        if strategy.supersedes_strategy_id is None:
+            if self.get_initial_long_range_strategy(strategy.athlete_id) is not None:
+                raise DomainIntegrityError("athlete already has an initial strategy")
+        else:
             existing_revision = self.session.scalar(
                 select(LongRangeStrategyRecord).where(
                     LongRangeStrategyRecord.triggering_block_review_id
@@ -1264,6 +1569,20 @@ class DomainRepository:
             demand_version=record.demand_version,
         )
 
+    def list_adaptation_resource_demands_for_strategy(
+        self, strategy_id: UUID
+    ) -> tuple[AdaptationResourceDemand, ...]:
+        demand_ids = self.session.scalars(
+            select(AdaptationResourceDemandRecord.id)
+            .where(AdaptationResourceDemandRecord.long_range_strategy_id == strategy_id)
+            .order_by(
+                AdaptationResourceDemandRecord.created_at,
+                AdaptationResourceDemandRecord.id,
+            )
+        ).all()
+        demands = (self.get_adaptation_resource_demand(demand_id) for demand_id in demand_ids)
+        return tuple(demand for demand in demands if demand is not None)
+
     def add_resource_allocation_policy(self, policy: ResourceAllocationPolicy) -> None:
         self.session.add(
             ResourceAllocationPolicyRecord(
@@ -1292,6 +1611,16 @@ class DomainRepository:
             allow_partial_exercise_resolution=record.allow_partial_exercise_resolution,
             policy_version=record.policy_version,
         )
+
+    def list_resource_allocation_policies(self) -> tuple[ResourceAllocationPolicy, ...]:
+        policy_ids = self.session.scalars(
+            select(ResourceAllocationPolicyRecord.id).order_by(
+                ResourceAllocationPolicyRecord.policy_version,
+                ResourceAllocationPolicyRecord.id,
+            )
+        ).all()
+        policies = (self.get_resource_allocation_policy(policy_id) for policy_id in policy_ids)
+        return tuple(policy for policy in policies if policy is not None)
 
     def add_block_plan(self, block: BlockPlan) -> None:
         self._require_athlete(block.athlete_id)
@@ -1452,6 +1781,15 @@ class DomainRepository:
             rule_version=record.rule_version,
         )
 
+    def list_block_plans_for_strategy(self, strategy_id: UUID) -> tuple[BlockPlan, ...]:
+        block_ids = self.session.scalars(
+            select(BlockPlanRecord.id)
+            .where(BlockPlanRecord.long_range_strategy_id == strategy_id)
+            .order_by(BlockPlanRecord.generated_at, BlockPlanRecord.id)
+        ).all()
+        blocks = (self.get_block_plan(block_id) for block_id in block_ids)
+        return tuple(block for block in blocks if block is not None)
+
     def add_session_prescription(self, prescription: SessionPrescription) -> None:
         block = self.session.get(BlockPlanRecord, prescription.block_plan_id)
         if block is None or block.athlete_id != prescription.athlete_id:
@@ -1484,13 +1822,70 @@ class DomainRepository:
             previous = self.session.get(
                 SessionPrescriptionRecord, prescription.supersedes_prescription_id
             )
-            decision = self.session.get(
-                ProgressionDecisionRecord, prescription.progression_decision_id
-            )
-            if previous is None or decision is None or decision.prescription_id != previous.id:
-                raise DomainIntegrityError("prescription revision provenance is invalid")
-            if decision.outcome != "progress" or decision.athlete_id != prescription.athlete_id:
-                raise DomainIntegrityError("progression decision cannot authorize this revision")
+            if previous is None:
+                raise DomainIntegrityError("superseded prescription does not exist")
+            if (
+                previous.athlete_id != prescription.athlete_id
+                or previous.block_plan_id != prescription.block_plan_id
+                or previous.resource_allocation_id != prescription.resource_allocation_id
+                or previous.adaptation_id != prescription.adaptation_id
+            ):
+                raise DomainIntegrityError(
+                    "prescription revision must preserve athlete, block, allocation, and adaptation"
+                )
+            if prescription.prescribed_at < previous.prescribed_at:
+                raise DomainIntegrityError("prescription revision cannot predate its predecessor")
+            if prescription.progression_decision_id is not None:
+                decision = self.session.get(
+                    ProgressionDecisionRecord, prescription.progression_decision_id
+                )
+                if decision is None or decision.prescription_id != previous.id:
+                    raise DomainIntegrityError("prescription revision provenance is invalid")
+                if decision.outcome != "progress" or decision.athlete_id != prescription.athlete_id:
+                    raise DomainIntegrityError(
+                        "progression decision cannot authorize this revision"
+                    )
+                if (
+                    previous.exercise_resolution_id != prescription.exercise_resolution_id
+                    or previous.exercise_id != prescription.exercise_id
+                ):
+                    raise DomainIntegrityError(
+                        "progression decision cannot authorize an exercise substitution"
+                    )
+            elif prescription.planning_decision_record_id is not None:
+                planning_decision = self.session.get(
+                    DecisionRecordRecord, prescription.planning_decision_record_id
+                )
+                if planning_decision is None:
+                    raise DomainIntegrityError("planning revision decision does not exist")
+                if planning_decision.decided_on > prescription.prescribed_at.date():
+                    raise DomainIntegrityError(
+                        "prescription revision cannot predate its planning decision"
+                    )
+                required_evidence = {
+                    f"athlete:{prescription.athlete_id}",
+                    f"block_plan:{prescription.block_plan_id}",
+                    f"resource_allocation:{prescription.resource_allocation_id}",
+                    f"session_prescription:{previous.id}",
+                    f"exercise_resolution:{prescription.exercise_resolution_id}",
+                    f"session_prescription:{prescription.id}",
+                }
+                if not required_evidence.issubset(set(planning_decision.evidence)):
+                    raise DomainIntegrityError(
+                        "planning revision decision lacks required prescription lineage"
+                    )
+                if not planning_decision.decision_version.startswith(
+                    "environment-prescription-revision@"
+                ):
+                    raise DomainIntegrityError(
+                        "planning decision cannot authorize this prescription revision"
+                    )
+                if previous.exercise_resolution_id == prescription.exercise_resolution_id:
+                    raise DomainIntegrityError(
+                        "environment revision requires a different exercise resolution"
+                    )
+            else:
+                raise DomainIntegrityError("prescription revision has no authorizing decision")
         record = SessionPrescriptionRecord(
             id=prescription.id,
             schema_version=prescription.schema_version,
@@ -1539,6 +1934,7 @@ class DomainRepository:
                     revised_prescription_id=prescription.id,
                     superseded_prescription_id=prescription.supersedes_prescription_id,
                     progression_decision_id=prescription.progression_decision_id,
+                    planning_decision_record_id=prescription.planning_decision_record_id,
                 )
             )
 
@@ -1577,6 +1973,9 @@ class DomainRepository:
             rule_version=record.rule_version,
             supersedes_prescription_id=(revision.superseded_prescription_id if revision else None),
             progression_decision_id=(revision.progression_decision_id if revision else None),
+            planning_decision_record_id=(
+                revision.planning_decision_record_id if revision else None
+            ),
         )
 
     def get_latest_session_prescription_revision(
@@ -1760,6 +2159,16 @@ class DomainRepository:
 
     def add_weekly_availability(self, availability: WeeklyAvailability) -> None:
         self._require_athlete(availability.athlete_id)
+        if availability.source_weekly_plan_id is not None:
+            source_plan = self.get_weekly_plan(availability.source_weekly_plan_id)
+            if source_plan is None:
+                raise DomainIntegrityError("availability source weekly plan does not exist")
+            if source_plan.athlete_id != availability.athlete_id:
+                raise DomainIntegrityError("availability source weekly plan belongs elsewhere")
+            if source_plan.week_start + timedelta(days=7) != availability.week_start:
+                raise DomainIntegrityError(
+                    "confirmed availability must be for the consecutive week"
+                )
         environment_ids = tuple(item.environment_id for item in availability.windows)
         environments = list(
             self.session.scalars(
@@ -1780,6 +2189,7 @@ class DomainRepository:
             schema_version=availability.schema_version,
             created_at=availability.created_at,
             athlete_id=availability.athlete_id,
+            source_weekly_plan_id=availability.source_weekly_plan_id,
             week_start=availability.week_start,
             recorded_at=availability.recorded_at,
             rule_version=availability.rule_version,
@@ -1816,6 +2226,7 @@ class DomainRepository:
             schema_version=record.schema_version,
             created_at=record.created_at,
             athlete_id=record.athlete_id,
+            source_weekly_plan_id=record.source_weekly_plan_id,
             week_start=record.week_start,
             windows=tuple(
                 AvailabilityWindow(
@@ -1831,6 +2242,18 @@ class DomainRepository:
             source_observation_ids=tuple(item.observation_id for item in record.observation_links),
             recorded_at=record.recorded_at,
             rule_version=record.rule_version,
+        )
+
+    def get_weekly_availability_by_source_plan(
+        self, source_weekly_plan_id: UUID
+    ) -> WeeklyAvailability | None:
+        availability_id = self.session.scalar(
+            select(WeeklyAvailabilityRecord.id).where(
+                WeeklyAvailabilityRecord.source_weekly_plan_id == source_weekly_plan_id
+            )
+        )
+        return (
+            self.get_weekly_availability(availability_id) if availability_id is not None else None
         )
 
     def add_weekly_scheduling_policy(self, policy: WeeklySchedulingPolicy) -> None:
@@ -1864,6 +2287,113 @@ class DomainRepository:
             policy_version=record.policy_version,
         )
 
+    def add_weekly_scheduling_policy_review(self, review: WeeklySchedulingPolicyReview) -> None:
+        if self.get_weekly_scheduling_policy(review.weekly_scheduling_policy_id) is None:
+            raise DomainIntegrityError("weekly scheduling policy review policy does not exist")
+        self._require_ids_exist(
+            EvidenceClaimRecord.id,
+            review.evidence_claim_ids,
+            "weekly scheduling policy review evidence claims",
+        )
+        current = self.get_current_weekly_scheduling_policy_review(
+            review.weekly_scheduling_policy_id
+        )
+        if current is None:
+            if review.sequence_number != 1 or review.supersedes_review_id is not None:
+                raise DomainIntegrityError(
+                    "the first weekly scheduling policy review must start sequence one"
+                )
+        else:
+            if review.sequence_number != current.sequence_number + 1:
+                raise DomainIntegrityError(
+                    "a weekly scheduling policy review replacement must use the next sequence "
+                    "number"
+                )
+            if review.supersedes_review_id != current.id:
+                raise DomainIntegrityError(
+                    "a weekly scheduling policy review replacement must supersede the current "
+                    "review"
+                )
+            if review.reviewed_at < current.reviewed_at:
+                raise DomainIntegrityError(
+                    "a weekly scheduling policy review replacement cannot predate the current "
+                    "review"
+                )
+
+        record = WeeklySchedulingPolicyReviewRecord(
+            id=review.id,
+            schema_version=review.schema_version,
+            created_at=review.created_at,
+            weekly_scheduling_policy_id=review.weekly_scheduling_policy_id,
+            decision=review.decision.value,
+            sequence_number=review.sequence_number,
+            supersedes_review_id=review.supersedes_review_id,
+            reviewed_at=review.reviewed_at,
+            reviewed_by=review.reviewed_by,
+            applicability_rationale=review.applicability_rationale,
+            uncertainty=review.uncertainty,
+            review_version=review.review_version,
+        )
+        record.evidence_links = [
+            WeeklySchedulingPolicyReviewEvidenceClaimRecord(
+                weekly_scheduling_policy_review_id=review.id,
+                evidence_claim_id=evidence_claim_id,
+                position=position,
+            )
+            for position, evidence_claim_id in enumerate(review.evidence_claim_ids)
+        ]
+        self.session.add(record)
+
+    def get_weekly_scheduling_policy_review(
+        self, review_id: UUID
+    ) -> WeeklySchedulingPolicyReview | None:
+        record = self.session.get(WeeklySchedulingPolicyReviewRecord, review_id)
+        return self._weekly_scheduling_policy_review_from_record(record) if record else None
+
+    def get_current_weekly_scheduling_policy_review(
+        self, policy_id: UUID
+    ) -> WeeklySchedulingPolicyReview | None:
+        record = self.session.scalar(
+            select(WeeklySchedulingPolicyReviewRecord)
+            .where(WeeklySchedulingPolicyReviewRecord.weekly_scheduling_policy_id == policy_id)
+            .order_by(
+                WeeklySchedulingPolicyReviewRecord.sequence_number.desc(),
+                WeeklySchedulingPolicyReviewRecord.id.desc(),
+            )
+            .limit(1)
+        )
+        return self._weekly_scheduling_policy_review_from_record(record) if record else None
+
+    @staticmethod
+    def _weekly_scheduling_policy_review_from_record(
+        record: WeeklySchedulingPolicyReviewRecord,
+    ) -> WeeklySchedulingPolicyReview:
+        return WeeklySchedulingPolicyReview(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            weekly_scheduling_policy_id=record.weekly_scheduling_policy_id,
+            decision=record.decision,
+            sequence_number=record.sequence_number,
+            supersedes_review_id=record.supersedes_review_id,
+            evidence_claim_ids=tuple(item.evidence_claim_id for item in record.evidence_links),
+            reviewed_at=record.reviewed_at,
+            reviewed_by=record.reviewed_by,
+            applicability_rationale=record.applicability_rationale,
+            uncertainty=record.uncertainty,
+            review_version=record.review_version,
+        )
+
+    def list_weekly_scheduling_policies(self) -> tuple[WeeklySchedulingPolicy, ...]:
+        policy_ids = self.session.scalars(
+            select(WeeklySchedulingPolicyRecord.id).order_by(
+                WeeklySchedulingPolicyRecord.policy_version,
+                WeeklySchedulingPolicyRecord.id,
+            )
+        ).all()
+        policies = (self.get_weekly_scheduling_policy(policy_id) for policy_id in policy_ids)
+        return tuple(policy for policy in policies if policy is not None)
+
     def add_weekly_plan(self, plan: WeeklyPlan) -> None:
         self._require_athlete(plan.athlete_id)
         block = self.session.get(BlockPlanRecord, plan.block_plan_id)
@@ -1876,6 +2406,14 @@ class DomainRepository:
             raise DomainIntegrityError("weekly plan date differs from its availability")
         if self.session.get(WeeklySchedulingPolicyRecord, plan.scheduling_policy_id) is None:
             raise DomainIntegrityError("weekly scheduling policy does not exist")
+        if plan.scheduling_policy_review_id is not None:
+            review = self.session.get(
+                WeeklySchedulingPolicyReviewRecord, plan.scheduling_policy_review_id
+            )
+            if review is None or review.weekly_scheduling_policy_id != plan.scheduling_policy_id:
+                raise DomainIntegrityError(
+                    "weekly scheduling policy review does not govern the selected policy"
+                )
         if plan.previous_weekly_plan_id is not None:
             previous = self.session.get(WeeklyPlanRecord, plan.previous_weekly_plan_id)
             if (
@@ -1893,6 +2431,10 @@ class DomainRepository:
                 raise DomainIntegrityError("weekly plan cannot predate its predecessor")
             if plan.scheduling_policy_id != previous.scheduling_policy_id:
                 raise DomainIntegrityError("weekly roll-forward must retain its scheduling policy")
+            if plan.scheduling_policy_review_id != previous.scheduling_policy_review_id:
+                raise DomainIntegrityError(
+                    "weekly roll-forward must retain its scheduling policy review"
+                )
         window_by_id = {item.id: item for item in availability.windows}
         for session in plan.sessions:
             template = self.session.get(SessionTemplateRecord, session.session_template_id)
@@ -1916,6 +2458,7 @@ class DomainRepository:
             previous_weekly_plan_id=plan.previous_weekly_plan_id,
             weekly_availability_id=plan.weekly_availability_id,
             scheduling_policy_id=plan.scheduling_policy_id,
+            scheduling_policy_review_id=plan.scheduling_policy_review_id,
             week_start=plan.week_start,
             block_week=plan.block_week,
             status=plan.status.value,
@@ -1956,6 +2499,7 @@ class DomainRepository:
             previous_weekly_plan_id=record.previous_weekly_plan_id,
             weekly_availability_id=record.weekly_availability_id,
             scheduling_policy_id=record.scheduling_policy_id,
+            scheduling_policy_review_id=record.scheduling_policy_review_id,
             week_start=record.week_start,
             block_week=record.block_week,
             status=record.status,
@@ -3316,6 +3860,53 @@ class DomainRepository:
             floor_version=record.floor_version,
         )
 
+    def list_competency_floors(self) -> tuple[CompetencyFloor, ...]:
+        floor_ids = self.session.scalars(
+            select(CompetencyFloorRecord.id).order_by(
+                CompetencyFloorRecord.domain,
+                CompetencyFloorRecord.estimate_scope,
+                CompetencyFloorRecord.id,
+            )
+        ).all()
+        floors = (self.get_competency_floor(floor_id) for floor_id in floor_ids)
+        return tuple(floor for floor in floors if floor is not None)
+
+    def get_competency_floor_review(self, review_id: UUID) -> CompetencyFloorReview | None:
+        record = self.session.get(CompetencyFloorReviewRecord, review_id)
+        return self._competency_floor_review_from_record(record) if record is not None else None
+
+    def get_current_competency_floor_review(self, floor_id: UUID) -> CompetencyFloorReview | None:
+        record = self.session.scalar(
+            select(CompetencyFloorReviewRecord)
+            .where(CompetencyFloorReviewRecord.competency_floor_id == floor_id)
+            .order_by(
+                CompetencyFloorReviewRecord.sequence_number.desc(),
+                CompetencyFloorReviewRecord.id.desc(),
+            )
+            .limit(1)
+        )
+        return self._competency_floor_review_from_record(record) if record is not None else None
+
+    @staticmethod
+    def _competency_floor_review_from_record(
+        record: CompetencyFloorReviewRecord,
+    ) -> CompetencyFloorReview:
+        return CompetencyFloorReview(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            competency_floor_id=record.competency_floor_id,
+            decision=record.decision,
+            sequence_number=record.sequence_number,
+            supersedes_review_id=record.supersedes_review_id,
+            evidence_claim_ids=tuple(item.evidence_claim_id for item in record.evidence_links),
+            reviewed_at=record.reviewed_at,
+            reviewed_by=record.reviewed_by,
+            applicability_rationale=record.applicability_rationale,
+            uncertainty=record.uncertainty,
+            review_version=record.review_version,
+        )
+
     def get_capability_need(self, need_id: UUID) -> CapabilityNeed | None:
         record = self.session.get(CapabilityNeedRecord, need_id)
         if record is None:
@@ -3365,6 +3956,52 @@ class DomainRepository:
             severe_deficit_threshold=record.severe_deficit_threshold,
             max_develop_adaptations=record.max_develop_adaptations,
             policy_version=record.policy_version,
+        )
+
+    def list_priority_policies(self) -> tuple[PriorityPolicy, ...]:
+        policy_ids = self.session.scalars(
+            select(PriorityPolicyRecord.id).order_by(
+                PriorityPolicyRecord.policy_version,
+                PriorityPolicyRecord.id,
+            )
+        ).all()
+        policies = (self.get_priority_policy(policy_id) for policy_id in policy_ids)
+        return tuple(policy for policy in policies if policy is not None)
+
+    def get_priority_policy_review(self, review_id: UUID) -> PriorityPolicyReview | None:
+        record = self.session.get(PriorityPolicyReviewRecord, review_id)
+        return self._priority_policy_review_from_record(record) if record is not None else None
+
+    def get_current_priority_policy_review(self, policy_id: UUID) -> PriorityPolicyReview | None:
+        record = self.session.scalar(
+            select(PriorityPolicyReviewRecord)
+            .where(PriorityPolicyReviewRecord.priority_policy_id == policy_id)
+            .order_by(
+                PriorityPolicyReviewRecord.sequence_number.desc(),
+                PriorityPolicyReviewRecord.id.desc(),
+            )
+            .limit(1)
+        )
+        return self._priority_policy_review_from_record(record) if record is not None else None
+
+    @staticmethod
+    def _priority_policy_review_from_record(
+        record: PriorityPolicyReviewRecord,
+    ) -> PriorityPolicyReview:
+        return PriorityPolicyReview(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            priority_policy_id=record.priority_policy_id,
+            decision=record.decision,
+            sequence_number=record.sequence_number,
+            supersedes_review_id=record.supersedes_review_id,
+            evidence_claim_ids=tuple(item.evidence_claim_id for item in record.evidence_links),
+            reviewed_at=record.reviewed_at,
+            reviewed_by=record.reviewed_by,
+            applicability_rationale=record.applicability_rationale,
+            uncertainty=record.uncertainty,
+            review_version=record.review_version,
         )
 
     def get_long_range_strategy(self, strategy_id: UUID) -> LongRangeStrategy | None:
@@ -3437,6 +4074,15 @@ class DomainRepository:
         )
         return self.get_long_range_strategy(record.id) if record is not None else None
 
+    def get_initial_long_range_strategy(self, athlete_id: UUID) -> LongRangeStrategy | None:
+        record = self.session.scalar(
+            select(LongRangeStrategyRecord).where(
+                LongRangeStrategyRecord.athlete_id == athlete_id,
+                LongRangeStrategyRecord.supersedes_strategy_id.is_(None),
+            )
+        )
+        return self.get_long_range_strategy(record.id) if record is not None else None
+
     def add_assessment_definition(self, definition: AssessmentDefinition) -> None:
         self.session.add(
             AssessmentDefinitionRecord(
@@ -3463,10 +4109,299 @@ class DomainRepository:
             )
         )
 
+    def add_assessment_definition_review(self, review: AssessmentDefinitionReview) -> None:
+        if self.session.get(AssessmentDefinitionRecord, review.assessment_definition_id) is None:
+            raise DomainIntegrityError("assessment definition does not exist")
+        self._require_ids_exist(
+            EvidenceClaimRecord.id, review.evidence_claim_ids, "assessment review evidence"
+        )
+        current = self.get_current_assessment_definition_review(review.assessment_definition_id)
+        if current is None:
+            if review.sequence_number != 1 or review.supersedes_review_id is not None:
+                raise DomainIntegrityError("the first assessment review must start sequence one")
+        else:
+            if review.sequence_number != current.sequence_number + 1:
+                raise DomainIntegrityError(
+                    "an assessment review replacement must use the next sequence number"
+                )
+            if review.supersedes_review_id != current.id:
+                raise DomainIntegrityError(
+                    "an assessment review replacement must supersede the current review"
+                )
+            if review.reviewed_at < current.reviewed_at:
+                raise DomainIntegrityError(
+                    "an assessment review replacement cannot predate the current review"
+                )
+
+        record = AssessmentDefinitionReviewRecord(
+            id=review.id,
+            schema_version=review.schema_version,
+            created_at=review.created_at,
+            assessment_definition_id=review.assessment_definition_id,
+            decision=review.decision.value,
+            sequence_number=review.sequence_number,
+            supersedes_review_id=review.supersedes_review_id,
+            protocol_instructions=list(review.protocol_instructions),
+            result_entry_instructions=review.result_entry_instructions,
+            measurement_schema=(
+                review.measurement_schema.model_dump(mode="json")
+                if review.measurement_schema
+                else None
+            ),
+            recommended_reassessment_days=review.recommended_reassessment_days,
+            self_administered=review.self_administered,
+            reviewed_at=review.reviewed_at,
+            reviewer=review.reviewer,
+            applicability_notes=review.applicability_notes,
+            uncertainty=review.uncertainty,
+            review_version=review.review_version,
+        )
+        record.evidence_links = [
+            AssessmentDefinitionReviewEvidenceClaimRecord(
+                assessment_review_id=review.id,
+                evidence_claim_id=evidence_claim_id,
+                position=position,
+            )
+            for position, evidence_claim_id in enumerate(review.evidence_claim_ids)
+        ]
+        self.session.add(record)
+
+    def get_assessment_definition_review(
+        self, review_id: UUID
+    ) -> AssessmentDefinitionReview | None:
+        record = self.session.get(AssessmentDefinitionReviewRecord, review_id)
+        return self._assessment_review_from_record(record) if record is not None else None
+
+    def get_current_assessment_definition_review(
+        self, definition_id: UUID
+    ) -> AssessmentDefinitionReview | None:
+        record = self.session.scalar(
+            select(AssessmentDefinitionReviewRecord)
+            .where(AssessmentDefinitionReviewRecord.assessment_definition_id == definition_id)
+            .order_by(
+                AssessmentDefinitionReviewRecord.sequence_number.desc(),
+                AssessmentDefinitionReviewRecord.id.desc(),
+            )
+            .limit(1)
+        )
+        return self._assessment_review_from_record(record) if record is not None else None
+
+    def list_approved_assessment_definitions(
+        self,
+    ) -> tuple[tuple[AssessmentDefinition, AssessmentDefinitionReview], ...]:
+        definition_ids = self.session.scalars(
+            select(AssessmentDefinitionReviewRecord.assessment_definition_id)
+            .distinct()
+            .order_by(AssessmentDefinitionReviewRecord.assessment_definition_id)
+        ).all()
+        approved: list[tuple[AssessmentDefinition, AssessmentDefinitionReview]] = []
+        for definition_id in definition_ids:
+            review = self.get_current_assessment_definition_review(definition_id)
+            if review is None or review.decision is not AssessmentReviewDecision.APPROVED:
+                continue
+            definition = self.get_assessment_definition(definition_id)
+            if definition is not None:
+                approved.append((definition, review))
+        return tuple(
+            sorted(
+                approved,
+                key=lambda item: (
+                    item[0].domain.value,
+                    item[0].slug,
+                    item[0].protocol_version,
+                    str(item[0].id),
+                ),
+            )
+        )
+
+    @staticmethod
+    def _assessment_review_from_record(
+        record: AssessmentDefinitionReviewRecord,
+    ) -> AssessmentDefinitionReview:
+        return AssessmentDefinitionReview(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            assessment_definition_id=record.assessment_definition_id,
+            decision=record.decision,
+            sequence_number=record.sequence_number,
+            supersedes_review_id=record.supersedes_review_id,
+            protocol_instructions=tuple(record.protocol_instructions),
+            result_entry_instructions=record.result_entry_instructions,
+            measurement_schema=record.measurement_schema,
+            recommended_reassessment_days=record.recommended_reassessment_days,
+            self_administered=record.self_administered,
+            evidence_claim_ids=tuple(link.evidence_claim_id for link in record.evidence_links),
+            reviewed_at=record.reviewed_at,
+            reviewer=record.reviewer,
+            applicability_notes=record.applicability_notes,
+            uncertainty=record.uncertainty,
+            review_version=record.review_version,
+        )
+
+    def add_capability_estimation_policy(self, policy: CapabilityEstimationPolicy) -> None:
+        definition = self.get_assessment_definition(policy.assessment_definition_id)
+        if definition is None:
+            raise DomainIntegrityError("capability estimation policy definition does not exist")
+        review = self.get_assessment_definition_review(policy.assessment_definition_review_id)
+        if review is None or review.assessment_definition_id != definition.id:
+            raise DomainIntegrityError(
+                "capability estimation policy review does not govern its definition"
+            )
+        if (
+            policy.domain != definition.domain
+            or policy.observation_type != definition.observation_type
+            or policy.unit_or_scale != definition.unit_or_scale
+        ):
+            raise DomainIntegrityError(
+                "capability estimation policy contract differs from its definition"
+            )
+        self._require_ids_exist(
+            EvidenceClaimRecord.id,
+            policy.evidence_claim_ids,
+            "capability estimation policy evidence",
+        )
+        current = self.get_current_capability_estimation_policy(definition.id)
+        if current is None:
+            if policy.sequence_number != 1 or policy.supersedes_policy_id is not None:
+                raise DomainIntegrityError(
+                    "the first capability estimation policy must start sequence one"
+                )
+        else:
+            if policy.sequence_number != current.sequence_number + 1:
+                raise DomainIntegrityError(
+                    "a capability estimation policy replacement must use the next sequence number"
+                )
+            if policy.supersedes_policy_id != current.id:
+                raise DomainIntegrityError(
+                    "a capability estimation policy replacement must supersede the current policy"
+                )
+            if policy.reviewed_at < current.reviewed_at:
+                raise DomainIntegrityError(
+                    "a capability estimation policy replacement cannot predate the current policy"
+                )
+        current_review = self.get_current_assessment_definition_review(definition.id)
+        if policy.decision is AssessmentReviewDecision.APPROVED and (
+            current_review is None
+            or current_review.id != review.id
+            or review.decision is not AssessmentReviewDecision.APPROVED
+            or review.measurement_schema is None
+        ):
+            raise DomainIntegrityError(
+                "approved capability estimation policy requires the current approved "
+                "protocol review"
+            )
+        if policy.reviewed_at < review.reviewed_at:
+            raise DomainIntegrityError(
+                "capability estimation policy cannot predate its protocol review"
+            )
+
+        record = CapabilityEstimationPolicyRecord(
+            id=policy.id,
+            schema_version=policy.schema_version,
+            created_at=policy.created_at,
+            assessment_definition_id=policy.assessment_definition_id,
+            assessment_definition_review_id=policy.assessment_definition_review_id,
+            decision=policy.decision.value,
+            sequence_number=policy.sequence_number,
+            supersedes_policy_id=policy.supersedes_policy_id,
+            domain=policy.domain.value,
+            observation_type=policy.observation_type,
+            unit_or_scale=policy.unit_or_scale,
+            calculation_method=policy.calculation_method,
+            valid_for_days=policy.valid_for_days,
+            multi_observation_window_days=policy.multi_observation_window_days,
+            reviewed_at=policy.reviewed_at,
+            reviewed_by=policy.reviewed_by,
+            applicability_notes=policy.applicability_notes,
+            uncertainty=policy.uncertainty,
+            rule_version=policy.rule_version,
+        )
+        record.evidence_links = [
+            CapabilityEstimationPolicyEvidenceClaimRecord(
+                capability_estimation_policy_id=policy.id,
+                evidence_claim_id=evidence_claim_id,
+                position=position,
+            )
+            for position, evidence_claim_id in enumerate(policy.evidence_claim_ids)
+        ]
+        self.session.add(record)
+
+    def get_capability_estimation_policy(
+        self, policy_id: UUID
+    ) -> CapabilityEstimationPolicy | None:
+        record = self.session.get(CapabilityEstimationPolicyRecord, policy_id)
+        return self._capability_estimation_policy_from_record(record) if record else None
+
+    def get_current_capability_estimation_policy(
+        self, assessment_definition_id: UUID
+    ) -> CapabilityEstimationPolicy | None:
+        record = self.session.scalar(
+            select(CapabilityEstimationPolicyRecord)
+            .where(
+                CapabilityEstimationPolicyRecord.assessment_definition_id
+                == assessment_definition_id
+            )
+            .order_by(
+                CapabilityEstimationPolicyRecord.sequence_number.desc(),
+                CapabilityEstimationPolicyRecord.id.desc(),
+            )
+            .limit(1)
+        )
+        return self._capability_estimation_policy_from_record(record) if record else None
+
+    @staticmethod
+    def _capability_estimation_policy_from_record(
+        record: CapabilityEstimationPolicyRecord,
+    ) -> CapabilityEstimationPolicy:
+        return CapabilityEstimationPolicy(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            assessment_definition_id=record.assessment_definition_id,
+            assessment_definition_review_id=record.assessment_definition_review_id,
+            decision=record.decision,
+            sequence_number=record.sequence_number,
+            supersedes_policy_id=record.supersedes_policy_id,
+            domain=record.domain,
+            observation_type=record.observation_type,
+            unit_or_scale=record.unit_or_scale,
+            calculation_method=record.calculation_method,
+            valid_for_days=record.valid_for_days,
+            multi_observation_window_days=record.multi_observation_window_days,
+            evidence_claim_ids=tuple(link.evidence_claim_id for link in record.evidence_links),
+            reviewed_at=record.reviewed_at,
+            reviewed_by=record.reviewed_by,
+            applicability_notes=record.applicability_notes,
+            uncertainty=record.uncertainty,
+            rule_version=record.rule_version,
+        )
+
     def add_assessment_selection(self, selection: AssessmentSelection) -> None:
         self._require_athlete(selection.athlete_id)
         if self.session.get(AssessmentDefinitionRecord, selection.assessment_definition_id) is None:
             raise DomainIntegrityError("assessment definition does not exist")
+        review = self.get_current_assessment_definition_review(selection.assessment_definition_id)
+        if (
+            review is None
+            or review.decision is not AssessmentReviewDecision.APPROVED
+            or review.measurement_schema is None
+            or selection.assessment_definition_review_id != review.id
+        ):
+            raise DomainIntegrityError(
+                "assessment selection requires the current approved definition review"
+            )
+        eligibility = self.get_current_assessment_eligibility_review(selection.athlete_id)
+        if (
+            eligibility is None
+            or eligibility.id != selection.assessment_eligibility_review_id
+            or eligibility.outcome is not AssessmentEligibilityOutcome.SELECTION_ALLOWED
+            or selection.evaluated_at < eligibility.reviewed_at
+            or selection.evaluated_at >= eligibility.valid_until
+        ):
+            raise DomainIntegrityError(
+                "assessment selection requires a current active eligibility review"
+            )
         observations = self._observations_by_id(selection.source_observation_ids)
         found_ids = {item.id for item in observations}
         missing = set(selection.source_observation_ids) - found_ids
@@ -3483,6 +4418,8 @@ class DomainRepository:
             created_at=selection.created_at,
             athlete_id=selection.athlete_id,
             assessment_definition_id=selection.assessment_definition_id,
+            assessment_definition_review_id=selection.assessment_definition_review_id,
+            assessment_eligibility_review_id=selection.assessment_eligibility_review_id,
             decision=selection.decision.value,
             reason_codes=[item.value for item in selection.reason_codes],
             rationale=list(selection.rationale),
@@ -3534,12 +4471,354 @@ class DomainRepository:
             created_at=record.created_at,
             athlete_id=record.athlete_id,
             assessment_definition_id=record.assessment_definition_id,
+            assessment_definition_review_id=record.assessment_definition_review_id,
+            assessment_eligibility_review_id=record.assessment_eligibility_review_id,
             decision=record.decision,
             reason_codes=tuple(record.reason_codes),
             rationale=tuple(record.rationale),
             source_observation_ids=tuple(link.observation_id for link in record.source_links),
             evaluated_at=record.evaluated_at,
             rule_version=record.rule_version,
+        )
+
+    def add_assessment_eligibility_review(self, review: AssessmentEligibilityReview) -> None:
+        self._require_athlete(review.athlete_id)
+        observations = self._observations_by_id(review.source_observation_ids)
+        found_ids = {item.id for item in observations}
+        missing = set(review.source_observation_ids) - found_ids
+        if missing:
+            raise DomainIntegrityError(
+                f"unknown eligibility observations: {sorted(map(str, missing))}"
+            )
+        if any(item.athlete_id != review.athlete_id for item in observations):
+            raise DomainIntegrityError(
+                "eligibility observations must belong to the reviewed athlete"
+            )
+        current = self.get_current_assessment_eligibility_review(review.athlete_id)
+        if current is None:
+            if review.sequence_number != 1 or review.supersedes_review_id is not None:
+                raise DomainIntegrityError("the first eligibility review must start sequence one")
+        else:
+            if review.sequence_number != current.sequence_number + 1:
+                raise DomainIntegrityError(
+                    "an eligibility replacement must use the next sequence number"
+                )
+            if review.supersedes_review_id != current.id:
+                raise DomainIntegrityError(
+                    "an eligibility replacement must supersede the current review"
+                )
+            if review.reviewed_at < current.reviewed_at:
+                raise DomainIntegrityError(
+                    "an eligibility replacement cannot predate the current review"
+                )
+
+        record = AssessmentEligibilityReviewRecord(
+            id=review.id,
+            schema_version=review.schema_version,
+            created_at=review.created_at,
+            athlete_id=review.athlete_id,
+            outcome=review.outcome.value,
+            sequence_number=review.sequence_number,
+            supersedes_review_id=review.supersedes_review_id,
+            reviewed_at=review.reviewed_at,
+            valid_until=review.valid_until,
+            reviewed_by=review.reviewed_by,
+            screening_process_reference=review.screening_process_reference,
+            rationale=review.rationale,
+            uncertainty=review.uncertainty,
+            rule_version=review.rule_version,
+        )
+        record.source_links = [
+            AssessmentEligibilityReviewObservationRecord(
+                eligibility_review_id=review.id,
+                observation_id=observation_id,
+                position=position,
+            )
+            for position, observation_id in enumerate(review.source_observation_ids)
+        ]
+        self.session.add(record)
+
+    def get_assessment_eligibility_review(
+        self, review_id: UUID
+    ) -> AssessmentEligibilityReview | None:
+        record = self.session.get(AssessmentEligibilityReviewRecord, review_id)
+        return self._assessment_eligibility_review_from_record(record) if record else None
+
+    def get_current_assessment_eligibility_review(
+        self, athlete_id: UUID
+    ) -> AssessmentEligibilityReview | None:
+        record = self.session.scalar(
+            select(AssessmentEligibilityReviewRecord)
+            .where(AssessmentEligibilityReviewRecord.athlete_id == athlete_id)
+            .order_by(
+                AssessmentEligibilityReviewRecord.sequence_number.desc(),
+                AssessmentEligibilityReviewRecord.id.desc(),
+            )
+            .limit(1)
+        )
+        return self._assessment_eligibility_review_from_record(record) if record else None
+
+    @staticmethod
+    def _assessment_eligibility_review_from_record(
+        record: AssessmentEligibilityReviewRecord,
+    ) -> AssessmentEligibilityReview:
+        return AssessmentEligibilityReview(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            athlete_id=record.athlete_id,
+            outcome=record.outcome,
+            sequence_number=record.sequence_number,
+            supersedes_review_id=record.supersedes_review_id,
+            source_observation_ids=tuple(link.observation_id for link in record.source_links),
+            reviewed_at=record.reviewed_at,
+            valid_until=record.valid_until,
+            reviewed_by=record.reviewed_by,
+            screening_process_reference=record.screening_process_reference,
+            rationale=record.rationale,
+            uncertainty=record.uncertainty,
+            rule_version=record.rule_version,
+        )
+
+    def add_assessment_selection_run(self, run: AssessmentSelectionRun) -> None:
+        self._require_athlete(run.athlete_id)
+        environment = self.session.get(EnvironmentRecord, run.environment_id)
+        if environment is None or environment.athlete_id != run.athlete_id:
+            raise DomainIntegrityError("assessment run environment belongs to another athlete")
+        eligibility = self.get_assessment_eligibility_review(run.assessment_eligibility_review_id)
+        if eligibility is None or eligibility.athlete_id != run.athlete_id:
+            raise DomainIntegrityError("assessment run eligibility review belongs elsewhere")
+        context = self.session.get(ObservationRecord, run.context_observation_id)
+        if context is None or context.athlete_id != run.athlete_id:
+            raise DomainIntegrityError("assessment run context observation belongs elsewhere")
+        selections = list(
+            self.session.scalars(
+                select(AssessmentSelectionRecord).where(
+                    AssessmentSelectionRecord.id.in_(run.selection_ids)
+                )
+            )
+        )
+        if {item.id for item in selections} != set(run.selection_ids):
+            raise DomainIntegrityError("one or more assessment run selections do not exist")
+        if any(
+            item.athlete_id != run.athlete_id
+            or item.assessment_eligibility_review_id != eligibility.id
+            or item.evaluated_at != run.evaluated_at
+            or run.context_observation_id not in {link.observation_id for link in item.source_links}
+            for item in selections
+        ):
+            raise DomainIntegrityError(
+                "assessment run selections do not match its athlete, authority, context, and time"
+            )
+        record = AssessmentSelectionRunRecord(
+            id=run.id,
+            schema_version=run.schema_version,
+            created_at=run.created_at,
+            athlete_id=run.athlete_id,
+            assessment_eligibility_review_id=run.assessment_eligibility_review_id,
+            environment_id=run.environment_id,
+            context_observation_id=run.context_observation_id,
+            evaluated_at=run.evaluated_at,
+            rule_version=run.rule_version,
+        )
+        record.selection_links = [
+            AssessmentSelectionRunItemRecord(
+                assessment_run_id=run.id,
+                selection_id=selection_id,
+                position=position,
+            )
+            for position, selection_id in enumerate(run.selection_ids)
+        ]
+        self.session.add(record)
+
+    def get_assessment_selection_run(self, run_id: UUID) -> AssessmentSelectionRun | None:
+        record = self.session.get(AssessmentSelectionRunRecord, run_id)
+        if record is None:
+            return None
+        return AssessmentSelectionRun(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            athlete_id=record.athlete_id,
+            assessment_eligibility_review_id=record.assessment_eligibility_review_id,
+            environment_id=record.environment_id,
+            context_observation_id=record.context_observation_id,
+            selection_ids=tuple(link.selection_id for link in record.selection_links),
+            evaluated_at=record.evaluated_at,
+            rule_version=record.rule_version,
+        )
+
+    def list_assessment_selection_runs(
+        self, athlete_id: UUID
+    ) -> tuple[AssessmentSelectionRun, ...]:
+        records = self.session.scalars(
+            select(AssessmentSelectionRunRecord)
+            .where(AssessmentSelectionRunRecord.athlete_id == athlete_id)
+            .order_by(
+                AssessmentSelectionRunRecord.evaluated_at.desc(),
+                AssessmentSelectionRunRecord.created_at.desc(),
+                AssessmentSelectionRunRecord.id.desc(),
+            )
+        )
+        return tuple(
+            AssessmentSelectionRun(
+                id=record.id,
+                schema_version=record.schema_version,
+                created_at=record.created_at,
+                athlete_id=record.athlete_id,
+                assessment_eligibility_review_id=record.assessment_eligibility_review_id,
+                environment_id=record.environment_id,
+                context_observation_id=record.context_observation_id,
+                selection_ids=tuple(link.selection_id for link in record.selection_links),
+                evaluated_at=record.evaluated_at,
+                rule_version=record.rule_version,
+            )
+            for record in records
+        )
+
+    def add_assessment_performance(self, performance: AssessmentPerformance) -> None:
+        self._require_athlete(performance.athlete_id)
+        run = self.get_assessment_selection_run(performance.assessment_selection_run_id)
+        if run is None or run.athlete_id != performance.athlete_id:
+            raise DomainIntegrityError("assessment performance run belongs elsewhere")
+        if performance.assessment_selection_id not in run.selection_ids:
+            raise DomainIntegrityError("assessment performance selection is not in its run")
+        selection = self.get_assessment_selection(performance.assessment_selection_id)
+        if selection is None or selection.athlete_id != performance.athlete_id:
+            raise DomainIntegrityError("assessment performance selection belongs elsewhere")
+        if selection.decision is not AssessmentDecision.SELECTED:
+            raise DomainIntegrityError("only a selected assessment can record performance")
+        if (
+            performance.assessment_definition_id != selection.assessment_definition_id
+            or performance.assessment_definition_review_id
+            != selection.assessment_definition_review_id
+            or performance.assessment_eligibility_review_id
+            != selection.assessment_eligibility_review_id
+        ):
+            raise DomainIntegrityError(
+                "assessment performance authority differs from its selection"
+            )
+        if performance.performed_at < selection.evaluated_at:
+            raise DomainIntegrityError("assessment performance cannot predate selection")
+
+        definition = self.get_assessment_definition(performance.assessment_definition_id)
+        if definition is None:
+            raise DomainIntegrityError("assessment performance definition does not exist")
+        review = self.get_current_assessment_definition_review(performance.assessment_definition_id)
+        if (
+            review is None
+            or review.id != performance.assessment_definition_review_id
+            or review.decision is not AssessmentReviewDecision.APPROVED
+            or not review.self_administered
+            or review.measurement_schema is None
+        ):
+            raise DomainIntegrityError(
+                "assessment performance requires the current approved self-administered review"
+            )
+        eligibility = self.get_current_assessment_eligibility_review(performance.athlete_id)
+        if (
+            eligibility is None
+            or eligibility.id != performance.assessment_eligibility_review_id
+            or eligibility.outcome is not AssessmentEligibilityOutcome.SELECTION_ALLOWED
+            or not eligibility.reviewed_at <= performance.performed_at < eligibility.valid_until
+        ):
+            raise DomainIntegrityError(
+                "assessment performance requires the current active eligibility review"
+            )
+
+        observation = self.get_observation(performance.result_observation_id)
+        expected_context = {
+            "assessment_selection_run_id": str(run.id),
+            "assessment_selection_id": str(selection.id),
+            "assessment_definition_id": str(selection.assessment_definition_id),
+            "assessment_definition_review_id": str(performance.assessment_definition_review_id),
+            "assessment_eligibility_review_id": str(performance.assessment_eligibility_review_id),
+        }
+        if (
+            observation is None
+            or observation.athlete_id != performance.athlete_id
+            or observation.source.value != "test_result"
+            or observation.observed_at != performance.performed_at
+            or observation.observation_type != definition.observation_type
+            or observation.unit != definition.unit_or_scale
+            or any(observation.context.get(key) != value for key, value in expected_context.items())
+        ):
+            raise DomainIntegrityError(
+                "assessment performance result observation does not match its governed lineage"
+            )
+        review.measurement_schema.validate_measurement(observation.measurement)
+        self.session.add(
+            AssessmentPerformanceRecord(
+                id=performance.id,
+                schema_version=performance.schema_version,
+                created_at=performance.created_at,
+                athlete_id=performance.athlete_id,
+                assessment_selection_run_id=performance.assessment_selection_run_id,
+                assessment_selection_id=performance.assessment_selection_id,
+                assessment_definition_id=performance.assessment_definition_id,
+                assessment_definition_review_id=performance.assessment_definition_review_id,
+                assessment_eligibility_review_id=performance.assessment_eligibility_review_id,
+                result_observation_id=performance.result_observation_id,
+                performed_at=performance.performed_at,
+                rule_version=performance.rule_version,
+            )
+        )
+
+    def get_assessment_performance(self, performance_id: UUID) -> AssessmentPerformance | None:
+        record = self.session.get(AssessmentPerformanceRecord, performance_id)
+        if record is None:
+            return None
+        return AssessmentPerformance(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            athlete_id=record.athlete_id,
+            assessment_selection_run_id=record.assessment_selection_run_id,
+            assessment_selection_id=record.assessment_selection_id,
+            assessment_definition_id=record.assessment_definition_id,
+            assessment_definition_review_id=record.assessment_definition_review_id,
+            assessment_eligibility_review_id=record.assessment_eligibility_review_id,
+            result_observation_id=record.result_observation_id,
+            performed_at=record.performed_at,
+            rule_version=record.rule_version,
+        )
+
+    def get_assessment_performance_for_selection(
+        self, selection_id: UUID
+    ) -> AssessmentPerformance | None:
+        record = self.session.scalar(
+            select(AssessmentPerformanceRecord).where(
+                AssessmentPerformanceRecord.assessment_selection_id == selection_id
+            )
+        )
+        return self.get_assessment_performance(record.id) if record else None
+
+    def list_assessment_performances(self, athlete_id: UUID) -> tuple[AssessmentPerformance, ...]:
+        records = self.session.scalars(
+            select(AssessmentPerformanceRecord)
+            .where(AssessmentPerformanceRecord.athlete_id == athlete_id)
+            .order_by(
+                AssessmentPerformanceRecord.performed_at.desc(),
+                AssessmentPerformanceRecord.created_at.desc(),
+                AssessmentPerformanceRecord.id.desc(),
+            )
+        )
+        return tuple(
+            AssessmentPerformance(
+                id=record.id,
+                schema_version=record.schema_version,
+                created_at=record.created_at,
+                athlete_id=record.athlete_id,
+                assessment_selection_run_id=record.assessment_selection_run_id,
+                assessment_selection_id=record.assessment_selection_id,
+                assessment_definition_id=record.assessment_definition_id,
+                assessment_definition_review_id=record.assessment_definition_review_id,
+                assessment_eligibility_review_id=record.assessment_eligibility_review_id,
+                result_observation_id=record.result_observation_id,
+                performed_at=record.performed_at,
+                rule_version=record.rule_version,
+            )
+            for record in records
         )
 
     def get_observation(self, observation_id: UUID) -> Observation | None:
@@ -3581,7 +4860,53 @@ class DomainRepository:
             estimated_at=record.estimated_at,
             valid_until=record.valid_until,
             rule_version=record.rule_version,
+            capability_estimation_policy_id=record.capability_estimation_policy_id,
+            triggering_assessment_performance_id=(record.triggering_assessment_performance_id),
         )
+
+    def list_capability_estimates(self, athlete_id: UUID) -> tuple[CapabilityEstimate, ...]:
+        records = self.session.scalars(
+            select(CapabilityEstimateRecord)
+            .where(CapabilityEstimateRecord.athlete_id == athlete_id)
+            .order_by(
+                CapabilityEstimateRecord.estimated_at.desc(),
+                CapabilityEstimateRecord.created_at.desc(),
+                CapabilityEstimateRecord.id.desc(),
+            )
+        )
+        return tuple(
+            estimate
+            for record in records
+            if (estimate := self.get_capability_estimate(record.id)) is not None
+        )
+
+    def get_assessment_capability_estimate(
+        self, performance_id: UUID, policy_id: UUID
+    ) -> CapabilityEstimate | None:
+        record = self.session.scalar(
+            select(CapabilityEstimateRecord)
+            .where(
+                CapabilityEstimateRecord.triggering_assessment_performance_id == performance_id,
+                CapabilityEstimateRecord.capability_estimation_policy_id == policy_id,
+            )
+            .limit(1)
+        )
+        return self.get_capability_estimate(record.id) if record else None
+
+    def get_latest_assessment_capability_estimate(
+        self, performance_id: UUID
+    ) -> CapabilityEstimate | None:
+        record = self.session.scalar(
+            select(CapabilityEstimateRecord)
+            .where(CapabilityEstimateRecord.triggering_assessment_performance_id == performance_id)
+            .order_by(
+                CapabilityEstimateRecord.estimated_at.desc(),
+                CapabilityEstimateRecord.created_at.desc(),
+                CapabilityEstimateRecord.id.desc(),
+            )
+            .limit(1)
+        )
+        return self.get_capability_estimate(record.id) if record else None
 
     def get_evidence_claim(self, claim_id: UUID) -> EvidenceClaim | None:
         record = self.session.get(EvidenceClaimRecord, claim_id)
@@ -3627,6 +4952,27 @@ class DomainRepository:
             noise_constraints=record.noise_constraints,
             max_noise_level=record.max_noise_level,
             outdoor_access=record.outdoor_access,
+        )
+
+    def list_environments(self, athlete_id: UUID) -> tuple[Environment, ...]:
+        records = self.session.scalars(
+            select(EnvironmentRecord)
+            .where(EnvironmentRecord.athlete_id == athlete_id)
+            .order_by(EnvironmentRecord.name, EnvironmentRecord.id)
+        )
+        return tuple(
+            Environment(
+                id=record.id,
+                schema_version=record.schema_version,
+                created_at=record.created_at,
+                athlete_id=record.athlete_id,
+                name=record.name,
+                space_constraints=record.space_constraints,
+                noise_constraints=record.noise_constraints,
+                max_noise_level=record.max_noise_level,
+                outdoor_access=record.outdoor_access,
+            )
+            for record in records
         )
 
     def get_equipment(self, equipment_id: UUID) -> Equipment | None:
@@ -3801,6 +5147,7 @@ class DomainRepository:
                 created_at=record.created_at,
                 environment_id=record.environment_id,
                 equipment_id=record.equipment_id,
+                source_observation_id=record.source_observation_id,
                 is_available=record.is_available,
                 effective_from=record.effective_from,
                 effective_until=record.effective_until,

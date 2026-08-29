@@ -8,6 +8,40 @@ AGAS is a training-planning product for generally healthy adults. It is not a di
 
 Safety validation executes before LLM discretion and ordinary planning. The LLM cannot override a hard safety outcome.
 
+## Assessment boundary
+
+An assessment protocol must have a current evidence-linked approval before it can enter persisted
+athlete selection. Approval records exact instructions, applicability, uncertainty, and whether
+self-administration was reviewed; it is not a medical clearance or a substitute for athlete-level
+screening. The repository currently seeds no assessment protocols and exposes no sensitive
+screening workflow. Unreviewed or withdrawn definitions fail closed, and future intake must not
+infer health, injury, or symptom classifications from free text.
+
+Assessment selection additionally requires a current, time-bounded operator eligibility review
+linked to the observations and process actually reviewed. Allowed, blocked, and review-required
+outcomes are preserved as append-only history. This authority controls selection only; it is not a
+diagnosis or medical clearance. The athlete-facing assessment-run request contains no health,
+injury, symptom, or raw screening fields and cannot override its eligibility or persisted equipment
+state.
+
+Result recording is allowed only for a selected decision while its exact self-administered protocol
+approval and athlete eligibility remain current and active. It rejects future performance times,
+deferred decisions, missing or invalid reviewed measurement schemas, values outside the reviewed
+contract, unit mismatches, and duplicates without retaining partial observations. Browser controls
+do not replace server enforcement. The result is historical reported evidence, not a safety
+decision, diagnosis, medical clearance, or capability estimate.
+
+Capability interpretation remains a separate action and requires a current evidence-linked policy
+for the exact current protocol review. It cannot admit manual same-type observations, accept a
+browser-supplied formula, or reinterpret a withdrawn protocol. Its output remains a bounded,
+protocol-specific derived record and is not a diagnosis, medical clearance, or safety decision.
+
+Ordinary self-service reassessment is unavailable until the exact historical protocol review's
+recommended interval ends. This is a conservative cadence boundary, not a medical judgment or a
+claim that earlier testing is universally unsafe. Any early-retest path requires separate governed
+authority; browser input cannot override the interval. A selected result awaiting completion also
+blocks a competing run.
+
 ## Policy classes
 
 ### Escalation

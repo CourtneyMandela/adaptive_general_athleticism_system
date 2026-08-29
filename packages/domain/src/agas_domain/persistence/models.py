@@ -10,11 +10,13 @@ from sqlalchemy import (
     Date,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
     event,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -44,6 +46,50 @@ class AccountRecord(VersionedRecordMixin, Base):
 
     issuer: Mapped[str] = mapped_column(String(300), nullable=False)
     subject: Mapped[str] = mapped_column(String(255), nullable=False)
+
+
+class AccountRoleAssignmentRecord(VersionedRecordMixin, Base):
+    __tablename__ = "account_role_assignments"
+    __table_args__ = (
+        CheckConstraint(
+            "role IN ('planning_reviewer')",
+            name="ck_account_role_assignment_role",
+        ),
+        CheckConstraint(
+            "status IN ('active', 'revoked')",
+            name="ck_account_role_assignment_status",
+        ),
+        CheckConstraint(
+            "sequence_number >= 1",
+            name="ck_account_role_assignment_sequence_positive",
+        ),
+        UniqueConstraint(
+            "account_id",
+            "role",
+            "sequence_number",
+            name="uq_account_role_assignment_sequence",
+        ),
+        UniqueConstraint(
+            "supersedes_assignment_id",
+            name="uq_account_role_assignment_superseded_once",
+        ),
+    )
+
+    account_id: Mapped[UUID] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    role: Mapped[str] = mapped_column(String(80), index=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(40), index=True, nullable=False)
+    sequence_number: Mapped[int] = mapped_column(Integer(), nullable=False)
+    supersedes_assignment_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("account_role_assignments.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=True,
+    )
+    assigned_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)
+    assigned_by: Mapped[str] = mapped_column(String(160), nullable=False)
+    rationale: Mapped[str] = mapped_column(Text(), nullable=False)
+    rule_version: Mapped[str] = mapped_column(String(120), nullable=False)
 
 
 class AthleteRecord(VersionedRecordMixin, Base):
@@ -88,7 +134,19 @@ class ObservationRecord(VersionedRecordMixin, Base):
 
 class CapabilityEstimateRecord(VersionedRecordMixin, Base):
     __tablename__ = "capability_estimates"
-    __table_args__ = (CheckConstraint("kind = 'derived'", name="ck_estimate_is_derived"),)
+    __table_args__ = (
+        CheckConstraint("kind = 'derived'", name="ck_estimate_is_derived"),
+        CheckConstraint(
+            "(capability_estimation_policy_id IS NULL) = "
+            "(triggering_assessment_performance_id IS NULL)",
+            name="ck_assessment_estimate_lineage_complete",
+        ),
+        UniqueConstraint(
+            "triggering_assessment_performance_id",
+            "capability_estimation_policy_id",
+            name="uq_assessment_estimate_performance_policy",
+        ),
+    )
 
     kind: Mapped[str] = mapped_column(String(20), nullable=False, default="derived")
     athlete_id: Mapped[UUID] = mapped_column(
@@ -103,6 +161,16 @@ class CapabilityEstimateRecord(VersionedRecordMixin, Base):
     estimated_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)
     valid_until: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     rule_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    capability_estimation_policy_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("capability_estimation_policies.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=True,
+    )
+    triggering_assessment_performance_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("assessment_performances.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=True,
+    )
 
     source_links: Mapped[list[CapabilityEstimateObservationRecord]] = relationship(
         back_populates="estimate",
@@ -160,6 +228,9 @@ class EquipmentAvailabilityRecord(VersionedRecordMixin, Base):
     )
     equipment_id: Mapped[UUID] = mapped_column(
         ForeignKey("equipment.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    source_observation_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("observations.id", ondelete="RESTRICT"), index=True, nullable=True
     )
     is_available: Mapped[bool] = mapped_column(Boolean(), nullable=False)
     effective_from: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)
@@ -286,6 +357,225 @@ class AssessmentDefinitionRecord(VersionedRecordMixin, Base):
     )
 
 
+class AssessmentDefinitionReviewRecord(VersionedRecordMixin, Base):
+    __tablename__ = "assessment_definition_reviews"
+    __table_args__ = (
+        CheckConstraint(
+            "decision IN ('approved', 'needs_revision', 'rejected')",
+            name="ck_assessment_review_decision",
+        ),
+        CheckConstraint("sequence_number >= 1", name="ck_assessment_review_sequence_positive"),
+        CheckConstraint(
+            "recommended_reassessment_days IS NULL OR recommended_reassessment_days >= 1",
+            name="ck_assessment_review_reassessment_positive",
+        ),
+        CheckConstraint(
+            "decision != 'approved' OR recommended_reassessment_days IS NOT NULL",
+            name="ck_approved_assessment_has_reassessment_interval",
+        ),
+        UniqueConstraint(
+            "assessment_definition_id",
+            "sequence_number",
+            name="uq_assessment_review_definition_sequence",
+        ),
+        UniqueConstraint("supersedes_review_id", name="uq_assessment_review_superseded_once"),
+    )
+
+    assessment_definition_id: Mapped[UUID] = mapped_column(
+        ForeignKey("assessment_definitions.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=False,
+    )
+    decision: Mapped[str] = mapped_column(String(40), index=True, nullable=False)
+    sequence_number: Mapped[int] = mapped_column(Integer(), nullable=False)
+    supersedes_review_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("assessment_definition_reviews.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=True,
+    )
+    protocol_instructions: Mapped[list[str]] = mapped_column(JsonType, nullable=False)
+    result_entry_instructions: Mapped[str] = mapped_column(Text(), nullable=False)
+    measurement_schema: Mapped[dict[str, Any] | None] = mapped_column(JsonType, nullable=True)
+    recommended_reassessment_days: Mapped[int | None] = mapped_column(Integer(), nullable=True)
+    self_administered: Mapped[bool] = mapped_column(Boolean(), nullable=False, default=False)
+    reviewed_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)
+    reviewer: Mapped[str] = mapped_column(String(160), nullable=False)
+    applicability_notes: Mapped[str] = mapped_column(Text(), nullable=False)
+    uncertainty: Mapped[str] = mapped_column(Text(), nullable=False)
+    review_version: Mapped[str] = mapped_column(String(120), nullable=False)
+
+    evidence_links: Mapped[list[AssessmentDefinitionReviewEvidenceClaimRecord]] = relationship(
+        cascade="save-update, merge",
+        lazy="selectin",
+        order_by="AssessmentDefinitionReviewEvidenceClaimRecord.position",
+    )
+
+
+class AssessmentDefinitionReviewEvidenceClaimRecord(Base):
+    __tablename__ = "assessment_definition_review_evidence_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "assessment_review_id",
+            "position",
+            name="uq_assessment_review_evidence_order",
+        ),
+    )
+
+    assessment_review_id: Mapped[UUID] = mapped_column(
+        ForeignKey("assessment_definition_reviews.id", ondelete="RESTRICT"), primary_key=True
+    )
+    evidence_claim_id: Mapped[UUID] = mapped_column(
+        ForeignKey("evidence_claims.id", ondelete="RESTRICT"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer(), nullable=False)
+
+
+class CapabilityEstimationPolicyRecord(VersionedRecordMixin, Base):
+    __tablename__ = "capability_estimation_policies"
+    __table_args__ = (
+        CheckConstraint(
+            "decision IN ('approved', 'needs_revision', 'rejected')",
+            name="ck_capability_estimation_policy_decision",
+        ),
+        CheckConstraint(
+            "sequence_number >= 1", name="ck_capability_estimation_policy_sequence_positive"
+        ),
+        CheckConstraint("valid_for_days >= 1", name="ck_capability_estimation_validity_positive"),
+        CheckConstraint(
+            "multi_observation_window_days >= 1",
+            name="ck_capability_estimation_window_positive",
+        ),
+        UniqueConstraint(
+            "assessment_definition_id",
+            "sequence_number",
+            name="uq_capability_estimation_policy_definition_sequence",
+        ),
+        UniqueConstraint(
+            "supersedes_policy_id", name="uq_capability_estimation_policy_superseded_once"
+        ),
+        Index("ix_cap_estimation_policy_definition", "assessment_definition_id"),
+        Index(
+            "ix_cap_estimation_policy_definition_review",
+            "assessment_definition_review_id",
+        ),
+        Index("ix_cap_estimation_policy_decision", "decision"),
+        Index("ix_cap_estimation_policy_supersedes", "supersedes_policy_id"),
+        Index("ix_cap_estimation_policy_domain", "domain"),
+        Index("ix_cap_estimation_policy_reviewed_at", "reviewed_at"),
+    )
+
+    assessment_definition_id: Mapped[UUID] = mapped_column(
+        ForeignKey("assessment_definitions.id", ondelete="RESTRICT"), nullable=False
+    )
+    assessment_definition_review_id: Mapped[UUID] = mapped_column(
+        ForeignKey("assessment_definition_reviews.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    decision: Mapped[str] = mapped_column(String(40), nullable=False)
+    sequence_number: Mapped[int] = mapped_column(Integer(), nullable=False)
+    supersedes_policy_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("capability_estimation_policies.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    domain: Mapped[str] = mapped_column(String(80), nullable=False)
+    observation_type: Mapped[str] = mapped_column(String(120), nullable=False)
+    unit_or_scale: Mapped[str] = mapped_column(String(80), nullable=False)
+    calculation_method: Mapped[str] = mapped_column(String(160), nullable=False)
+    valid_for_days: Mapped[int] = mapped_column(Integer(), nullable=False)
+    multi_observation_window_days: Mapped[int] = mapped_column(Integer(), nullable=False)
+    reviewed_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+    reviewed_by: Mapped[str] = mapped_column(String(160), nullable=False)
+    applicability_notes: Mapped[str] = mapped_column(Text(), nullable=False)
+    uncertainty: Mapped[str] = mapped_column(Text(), nullable=False)
+    rule_version: Mapped[str] = mapped_column(String(120), nullable=False)
+
+    evidence_links: Mapped[list[CapabilityEstimationPolicyEvidenceClaimRecord]] = relationship(
+        cascade="save-update, merge",
+        lazy="selectin",
+        order_by="CapabilityEstimationPolicyEvidenceClaimRecord.position",
+    )
+
+
+class CapabilityEstimationPolicyEvidenceClaimRecord(Base):
+    __tablename__ = "capability_estimation_policy_evidence_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "capability_estimation_policy_id",
+            "position",
+            name="uq_capability_estimation_policy_evidence_order",
+        ),
+    )
+
+    capability_estimation_policy_id: Mapped[UUID] = mapped_column(
+        ForeignKey("capability_estimation_policies.id", ondelete="RESTRICT"), primary_key=True
+    )
+    evidence_claim_id: Mapped[UUID] = mapped_column(
+        ForeignKey("evidence_claims.id", ondelete="RESTRICT"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer(), nullable=False)
+
+
+class AssessmentEligibilityReviewRecord(VersionedRecordMixin, Base):
+    __tablename__ = "assessment_eligibility_reviews"
+    __table_args__ = (
+        CheckConstraint(
+            "outcome IN ('selection_allowed', 'selection_blocked', 'review_required')",
+            name="ck_assessment_eligibility_outcome",
+        ),
+        CheckConstraint("sequence_number >= 1", name="ck_assessment_eligibility_sequence_positive"),
+        CheckConstraint("valid_until > reviewed_at", name="ck_assessment_eligibility_valid_window"),
+        UniqueConstraint(
+            "athlete_id",
+            "sequence_number",
+            name="uq_assessment_eligibility_athlete_sequence",
+        ),
+        UniqueConstraint("supersedes_review_id", name="uq_assessment_eligibility_superseded_once"),
+    )
+
+    athlete_id: Mapped[UUID] = mapped_column(
+        ForeignKey("athletes.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    outcome: Mapped[str] = mapped_column(String(40), index=True, nullable=False)
+    sequence_number: Mapped[int] = mapped_column(Integer(), nullable=False)
+    supersedes_review_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("assessment_eligibility_reviews.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=True,
+    )
+    reviewed_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)
+    valid_until: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)
+    reviewed_by: Mapped[str] = mapped_column(String(160), nullable=False)
+    screening_process_reference: Mapped[str] = mapped_column(String(160), nullable=False)
+    rationale: Mapped[str] = mapped_column(Text(), nullable=False)
+    uncertainty: Mapped[str] = mapped_column(Text(), nullable=False)
+    rule_version: Mapped[str] = mapped_column(String(120), nullable=False)
+
+    source_links: Mapped[list[AssessmentEligibilityReviewObservationRecord]] = relationship(
+        cascade="save-update, merge",
+        lazy="selectin",
+        order_by="AssessmentEligibilityReviewObservationRecord.position",
+    )
+
+
+class AssessmentEligibilityReviewObservationRecord(Base):
+    __tablename__ = "assessment_eligibility_review_observations"
+    __table_args__ = (
+        UniqueConstraint(
+            "eligibility_review_id",
+            "position",
+            name="uq_assessment_eligibility_observation_order",
+        ),
+    )
+
+    eligibility_review_id: Mapped[UUID] = mapped_column(
+        ForeignKey("assessment_eligibility_reviews.id", ondelete="RESTRICT"), primary_key=True
+    )
+    observation_id: Mapped[UUID] = mapped_column(
+        ForeignKey("observations.id", ondelete="RESTRICT"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer(), nullable=False)
+
+
 class AssessmentSelectionRecord(VersionedRecordMixin, Base):
     __tablename__ = "assessment_selections"
 
@@ -294,6 +584,16 @@ class AssessmentSelectionRecord(VersionedRecordMixin, Base):
     )
     assessment_definition_id: Mapped[UUID] = mapped_column(
         ForeignKey("assessment_definitions.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    assessment_definition_review_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("assessment_definition_reviews.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=True,
+    )
+    assessment_eligibility_review_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("assessment_eligibility_reviews.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=True,
     )
     decision: Mapped[str] = mapped_column(String(40), nullable=False)
     reason_codes: Mapped[list[str]] = mapped_column(JsonType, nullable=False)
@@ -325,6 +625,88 @@ class AssessmentSelectionObservationRecord(Base):
     selection: Mapped[AssessmentSelectionRecord] = relationship(back_populates="source_links")
 
 
+class AssessmentSelectionRunRecord(VersionedRecordMixin, Base):
+    __tablename__ = "assessment_selection_runs"
+    __table_args__ = (
+        UniqueConstraint("context_observation_id", name="uq_assessment_run_context_observation"),
+    )
+
+    athlete_id: Mapped[UUID] = mapped_column(
+        ForeignKey("athletes.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    assessment_eligibility_review_id: Mapped[UUID] = mapped_column(
+        ForeignKey("assessment_eligibility_reviews.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=False,
+    )
+    environment_id: Mapped[UUID] = mapped_column(
+        ForeignKey("environments.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    context_observation_id: Mapped[UUID] = mapped_column(
+        ForeignKey("observations.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    evaluated_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)
+    rule_version: Mapped[str] = mapped_column(String(120), nullable=False)
+
+    selection_links: Mapped[list[AssessmentSelectionRunItemRecord]] = relationship(
+        cascade="save-update, merge",
+        lazy="selectin",
+        order_by="AssessmentSelectionRunItemRecord.position",
+    )
+
+
+class AssessmentSelectionRunItemRecord(Base):
+    __tablename__ = "assessment_selection_run_items"
+    __table_args__ = (
+        UniqueConstraint("assessment_run_id", "position", name="uq_assessment_run_selection_order"),
+        UniqueConstraint("selection_id", name="uq_assessment_selection_one_run"),
+    )
+
+    assessment_run_id: Mapped[UUID] = mapped_column(
+        ForeignKey("assessment_selection_runs.id", ondelete="RESTRICT"), primary_key=True
+    )
+    selection_id: Mapped[UUID] = mapped_column(
+        ForeignKey("assessment_selections.id", ondelete="RESTRICT"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer(), nullable=False)
+
+
+class AssessmentPerformanceRecord(VersionedRecordMixin, Base):
+    __tablename__ = "assessment_performances"
+    __table_args__ = (
+        UniqueConstraint("assessment_selection_id", name="uq_assessment_performance_selection"),
+        UniqueConstraint("result_observation_id", name="uq_assessment_performance_observation"),
+    )
+
+    athlete_id: Mapped[UUID] = mapped_column(
+        ForeignKey("athletes.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    assessment_selection_run_id: Mapped[UUID] = mapped_column(
+        ForeignKey("assessment_selection_runs.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    assessment_selection_id: Mapped[UUID] = mapped_column(
+        ForeignKey("assessment_selections.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    assessment_definition_id: Mapped[UUID] = mapped_column(
+        ForeignKey("assessment_definitions.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    assessment_definition_review_id: Mapped[UUID] = mapped_column(
+        ForeignKey("assessment_definition_reviews.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=False,
+    )
+    assessment_eligibility_review_id: Mapped[UUID] = mapped_column(
+        ForeignKey("assessment_eligibility_reviews.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=False,
+    )
+    result_observation_id: Mapped[UUID] = mapped_column(
+        ForeignKey("observations.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    performed_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)
+    rule_version: Mapped[str] = mapped_column(String(120), nullable=False)
+
+
 class CompetencyFloorRecord(VersionedRecordMixin, Base):
     __tablename__ = "competency_floors"
 
@@ -353,6 +735,66 @@ class CompetencyFloorEvidenceClaimRecord(Base):
 
     competency_floor_id: Mapped[UUID] = mapped_column(
         ForeignKey("competency_floors.id", ondelete="RESTRICT"), primary_key=True
+    )
+    evidence_claim_id: Mapped[UUID] = mapped_column(
+        ForeignKey("evidence_claims.id", ondelete="RESTRICT"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer(), nullable=False)
+
+
+class CompetencyFloorReviewRecord(VersionedRecordMixin, Base):
+    __tablename__ = "competency_floor_reviews"
+    __table_args__ = (
+        CheckConstraint(
+            "decision IN ('approved', 'needs_revision', 'rejected')",
+            name="ck_competency_floor_review_decision",
+        ),
+        CheckConstraint(
+            "sequence_number >= 1", name="ck_competency_floor_review_sequence_positive"
+        ),
+        UniqueConstraint(
+            "competency_floor_id",
+            "sequence_number",
+            name="uq_competency_floor_review_floor_sequence",
+        ),
+        UniqueConstraint("supersedes_review_id", name="uq_competency_floor_review_superseded_once"),
+    )
+
+    competency_floor_id: Mapped[UUID] = mapped_column(
+        ForeignKey("competency_floors.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    decision: Mapped[str] = mapped_column(String(40), index=True, nullable=False)
+    sequence_number: Mapped[int] = mapped_column(Integer(), nullable=False)
+    supersedes_review_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("competency_floor_reviews.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=True,
+    )
+    reviewed_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)
+    reviewed_by: Mapped[str] = mapped_column(String(160), nullable=False)
+    applicability_rationale: Mapped[str] = mapped_column(Text(), nullable=False)
+    uncertainty: Mapped[str] = mapped_column(Text(), nullable=False)
+    review_version: Mapped[str] = mapped_column(String(120), nullable=False)
+
+    evidence_links: Mapped[list[CompetencyFloorReviewEvidenceClaimRecord]] = relationship(
+        cascade="save-update, merge",
+        lazy="selectin",
+        order_by="CompetencyFloorReviewEvidenceClaimRecord.position",
+    )
+
+
+class CompetencyFloorReviewEvidenceClaimRecord(Base):
+    __tablename__ = "competency_floor_review_evidence_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "competency_floor_review_id",
+            "position",
+            name="uq_competency_floor_review_evidence_order",
+        ),
+    )
+
+    competency_floor_review_id: Mapped[UUID] = mapped_column(
+        ForeignKey("competency_floor_reviews.id", ondelete="RESTRICT"), primary_key=True
     )
     evidence_claim_id: Mapped[UUID] = mapped_column(
         ForeignKey("evidence_claims.id", ondelete="RESTRICT"), primary_key=True
@@ -427,6 +869,64 @@ class PriorityPolicyRecord(VersionedRecordMixin, Base):
     policy_version: Mapped[str] = mapped_column(String(80), nullable=False)
 
 
+class PriorityPolicyReviewRecord(VersionedRecordMixin, Base):
+    __tablename__ = "priority_policy_reviews"
+    __table_args__ = (
+        CheckConstraint(
+            "decision IN ('approved', 'needs_revision', 'rejected')",
+            name="ck_priority_policy_review_decision",
+        ),
+        CheckConstraint("sequence_number >= 1", name="ck_priority_policy_review_sequence_positive"),
+        UniqueConstraint(
+            "priority_policy_id",
+            "sequence_number",
+            name="uq_priority_policy_review_policy_sequence",
+        ),
+        UniqueConstraint("supersedes_review_id", name="uq_priority_policy_review_superseded_once"),
+    )
+
+    priority_policy_id: Mapped[UUID] = mapped_column(
+        ForeignKey("priority_policies.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    decision: Mapped[str] = mapped_column(String(40), index=True, nullable=False)
+    sequence_number: Mapped[int] = mapped_column(Integer(), nullable=False)
+    supersedes_review_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("priority_policy_reviews.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=True,
+    )
+    reviewed_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)
+    reviewed_by: Mapped[str] = mapped_column(String(160), nullable=False)
+    applicability_rationale: Mapped[str] = mapped_column(Text(), nullable=False)
+    uncertainty: Mapped[str] = mapped_column(Text(), nullable=False)
+    review_version: Mapped[str] = mapped_column(String(120), nullable=False)
+
+    evidence_links: Mapped[list[PriorityPolicyReviewEvidenceClaimRecord]] = relationship(
+        cascade="save-update, merge",
+        lazy="selectin",
+        order_by="PriorityPolicyReviewEvidenceClaimRecord.position",
+    )
+
+
+class PriorityPolicyReviewEvidenceClaimRecord(Base):
+    __tablename__ = "priority_policy_review_evidence_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "priority_policy_review_id",
+            "position",
+            name="uq_priority_policy_review_evidence_order",
+        ),
+    )
+
+    priority_policy_review_id: Mapped[UUID] = mapped_column(
+        ForeignKey("priority_policy_reviews.id", ondelete="RESTRICT"), primary_key=True
+    )
+    evidence_claim_id: Mapped[UUID] = mapped_column(
+        ForeignKey("evidence_claims.id", ondelete="RESTRICT"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer(), nullable=False)
+
+
 class LongRangeStrategyRecord(VersionedRecordMixin, Base):
     __tablename__ = "long_range_strategies"
     __table_args__ = (
@@ -437,6 +937,13 @@ class LongRangeStrategyRecord(VersionedRecordMixin, Base):
             name="ck_strategy_revision_lineage_pair",
         ),
         UniqueConstraint("triggering_block_review_id", name="uq_strategy_triggering_block_review"),
+        Index(
+            "uq_initial_strategy_athlete",
+            "athlete_id",
+            unique=True,
+            postgresql_where=text("supersedes_strategy_id IS NULL"),
+            sqlite_where=text("supersedes_strategy_id IS NULL"),
+        ),
     )
 
     athlete_id: Mapped[UUID] = mapped_column(
@@ -1134,9 +1641,25 @@ class SessionTemplateEvidenceRecord(Base):
 
 class WeeklyAvailabilityRecord(VersionedRecordMixin, Base):
     __tablename__ = "weekly_availabilities"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_weekly_plan_id",
+            name="uq_weekly_availability_source_plan",
+        ),
+    )
 
     athlete_id: Mapped[UUID] = mapped_column(
         ForeignKey("athletes.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    source_weekly_plan_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey(
+            "weekly_plans.id",
+            name="fk_weekly_availability_source_plan",
+            ondelete="RESTRICT",
+            use_alter=True,
+        ),
+        index=True,
+        nullable=True,
     )
     week_start: Mapped[date] = mapped_column(Date(), index=True, nullable=False)
     recorded_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)
@@ -1196,6 +1719,72 @@ class WeeklySchedulingPolicyRecord(VersionedRecordMixin, Base):
     policy_version: Mapped[str] = mapped_column(String(80), nullable=False)
 
 
+class WeeklySchedulingPolicyReviewRecord(VersionedRecordMixin, Base):
+    __tablename__ = "weekly_scheduling_policy_reviews"
+    __table_args__ = (
+        CheckConstraint(
+            "decision IN ('approved', 'needs_revision', 'rejected')",
+            name="ck_weekly_scheduling_policy_review_decision",
+        ),
+        CheckConstraint(
+            "sequence_number >= 1",
+            name="ck_weekly_scheduling_policy_review_sequence_positive",
+        ),
+        UniqueConstraint(
+            "weekly_scheduling_policy_id",
+            "sequence_number",
+            name="uq_weekly_scheduling_policy_review_policy_sequence",
+        ),
+        UniqueConstraint(
+            "supersedes_review_id",
+            name="uq_weekly_scheduling_policy_review_superseded_once",
+        ),
+    )
+
+    weekly_scheduling_policy_id: Mapped[UUID] = mapped_column(
+        ForeignKey("weekly_scheduling_policies.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=False,
+    )
+    decision: Mapped[str] = mapped_column(String(40), index=True, nullable=False)
+    sequence_number: Mapped[int] = mapped_column(Integer(), nullable=False)
+    supersedes_review_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("weekly_scheduling_policy_reviews.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=True,
+    )
+    reviewed_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)
+    reviewed_by: Mapped[str] = mapped_column(String(160), nullable=False)
+    applicability_rationale: Mapped[str] = mapped_column(Text(), nullable=False)
+    uncertainty: Mapped[str] = mapped_column(Text(), nullable=False)
+    review_version: Mapped[str] = mapped_column(String(120), nullable=False)
+
+    evidence_links: Mapped[list[WeeklySchedulingPolicyReviewEvidenceClaimRecord]] = relationship(
+        cascade="save-update, merge",
+        lazy="selectin",
+        order_by="WeeklySchedulingPolicyReviewEvidenceClaimRecord.position",
+    )
+
+
+class WeeklySchedulingPolicyReviewEvidenceClaimRecord(Base):
+    __tablename__ = "weekly_scheduling_policy_review_evidence_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "weekly_scheduling_policy_review_id",
+            "position",
+            name="uq_weekly_scheduling_policy_review_evidence_order",
+        ),
+    )
+
+    weekly_scheduling_policy_review_id: Mapped[UUID] = mapped_column(
+        ForeignKey("weekly_scheduling_policy_reviews.id", ondelete="RESTRICT"), primary_key=True
+    )
+    evidence_claim_id: Mapped[UUID] = mapped_column(
+        ForeignKey("evidence_claims.id", ondelete="RESTRICT"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer(), nullable=False)
+
+
 class WeeklyPlanRecord(VersionedRecordMixin, Base):
     __tablename__ = "weekly_plans"
 
@@ -1216,6 +1805,11 @@ class WeeklyPlanRecord(VersionedRecordMixin, Base):
     )
     scheduling_policy_id: Mapped[UUID] = mapped_column(
         ForeignKey("weekly_scheduling_policies.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    scheduling_policy_review_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("weekly_scheduling_policy_reviews.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=True,
     )
     week_start: Mapped[date] = mapped_column(Date(), index=True, nullable=False)
     block_week: Mapped[int] = mapped_column(Integer(), nullable=False)
@@ -1776,14 +2370,24 @@ class ProgressionDecisionObservationRecord(Base):
 
 class SessionPrescriptionRevisionRecord(Base):
     __tablename__ = "session_prescription_revisions"
+    __table_args__ = (
+        CheckConstraint(
+            "(progression_decision_id IS NOT NULL AND planning_decision_record_id IS NULL) OR "
+            "(progression_decision_id IS NULL AND planning_decision_record_id IS NOT NULL)",
+            name="ck_prescription_revision_one_authorizer",
+        ),
+    )
     revised_prescription_id: Mapped[UUID] = mapped_column(
         ForeignKey("session_prescriptions.id", ondelete="RESTRICT"), primary_key=True
     )
     superseded_prescription_id: Mapped[UUID] = mapped_column(
         ForeignKey("session_prescriptions.id", ondelete="RESTRICT"), nullable=False, unique=True
     )
-    progression_decision_id: Mapped[UUID] = mapped_column(
-        ForeignKey("progression_decisions.id", ondelete="RESTRICT"), nullable=False, unique=True
+    progression_decision_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("progression_decisions.id", ondelete="RESTRICT"), nullable=True, unique=True
+    )
+    planning_decision_record_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("decision_records.id", ondelete="RESTRICT"), nullable=True, index=True
     )
 
 
@@ -2283,6 +2887,7 @@ def _reject_mutation(_mapper: object, _connection: object, target: object) -> No
 
 for _record_type in (
     AccountRecord,
+    AccountRoleAssignmentRecord,
     AthleteOwnershipRecord,
     ObservationRecord,
     CapabilityEstimateRecord,
@@ -2290,13 +2895,26 @@ for _record_type in (
     EquipmentAvailabilityRecord,
     EvidenceClaimRecord,
     AssessmentDefinitionRecord,
+    AssessmentDefinitionReviewRecord,
+    AssessmentDefinitionReviewEvidenceClaimRecord,
+    CapabilityEstimationPolicyRecord,
+    CapabilityEstimationPolicyEvidenceClaimRecord,
+    AssessmentEligibilityReviewRecord,
+    AssessmentEligibilityReviewObservationRecord,
     AssessmentSelectionRecord,
     AssessmentSelectionObservationRecord,
+    AssessmentSelectionRunRecord,
+    AssessmentSelectionRunItemRecord,
+    AssessmentPerformanceRecord,
     CompetencyFloorRecord,
     CompetencyFloorEvidenceClaimRecord,
+    CompetencyFloorReviewRecord,
+    CompetencyFloorReviewEvidenceClaimRecord,
     CapabilityNeedRecord,
     CapabilityNeedEvidenceClaimRecord,
     PriorityPolicyRecord,
+    PriorityPolicyReviewRecord,
+    PriorityPolicyReviewEvidenceClaimRecord,
     LongRangeStrategyRecord,
     AdaptationPriorityRecord,
     RoadmapItemRecord,

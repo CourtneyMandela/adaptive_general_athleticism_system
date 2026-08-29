@@ -208,6 +208,17 @@ button { cursor: pointer; }
 .status-badge--completed, .status-badge--cleared { background: var(--accent-soft); color: var(--accent); }
 .status-badge--held, .status-badge--needs_attention, .status-badge--stopped_safety { background: var(--danger-soft); color: var(--danger); }
 .status-badge--modified, .status-badge--partial { background: #f2e8c9; color: #765c13; }
+.status-badge--first_week_created { background: var(--accent-soft); color: var(--accent); }
+.status-badge--block_infeasible,
+.status-badge--first_week_infeasible { background: var(--danger-soft); color: var(--danger); }
+.status-badge--resource_demand_preparation_required,
+.status-badge--resource_allocation_policy_required,
+.status-badge--exercise_resolution_review_required,
+.status-badge--block_context_review_required,
+.status-badge--block_selection_review_required,
+.status-badge--weekly_scheduling_policy_required,
+.status-badge--weekly_plan_context_review_required,
+.status-badge--first_week_selection_review_required { background: #f2e8c9; color: #765c13; }
 
 .safety-note {
   display: flex;
@@ -308,6 +319,138 @@ button { cursor: pointer; }
   box-shadow: var(--shadow);
 }
 
+.assessment-panel {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: clamp(1.15rem, 3vw, 2rem);
+  border: 1px solid var(--line);
+  border-radius: 1.15rem;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.athletic-dashboard {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: clamp(1.15rem, 3vw, 2rem);
+  border: 1px solid var(--line);
+  border-radius: 1.15rem;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.athletic-dashboard__heading, .capability-domain-card > header, .capability-value-line {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.athletic-dashboard h2 { margin: .25rem 0 0; font-family: Georgia, "Times New Roman", serif; font-size: clamp(1.6rem, 4vw, 2.35rem); font-weight: 500; letter-spacing: -.035em; }
+.athletic-dashboard__heading button:disabled { cursor: not-allowed; opacity: .55; }
+.dashboard-coverage { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; margin: 0; }
+.dashboard-coverage div { display: grid; gap: .2rem; padding: .75rem; border-radius: .7rem; background: #f3f5f0; }
+.dashboard-coverage dt { color: var(--muted); font-size: .72rem; font-weight: 750; text-transform: uppercase; }
+.dashboard-coverage dd { margin: 0; color: var(--accent); font-family: Georgia, "Times New Roman", serif; font-size: 1.45rem; }
+.capability-domain-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+.capability-domain-card { display: grid; align-content: start; gap: .65rem; min-width: 0; padding: 1rem; border: 1px solid var(--line); border-radius: .8rem; background: #f9faf6; }
+.capability-domain-card h3, .capability-domain-card p { margin: 0; }
+.capability-series-list { display: grid; gap: .65rem; }
+.capability-series-list > section { display: grid; gap: .35rem; padding: .75rem; border-radius: .65rem; background: #fff; }
+.capability-value-line strong { font-size: 1.15rem; }
+.capability-value-line span { color: var(--muted); font-size: .75rem; text-align: right; }
+.capability-series-list > section > p { overflow-wrap: anywhere; color: var(--muted); font-size: .78rem; }
+.capability-series-list details { color: var(--muted); font-size: .78rem; }
+.capability-series-list summary, .unestimated-domains summary { color: var(--accent); cursor: pointer; font-weight: 800; }
+.capability-series-list details p { margin-top: .4rem; line-height: 1.45; }
+.dashboard-empty { margin: 0; padding: .85rem; border-radius: .7rem; background: var(--accent-soft); color: var(--accent); line-height: 1.5; }
+.unestimated-domains { padding: .8rem; border: 1px solid var(--line); border-radius: .7rem; }
+.unestimated-domains ul { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .4rem 1rem; margin: .75rem 0 0; padding-left: 1.2rem; color: var(--muted); font-size: .82rem; }
+
+.environment-panel {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: clamp(1.15rem, 3vw, 2rem);
+  border: 1px solid var(--line);
+  border-radius: 1.15rem;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.environment-panel__heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.environment-panel h2 { margin: .25rem 0 0; font-family: Georgia, "Times New Roman", serif; font-size: clamp(1.6rem, 4vw, 2.35rem); font-weight: 500; letter-spacing: -.035em; }
+.environment-selector, .equipment-change-form > label, .equipment-change-timing label { display: grid; gap: .35rem; color: var(--muted); font-size: .78rem; font-weight: 750; }
+.environment-selector { max-width: 28rem; }
+.environment-selector select, .equipment-change-form input, .equipment-change-form select { width: 100%; min-width: 0; padding: .65rem .7rem; border: 1px solid #b9c2bb; border-radius: .65rem; background: #fff; color: var(--ink); }
+.environment-constraints { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .65rem; margin: 0; }
+.environment-constraints div { display: grid; gap: .2rem; padding: .75rem; border-radius: .7rem; background: #f3f5f0; }
+.environment-constraints dt { color: var(--muted); font-size: .72rem; font-weight: 750; text-transform: uppercase; }
+.environment-constraints dd { margin: 0; font-weight: 750; }
+.equipment-change-form { display: grid; gap: .85rem; padding-top: .25rem; }
+.equipment-state-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .55rem; }
+.equipment-state-list > label { display: grid; grid-template-columns: minmax(0, 1fr) minmax(8.5rem, .45fr); align-items: center; gap: .65rem; padding: .7rem .8rem; border: 1px solid var(--line); border-radius: .7rem; background: #f9faf6; }
+.equipment-state-list label > span { display: grid; gap: .18rem; min-width: 0; }
+.equipment-state-list small { overflow-wrap: anywhere; color: var(--muted); text-transform: capitalize; }
+.equipment-change-timing { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; }
+.equipment-change-form button { justify-self: start; border: 0; border-radius: .7rem; background: var(--accent); color: #fff; padding: .85rem 1.1rem; font-weight: 750; }
+.equipment-change-form button:disabled { cursor: not-allowed; opacity: .55; }
+
+.assessment-panel__heading, .assessment-decision > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.assessment-panel h2 {
+  margin: .25rem 0 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(1.6rem, 4vw, 2.35rem);
+  font-weight: 500;
+  letter-spacing: -.035em;
+}
+
+.assessment-message { margin: 0; color: var(--muted); line-height: 1.5; }
+.assessment-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; margin: 0; }
+.assessment-summary div { display: grid; gap: .2rem; padding: .75rem; border-radius: .7rem; background: #f3f5f0; }
+.assessment-summary dt { color: var(--muted); font-size: .72rem; font-weight: 750; text-transform: uppercase; }
+.assessment-summary dd { margin: 0; font-weight: 750; }
+.planning-requirements { display: grid; gap: .55rem; margin: 0; padding: 0; list-style: none; }
+.planning-requirements li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: .6rem; padding: .7rem .8rem; border: 1px solid #d8c9a3; border-radius: .7rem; background: #fffaf0; color: #675521; }
+.planning-requirements li > span:first-child { font-size: 1.05rem; font-weight: 850; }
+.planning-requirements strong { font-size: .75rem; text-transform: uppercase; }
+.planning-requirements .planning-requirement--ready { border-color: #bed1c5; background: #f2f8f3; color: var(--accent); }
+.assessment-decisions { display: grid; gap: .75rem; }
+.assessment-decision { padding: 1rem; border: 1px solid var(--line); border-radius: .8rem; background: #f9faf6; }
+.assessment-decision h3 { margin: 0; }
+.assessment-decision header p, .assessment-decision > p { margin: .25rem 0 0; color: var(--muted); line-height: 1.45; }
+.assessment-decision details { margin-top: .75rem; color: var(--muted); font-size: .86rem; }
+.assessment-decision summary, .assessment-start > summary, .assessment-history > summary { color: var(--accent); cursor: pointer; font-weight: 800; }
+.assessment-decision ol { padding-left: 1.25rem; }
+.assessment-result { padding: .7rem; border-radius: .65rem; background: var(--accent-soft); color: var(--accent) !important; }
+.assessment-result--pending { background: #f2e8c9; color: #5e4a14 !important; }
+.assessment-capability { display: grid; gap: .55rem; margin-top: .65rem; padding: .75rem; border: 1px solid var(--line); border-radius: .65rem; background: #fff; }
+.assessment-capability p { margin: 0; }
+.assessment-capability button { justify-self: start; border: 0; border-radius: .6rem; background: var(--accent); color: #fff; padding: .7rem .85rem; font-weight: 750; }
+.assessment-capability button:disabled { cursor: not-allowed; opacity: .55; }
+.assessment-start { border-top: 1px solid var(--line); padding-top: 1rem; }
+.assessment-form { display: grid; gap: .85rem; padding-top: 1rem; }
+.assessment-form label { display: grid; gap: .35rem; color: var(--muted); font-size: .78rem; font-weight: 750; }
+.assessment-form label span { font-weight: 500; }
+.assessment-form input, .assessment-form select, .assessment-form textarea { width: 100%; min-width: 0; padding: .65rem .7rem; border: 1px solid #b9c2bb; border-radius: .65rem; background: #fff; color: var(--ink); }
+.assessment-form textarea { resize: vertical; }
+.assessment-form button { justify-self: start; border: 0; border-radius: .7rem; background: var(--accent); color: #fff; padding: .85rem 1.1rem; font-weight: 750; }
+.assessment-form button:disabled { cursor: not-allowed; opacity: .55; }
+.assessment-result-form { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(10rem, .7fr) auto; align-items: end; gap: .65rem; margin-top: .8rem; padding: .8rem; border-radius: .7rem; background: #f2e8c9; }
+.assessment-result-form label { display: grid; gap: .3rem; color: #5e4a14; font-size: .76rem; font-weight: 750; }
+.assessment-result-form input, .assessment-result-form select { width: 100%; min-width: 0; padding: .6rem .65rem; border: 1px solid #cbbd8b; border-radius: .55rem; background: #fff; color: var(--ink); }
+.assessment-result-form button { border: 0; border-radius: .6rem; background: var(--accent); color: #fff; padding: .7rem .8rem; font-weight: 750; }
+.assessment-result-form button:disabled { cursor: not-allowed; opacity: .55; }
+.assessment-result-form .form-help, .assessment-result-form .form-error { grid-column: 1 / -1; }
+.assessment-unit { align-self: center; color: #5e4a14; font-weight: 800; }
+.assessment-history { padding: .8rem; border: 1px solid var(--line); border-radius: .7rem; }
+.assessment-history__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .65rem; padding-top: .8rem; }
+
 .weekly-review__heading { display: grid; gap: 1rem; }
 .weekly-review h2 { margin: .25rem 0 .4rem; font-size: clamp(1.6rem, 4vw, 2.35rem); }
 .weekly-review__heading > div > p:last-child { max-width: 62ch; margin: 0; color: var(--muted); line-height: 1.5; }
@@ -359,6 +502,11 @@ button { cursor: pointer; }
   .compact-fields, .performance-fields { grid-template-columns: 1fr; }
   .review-counts, .availability-fields { grid-template-columns: 1fr; }
   .paired-fields, .equipment-options, .compact-section { grid-template-columns: 1fr; }
+  .assessment-summary, .assessment-history__grid, .dashboard-coverage, .capability-domain-grid, .environment-constraints, .equipment-state-list, .equipment-change-timing { grid-template-columns: 1fr; }
+  .assessment-result-form { grid-template-columns: 1fr; align-items: stretch; }
+  .assessment-unit { align-self: auto; }
+  .assessment-panel__heading, .assessment-decision > header, .athletic-dashboard__heading, .environment-panel__heading { flex-direction: column; }
+  .unestimated-domains ul { grid-template-columns: 1fr; }
   .section-heading { align-items: flex-start; flex-direction: column; }
 }
 

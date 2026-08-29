@@ -351,13 +351,11 @@ export function ProgressionEvaluationButton({
   apiBaseUrl,
   executionId,
   prescriptionId,
-  progressionPolicyId,
   onSaved,
 }: {
   apiBaseUrl: string;
   executionId: string;
   prescriptionId: string;
-  progressionPolicyId: string;
   onSaved: () => Promise<void>;
 }) {
   const [state, setState] = useState<"idle" | "saving" | "error">("idle");
@@ -367,7 +365,7 @@ export function ProgressionEvaluationButton({
     setState("saving");
     setMessage("");
     try {
-      const command = buildProgressionEvaluationCommand(progressionPolicyId);
+      const command = buildProgressionEvaluationCommand();
       await submitProgressionEvaluation(
         apiBaseUrl,
         executionId,

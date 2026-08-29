@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from typing import Annotated
 from uuid import UUID
 
 from agas_domain import (
     BlockPlan,
     BlockReview,
     ComparisonDirection,
+    DecisionRecord,
     ResponseEvaluationTarget,
     SessionAdherence,
     SessionExecution,
@@ -20,6 +22,8 @@ from agas_planner import BlockReviewEngine, BlockReviewError, TrainingResponseCa
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+
+NonEmptyText = Annotated[str, Field(min_length=1)]
 
 
 class TrainingResponseDraft(BaseModel):
@@ -53,6 +57,9 @@ class CreateBlockReviewCommand(BaseModel):
     response_drafts: tuple[TrainingResponseDraft, ...] = Field(min_length=1)
     responses_calculated_at: datetime
     reviewed_at: datetime
+    reviewed_by: NonEmptyText
+    applicability_rationale: NonEmptyText
+    uncertainty: NonEmptyText
 
     @field_validator("responses_calculated_at", "reviewed_at")
     @classmethod
@@ -60,6 +67,14 @@ class CreateBlockReviewCommand(BaseModel):
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("block review timestamps must include a timezone")
         return value
+
+    @field_validator("reviewed_by", "applicability_rationale", "uncertainty")
+    @classmethod
+    def require_meaningful_review_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("operator review metadata must not be blank")
+        return normalized
 
     @model_validator(mode="after")
     def require_ordered_times_and_unique_prescriptions(self) -> CreateBlockReviewCommand:
@@ -80,6 +95,7 @@ class BlockReviewCreationResult(BaseModel):
 
     training_responses: tuple[TrainingResponse, ...]
     block_review: BlockReview
+    decision_record: DecisionRecord
 
 
 class BlockReviewUseCaseError(RuntimeError):
@@ -114,6 +130,7 @@ class PersistedBlockReviewService:
                 self.repository.add_training_response(response)
             self.session.flush()
             self.repository.add_block_review(result.block_review)
+            self.repository.add_decision_record(result.decision_record)
             self.session.commit()
             return result
         except BlockReviewUseCaseError:
@@ -226,7 +243,79 @@ class PersistedBlockReviewService:
             policy=policy,
             reviewed_at=command.reviewed_at,
         )
-        return BlockReviewCreationResult(training_responses=responses, block_review=review)
+        return BlockReviewCreationResult(
+            training_responses=responses,
+            block_review=review,
+            decision_record=self._decision_record(
+                block=block,
+                command=command,
+                responses=responses,
+                review=review,
+            ),
+        )
+
+    @staticmethod
+    def _decision_record(
+        *,
+        block: BlockPlan,
+        command: CreateBlockReviewCommand,
+        responses: tuple[TrainingResponse, ...],
+        review: BlockReview,
+    ) -> DecisionRecord:
+        values = [
+            f"block_plan:{block.id}",
+            f"block_review_policy:{command.block_review_policy_id}",
+            *(
+                f"response_evaluation_target:{response.id}:"
+                f"direction={draft.comparison_direction.value}:"
+                f"minimum_meaningful_change={draft.minimum_meaningful_change}"
+                for response, draft in zip(responses, command.response_drafts, strict=True)
+            ),
+            *(f"adaptation:{response.adaptation_id}" for response in responses),
+            *(f"training_response:{response.id}" for response in responses),
+            *(
+                f"session_prescription:{item}"
+                for response in responses
+                for item in response.prescription_ids
+            ),
+            *(
+                f"session_execution:{item}"
+                for response in responses
+                for item in response.session_execution_ids
+            ),
+            *(
+                f"session_adherence:{item}"
+                for response in responses
+                for item in response.session_adherence_ids
+            ),
+            *(
+                f"capability_estimate:{item}"
+                for response in responses
+                for item in (
+                    response.baseline_capability_estimate_id,
+                    response.followup_capability_estimate_id,
+                )
+            ),
+            *(
+                f"session_safety_decision:{item}"
+                for item in review.post_session_safety_decision_ids
+            ),
+            *(f"observation:{item}" for item in review.source_observation_ids),
+            *(f"evidence_claim:{item}" for item in review.evidence_claim_ids),
+            f"block_review:{review.id}",
+        ]
+        return DecisionRecord(
+            decision=f"Complete block review {review.id} for block {block.id}.",
+            reason=f"Reviewed by {command.reviewed_by}. {command.applicability_rationale}",
+            alternatives_considered=(
+                "Defer block review until different reviewed response groupings, estimates, "
+                "measurement interpretation, or policy authority are available.",
+            ),
+            evidence=tuple(dict.fromkeys(values)),
+            uncertainty=command.uncertainty,
+            decision_version=f"block-review-operator-review@1.0.0;engine={review.rule_version}",
+            decided_on=command.reviewed_at.date(),
+        )
 
     def _build_response(
         self,

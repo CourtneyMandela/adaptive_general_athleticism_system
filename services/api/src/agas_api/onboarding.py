@@ -278,6 +278,7 @@ class PersistedAthleteOnboardingService:
                 created_at=command.reported_at,
                 environment_id=environment.id,
                 equipment_id=selection.equipment_id,
+                source_observation_id=observation.id,
                 is_available=True,
                 effective_from=command.reported_at,
                 capabilities=selection.capabilities,

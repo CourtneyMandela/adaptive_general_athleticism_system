@@ -6,12 +6,8 @@ from typing import Annotated
 from uuid import UUID
 
 from agas_domain import (
-    AvailabilityWindow,
-    Confidence,
+    AssessmentReviewDecision,
     CostLevel,
-    Observation,
-    ObservationSource,
-    Provenance,
     SessionPrescription,
     SessionTemplate,
     SessionTemplateItem,
@@ -24,16 +20,14 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from agas_api.weekly_planning import WeeklyAvailabilityDraft
+from agas_api.current_week import CurrentWeekProjectionError, CurrentWeekProjector
 
 
 class RollForwardWeeklyPlanCommand(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    availability: WeeklyAvailabilityDraft
+    weekly_availability_id: UUID
     prepared_at: datetime
-    reliability: Confidence
-    provenance: Provenance
 
     @model_validator(mode="after")
     def validate_command(self) -> RollForwardWeeklyPlanCommand:
@@ -48,7 +42,6 @@ class WeeklyPlanRollForwardResult(BaseModel):
     prescriptions: Annotated[tuple[SessionPrescription, ...], Field(min_length=1)]
     session_templates: Annotated[tuple[SessionTemplate, ...], Field(min_length=1)]
     created_session_templates: tuple[SessionTemplate, ...]
-    availability_observation: Observation
     availability: WeeklyAvailability
     weekly_plan: WeeklyPlan
 
@@ -85,12 +78,8 @@ class PersistedWeeklyPlanRollForwardService:
                     "weekly plan already has an automatic successor"
                 )
             result = self._build(weekly_plan_id, command)
-            self.repository.add_observation(result.availability_observation)
-            self.session.flush()
             for template in result.created_session_templates:
                 self.repository.add_session_template(template)
-            self.repository.add_weekly_availability(result.availability)
-            self.session.flush()
             self.repository.add_weekly_plan(result.weekly_plan)
             self.session.commit()
             return result
@@ -112,15 +101,77 @@ class PersistedWeeklyPlanRollForwardService:
         source_plan = self.repository.get_weekly_plan(weekly_plan_id)
         if source_plan is None:
             raise WeeklyPlanRollForwardNotFoundError("weekly plan does not exist")
+        source_availability = self.repository.get_weekly_availability(
+            source_plan.weekly_availability_id
+        )
+        if source_availability is None:
+            raise WeeklyPlanRollForwardNotFoundError("source weekly availability does not exist")
+        if (
+            source_availability.athlete_id != source_plan.athlete_id
+            or source_availability.week_start != source_plan.week_start
+        ):
+            raise WeeklyPlanRollForwardValidationError(
+                "source weekly availability does not match its plan"
+            )
         block = self.repository.get_block_plan(source_plan.block_plan_id)
         if block is None:
             raise WeeklyPlanRollForwardNotFoundError("weekly plan block does not exist")
         policy = self.repository.get_weekly_scheduling_policy(source_plan.scheduling_policy_id)
         if policy is None:
             raise WeeklyPlanRollForwardNotFoundError("weekly scheduling policy does not exist")
-        if command.availability.week_start != source_plan.week_start + timedelta(days=7):
+        if source_plan.scheduling_policy_review_id is None:
             raise WeeklyPlanRollForwardValidationError(
-                "roll-forward availability must describe the immediately following week"
+                "source weekly plan predates governed scheduling policy review"
+            )
+        policy_review = self.repository.get_weekly_scheduling_policy_review(
+            source_plan.scheduling_policy_review_id
+        )
+        if policy_review is None:
+            raise WeeklyPlanRollForwardNotFoundError(
+                "weekly scheduling policy review does not exist"
+            )
+        current_policy_review = self.repository.get_current_weekly_scheduling_policy_review(
+            policy.id
+        )
+        if (
+            policy_review.weekly_scheduling_policy_id != policy.id
+            or current_policy_review is None
+            or current_policy_review.id != policy_review.id
+            or policy_review.decision is not AssessmentReviewDecision.APPROVED
+            or policy_review.reviewed_at > command.prepared_at
+        ):
+            raise WeeklyPlanRollForwardValidationError(
+                "weekly roll-forward requires the source plan's current approved scheduling "
+                "policy review"
+            )
+        try:
+            source_review = CurrentWeekProjector(self.session).project_week(source_plan).review
+        except CurrentWeekProjectionError as error:
+            raise WeeklyPlanRollForwardValidationError(
+                f"source weekly plan review is unavailable: {error}"
+            ) from error
+        if source_review.status != "ready_to_finalize_next_week":
+            raise WeeklyPlanRollForwardValidationError(
+                "source weekly plan is not ready for automatic advancement: "
+                f"{source_review.status}: {source_review.reason}"
+            )
+        next_week_start = source_plan.week_start + timedelta(days=7)
+        availability = self.repository.get_weekly_availability(command.weekly_availability_id)
+        if availability is None:
+            raise WeeklyPlanRollForwardNotFoundError(
+                "confirmed next-week availability does not exist"
+            )
+        if (
+            availability.source_weekly_plan_id != source_plan.id
+            or availability.athlete_id != source_plan.athlete_id
+            or availability.week_start != next_week_start
+        ):
+            raise WeeklyPlanRollForwardValidationError(
+                "confirmed availability does not belong to this weekly advancement"
+            )
+        if availability.recorded_at > command.prepared_at:
+            raise WeeklyPlanRollForwardValidationError(
+                "weekly plan cannot predate its availability confirmation"
             )
 
         template_ids = {
@@ -161,44 +212,6 @@ class PersistedWeeklyPlanRollForwardService:
             if effective_template.id != source_template.id:
                 created_templates.append(effective_template)
 
-        availability_observation = Observation(
-            athlete_id=source_plan.athlete_id,
-            observed_at=command.prepared_at,
-            observation_type="weekly_availability_confirmation",
-            measurement={
-                "week_start": command.availability.week_start.isoformat(),
-                "windows": [
-                    {
-                        "environment_id": str(item.environment_id),
-                        "starts_at": item.starts_at.isoformat(),
-                        "ends_at": item.ends_at.isoformat(),
-                    }
-                    for item in command.availability.windows
-                ],
-            },
-            source=ObservationSource.USER_REPORT,
-            reliability=command.reliability,
-            context={"source_weekly_plan_id": str(source_plan.id)},
-            provenance=command.provenance,
-        )
-        availability = WeeklyAvailability(
-            athlete_id=source_plan.athlete_id,
-            week_start=command.availability.week_start,
-            windows=tuple(
-                AvailabilityWindow(
-                    environment_id=item.environment_id,
-                    starts_at=item.starts_at,
-                    ends_at=item.ends_at,
-                )
-                for item in command.availability.windows
-            ),
-            source_observation_ids=self._ordered_union(
-                command.availability.source_observation_ids,
-                (availability_observation.id,),
-            ),
-            recorded_at=command.prepared_at,
-            rule_version=command.availability.rule_version,
-        )
         resolutions = []
         for prescription in prescriptions_by_id.values():
             resolution = self.repository.get_exercise_resolution(
@@ -209,6 +222,13 @@ class PersistedWeeklyPlanRollForwardService:
                     f"exercise resolution {prescription.exercise_resolution_id} does not exist"
                 )
             resolutions.append(resolution)
+        allowed_environment_ids = {item.environment_id for item in availability.windows}
+        if any(
+            resolution.environment_id not in allowed_environment_ids for resolution in resolutions
+        ):
+            raise WeeklyPlanRollForwardValidationError(
+                "effective prescription environments are not represented in confirmed availability"
+            )
 
         scheduled = WeeklyScheduler().schedule(
             block=block,
@@ -222,14 +242,14 @@ class PersistedWeeklyPlanRollForwardService:
         plan = scheduled.model_copy(
             update={
                 "previous_weekly_plan_id": source_plan.id,
-                "rule_version": (f"weekly-roll-forward@1.0.0;scheduler={scheduled.rule_version}"),
+                "scheduling_policy_review_id": policy_review.id,
+                "rule_version": (f"weekly-roll-forward@2.0.0;scheduler={scheduled.rule_version}"),
             }
         )
         return WeeklyPlanRollForwardResult(
             prescriptions=tuple(prescriptions_by_id.values()),
             session_templates=tuple(effective_templates),
             created_session_templates=tuple(created_templates),
-            availability_observation=availability_observation,
             availability=availability,
             weekly_plan=plan,
         )

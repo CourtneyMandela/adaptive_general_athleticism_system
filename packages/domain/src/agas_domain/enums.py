@@ -1,6 +1,15 @@
 from enum import StrEnum
 
 
+class AccountRole(StrEnum):
+    PLANNING_REVIEWER = "planning_reviewer"
+
+
+class AccountRoleStatus(StrEnum):
+    ACTIVE = "active"
+    REVOKED = "revoked"
+
+
 class Confidence(StrEnum):
     UNKNOWN = "unknown"
     LOW = "low"
@@ -177,6 +186,24 @@ class AssessmentDecision(StrEnum):
     SELECTED = "selected"
     DEFERRED = "deferred"
     EXCLUDED = "excluded"
+
+
+class AssessmentReviewDecision(StrEnum):
+    APPROVED = "approved"
+    NEEDS_REVISION = "needs_revision"
+    REJECTED = "rejected"
+
+
+class AssessmentEligibilityOutcome(StrEnum):
+    SELECTION_ALLOWED = "selection_allowed"
+    SELECTION_BLOCKED = "selection_blocked"
+    REVIEW_REQUIRED = "review_required"
+
+
+class AssessmentMeasurementType(StrEnum):
+    NUMBER = "number"
+    INTEGER = "integer"
+    CATEGORY = "category"
 
 
 class AssessmentReason(StrEnum):

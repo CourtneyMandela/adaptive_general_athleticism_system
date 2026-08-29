@@ -1,15 +1,20 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import ClassVar
+from uuid import UUID
 
 from agas_domain import (
     AssessmentContext,
     AssessmentDecision,
     AssessmentDefinition,
+    AssessmentDefinitionReview,
+    AssessmentPerformance,
     AssessmentReason,
     AssessmentResultInput,
+    AssessmentReviewDecision,
     AssessmentSelection,
     CapabilityEstimate,
     CapabilityEstimationPolicy,
@@ -23,6 +28,115 @@ class AssessmentError(ValueError):
     """Raised when an assessment operation would violate a domain invariant."""
 
 
+@dataclass(frozen=True)
+class AssessmentReassessmentTiming:
+    assessment_definition_id: UUID
+    current_review_id: UUID
+    latest_performance_id: UUID | None
+    interval_source_review_id: UUID
+    next_reassessment_at: datetime | None
+    due: bool
+
+
+@dataclass(frozen=True)
+class AssessmentReassessmentSchedule:
+    timings: tuple[AssessmentReassessmentTiming, ...]
+    evaluated_at: datetime
+    rule_version: str
+
+    @property
+    def due_definition_ids(self) -> tuple[UUID, ...]:
+        return tuple(item.assessment_definition_id for item in self.timings if item.due)
+
+    @property
+    def next_reassessment_at(self) -> datetime | None:
+        future = tuple(
+            item.next_reassessment_at
+            for item in self.timings
+            if not item.due and item.next_reassessment_at is not None
+        )
+        return min(future) if future else None
+
+
+class AssessmentReassessmentScheduler:
+    """Resolve protocol due dates without inventing an interval or rewriting history."""
+
+    def __init__(self, rule_version: str = "assessment-reassessment-schedule@1.0.0") -> None:
+        self.rule_version = rule_version
+
+    def schedule(
+        self,
+        reviewed_definitions: Iterable[tuple[AssessmentDefinition, AssessmentDefinitionReview]],
+        performances: Iterable[AssessmentPerformance],
+        performance_reviews: Mapping[UUID, AssessmentDefinitionReview],
+        evaluated_at: datetime,
+    ) -> AssessmentReassessmentSchedule:
+        if evaluated_at.tzinfo is None or evaluated_at.utcoffset() is None:
+            raise AssessmentError("reassessment schedule time must include a timezone")
+
+        latest_by_definition: dict[UUID, AssessmentPerformance] = {}
+        for performance in sorted(
+            performances,
+            key=lambda item: (item.performed_at, item.created_at, str(item.id)),
+            reverse=True,
+        ):
+            latest_by_definition.setdefault(performance.assessment_definition_id, performance)
+
+        timings: list[AssessmentReassessmentTiming] = []
+        for definition, current_review in reviewed_definitions:
+            if current_review.assessment_definition_id != definition.id:
+                raise AssessmentError("reassessment review does not match its definition")
+            if (
+                current_review.decision is not AssessmentReviewDecision.APPROVED
+                or current_review.recommended_reassessment_days is None
+            ):
+                raise AssessmentError("reassessment requires a currently approved interval")
+
+            latest = latest_by_definition.get(definition.id)
+            if latest is None:
+                timings.append(
+                    AssessmentReassessmentTiming(
+                        assessment_definition_id=definition.id,
+                        current_review_id=current_review.id,
+                        latest_performance_id=None,
+                        interval_source_review_id=current_review.id,
+                        next_reassessment_at=None,
+                        due=True,
+                    )
+                )
+                continue
+
+            interval_review = performance_reviews.get(latest.assessment_definition_review_id)
+            if (
+                interval_review is None
+                or interval_review.assessment_definition_id != definition.id
+                or interval_review.decision is not AssessmentReviewDecision.APPROVED
+                or interval_review.recommended_reassessment_days is None
+            ):
+                raise AssessmentError(
+                    "latest assessment performance has no valid interval-source review"
+                )
+            next_at = latest.performed_at + timedelta(
+                days=interval_review.recommended_reassessment_days
+            )
+            timings.append(
+                AssessmentReassessmentTiming(
+                    assessment_definition_id=definition.id,
+                    current_review_id=current_review.id,
+                    latest_performance_id=latest.id,
+                    interval_source_review_id=interval_review.id,
+                    next_reassessment_at=next_at,
+                    due=evaluated_at >= next_at,
+                )
+            )
+
+        return AssessmentReassessmentSchedule(
+            timings=tuple(timings),
+            evaluated_at=evaluated_at,
+            rule_version=self.rule_version,
+        )
+
+
 class AdaptiveAssessmentSelector:
     """Select assessments using explicit, versioned, deterministic constraints."""
 
@@ -34,12 +148,31 @@ class AdaptiveAssessmentSelector:
         context: AssessmentContext,
         definitions: Iterable[AssessmentDefinition],
     ) -> tuple[AssessmentSelection, ...]:
-        return tuple(self._evaluate(context, definition) for definition in definitions)
+        return tuple(self._evaluate(context, definition, None) for definition in definitions)
+
+    def select_reviewed(
+        self,
+        context: AssessmentContext,
+        reviewed_definitions: Iterable[tuple[AssessmentDefinition, AssessmentDefinitionReview]],
+        eligibility_review_id: UUID,
+    ) -> tuple[AssessmentSelection, ...]:
+        selections: list[AssessmentSelection] = []
+        for definition, review in reviewed_definitions:
+            if review.assessment_definition_id != definition.id:
+                raise AssessmentError("assessment review does not match its definition")
+            if review.decision is not AssessmentReviewDecision.APPROVED:
+                raise AssessmentError("assessment review is not approved")
+            if review.measurement_schema is None:
+                raise AssessmentError("assessment review has no measurement schema")
+            selections.append(self._evaluate(context, definition, review.id, eligibility_review_id))
+        return tuple(selections)
 
     def _evaluate(
         self,
         context: AssessmentContext,
         definition: AssessmentDefinition,
+        definition_review_id: UUID | None,
+        eligibility_review_id: UUID | None = None,
     ) -> AssessmentSelection:
         exclusion_reasons: list[tuple[AssessmentReason, str]] = []
         deferral_reasons: list[tuple[AssessmentReason, str]] = []
@@ -155,6 +288,8 @@ class AdaptiveAssessmentSelector:
         return AssessmentSelection(
             athlete_id=context.athlete_id,
             assessment_definition_id=definition.id,
+            assessment_definition_review_id=definition_review_id,
+            assessment_eligibility_review_id=eligibility_review_id,
             decision=decision,
             reason_codes=tuple(reason for reason, _ in reasons),
             rationale=tuple(rationale for _, rationale in reasons),
@@ -214,6 +349,7 @@ class ConservativeCapabilityEstimator:
         policy: CapabilityEstimationPolicy,
         observations: Iterable[Observation],
         estimated_at: datetime,
+        triggering_assessment_performance_id: UUID | None = None,
     ) -> CapabilityEstimate:
         if estimated_at.tzinfo is None or estimated_at.utcoffset() is None:
             raise AssessmentError("estimated_at must include a timezone")
@@ -254,6 +390,10 @@ class ConservativeCapabilityEstimator:
             estimated_at=estimated_at,
             valid_until=valid_until,
             rule_version=policy.rule_version,
+            capability_estimation_policy_id=(
+                policy.id if triggering_assessment_performance_id is not None else None
+            ),
+            triggering_assessment_performance_id=triggering_assessment_performance_id,
         )
 
     def _confidence(self, observations: list[Observation]) -> Confidence:

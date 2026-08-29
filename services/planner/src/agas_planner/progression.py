@@ -358,5 +358,6 @@ class PrescriptionProgressionApplicator:
             rule_version=f"{self.rule_version};decision={decision.rule_version}",
             supersedes_prescription_id=prescription.id,
             progression_decision_id=decision.id,
+            planning_decision_record_id=None,
         )
         return SessionPrescription.model_validate(values)

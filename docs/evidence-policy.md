@@ -4,6 +4,10 @@
 
 Pretrained model knowledge is not scientific provenance. Any material scientific claim used by AGAS must be traceable to a structured, reviewed, versioned evidence claim.
 
+A versioned policy record is not approved merely because it exists. Where a governed policy-review
+boundary exists, new decisions must retain the exact current approved review and its evidence links.
+Withdrawal or supersession preserves historical decisions but cannot silently authorize new ones.
+
 ## Preferred sources
 
 1. Systematic reviews, meta-analyses, rigorous position stands, and transparent consensus statements.
@@ -35,6 +39,71 @@ floor must link to at least one reviewed `EvidenceClaim` and declare its populat
 uncertainty, metric scope, unit, and version. Priority policies are versioned heuristics rather than
 scientific facts. Tests may use clearly labeled software-only fixture claims, but those fixtures
 must never be shipped as training evidence or seed data.
+
+Initial planning must retain the selected floor evidence and every estimate's direct source
+observations. General relevance, goal relevance, prerequisite value, expected trainability,
+transfer value, and recovery-cost inputs are explicit governed context—not conclusions that may be
+invented from an assessment result or an LLM. Only the local operator workflow accepts these
+inputs. A floor or policy is not authorized merely because it exists: each has a linear,
+append-only review history, and the exact current review must be approved, evidence-linked, and no
+later than the strategy timestamp. Every floor review must include the claims cited by its floor.
+The operator command pins those review IDs, requires reviewer, rationale, and uncertainty metadata,
+and appends a decision audit in the strategy transaction; athlete-authenticated HTTP clients cannot
+submit them. Review records preserve governance provenance but do not turn software-fixture claims
+or heuristic policy weights into scientific evidence.
+
+## Assessment protocols
+
+An assessment definition is not operational merely because its constraints are representable in
+code. Its current `AssessmentDefinitionReview` must be approved and must retain evidence-claim
+links, exact administration and result-entry instructions, a reassessment interval, applicability,
+uncertainty, reviewer identity, review time, and version. A new review is appended when approval
+changes; prior decisions are not edited or deleted. A later rejection or needs-revision decision
+removes the definition from the operational catalog.
+
+Self-service selection also requires the current review to contain a machine-readable measurement
+schema. Its label, type, allowed values, bounds, and step are protocol claims, not neutral UI
+metadata. They require the same qualified evidence and applicability review as the instructions and
+must receive a new schema/review version when changed. A schema-less approval remains readable but
+cannot enter the self-service workflow.
+
+`recommended_reassessment_days` is likewise a material protocol claim. Ordinary self-service
+retesting must not invent a default interval. The schedule uses the exact historical review attached
+to the latest performance, and a different interval requires a new review version. The software
+fixture intervals in tests are not scientific recommendations.
+
+The repository ships no fabricated assessment protocol or norm. Software tests may use explicitly
+labeled non-scientific fixtures in isolated databases. Protocol evidence, population validity,
+measurement reliability, result interpretation, and self-administration suitability require
+qualified review before production use.
+
+Athlete eligibility is a separate authority from protocol approval. A current, approved definition
+does not establish that it should be selected for a particular athlete, while an eligibility review
+does not validate a protocol's scientific basis. Eligibility decisions must retain their source
+observations, process reference, reviewer, rationale, uncertainty, review time, validity window, and
+rule version. They authorize selection only and must not be represented as diagnoses or medical
+clearance. Persisted selection requires both exact authorities so later changes do not rewrite why
+the historical decision was permitted.
+
+Recording a selected assessment result preserves the reported measurement as a direct observation
+and repeats the exact protocol and eligibility authorities in relational lineage. Unit agreement is
+not scientific interpretation. The recording boundary does not apply population norms or create a
+capability estimate. The reviewed measurement schema validates entry shape only; it does not
+establish reliability or interpret meaning. Reliability judgments, estimation formulas, validity
+windows, and norm interpretation require separate reviewed policies before they can become
+operational.
+
+An operational `CapabilityEstimationPolicy` must be linked to evidence and to the exact approved
+protocol review it interprets. Its append-only history retains decision, reviewer, review time,
+applicability, uncertainty, observation window, validity window, calculation method, and rule
+version. Only the current approved policy can authorize a new estimate. Matching observation type
+alone is insufficient: assessment-derived sources must be persisted performances of that exact
+definition. The initial calculation preserves the latest protocol-specific measurement and grades
+confidence conservatively; it is not a population norm or whole-domain athletic score.
+
+No estimation policy is shipped as production evidence. Synthetic test policies prove software
+lineage only. A real deployment must supply qualified policy review before the PWA will offer
+capability interpretation.
 
 ## Exercise resolution
 

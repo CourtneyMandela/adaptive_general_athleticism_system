@@ -1,14 +1,17 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import {
+  buildWeeklyAvailabilityConfirmationCommand,
   buildWeeklyRollForwardCommand,
+  submitWeeklyAvailabilityConfirmation,
   submitWeeklyRollForward,
   type Confidence,
   type WeekProjection,
   type WeeklyAvailabilityDraft,
 } from "@/lib/current-week";
+import { fetchAthleteEnvironments } from "@/lib/environment";
 
 interface EditableAvailabilityWindow {
   environmentId: string;
@@ -40,6 +43,8 @@ function reviewTitle(status: WeekProjection["review"]["status"]): string {
     awaiting_progression: "Resolve progression decisions",
     manual_configuration_required: "A governed review is required",
     ready_to_prepare_next_week: "Confirm next week’s availability",
+    environment_revision_required: "Environment review is required",
+    ready_to_finalize_next_week: "Next week is ready to finalize",
     next_week_already_prepared: "Next week is ready",
     block_complete: "This training block is complete",
   };
@@ -49,13 +54,27 @@ function reviewTitle(status: WeekProjection["review"]["status"]): string {
 export function WeeklyReview({
   week,
   apiBaseUrl,
+  athleteId,
+  onWeekUpdated,
   onWeekPrepared,
 }: {
   week: WeekProjection;
   apiBaseUrl: string;
+  athleteId: string;
+  onWeekUpdated: () => Promise<void>;
   onWeekPrepared: (nextWeekStart: string) => Promise<void>;
 }) {
   const [windows, setWindows] = useState(() => initialWindows(week));
+  const [environmentOptions, setEnvironmentOptions] = useState(() =>
+    Array.from(
+      new Map(
+        week.availability.windows.map((window) => [
+          window.environment_id,
+          { id: window.environment_id, name: window.environment_name },
+        ]),
+      ).values(),
+    ),
+  );
   const [reliability, setReliability] = useState<Confidence>("moderate");
   const [confirmed, setConfirmed] = useState(false);
   const [state, setState] = useState<"idle" | "saving" | "error">("idle");
@@ -73,6 +92,27 @@ export function WeeklyReview({
     [week.review.progression_outcomes],
   );
 
+  useEffect(() => {
+    let active = true;
+    void fetchAthleteEnvironments(apiBaseUrl, athleteId)
+      .then((result) => {
+        if (active && result.environments.length) {
+          setEnvironmentOptions(
+            result.environments.map((environment) => ({
+              id: environment.environment_id,
+              name: environment.name,
+            })),
+          );
+        }
+      })
+      .catch(() => {
+        // The source-week environments remain valid fallback choices.
+      });
+    return () => {
+      active = false;
+    };
+  }, [apiBaseUrl, athleteId]);
+
   function updateWindow(index: number, field: "startsAt" | "endsAt", value: string) {
     setWindows((current) =>
       current.map((window, windowIndex) =>
@@ -81,7 +121,19 @@ export function WeeklyReview({
     );
   }
 
-  async function prepareNextWeek(event: FormEvent<HTMLFormElement>) {
+  function updateEnvironment(index: number, environmentId: string) {
+    const option = environmentOptions.find((item) => item.id === environmentId);
+    if (!option) return;
+    setWindows((current) =>
+      current.map((window, windowIndex) =>
+        windowIndex === index
+          ? { ...window, environmentId: option.id, environmentName: option.name }
+          : window,
+      ),
+    );
+  }
+
+  async function confirmNextWeekAvailability(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!confirmed || week.review.next_week_start === null) return;
     setState("saving");
@@ -92,17 +144,32 @@ export function WeeklyReview({
         startsAt: new Date(window.startsAt),
         endsAt: new Date(window.endsAt),
       }));
-      const command = buildWeeklyRollForwardCommand({
-        nextWeekStart: week.review.next_week_start,
-        sourceObservationIds: week.availability.source_observation_ids,
+      const command = buildWeeklyAvailabilityConfirmationCommand({
         windows: availability,
         reliability,
+      });
+      await submitWeeklyAvailabilityConfirmation(apiBaseUrl, week.weekly_plan_id, command);
+      await onWeekUpdated();
+    } catch (error) {
+      setState("error");
+      setMessage(error instanceof Error ? error.message : "Unable to confirm availability.");
+    }
+  }
+
+  async function finalizeNextWeek() {
+    const availability = week.review.confirmed_availability;
+    if (availability === null || week.review.next_week_start === null) return;
+    setState("saving");
+    setMessage("");
+    try {
+      const command = buildWeeklyRollForwardCommand({
+        weeklyAvailabilityId: availability.weekly_availability_id,
       });
       await submitWeeklyRollForward(apiBaseUrl, week.weekly_plan_id, command);
       await onWeekPrepared(week.review.next_week_start);
     } catch (error) {
       setState("error");
-      setMessage(error instanceof Error ? error.message : "Unable to prepare the next week.");
+      setMessage(error instanceof Error ? error.message : "Unable to finalize the next week.");
     }
   }
 
@@ -147,17 +214,29 @@ export function WeeklyReview({
       ) : null}
 
       {week.review.status === "ready_to_prepare_next_week" ? (
-        <form className="availability-form" onSubmit={prepareNextWeek}>
+        <form className="availability-form" onSubmit={confirmNextWeekAvailability}>
           <fieldset disabled={state === "saving"}>
             <legend>Availability for the week of {week.review.next_week_start}</legend>
             <p className="form-help">
-              These windows start as a seven-day shift of this week. Confirm the actual times;
-              the saved report becomes provenance for the next plan.
+              These windows start as a seven-day shift of this week. Confirm the actual places and
+              times; the saved report becomes provenance for the next plan.
             </p>
             <div className="availability-windows">
               {windows.map((window, index) => (
                 <section className="availability-window" key={`${window.environmentId}-${index}`}>
-                  <strong>{window.environmentName}</strong>
+                  <label>
+                    Training environment
+                    <select
+                      value={window.environmentId}
+                      onChange={(event) => updateEnvironment(index, event.target.value)}
+                    >
+                      {environmentOptions.map((environment) => (
+                        <option value={environment.id} key={environment.id}>
+                          {environment.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                   <div className="availability-fields">
                     <label>
                       Starts
@@ -202,7 +281,7 @@ export function WeeklyReview({
               I confirm these are the environments and times I expect to have available.
             </label>
             <button type="submit" disabled={!confirmed || windows.length === 0}>
-              {state === "saving" ? "Preparing next week…" : "Confirm and prepare next week"}
+              {state === "saving" ? "Saving availability…" : "Confirm next week’s availability"}
             </button>
             {message ? (
               <p className="form-error" role="alert">
@@ -211,6 +290,39 @@ export function WeeklyReview({
             ) : null}
           </fieldset>
         </form>
+      ) : null}
+
+      {week.review.confirmed_availability &&
+      (week.review.status === "environment_revision_required" ||
+        week.review.status === "ready_to_finalize_next_week") ? (
+        <section className="availability-form" aria-label="Confirmed next-week availability">
+          <p className="eyebrow">Confirmed availability</p>
+          <ul className="review-outcomes">
+            {week.review.confirmed_availability.windows.map((window) => (
+              <li key={`${window.environment_id}-${window.starts_at}`}>
+                <strong>{window.environment_name}</strong>{" "}
+                {new Date(window.starts_at).toLocaleString()}–
+                {new Date(window.ends_at).toLocaleTimeString()}
+              </li>
+            ))}
+          </ul>
+          {week.review.status === "environment_revision_required" ? (
+            <p className="form-help">
+              {week.review.unresolved_environment_prescriptions} prescription(s) need reviewed
+              exercise and dose decisions. Your confirmed times are saved; the PWA will not invent
+              substitutions.
+            </p>
+          ) : (
+            <button type="button" disabled={state === "saving"} onClick={finalizeNextWeek}>
+              {state === "saving" ? "Finalizing next week…" : "Finalize next week"}
+            </button>
+          )}
+          {message ? (
+            <p className="form-error" role="alert">
+              {message}
+            </p>
+          ) : null}
+        </section>
       ) : null}
 
       {week.review.status === "next_week_already_prepared" && week.review.next_week_start ? (

@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Annotated, NoReturn, Protocol
 from uuid import UUID
 
+from agas_domain import AccountRole, AccountRoleStatus
 from agas_domain.persistence.models import (
     BlockPlanRecord,
     BlockReviewRecord,
@@ -194,3 +196,66 @@ def ownership_authorizer_dependency(
     principal: Annotated[AuthenticatedPrincipal, Depends(authenticated_principal_dependency)],
 ) -> OwnershipAuthorizer:
     return OwnershipAuthorizer(session, principal)
+
+
+@dataclass(frozen=True, slots=True)
+class AuthorizedRole:
+    """The exact current assignment that authorized an operator request."""
+
+    account_id: UUID
+    assignment_id: UUID
+    role: AccountRole
+    assigned_at: datetime
+
+
+class RoleAuthorizer:
+    """Enforce current append-only account-role assignments for operator resources."""
+
+    def __init__(self, session: Session, principal: AuthenticatedPrincipal) -> None:
+        self.repository = DomainRepository(session)
+        self.principal = principal
+
+    def require_role(self, role: AccountRole) -> AuthorizedRole:
+        if self.principal.test_bypass:
+            return AuthorizedRole(
+                account_id=UUID(int=0),
+                assignment_id=UUID(int=0),
+                role=role,
+                assigned_at=datetime.min.replace(tzinfo=UTC),
+            )
+        account = self.repository.get_account_by_identity(
+            self.principal.issuer, self.principal.subject
+        )
+        if account is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="authenticated account is not registered",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        assignment = self.repository.get_current_account_role_assignment(account.id, role)
+        if assignment is None or assignment.status is not AccountRoleStatus.ACTIVE:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"active {role.value} role required",
+            )
+        return AuthorizedRole(
+            account_id=account.id,
+            assignment_id=assignment.id,
+            role=assignment.role,
+            assigned_at=assignment.assigned_at,
+        )
+
+
+def role_authorizer_dependency(
+    session: Annotated[Session, Depends(database_session_dependency)],
+    principal: Annotated[AuthenticatedPrincipal, Depends(authenticated_principal_dependency)],
+) -> RoleAuthorizer:
+    return RoleAuthorizer(session, principal)
+
+
+def planning_reviewer_dependency(
+    role_authorizer: Annotated[RoleAuthorizer, Depends(role_authorizer_dependency)],
+) -> AuthorizedRole:
+    """Authorize before operator request bodies reach their application handlers."""
+
+    return role_authorizer.require_role(AccountRole.PLANNING_REVIEWER)

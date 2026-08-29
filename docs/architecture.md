@@ -7,8 +7,9 @@ validated seed boundary. A tested full-gym/travel/return scenario re-resolves ex
 current environment without changing the athlete, strategy, block, adaptation, or stimulus.
 Existing immutable session, execution, response, and block-review behavior remains in place;
 reviewed capability estimates can now drive a lineage-linked replacement strategy. Automatic
-capability estimation from raw results, candidate-context inference, workout generation, and
-next-block generation remain deferred.
+interpretation of arbitrary raw results, candidate-context inference, workout generation, and
+next-block generation remain deferred. Governed assessment performances can create a bounded
+protocol-specific estimate only through a current reviewed estimation policy.
 
 ## Shape
 
@@ -50,19 +51,93 @@ matching result inside a versioned time window, preserves all qualifying source 
 chronological order, and caps confidence at moderate. It does not convert results into population
 norms, athletic labels, or unsupported composite scores.
 
+An operational `CapabilityEstimationPolicy` is an immutable governance record bound to one exact
+assessment definition and approved definition review. Linear predecessor history preserves policy
+withdrawal and replacement; evidence claims, reviewer, applicability, uncertainty, validity and
+source windows, method, and rule version remain explicit. New assessment estimates cite both this
+policy and the performance that triggered derivation. The repository restricts their sources to
+governed performances of that exact definition review and enforces one interpretation per
+performance-policy pair.
+
+`AthleticDashboardProjection` is an owned, read-only view over this append-only history. At a
+requested instant it selects the latest visible estimate independently for each exact
+`(domain, estimate_scope, unit_or_scale)` series. It returns derived classification, value,
+confidence, current/stale validity, method, rule version, timestamps, source-observation IDs, and
+history counts. Future estimates are excluded and every capability domain remains present even
+when no estimate exists. The projection and PWA do not collapse incompatible scopes, apply
+population norms, or render a cross-domain percentage bar without a reviewed comparison policy.
+
 ### Adaptive assessment
 
 Assessment definitions are versioned protocols with explicit domain, intensity, unit, body-mass
 requirement, equipment, training-history, skill, recent-exposure, injury, symptom, and
-health-screening constraints. The selector
-uses exact tag matching and a versioned deterministic rule. Each selected, deferred, or excluded
+health-screening constraints. Each definition has a separate append-only
+`AssessmentDefinitionReview` history. Reviews retain an explicit decision, ordered protocol and
+result-entry instructions, reassessment interval, self-administration status, evidence-claim
+links, applicability, uncertainty, reviewer, time, version, and an optional machine-readable
+measurement schema. The schema supports explicitly versioned number, integer, and categorical
+entry contracts with reviewed labels, ranges, steps, or allowed values. Replacements form a linear
+sequence; a later rejection or needs-revision decision withdraws a prior approval without erasing
+it. Only definitions whose latest review is approved appear in the read-only global assessment
+catalog. A schema-less approval remains inspectable but is ineligible for self-service selection,
+and persistence rejects athlete selections against it. No operational assessment protocol is
+seeded by this boundary.
+
+Athlete-level authority is separate. `AssessmentEligibilityReview` is an append-only, linear,
+time-bounded operator decision that references the observations and screening process actually
+reviewed. Its outcomes allow selection, block selection, or require further review; the record is
+not a diagnosis or medical clearance. Athlete-facing services cannot create this authority.
+
+The persisted assessment-run service loads the athlete's current allowed eligibility decision and
+the catalog's current approved, self-administered definitions. It derives equipment categories from
+the effective-dated state of an owned environment, records the non-medical context as a direct
+observation, and atomically appends decisions, selections, and an `AssessmentSelectionRun`.
+Athlete input cannot supply injury, symptom, health-classification, or equipment-category fields.
+
+The selector uses exact tag matching and a versioned deterministic rule. Each selected, deferred, or excluded
 decision records reason codes, human-readable rationale, and the immutable intake observations it
-used.
+used. Persisted selections also name the exact approved review that authorized evaluation, so a
+later withdrawal does not make historical authority ambiguous. Every new persisted selection also
+names its exact athlete eligibility review. Legacy selections may have null authority references
+after migration, but new repository writes fail closed without both current authorities.
 
 Incomplete health screening excludes assessment. Health, injury, and symptom tags are constraints
 supplied by intake/safety workflows; the selector does not diagnose or infer medical meaning. A
 performed assessment becomes a direct `Observation`. Any
 capability state created from it remains a separate derived `CapabilityEstimate`.
+One selected decision can append an `AssessmentPerformance` linked to its result observation, run,
+definition, exact protocol approval, and exact active eligibility review. The narrow result request
+accepts no free-form medical context, verifies the definition unit and exact review's measurement
+schema, and rolls back its observation if lineage persistence fails. Deferred and duplicate results
+fail closed. Selection and performance runs do not create estimates, apply norms, or generate
+workouts.
+
+The separate assessment-capability-estimation service resolves the current approved policy on the
+server, admits only exact-definition performance observations, and invokes the conservative
+estimator. The request contains no scientific decision fields. Repeating it is idempotent; a future
+policy may append a new interpretation without rewriting the older estimate. A withdrawn policy or
+changed protocol review blocks new interpretation while preserving historical results and estimates.
+
+An authenticated `AssessmentWorkflowProjection` derives the athlete-facing state from those
+append-only records rather than persisting a mutable status flag. It exposes safe eligibility
+timing, environment choices, reviewed protocol instructions and uncertainty, ordered deterministic
+decisions, exact versions and evidence identifiers, and completed result observations. It omits
+screening sources, operator identity, and screening-process details. The PWA can submit the narrow
+selection context when the projection permits it. It renders number, integer, or categorical result
+controls directly from the exact reviewed schema and performs convenience validation, while the
+backend remains authoritative for the same contract and all lineage rules.
+
+`AssessmentReassessmentScheduler` derives cadence from current operational definitions and the
+latest immutable performance for each definition. An unmeasured protocol is due immediately. A
+measured protocol uses the reassessment interval on the exact historical review that authorized its
+latest result; replacement review data does not rewrite that date. The selection service evaluates
+only due definitions, rejects premature requests and an unresolved selected run before any write,
+and records the material behavior change as `assessment-selection-run@2.0.0`.
+
+The workflow projection exposes due count, earliest future time, schedule-rule version, and each
+result's exact interval-source review. Due status remains derived rather than a mutable workflow
+record. Eligibility, environment, current protocol approval, and measurement-schema requirements
+still fail closed independently.
 
 ### Needs and long-range strategy
 
@@ -77,19 +152,69 @@ context signals distinct from the persisted result. The deterministic planner re
 scores, rank, rationale, DEVELOP/MAINTAIN/EXPOSE/DEFER state, relative development allocation,
 sequencing hints, review triggers, and a block hypothesis in `LongRangeStrategy`.
 
+`CompetencyFloorReview` and `PriorityPolicyReview` keep governance separate from those immutable
+authorities. Each authority has one linear, append-only review history with decision, evidence,
+reviewer, applicability rationale, uncertainty, timestamp, and review version. Sequence and
+single-successor database constraints reject forks. Superseding an approval does not alter a prior
+strategy, but only the exact current approved reviews may authorize a new initial strategy.
+
+`PersistedInitialPlanningService` is the transactional boundary for the first strategy. The command
+pins the exact current priority-policy review, and each explicit candidate context names one
+persisted estimate, competency floor, floor review, and adaptation. The service verifies athlete
+ownership, approval currency, review timing, and provenance, creates one need per unique
+floor-estimate pair,
+adds every estimate source observation and floor evidence claim to the candidate, and delegates
+only deterministic scoring and state assignment to the planner. It appends all needs and one root
+strategy together with a `DecisionRecord` carrying reviewer, rationale, uncertainty, and typed
+input and review identifiers. A repository guard and partial unique database index allow only one strategy
+whose `supersedes_strategy_id` is null per athlete; later changes must use review-linked replanning.
+Review histories and the service are invoked by local operator CLIs. They are deliberately absent
+from athlete-authenticated HTTP writes because hiding expert context fields in the PWA would not
+authorize their use.
+
 The strategy is not a workout. It contains no exercise, dose, weekly schedule, or session. Safety
 restriction, introductory exposure, missing prerequisites, unresolved information, competency
 deficits, and athlete-valued comparative advantages remain distinguishable reasons.
 
+`get_planning_status_projection` is the read-only athlete-facing handoff around this boundary. It
+classifies persisted estimates as current or stale at an explicit instant and reports whether the
+root strategy exists. Before strategy creation it exposes exact reviewed-authority and context
+requirements. After strategy creation it derives demand coverage for every priority, whether each
+priority has a resolution eligible under the available allocation policies, the remaining explicit
+block-context review, and any persisted block status. A single infeasible block remains visible;
+multiple blocks become an ambiguity state because the model has no current-block pointer. For one
+feasible block, the same projection reports scheduling-policy availability and preserves the atomic
+weekly-plan boundary: exact prescriptions, session composition, and observation-backed availability
+remain pending together until a weekly plan exists. Only `block_week == 1` establishes first-week
+readiness. A single feasible or infeasible result is summarized with exact policy, availability,
+template, prescription, issue, and rule lineage; multiple first-week plans remain ambiguous rather
+than being sorted into authority by generation time. Narrow strategy, block, and week summaries are
+presentation state, not second planning records. Missing floors, evidence, adaptation context,
+policy, demand, resolution, or operator choices remain visible governed dependencies; the
+projection cannot create inputs, choose historical records, or infer a weekly budget, calendar,
+dose, session grouping, or exercise substitution.
+
 ### Environment and equipment
 
-An athlete may own multiple environments. Equipment is cataloged independently, while availability is an append-only, effective-dated event with capabilities and limits. Environment changes therefore constrain future exercise resolution without changing athlete identity or adaptation intent.
+An athlete may own multiple environments. Equipment is cataloged independently, while availability
+is an append-only, effective-dated event with capabilities and limits. Environment changes
+therefore constrain future exercise resolution without changing athlete identity or adaptation
+intent. New governed events name the direct observation that reported them; pre-migration history
+may retain a null source as explicit unknown provenance. Repository validation requires a linked
+observation and environment to belong to the same athlete.
 
 The `EnvironmentSnapshotBuilder` selects the latest active availability event for each equipment
 item at a stated capture time. A temporary outage may expire and reveal an older still-effective
 availability record. Snapshots retain the exact availability IDs used, merged equipment
 capabilities, load limits, usable floor area, outdoor access, and the environment's maximum noise
 level. They are derived resolver inputs, not a replacement for availability history.
+
+`PersistedEquipmentStateService` accepts a partial set of explicit available/unavailable changes
+for one owned environment. It appends the exact direct user report and its temporal events in one
+transaction. Omitted catalog items retain their current or unknown state. The owned read projection
+uses `EnvironmentSnapshotBuilder.current_availability` so PWA state and exercise resolution share
+one latest-active-event rule. The projection exposes the controlling event and observation IDs and
+never turns missing history into an unavailable report.
 
 ### Exercise and adaptation ontologies
 
@@ -197,10 +322,12 @@ entries from actual execution; configured initial, relative, and absolute caps r
 jumps without using general fitness as a proxy.
 
 Approved progression decisions may create a new `SessionPrescription` linked through an immutable
-revision record to both the superseded prescription and authorizing decision. Repetitions, sets,
-duration, and compatible absolute or relative load targets are automatically applicable in V1;
-unsupported or unit-incompatible adjustments fail explicitly. Evidence, observation,
-exposure-entry, and safety-decision provenance uses ordered foreign-key association tables.
+revision record to both the superseded prescription and authorizing decision. The applicator has
+typed support for repetitions, sets, duration, and compatible absolute or relative load targets,
+but the athlete-facing automatic boundary is provisionally limited to non-exposure load and
+repetition adjustments. Unsupported or unit-incompatible adjustments fail explicitly. Evidence,
+observation, exposure-entry, and safety-decision provenance uses ordered foreign-key association
+tables.
 
 ### Training response and block review
 
@@ -238,12 +365,21 @@ does not assert that the completed block caused the change. Candidate relevance,
 transfer, and cost values remain explicit governed inputs rather than being inferred from a single
 response.
 
+This is an operator-only application boundary. The command requires reviewer, applicability, and
+uncertainty metadata because candidate relevance, trainability, transfer, costs, prerequisites,
+safety state, and comparative-advantage flags are expert planning inputs. The capability needs,
+successor strategy, and a `DecisionRecord` citing the exact review chain, contexts, observations,
+evidence, policy, and result identities commit or roll back together.
+
 ### Persisted next-block creation
 
 `PersistedBlockCreationService` is the application boundary from a stored strategy to an immutable
 `BlockPlan`. The caller supplies identities for already-governed resource demands and an allocation
 policy, plus dates, weekly time budget, and explicit constraints. The service reconstructs every
-referenced exercise resolution and delegates allocation to `BlockPlanner` in one transaction.
+referenced exercise resolution and delegates allocation to `BlockPlanner` in one transaction. The
+same transaction appends a `DecisionRecord` that pins reviewer, applicability rationale,
+uncertainty, demands, allocation policy, resulting allocations, observations, evidence, and block
+identity.
 
 The planner requires one demand for every strategy priority and verifies exact
 strategy–priority–adaptation–state lineage. Active demands must reference a matching persisted
@@ -251,6 +387,7 @@ stimulus and exercise resolution; deferred demands consume no resources. Consequ
 strategy cannot reuse a demand attached to its predecessor, and block two materially depends on
 the replanning result rather than merely copying block one. This boundary stops at resource
 allocation: it creates no prescriptions, sessions, exercise substitutions, or progression rules.
+It is invoked through reviewed operator JSON and a local CLI, not an athlete-authenticated route.
 
 ### Governed resource-demand preparation
 
@@ -259,13 +396,60 @@ creation. For an active strategy priority, it loads the persisted adaptation, en
 effective-dated equipment availability, equipment records, explicit exercise candidates, and
 resolver policy. It binds the caller's explicit stimulus specification to the immutable priority,
 derives one environment snapshot, resolves exercise fidelity, and appends the requirement,
-resolution, and resource demand in one transaction.
+resolution, resource demand, and reviewer-attributed `DecisionRecord` in one transaction.
 
 The service does not derive scientific dose from `DEVELOP`, `MAINTAIN`, or `EXPOSE`; minimum and
 target minutes plus frequency remain explicit versioned inputs. An `INFEASIBLE` resolution is
 persisted and makes downstream block planning infeasible. A `DEFER` priority instead creates a
 zero-resource demand with no stimulus or resolution. This makes absence of training intentional
-and traceable rather than ambiguous.
+and traceable rather than ambiguous. Active and deferred commands require reviewer, applicability,
+uncertainty, and preparation-time metadata. The application boundary is exposed only through the
+local planning-authoring CLI until administrative identities and roles exist.
+
+### Operator-reviewed exercise re-resolution
+
+`PersistedExerciseReResolutionService` applies a new environment state to an existing immutable
+`StimulusRequirement`. It loads an explicit reviewed exercise-candidate set and resolver policy,
+derives effective equipment state at the requested instant, and delegates to the same deterministic
+resolver used during resource-demand preparation. The new `ExerciseResolution` and its
+reviewer-attributed `DecisionRecord` commit or roll back together.
+
+The service appends history instead of replacing the planning-time resolution. It preserves the
+requirement's athlete, strategy, priority, adaptation, observation, evidence, and stimulus
+semantics, and records the controlling equipment-availability events. `FULL`, `PARTIAL`, and
+`INFEASIBLE` remain distinct. A successful transaction is only a new planning input: it does not
+revise a demand, block allocation, dose, prescription, template, or weekly plan. It is available
+through reviewed operator JSON and the local planning-authoring CLI, not the athlete API.
+
+### Reviewed environment prescription revisions
+
+`PersistedEnvironmentPrescriptionRevisionService` is the governed bridge from an exercise
+re-resolution to the dose-bearing prescription lineage consumed by weekly roll-forward. It accepts
+one closed source weekly plan and a batch of explicit replacement prescriptions. The source plan's
+backend-derived review must be `environment_revision_required`; its scheduling policy review must
+still be the exact current approval. Each replacement resolution must preserve the block
+allocation's stimulus and adaptation, predate the replacement, select an exercise, and be full or
+a policy-permitted partial match. Replacement sets, repetitions or duration, intensity, rest,
+fatigue, progression reference, rationale, and rule version remain reviewed inputs.
+
+Prescription revision lineage now has two mutually exclusive authorizers: a performance-derived
+`ProgressionDecision`, or an operator `DecisionRecord` for environment planning. A database check
+constraint, the domain model, and repository validation enforce that XOR. Environment decisions
+must cite the source plan, block, allocation, immediate predecessor, new resolution, new
+prescription, policy, review, observations, evidence, and availability events. The service appends
+to the latest progression descendant rather than branching it, and rolls the decision and all
+replacement prescriptions back together on failure.
+
+This boundary creates no template, availability record, or weekly plan. It consumes the athlete's
+already-persisted next-week availability confirmation, and the existing roll-forward service later
+follows the revision lineage and creates a successor template only when needed. All
+items retained within one session template must resolve to one environment after the reviewed
+batch, preventing a mixed-environment container from being presented as executable. The local
+`weekly_revision_admin` CLI and the role-protected operator endpoint are provisional operator
+transports; no athlete HTTP write accepts dose or substitution authority. The HTTP request cannot
+name its reviewer. The server records `account:<account-id>` and cites the exact active
+`AccountRoleAssignment` in the decision evidence, making the authorization state at the time of
+the append reconstructable after later revocation.
 
 ### Transactional weekly-plan creation
 
@@ -280,7 +464,15 @@ then delegates placement and feasibility to `WeeklyScheduler`. Prescriptions mus
 active allocation exactly, container frequencies must reproduce each allocation frequency, and
 container duration and fatigue must equal their item composition. The result is persisted whether
 feasible or infeasible so schedule limitations remain explicit. All records commit or roll back
-together.
+together with a `DecisionRecord` citing the reviewer, rationale, uncertainty, exact policy,
+upstream block lineage, observations, evidence claims, and newly created records.
+
+This is an operator-only application boundary invoked through a reviewed JSON file and local CLI.
+It is deliberately absent from athlete-authenticated HTTP writes: dose, intensity, progression,
+session grouping, fatigue classification, and scheduling-policy selection are expert inputs, and
+omitting their controls from the PWA would not authorize an athlete client to submit them. The CLI
+is provisional development administration until verified administrative identities and roles
+exist.
 
 ### Transactional safety and session recording
 
@@ -317,22 +509,44 @@ adherence, exposure, and progression facts for the same execution chain.
 ### Transactional weekly progression roll-forward
 
 `PersistedWeeklyPlanRollForwardService` is the narrow bridge from an immutable weekly plan to the
-immediately following week of the same block. The request supplies only new dated availability and
-a preparation timestamp. The service retains the source plan's scheduling policy, follows each
+immediately following week of the same block. Before roll-forward, the athlete-facing
+`PersistedWeeklyAvailabilityConfirmationService` appends a direct-report observation and one
+`WeeklyAvailability` linked to the exact source plan. That transaction creates no planning state.
+The current-week read model compares the latest prescription-resolution environments with those
+confirmed windows and exposes a governed-review requirement when they differ.
+
+The final roll-forward request supplies only the persisted availability ID and preparation time.
+Client-authored week identity, source IDs, reliability, provenance, windows, and rule versions are
+forbidden at this boundary. The service retains the source plan's scheduling policy and exact immutable policy-review
+identifier, verifies that the review remains the current non-future approval, and follows each
 session-template item through normalized prescription-revision records, and selects the latest
-revision that existed at preparation time.
+revision that existed at preparation time. Before any write, the service also uses the same
+`CurrentWeekProjector` as the athlete-facing read model to reconstruct the exact source plan's
+closure state. Only `ready_to_finalize_next_week` is eligible; incomplete execution, post-session
+safety, or progression history and all hold, review-required, infeasible, unsupported, and final
+block-week states fail closed at the backend boundary. The browser never supplies readiness as
+command authority.
+
+`WeeklySchedulingPolicy` records are proposals until an immutable
+`WeeklySchedulingPolicyReview` chain approves them. Each review retains ordered evidence claims,
+decision, reviewer, time, applicability rationale, uncertainty, predecessor, and review version.
+First-week authoring requires the exact current approved review; roll-forward derives it from the
+source plan. Plans created before this boundary may retain a null review ID as explicit unknown
+historical provenance, but governed creation paths cannot produce another such plan. Policy review
+administration remains operator-only.
 
 Unchanged prescriptions and templates are reused. If one or more items changed, the service creates
 a new immutable template with `previous_template_id`, preserving item order, section, frequency,
 and prescription ancestry while recomputing duration and fatigue from the carried items. The new
 `WeeklyPlan` records `previous_weekly_plan_id` and advances exactly seven days and one block week.
-The complete template, availability, and plan chain commits or rolls back together; unique lineage
-constraints reject competing automatic successors.
+Any successor template and the new plan commit or roll back together; the previously confirmed
+availability remains immutable. Unique lineage constraints reject competing automatic successors.
 
 The service adds no dose rule and accepts no client-authored prescription revision. Changed
-environments may make scheduling infeasible, but they never trigger an alleged equivalent exercise
-substitution. Exercise re-resolution, exposure proposals, block continuation, and next-block
-creation remain separate governed workflows.
+environments block finalization until the persisted resolution lineage matches the confirmed
+environment; they never trigger an alleged equivalent exercise substitution. Exercise
+re-resolution, exposure proposals, block continuation, and next-block creation remain separate
+governed workflows.
 
 ### Transactional completed-block review
 
@@ -346,9 +560,11 @@ The request groups the exact set of executed prescription identities into non-ov
 drafts and supplies compatible estimate identities, uncertainty, context, comparison direction,
 and a meaningful-change threshold. The service rejects omissions and double counting, derives all
 `TrainingResponse` records, evaluates the original hypothesis under a persisted review policy, and
-appends the response/review chain in one transaction. One block has at most one completed review in
-V1. The review remains descriptive and the existing replanning boundary is the only component that
-may derive a successor strategy.
+appends the response/review chain and a reviewer-attributed `DecisionRecord` in one transaction.
+The audit pins all interpretations, delivered records, estimates, observations, evidence, policy,
+and created identities. One block has at most one completed review in V1. The review remains
+descriptive and the existing replanning boundary is the only component that may derive a successor
+strategy. Review and replanning are local operator commands rather than athlete HTTP writes.
 
 ### Current-week read projection
 
@@ -382,7 +598,9 @@ SQLAlchemy 2 maps domain records to a PostgreSQL-oriented relational schema. JSO
 Provider-subject accounts and athlete ownerships are normalized immutable records. The account
 identity is not embedded in `Athlete`; one account may own multiple athlete records, while the V1
 database constraint permits exactly one permanent owner record per athlete. Transfer, revocation,
-and delegated roles are not implied by this narrow schema.
+and delegated athlete access are not implied by this narrow schema. Administrative authority is a
+separate append-only `AccountRoleAssignment` lineage. The initial vocabulary contains only
+`planning_reviewer`; sequenced active and revoked assignments preserve every authorization change.
 
 Historical athlete evidence, planning history, stimulus requirements, resolver policies, matches,
 resolutions, resource demands, blocks, prescriptions, availability windows, and weekly plans are
@@ -412,29 +630,43 @@ to completed block to block review to replacement strategy.
 ## API
 
 FastAPI owns transport concerns and database lifecycle. In addition to health/readiness, narrow
-write endpoints expose profile/environment onboarding, post-block replanning, and persisted block
-creation. Onboarding accepts only non-sensitive direct reports, validates equipment identities
+write endpoints expose profile/environment onboarding and daily execution feedback. Onboarding
+accepts only non-sensitive direct reports and validates equipment identities
 against the global catalog, and atomically appends the athlete, observation, environments, and
 equipment-availability events. It creates no estimate, safety assignment, assessment, or plan.
-An account and athlete ownership are appended in the same transaction. A block-review ID anchors
-the stored replanning lineage; the application service loads the governed inputs, invokes
-the deterministic planner, and commits new capability needs plus exactly one successor strategy
-atomically. A strategy-priority pair anchors resource-demand preparation; the service appends
-either an active stimulus-resolution-demand chain or one deferred zero-resource demand. A strategy
-ID anchors block creation; the service loads persisted demands, their resolutions, and the selected
-allocation policy before atomically appending a block. A block ID anchors explicit prescription,
-session-container, availability, and weekly scheduling creation. Weekly-plan and planned-session
-IDs anchor safety evaluation and actual-performance recording through immutable observations.
+An account and athlete ownership are appended in the same transaction. Initial planning remains an
+operator-only application boundary from reviewed estimates, floors, adaptations, contexts, and
+policy to needs, the sole root strategy, and its decision audit. Completed-block review and
+review-linked replanning remain operator-only application boundaries invoked through the
+post-block administration CLI. They commit response/review history or successor needs/strategy
+history with immutable decision audits. Strategy-priority resource-demand preparation and
+strategy-level block creation remain operator-only application services invoked by the
+planning-authoring CLI; existing-stimulus exercise re-resolution uses the same operator-only
+transport and appends a new resolution without mutating earlier decisions. Each commits its domain
+result with an immutable review audit. First-week prescription, session-container, availability,
+and scheduling creation likewise remains an operator-only service and CLI rather than an athlete
+route. Weekly-plan and planned-session IDs anchor safety evaluation and actual-performance recording
+through immutable observations.
 One weekly-plan ID can also anchor a single consecutive roll-forward that consumes existing
 prescription-revision lineage rather than accepting new dose.
-Roll-forward appends a direct availability-confirmation observation before the next
-`WeeklyAvailability`, template revisions, and weekly plan. Its transaction preserves both the
-athlete report authorizing scheduling and the earlier observation references carried by the
-submitted availability draft.
-An execution/prescription pair anchors governed exposure and progression processing. A block ID
-anchors completed-history review, while a block-review ID anchors successor-strategy derivation.
+Weekly advancement first appends a direct availability-confirmation observation and a
+`WeeklyAvailability` linked to its source plan without creating planning state. The derived review
+state then either requests governed environment revision or permits a separate roll-forward that
+consumes the persisted availability identifier. Finalization never accepts replacement windows or
+observation provenance.
+An execution/prescription pair anchors governed exposure and progression processing. Within the
+operator workflow, a block ID anchors completed-history review while a block-review ID anchors
+successor-strategy derivation.
 Missing dependencies, invalid inputs, and relational conflicts remain distinct transport errors.
 Raw domain CRUD is intentionally absent because it could bypass invariants.
+
+The role-protected operator environment-review queue is a read-only projection. It derives pending
+work from the same current-week readiness projection used by finalization, then exposes the exact
+confirmed windows and unresolved prescription, resolution, stimulus, adaptation, exercise, and
+environment identifiers. It creates no mutable task row. Separate role-protected commands append
+an exercise re-resolution and a complete environment prescription revision through the existing
+deterministic services; neither command performs candidate selection, substitution inference, or
+dose generation.
 
 Every athlete-scoped route depends on a replaceable authenticated-principal boundary. The
 authorizer resolves strategy, block, review, weekly-plan, and execution identifiers back to their
@@ -443,8 +675,14 @@ as an absent aggregate. The equipment catalog is public because it has no athlet
 
 Only a development bearer verifier exists today. `dev.<subject>` maps to the configured development
 issuer, onboarding creates the account and owner atomically, and a local operator CLI handles
-pre-existing fixtures. Production configuration rejects that verifier; external mode remains
-unavailable until a cryptographically verifying provider adapter is implemented.
+pre-existing fixtures and append-only reviewer role grants/revocations. An authenticated account
+must have a current active `planning_reviewer` assignment to read or complete operator environment
+reviews; athlete ownership alone is insufficient. Operator writes bind the authenticated account
+and exact role assignment server-side and reject client-supplied reviewer identity. The role is an
+application permission, not evidence of a scientific or professional credential. Production
+configuration rejects the development verifier;
+external mode remains unavailable until a cryptographically verifying provider adapter is
+implemented.
 
 ## Web
 
@@ -455,7 +693,14 @@ successful submission opens the authoritative current-week projection; the hones
 normally an empty week. The form does not collect sensitive health or injury data, derive capability
 estimates, assign safety policy, conduct assessment, or generate training.
 
-The PWA also has a connected current-week screen for an existing athlete. It
+The PWA also has a provenance-first athletic dashboard and a connected current-week screen for an
+existing athlete. The dashboard shows the latest derived records per exact measurement series,
+confidence and freshness, exposes method/version/source counts on demand, and lists domains that
+have not been estimated. It avoids false-precision bars because current protocol-specific units are
+not necessarily comparable. An environment panel shows effective equipment state and lets the
+athlete append partial current, future, or temporary changes with reliability and provenance. It
+states explicitly that reporting equipment does not rewrite existing sessions or establish
+substitution equivalence. The current-week screen
 renders dated session containers, prescription dose and intensity, a compact rationale disclosure,
 environment, safety status, execution, and adherence. Setup, loading, empty, conflict/error, and
 mobile layouts are explicit. It also submits structured pre-session self-reports and actual
@@ -463,18 +708,42 @@ set/dose/effort workout results through the existing transactional use-case endp
 the read projection. The frontend derives only descriptive execution status from the entered work;
 the backend remains authoritative for safety, execution validation, and adherence.
 
+The assessment panel uses the same pattern. It renders protocol instructions and uncertainty from
+the workflow projection and creates result controls only when the exact approved review contains a
+supported versioned measurement schema. Browser validation is usability support, not authority;
+the API reloads the current review and validates type, range, step, category, unit, and lineage
+before appending a performance and direct observation.
+
+For a completed result, the panel separately reports capability interpretation as unavailable,
+ready, completed, superseded, or stale. It may request interpretation when ready, but never chooses
+the policy or calculation. Estimate method, confidence, validity, applicability, uncertainty, and
+evidence provenance come back from the backend.
+
 After an execution, the PWA appends a structured post-session safety report linked to that exact
 execution and then presents persisted per-prescription progression outcomes. It does not select a
 progression policy, exposure definition, exposure policy, or proposed exposure target. Those remain
 governed planning inputs rather than daily-user choices.
+
+Beside assessment, a planning-status panel shows whether interpretation is missing or stale,
+whether current estimates lack approved planning authorities, whether authorities are present but
+athlete-specific context review remains, and which governed boundary separates the root strategy
+from a usable first week. Its backend-derived checklists report approved priority-policy and
+structurally compatible floor coverage, priority demand coverage, allocation-policy availability,
+policy-gated resolution eligibility, current approved scheduling-policy availability, and the
+explicit dose,
+session-composition, and dated-availability inputs still required. Persisted partial or infeasible
+blocks, feasible or infeasible first weeks, and ambiguous block/week history remain explicit.
+Compatibility does not establish athlete applicability. The panel exposes no planning-score, dose,
+exercise-selection, session-generation, or plan-generation action.
 
 The prescription's exact versioned `progression_rule_reference` is now the action-assignment key.
 The current-week projection resolves it against persisted policies and exposes a policy identifier
 only when one unique policy can produce an automatically typed load or repetition revision without
 exposure inputs. Missing, duplicate, exposure-governed, set/duration, and unsupported-dimension
 configurations fail closed with an explicit reason. The browser can request evaluation for a ready
-action, but the transactional backend still loads performance, adherence, all post-session safety
-history, and the evidence-linked policy before creating the immutable decision and revision.
+action using only a timestamp; it never returns the projected policy identity as command authority.
+The transactional backend resolves the policy again, then loads performance, adherence, and all
+post-session safety history before creating the immutable decision and revision.
 
 The projection also exposes the persisted week's availability and one backend-derived weekly-review
 state. Closure is descriptive and fail-closed: every scheduled occurrence needs an execution,
@@ -484,10 +753,11 @@ unsupported policies, and final block weeks route to explicit review states. The
 not reproduce that decision tree.
 
 For an ordinary closed week, the PWA proposes the existing windows shifted by seven days, permits
-time edits, and requires explicit confirmation. It sends the exact environment IDs, instants,
-source-observation IDs, reliability, and unverified-user provenance to the transactional
-roll-forward boundary. The saved confirmation is an observation, not an inference that future
-availability matches the past.
+owned-environment selection and time edits, and requires explicit confirmation. It sends the exact
+environment IDs, instants, reliability, and unverified-user provenance to the availability
+confirmation boundary. The saved confirmation is an observation, not an inference that future
+availability matches the past. A matching environment enables a separate finalization action; a
+changed environment pauses with a visible governed-review state and never invents a substitution.
 
 Technique-constraint reporting remains separate from completion and is not prefilled. When the
 assigned policy requires technique confirmation, an unreported or failed constraint produces the
