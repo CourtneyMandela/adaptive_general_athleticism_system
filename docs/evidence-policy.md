@@ -105,6 +105,12 @@ No estimation policy is shipped as production evidence. Synthetic test policies 
 lineage only. A real deployment must supply qualified policy review before the PWA will offer
 capability interpretation.
 
+The development-only assessment-governance bundle importer is a typed transport for externally
+curated records, not an evidence-review engine. It requires all referenced `EvidenceClaim` records
+to exist and preserves their exact identifiers, but it does not fetch sources, verify metadata,
+qualify the named reviewer, or turn structural validity into scientific approval. Production
+evidence ingestion and assessment approval remain separate governed workflows.
+
 ## Exercise resolution
 
 Exercise ontology metadata and resolver scores are not evidence of exercise equivalence. A full

@@ -1,15 +1,22 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
+from typing import Literal
 from uuid import UUID
 
-from agas_domain.persistence.models import WeeklyPlanRecord
+from agas_domain.persistence.models import BlockPlanRecord, WeeklyPlanRecord
 from agas_domain.persistence.repository import DomainIntegrityError, DomainRepository
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from agas_api.current_week import CurrentWeekProjectionError, CurrentWeekProjector
+from agas_api.post_block_preparation import (
+    BlockReviewPreparationProjector,
+    PostBlockPreparationNotFoundError,
+    PostBlockPreparationProjectionError,
+    ReplanningPreparationProjector,
+)
 
 
 class EnvironmentReviewWindowProjection(BaseModel):
@@ -64,6 +71,125 @@ class EnvironmentReviewQueueProjection(BaseModel):
 
 class OperatorReviewQueueProjectionError(RuntimeError):
     pass
+
+
+class PostBlockReviewQueueItemProjection(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    workflow_stage: Literal["block_review", "replanning"]
+    status: Literal[
+        "incomplete_history",
+        "ready_for_explicit_review",
+        "blocked",
+        "ready_for_explicit_replanning",
+    ]
+    athlete_id: UUID
+    athlete_display_name: str
+    block_id: UUID
+    block_review_id: UUID | None = None
+    block_starts_on: date
+    block_ends_on: date
+    block_hypothesis: str
+    reviewed_at: datetime | None = None
+    review_outcome: str | None = None
+    issues: tuple[str, ...] = ()
+
+
+class PostBlockReviewQueueProjection(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    projected_at: datetime
+    items: tuple[PostBlockReviewQueueItemProjection, ...]
+    projection_version: str = "post-block-review-queue@1.0.0"
+
+
+class PostBlockReviewQueueProjector:
+    """Discover due closed-loop work without persisting mutable task records."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+        self.repository = DomainRepository(session)
+        self.block_review_projector = BlockReviewPreparationProjector(session)
+        self.replanning_projector = ReplanningPreparationProjector(session)
+
+    def project(self, projected_at: datetime | None = None) -> PostBlockReviewQueueProjection:
+        instant = projected_at or datetime.now(UTC)
+        if instant.tzinfo is None or instant.utcoffset() is None:
+            raise ValueError("queue projection time must include a timezone")
+        block_ids = self.session.scalars(
+            select(BlockPlanRecord.id)
+            .where(
+                BlockPlanRecord.ends_on < instant.date(),
+                BlockPlanRecord.generated_at <= instant,
+            )
+            .order_by(
+                BlockPlanRecord.ends_on,
+                BlockPlanRecord.generated_at,
+                BlockPlanRecord.id,
+            )
+        ).all()
+        items = []
+        try:
+            for block_id in block_ids:
+                block = self.repository.get_block_plan(block_id)
+                if block is None:
+                    raise OperatorReviewQueueProjectionError(
+                        "block disappeared during queue projection"
+                    )
+                athlete = self.repository.get_athlete(block.athlete_id)
+                if athlete is None:
+                    raise OperatorReviewQueueProjectionError(
+                        "post-block queue athlete metadata is incomplete"
+                    )
+                review = self.repository.get_block_review_by_block(block.id)
+                if review is None:
+                    block_preparation = self.block_review_projector.project(block.id, instant)
+                    if block_preparation.status == "already_reviewed":
+                        raise OperatorReviewQueueProjectionError(
+                            "block review state changed during queue projection"
+                        )
+                    items.append(
+                        PostBlockReviewQueueItemProjection(
+                            workflow_stage="block_review",
+                            status=block_preparation.status,
+                            athlete_id=athlete.id,
+                            athlete_display_name=athlete.display_name,
+                            block_id=block.id,
+                            block_starts_on=block.starts_on,
+                            block_ends_on=block.ends_on,
+                            block_hypothesis=block.hypothesis,
+                            issues=block_preparation.issues,
+                        )
+                    )
+                    continue
+
+                replanning_preparation = self.replanning_projector.project(review.id, instant)
+                if replanning_preparation.status == "already_replanned":
+                    continue
+                items.append(
+                    PostBlockReviewQueueItemProjection(
+                        workflow_stage="replanning",
+                        status=replanning_preparation.status,
+                        athlete_id=athlete.id,
+                        athlete_display_name=athlete.display_name,
+                        block_id=block.id,
+                        block_review_id=review.id,
+                        block_starts_on=block.starts_on,
+                        block_ends_on=block.ends_on,
+                        block_hypothesis=block.hypothesis,
+                        reviewed_at=review.reviewed_at,
+                        review_outcome=review.outcome.value,
+                        issues=replanning_preparation.issues,
+                    )
+                )
+        except (
+            DomainIntegrityError,
+            PostBlockPreparationNotFoundError,
+            PostBlockPreparationProjectionError,
+            ValueError,
+        ) as error:
+            raise OperatorReviewQueueProjectionError(str(error)) from error
+        return PostBlockReviewQueueProjection(projected_at=instant, items=tuple(items))
 
 
 class EnvironmentReviewQueueProjector:

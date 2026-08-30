@@ -52,7 +52,7 @@ class AccountRoleAssignmentRecord(VersionedRecordMixin, Base):
     __tablename__ = "account_role_assignments"
     __table_args__ = (
         CheckConstraint(
-            "role IN ('planning_reviewer')",
+            "role IN ('planning_reviewer', 'assessment_reviewer')",
             name="ck_account_role_assignment_role",
         ),
         CheckConstraint(
@@ -925,6 +925,193 @@ class PriorityPolicyReviewEvidenceClaimRecord(Base):
         ForeignKey("evidence_claims.id", ondelete="RESTRICT"), primary_key=True
     )
     position: Mapped[int] = mapped_column(Integer(), nullable=False)
+
+
+class InitialPlanningContextDraftRecord(VersionedRecordMixin, Base):
+    __tablename__ = "initial_planning_context_drafts"
+
+    athlete_id: Mapped[UUID] = mapped_column(
+        ForeignKey("athletes.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    priority_policy_id: Mapped[UUID] = mapped_column(
+        ForeignKey("priority_policies.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    priority_policy_review_id: Mapped[UUID] = mapped_column(
+        ForeignKey("priority_policy_reviews.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    horizon_months: Mapped[int] = mapped_column(Integer(), nullable=False)
+    review_after_days: Mapped[int] = mapped_column(Integer(), nullable=False)
+    authored_by_account_id: Mapped[UUID] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    author_authority_assignment_id: Mapped[UUID] = mapped_column(
+        ForeignKey("account_role_assignments.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=False,
+    )
+    authored_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)
+    applicability_rationale: Mapped[str] = mapped_column(Text(), nullable=False)
+    uncertainty: Mapped[str] = mapped_column(Text(), nullable=False)
+    draft_version: Mapped[str] = mapped_column(String(120), nullable=False)
+
+    candidate_links: Mapped[list[InitialPlanningCandidateContextRecord]] = relationship(
+        cascade="save-update, merge",
+        lazy="selectin",
+        order_by="InitialPlanningCandidateContextRecord.position",
+    )
+
+
+class InitialPlanningCandidateContextRecord(Base):
+    __tablename__ = "initial_planning_candidate_contexts"
+    __table_args__ = (
+        CheckConstraint(
+            "general_relevance >= 0 AND general_relevance <= 1 "
+            "AND goal_relevance >= 0 AND goal_relevance <= 1 "
+            "AND prerequisite_value >= 0 AND prerequisite_value <= 1 "
+            "AND expected_trainability >= 0 AND expected_trainability <= 1 "
+            "AND transfer_value >= 0 AND transfer_value <= 1 "
+            "AND fatigue_cost >= 0 AND fatigue_cost <= 1 "
+            "AND time_cost >= 0 AND time_cost <= 1 "
+            "AND interference_cost >= 0 AND interference_cost <= 1",
+            name="ck_initial_planning_candidate_unit_intervals",
+        ),
+        UniqueConstraint("draft_id", "position", name="uq_initial_planning_candidate_order"),
+        UniqueConstraint("draft_id", "adaptation_id", name="uq_initial_planning_draft_adaptation"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
+    draft_id: Mapped[UUID] = mapped_column(
+        ForeignKey("initial_planning_context_drafts.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=False,
+    )
+    position: Mapped[int] = mapped_column(Integer(), nullable=False)
+    adaptation_id: Mapped[UUID] = mapped_column(
+        ForeignKey("adaptations.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    competency_floor_id: Mapped[UUID] = mapped_column(
+        ForeignKey("competency_floors.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    competency_floor_review_id: Mapped[UUID] = mapped_column(
+        ForeignKey("competency_floor_reviews.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=False,
+    )
+    capability_estimate_id: Mapped[UUID] = mapped_column(
+        ForeignKey("capability_estimates.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    general_relevance: Mapped[float] = mapped_column(Float(), nullable=False)
+    goal_relevance: Mapped[float] = mapped_column(Float(), nullable=False)
+    prerequisite_value: Mapped[float] = mapped_column(Float(), nullable=False)
+    expected_trainability: Mapped[float] = mapped_column(Float(), nullable=False)
+    transfer_value: Mapped[float] = mapped_column(Float(), nullable=False)
+    fatigue_cost: Mapped[float] = mapped_column(Float(), nullable=False)
+    time_cost: Mapped[float] = mapped_column(Float(), nullable=False)
+    interference_cost: Mapped[float] = mapped_column(Float(), nullable=False)
+    safe_to_train: Mapped[bool] = mapped_column(Boolean(), nullable=False)
+    introductory_exposure_needed: Mapped[bool] = mapped_column(Boolean(), nullable=False)
+    prerequisites_met: Mapped[bool] = mapped_column(Boolean(), nullable=False)
+    cultivate_comparative_advantage: Mapped[bool] = mapped_column(Boolean(), nullable=False)
+
+    prerequisite_links: Mapped[list[InitialPlanningContextPrerequisiteRecord]] = relationship(
+        cascade="save-update, merge",
+        lazy="selectin",
+        order_by="InitialPlanningContextPrerequisiteRecord.position",
+    )
+    observation_links: Mapped[list[InitialPlanningContextObservationRecord]] = relationship(
+        cascade="save-update, merge",
+        lazy="selectin",
+        order_by="InitialPlanningContextObservationRecord.position",
+    )
+    evidence_links: Mapped[list[InitialPlanningContextEvidenceRecord]] = relationship(
+        cascade="save-update, merge",
+        lazy="selectin",
+        order_by="InitialPlanningContextEvidenceRecord.position",
+    )
+
+
+class InitialPlanningContextPrerequisiteRecord(Base):
+    __tablename__ = "initial_planning_context_prerequisites"
+    __table_args__ = (
+        UniqueConstraint(
+            "candidate_context_id", "position", name="uq_initial_context_prerequisite_order"
+        ),
+    )
+
+    candidate_context_id: Mapped[UUID] = mapped_column(
+        ForeignKey("initial_planning_candidate_contexts.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    adaptation_id: Mapped[UUID] = mapped_column(
+        ForeignKey("adaptations.id", ondelete="RESTRICT"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer(), nullable=False)
+
+
+class InitialPlanningContextObservationRecord(Base):
+    __tablename__ = "initial_planning_context_observations"
+    __table_args__ = (
+        UniqueConstraint(
+            "candidate_context_id", "position", name="uq_initial_context_observation_order"
+        ),
+    )
+
+    candidate_context_id: Mapped[UUID] = mapped_column(
+        ForeignKey("initial_planning_candidate_contexts.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    observation_id: Mapped[UUID] = mapped_column(
+        ForeignKey("observations.id", ondelete="RESTRICT"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer(), nullable=False)
+
+
+class InitialPlanningContextEvidenceRecord(Base):
+    __tablename__ = "initial_planning_context_evidence_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "candidate_context_id", "position", name="uq_initial_context_evidence_order"
+        ),
+    )
+
+    candidate_context_id: Mapped[UUID] = mapped_column(
+        ForeignKey("initial_planning_candidate_contexts.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    evidence_claim_id: Mapped[UUID] = mapped_column(
+        ForeignKey("evidence_claims.id", ondelete="RESTRICT"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer(), nullable=False)
+
+
+class InitialPlanningContextReviewRecord(VersionedRecordMixin, Base):
+    __tablename__ = "initial_planning_context_reviews"
+    __table_args__ = (
+        CheckConstraint(
+            "decision IN ('approved', 'needs_revision', 'rejected')",
+            name="ck_initial_planning_context_review_decision",
+        ),
+        UniqueConstraint("draft_id", name="uq_initial_planning_context_review_draft"),
+    )
+
+    draft_id: Mapped[UUID] = mapped_column(
+        ForeignKey("initial_planning_context_drafts.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=False,
+    )
+    decision: Mapped[str] = mapped_column(String(40), index=True, nullable=False)
+    reviewed_by_account_id: Mapped[UUID] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    review_authority_assignment_id: Mapped[UUID] = mapped_column(
+        ForeignKey("account_role_assignments.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=False,
+    )
+    reviewed_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)
+    applicability_rationale: Mapped[str] = mapped_column(Text(), nullable=False)
+    uncertainty: Mapped[str] = mapped_column(Text(), nullable=False)
+    review_version: Mapped[str] = mapped_column(String(120), nullable=False)
 
 
 class LongRangeStrategyRecord(VersionedRecordMixin, Base):
@@ -2915,6 +3102,12 @@ for _record_type in (
     PriorityPolicyRecord,
     PriorityPolicyReviewRecord,
     PriorityPolicyReviewEvidenceClaimRecord,
+    InitialPlanningContextDraftRecord,
+    InitialPlanningCandidateContextRecord,
+    InitialPlanningContextPrerequisiteRecord,
+    InitialPlanningContextObservationRecord,
+    InitialPlanningContextEvidenceRecord,
+    InitialPlanningContextReviewRecord,
     LongRangeStrategyRecord,
     AdaptationPriorityRecord,
     RoadmapItemRecord,

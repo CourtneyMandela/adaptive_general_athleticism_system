@@ -86,3 +86,9 @@ jobs:
 
       - name: Build frontend
         run: pnpm --filter @agas/web build
+
+      - name: Install browser for navigation smoke tests
+        run: pnpm --filter @agas/web exec playwright install --with-deps chromium
+
+      - name: Run browser navigation smoke tests
+        run: pnpm --filter @agas/web test:e2e

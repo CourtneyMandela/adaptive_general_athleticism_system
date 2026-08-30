@@ -71,6 +71,15 @@ def test_every_athlete_scoped_route_requires_authentication() -> None:
         f"/v1/session-executions/{identity}/prescriptions/{identity}/progression",
         f"/v1/operator/stimulus-requirements/{identity}/exercise-reresolutions",
         f"/v1/operator/weekly-plans/{identity}/environment-prescription-revisions",
+        f"/v1/operator/athletes/{identity}/initial-planning-context-drafts",
+        f"/v1/operator/initial-planning-context-drafts/{identity}/reviews",
+        f"/v1/operator/initial-planning-context-reviews/{identity}/strategy",
+        f"/v1/operator/athletes/{identity}/initial-strategies",
+        f"/v1/operator/strategies/{identity}/priorities/{identity}/resource-demands",
+        f"/v1/operator/strategies/{identity}/blocks",
+        f"/v1/operator/blocks/{identity}/first-week-plans",
+        f"/v1/operator/blocks/{identity}/reviews",
+        f"/v1/operator/block-reviews/{identity}/replanning",
     )
     app.dependency_overrides.pop(authenticated_principal_dependency, None)
 
@@ -80,12 +89,34 @@ def test_every_athlete_scoped_route_requires_authentication() -> None:
     dashboard = TestClient(app).get(f"/v1/athletes/{identity}/dashboard")
     environments = TestClient(app).get(f"/v1/athletes/{identity}/environments")
     assessment_workflow = TestClient(app).get(f"/v1/athletes/{identity}/assessment-workflow")
+    initial_planning_preparation = TestClient(app).get(
+        f"/v1/operator/athletes/{identity}/initial-planning-preparation"
+    )
+    resource_demand_preparation = TestClient(app).get(
+        f"/v1/operator/strategies/{identity}/resource-demand-preparation"
+    )
+    block_preparation = TestClient(app).get(f"/v1/operator/strategies/{identity}/block-preparation")
+    first_week_preparation = TestClient(app).get(
+        f"/v1/operator/blocks/{identity}/first-week-preparation"
+    )
+    block_review_preparation = TestClient(app).get(
+        f"/v1/operator/blocks/{identity}/review-preparation"
+    )
+    replanning_preparation = TestClient(app).get(
+        f"/v1/operator/block-reviews/{identity}/replanning-preparation"
+    )
     post_responses = [TestClient(app).post(path, json={}) for path in protected_posts]
 
     assert current_week.status_code == 401
     assert dashboard.status_code == 401
     assert environments.status_code == 401
     assert assessment_workflow.status_code == 401
+    assert initial_planning_preparation.status_code == 401
+    assert resource_demand_preparation.status_code == 401
+    assert block_preparation.status_code == 401
+    assert first_week_preparation.status_code == 401
+    assert block_review_preparation.status_code == 401
+    assert replanning_preparation.status_code == 401
     assert all(response.status_code == 401 for response in post_responses)
 
 
@@ -377,6 +408,28 @@ def test_planning_reviewer_role_is_append_only_revocable_and_required_by_queue(
             headers=development_header("reviewer-one"),
             params={"projected_at": "2026-08-22T20:01:00Z"},
         )
+        unauthenticated_post_block_queue = TestClient(app).get(
+            "/v1/operator/post-block-review-queue"
+        )
+        no_role_post_block_queue = TestClient(app).get(
+            "/v1/operator/post-block-review-queue",
+            headers=development_header("registered-no-role"),
+        )
+        authorized_post_block_queue = TestClient(app).get(
+            "/v1/operator/post-block-review-queue",
+            headers=development_header("reviewer-one"),
+            params={"at": "2026-08-22T20:01:00Z"},
+        )
+        unauthenticated_planning_queue = TestClient(app).get("/v1/operator/planning-review-queue")
+        no_role_planning_queue = TestClient(app).get(
+            "/v1/operator/planning-review-queue",
+            headers=development_header("registered-no-role"),
+        )
+        authorized_planning_queue = TestClient(app).get(
+            "/v1/operator/planning-review-queue",
+            headers=development_header("reviewer-one"),
+            params={"at": "2026-08-22T20:01:00Z"},
+        )
         no_role_write = TestClient(app).post(
             f"/v1/operator/stimulus-requirements/{uuid4()}/exercise-reresolutions",
             json={},
@@ -384,6 +437,61 @@ def test_planning_reviewer_role_is_append_only_revocable_and_required_by_queue(
         )
         authorized_write_contract = TestClient(app).post(
             f"/v1/operator/stimulus-requirements/{uuid4()}/exercise-reresolutions",
+            json={},
+            headers=development_header("reviewer-one"),
+        )
+        no_role_initial_strategy = TestClient(app).post(
+            f"/v1/operator/athletes/{uuid4()}/initial-strategies",
+            json={},
+            headers=development_header("registered-no-role"),
+        )
+        authorized_initial_strategy_contract = TestClient(app).post(
+            f"/v1/operator/athletes/{uuid4()}/initial-strategies",
+            json={},
+            headers=development_header("reviewer-one"),
+        )
+        no_role_resource_preparation = TestClient(app).get(
+            f"/v1/operator/strategies/{uuid4()}/resource-demand-preparation",
+            headers=development_header("registered-no-role"),
+        )
+        authorized_resource_contract = TestClient(app).post(
+            f"/v1/operator/strategies/{uuid4()}/priorities/{uuid4()}/resource-demands",
+            json={},
+            headers=development_header("reviewer-one"),
+        )
+        no_role_block_preparation = TestClient(app).get(
+            f"/v1/operator/strategies/{uuid4()}/block-preparation",
+            headers=development_header("registered-no-role"),
+        )
+        authorized_block_contract = TestClient(app).post(
+            f"/v1/operator/strategies/{uuid4()}/blocks",
+            json={},
+            headers=development_header("reviewer-one"),
+        )
+        no_role_first_week_preparation = TestClient(app).get(
+            f"/v1/operator/blocks/{uuid4()}/first-week-preparation",
+            headers=development_header("registered-no-role"),
+        )
+        authorized_first_week_contract = TestClient(app).post(
+            f"/v1/operator/blocks/{uuid4()}/first-week-plans",
+            json={},
+            headers=development_header("reviewer-one"),
+        )
+        no_role_block_review_preparation = TestClient(app).get(
+            f"/v1/operator/blocks/{uuid4()}/review-preparation",
+            headers=development_header("registered-no-role"),
+        )
+        authorized_block_review_contract = TestClient(app).post(
+            f"/v1/operator/blocks/{uuid4()}/reviews",
+            json={},
+            headers=development_header("reviewer-one"),
+        )
+        no_role_replanning_preparation = TestClient(app).get(
+            f"/v1/operator/block-reviews/{uuid4()}/replanning-preparation",
+            headers=development_header("registered-no-role"),
+        )
+        authorized_replanning_contract = TestClient(app).post(
+            f"/v1/operator/block-reviews/{uuid4()}/replanning",
             json={},
             headers=development_header("reviewer-one"),
         )
@@ -396,8 +504,28 @@ def test_planning_reviewer_role_is_append_only_revocable_and_required_by_queue(
     assert no_role.json() == {"detail": "active planning_reviewer role required"}
     assert authorized.status_code == 200
     assert authorized.json()["items"] == []
+    assert unauthenticated_post_block_queue.status_code == 401
+    assert no_role_post_block_queue.status_code == 403
+    assert authorized_post_block_queue.status_code == 200
+    assert authorized_post_block_queue.json()["items"] == []
+    assert unauthenticated_planning_queue.status_code == 401
+    assert no_role_planning_queue.status_code == 403
+    assert authorized_planning_queue.status_code == 200
+    assert authorized_planning_queue.json()["items"] == []
     assert no_role_write.status_code == 403
     assert authorized_write_contract.status_code == 422
+    assert no_role_initial_strategy.status_code == 403
+    assert authorized_initial_strategy_contract.status_code == 422
+    assert no_role_resource_preparation.status_code == 403
+    assert authorized_resource_contract.status_code == 422
+    assert no_role_block_preparation.status_code == 403
+    assert authorized_block_contract.status_code == 422
+    assert no_role_first_week_preparation.status_code == 403
+    assert authorized_first_week_contract.status_code == 422
+    assert no_role_block_review_preparation.status_code == 403
+    assert authorized_block_review_contract.status_code == 422
+    assert no_role_replanning_preparation.status_code == 403
+    assert authorized_replanning_contract.status_code == 422
 
     _, revocation, _, revoked = set_account_role(
         session,
@@ -423,6 +551,14 @@ def test_planning_reviewer_role_is_append_only_revocable_and_required_by_queue(
             "/v1/operator/environment-review-queue",
             headers=development_header("reviewer-one"),
         )
+        revoked_post_block_queue = TestClient(app).get(
+            "/v1/operator/post-block-review-queue",
+            headers=development_header("reviewer-one"),
+        )
+        revoked_planning_queue = TestClient(app).get(
+            "/v1/operator/planning-review-queue",
+            headers=development_header("reviewer-one"),
+        )
         revoked_write = TestClient(app).post(
             f"/v1/operator/weekly-plans/{uuid4()}/environment-prescription-revisions",
             json={},
@@ -431,6 +567,8 @@ def test_planning_reviewer_role_is_append_only_revocable_and_required_by_queue(
     finally:
         app.dependency_overrides.pop(database_session_dependency, None)
     assert revoked_response.status_code == 403
+    assert revoked_post_block_queue.status_code == 403
+    assert revoked_planning_queue.status_code == 403
     assert revoked_write.status_code == 403
 
     history = repository.list_account_role_assignments(reviewer.id, AccountRole.PLANNING_REVIEWER)

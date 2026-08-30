@@ -11,6 +11,7 @@ from agas_api.block_creation import (
     CreateBlockPlanCommand,
     PersistedBlockCreationService,
 )
+from agas_api.block_preparation import BlockPreparationProjector
 from agas_api.block_review_application import (
     BlockReviewConflictError,
     BlockReviewValidationError,
@@ -33,10 +34,21 @@ from agas_api.exercise_reresolution import (
     PersistedExerciseReResolutionService,
     ReResolveExerciseCommand,
 )
-from agas_api.identity import authenticated_principal_dependency
+from agas_api.first_week_preparation import FirstWeekPreparationProjector
+from agas_api.identity import AuthorizedRole, authenticated_principal_dependency
 from agas_api.identity_admin import set_account_role
 from agas_api.main import app
-from agas_api.operator_review_queue import EnvironmentReviewQueueProjector
+from agas_api.operator_planning_queue import PlanningReviewQueueProjector
+from agas_api.operator_post_block import (
+    OperatorBlockReviewRequest,
+    OperatorReplanningRequest,
+    execute_operator_block_review,
+    execute_operator_replanning,
+)
+from agas_api.operator_review_queue import (
+    EnvironmentReviewQueueProjector,
+    PostBlockReviewQueueProjector,
+)
 from agas_api.planning_authoring_admin import (
     load_block_plan_command,
     load_exercise_reresolution_command,
@@ -45,6 +57,10 @@ from agas_api.planning_authoring_admin import (
 from agas_api.planning_governance_admin import record_weekly_scheduling_policy_review
 from agas_api.planning_status import get_planning_status_projection
 from agas_api.post_block_admin import load_block_review_command, load_replanning_command
+from agas_api.post_block_preparation import (
+    BlockReviewPreparationProjector,
+    ReplanningPreparationProjector,
+)
 from agas_api.progression_application import (
     CreateProgressionDecisionCommand,
     PersistedProgressionService,
@@ -928,6 +944,297 @@ def test_operator_resource_preparation_resolves_environment_and_persists_atomica
         == result.resource_demand
     )
     assert session.get(DecisionRecordRecord, result.decision_record.id) is not None
+
+
+def test_authenticated_resource_preparation_projects_exact_inputs_and_owns_reviewer_identity(
+    session: Session,
+) -> None:
+    (
+        repository,
+        strategy,
+        _,
+        _,
+        policy,
+        environment,
+        availability,
+        exercise,
+    ) = build_and_persist_resolution_chain(session)
+    priority = strategy.priorities[0]
+    resource_queue = PlanningReviewQueueProjector(session).project(NOW)
+    assert len(resource_queue.items) == 1
+    assert resource_queue.items[0].workflow_stage == "resource_demands"
+    assert resource_queue.items[0].strategy_id == strategy.id
+    assert resource_queue.items[0].readiness == "ready"
+    reviewer, assignment, _, _ = set_account_role(
+        session,
+        issuer="urn:agas:development",
+        subject="resource-reviewer",
+        role=AccountRole.PLANNING_REVIEWER,
+        status=AccountRoleStatus.ACTIVE,
+        assigned_at=NOW,
+        rationale="Exercise authenticated resource-demand review.",
+    )
+    prepared_at = NOW + timedelta(minutes=2)
+    specification = StimulusSpecification(
+        movement_patterns=("knee_dominant",),
+        allowed_loading_types=("external_load",),
+        allowed_lateralities=("bilateral", "unilateral"),
+        minimum_loadability=Loadability.HIGH,
+        required_velocity_characteristics=("controlled",),
+        maximum_skill_complexity=CostLevel.MODERATE,
+        maximum_impact_level=ImpactLevel.LOW,
+        maximum_stability_demand=CostLevel.MODERATE,
+        maximum_fatigue_cost=CostLevel.MODERATE,
+        maximum_soreness_cost=CostLevel.MODERATE,
+        source_observation_ids=strategy.source_observation_ids,
+        evidence_claim_ids=strategy.evidence_claim_ids,
+        rationale="Reviewed synthetic stimulus for authenticated transport testing.",
+    )
+    request_body = {
+        "mode": "active",
+        "environment_id": str(environment.id),
+        "exercise_candidate_ids": [str(exercise.id)],
+        "exercise_resolver_policy_id": str(policy.id),
+        "stimulus_specification": specification.model_dump(mode="json"),
+        "minimum_weekly_minutes": 60,
+        "target_weekly_minutes": 60,
+        "sessions_per_week": 2,
+        "demand_rationale": "Reviewed synthetic resource demand.",
+        "demand_version": "fixture-authenticated-resource-demand@1.0.0",
+        "prepared_at": prepared_at.isoformat(),
+        "applicability_rationale": "Exercise the server-owned reviewer boundary.",
+        "uncertainty": "Software fixture only; no operational training claim is made.",
+    }
+
+    def override_session() -> Iterator[Session]:
+        yield session
+
+    app.dependency_overrides[database_session_dependency] = override_session
+    app.dependency_overrides.pop(authenticated_principal_dependency, None)
+    headers = {"Authorization": "Bearer dev.resource-reviewer"}
+    try:
+        preparation = TestClient(app).get(
+            f"/v1/operator/strategies/{strategy.id}/resource-demand-preparation",
+            params={"at": prepared_at.isoformat()},
+            headers=headers,
+        )
+        spoofed = TestClient(app).post(
+            f"/v1/operator/strategies/{strategy.id}/priorities/{priority.id}/resource-demands",
+            json={**request_body, "reviewed_by": "spoofed-reviewer"},
+            headers=headers,
+        )
+        created = TestClient(app).post(
+            f"/v1/operator/strategies/{strategy.id}/priorities/{priority.id}/resource-demands",
+            json=request_body,
+            headers=headers,
+        )
+        refreshed = TestClient(app).get(
+            f"/v1/operator/strategies/{strategy.id}/resource-demand-preparation",
+            params={"at": prepared_at.isoformat()},
+            headers=headers,
+        )
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert preparation.status_code == 200
+    projection = preparation.json()
+    assert projection["strategy"]["id"] == str(strategy.id)
+    assert projection["priorities"][0]["adaptation"]["id"] == str(priority.adaptation_id)
+    assert projection["priorities"][0]["demand_history"] == []
+    assert projection["source_observations"][0]["id"] == str(strategy.source_observation_ids[0])
+    assert projection["evidence_claims"][0]["id"] == str(strategy.evidence_claim_ids[0])
+    assert projection["environments"][0]["environment"]["id"] == str(environment.id)
+    assert projection["environments"][0]["snapshot"]["source_availability_ids"] == [
+        str(availability.id)
+    ]
+    assert projection["exercise_resolver_policies"][0]["id"] == str(policy.id)
+    assert projection["exercise_catalog"][0]["id"] == str(exercise.id)
+    assert spoofed.status_code == 422
+    assert created.status_code == 201
+    result = created.json()
+    assert result["decision_record"]["reason"].startswith(f"Reviewed by account:{reviewer.id}.")
+    assert f"account_role_assignment:{assignment.id}" in result["decision_record"]["evidence"]
+    assert "reviewed_by" not in result
+    assert refreshed.status_code == 200
+    assert len(refreshed.json()["priorities"][0]["demand_history"]) == 1
+    demand_id = UUID(result["resource_demand"]["id"])
+    assert repository.get_adaptation_resource_demand(demand_id) is not None
+    block_queue = PlanningReviewQueueProjector(session).project(prepared_at)
+    assert len(block_queue.items) == 1
+    assert block_queue.items[0].workflow_stage == "block_creation"
+    assert block_queue.items[0].strategy_id == strategy.id
+    assert block_queue.items[0].readiness == "blocked"
+
+
+def test_authenticated_block_preparation_projects_history_and_owns_reviewer_identity(
+    session: Session,
+) -> None:
+    (
+        repository,
+        strategy,
+        requirement,
+        resolution,
+        _,
+        _,
+        _,
+        _,
+    ) = build_and_persist_resolution_chain(session)
+    demand = resource_demand_for(strategy, requirement, resolution)
+    allocation_policy = ResourceAllocationPolicy(
+        develop_weight=1,
+        maintain_weight=1,
+        expose_weight=1,
+        allow_partial_exercise_resolution=True,
+        policy_version="fixture-authenticated-block@1.0.0",
+    )
+
+    empty = BlockPreparationProjector(session).project(strategy.id, NOW)
+    assert empty.priorities[0].demand_history == ()
+    assert empty.resource_allocation_policies == ()
+    assert empty.existing_blocks == ()
+    assert tuple(item.id for item in empty.source_observations) == (strategy.source_observation_ids)
+    assert tuple(item.id for item in empty.evidence_claims) == strategy.evidence_claim_ids
+
+    repository.add_adaptation_resource_demand(demand)
+    repository.add_resource_allocation_policy(allocation_policy)
+    session.commit()
+    reviewer, assignment, _, _ = set_account_role(
+        session,
+        issuer="urn:agas:development",
+        subject="block-reviewer",
+        role=AccountRole.PLANNING_REVIEWER,
+        status=AccountRoleStatus.ACTIVE,
+        assigned_at=NOW,
+        rationale="Exercise authenticated block-context review.",
+    )
+    generated_at = NOW + timedelta(minutes=3)
+    request_body = {
+        "resource_demand_ids": [str(demand.id)],
+        "resource_allocation_policy_id": str(allocation_policy.id),
+        "weekly_budget_minutes": 60,
+        "starts_on": "2026-08-24",
+        "duration_weeks": 4,
+        "constraints": ["Synthetic reviewed block constraint"],
+        "generated_at": generated_at.isoformat(),
+        "applicability_rationale": "Exercise the server-owned block reviewer boundary.",
+        "uncertainty": "Software fixture only; no operational training claim is made.",
+    }
+
+    def override_session() -> Iterator[Session]:
+        yield session
+
+    app.dependency_overrides[database_session_dependency] = override_session
+    app.dependency_overrides.pop(authenticated_principal_dependency, None)
+    headers = {"Authorization": "Bearer dev.block-reviewer"}
+    try:
+        preparation = TestClient(app).get(
+            f"/v1/operator/strategies/{strategy.id}/block-preparation",
+            params={"at": generated_at.isoformat()},
+            headers=headers,
+        )
+        spoofed = TestClient(app).post(
+            f"/v1/operator/strategies/{strategy.id}/blocks",
+            json={**request_body, "reviewed_by": "spoofed-reviewer"},
+            headers=headers,
+        )
+        created = TestClient(app).post(
+            f"/v1/operator/strategies/{strategy.id}/blocks",
+            json=request_body,
+            headers=headers,
+        )
+        refreshed = TestClient(app).get(
+            f"/v1/operator/strategies/{strategy.id}/block-preparation",
+            params={"at": generated_at.isoformat()},
+            headers=headers,
+        )
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert preparation.status_code == 200
+    projection = preparation.json()
+    assert projection["strategy"]["id"] == str(strategy.id)
+    assert projection["priorities"][0]["adaptation"]["id"] == str(
+        strategy.priorities[0].adaptation_id
+    )
+    history = projection["priorities"][0]["demand_history"][0]
+    assert history["resource_demand"]["id"] == str(demand.id)
+    assert history["stimulus_requirement"]["id"] == str(requirement.id)
+    assert history["exercise_resolution"]["id"] == str(resolution.id)
+    assert projection["resource_allocation_policies"][0]["id"] == str(allocation_policy.id)
+    assert projection["existing_blocks"] == []
+    assert spoofed.status_code == 422
+    assert created.status_code == 201
+    result = created.json()
+    assert result["block_plan"]["status"] == "partial"
+    assert result["block_plan"]["allocations"][0]["resource_demand_id"] == str(demand.id)
+    assert result["decision_record"]["reason"].startswith(f"Reviewed by account:{reviewer.id}.")
+    assert f"account_role_assignment:{assignment.id}" in result["decision_record"]["evidence"]
+    assert "reviewed_by" not in result
+    assert refreshed.status_code == 200
+    assert len(refreshed.json()["existing_blocks"]) == 1
+    block_id = UUID(result["block_plan"]["id"])
+    assert repository.get_block_plan(block_id) is not None
+    first_week_queue = PlanningReviewQueueProjector(session).project(generated_at)
+    assert len(first_week_queue.items) == 1
+    assert first_week_queue.items[0].workflow_stage == "first_week"
+    assert first_week_queue.items[0].block_id == block_id
+    assert first_week_queue.items[0].readiness == "blocked"
+
+
+def test_block_creation_revalidates_exact_current_reviewer_assignment(session: Session) -> None:
+    repository, strategy, requirement, resolution, _, _, _, _ = build_and_persist_resolution_chain(
+        session
+    )
+    demand = resource_demand_for(strategy, requirement, resolution)
+    allocation_policy = ResourceAllocationPolicy(
+        develop_weight=1,
+        maintain_weight=1,
+        expose_weight=1,
+        allow_partial_exercise_resolution=True,
+        policy_version="fixture-block-authority@1.0.0",
+    )
+    repository.add_adaptation_resource_demand(demand)
+    repository.add_resource_allocation_policy(allocation_policy)
+    session.commit()
+    reviewer, assignment, _, _ = set_account_role(
+        session,
+        issuer="urn:agas:development",
+        subject="block-authority-reviewer",
+        role=AccountRole.PLANNING_REVIEWER,
+        status=AccountRoleStatus.ACTIVE,
+        assigned_at=NOW,
+        rationale="Create the exact grant exercised by the block service.",
+    )
+    command = CreateBlockPlanCommand(
+        resource_demand_ids=(demand.id,),
+        resource_allocation_policy_id=allocation_policy.id,
+        weekly_budget_minutes=60,
+        starts_on=date(2026, 8, 24),
+        duration_weeks=4,
+        constraints=("Synthetic exact-authority constraint",),
+        generated_at=NOW + timedelta(minutes=2),
+        reviewed_by=f"account:{reviewer.id}",
+        review_authority_assignment_id=assignment.id,
+        applicability_rationale="Exercise application-layer authority validation.",
+        uncertainty="Software fixture only.",
+    )
+    with pytest.raises(BlockCreationValidationError, match="does not match"):
+        PersistedBlockCreationService(session).execute(
+            strategy.id,
+            command.model_copy(update={"reviewed_by": "account:forged"}),
+        )
+
+    set_account_role(
+        session,
+        issuer="urn:agas:development",
+        subject="block-authority-reviewer",
+        role=AccountRole.PLANNING_REVIEWER,
+        status=AccountRoleStatus.REVOKED,
+        assigned_at=NOW + timedelta(minutes=1),
+        rationale="Revoke the exact grant before block creation.",
+    )
+    with pytest.raises(BlockCreationValidationError, match="not a current"):
+        PersistedBlockCreationService(session).execute(strategy.id, command)
 
 
 def test_operator_exercise_reresolution_preserves_stimulus_and_prior_history(
@@ -1884,7 +2191,6 @@ def test_current_week_progression_action_fails_closed_for_exposure_and_ambiguity
         safety_policy=safety_policy,
         provenance=provenance,
     )
-
     projected = CurrentWeekProjector(session).project(strategy.athlete_id, date(2026, 8, 25))
     assert projected.week is not None
     manual_action = projected.week.sessions[0].prescriptions[0].progression_action
@@ -1979,7 +2285,33 @@ def test_completed_block_review_requires_full_history_and_is_atomic(
         rule_version="fixture@1.0.0",
     )
     repository.add_capability_estimate(followup)
+    future_observation = followup_observation.model_copy(
+        update={
+            "id": uuid4(),
+            "observed_at": review_time + timedelta(days=1),
+        }
+    )
+    future_followup = followup.model_copy(
+        update={
+            "id": uuid4(),
+            "source_observation_ids": (future_observation.id,),
+            "estimated_at": review_time + timedelta(days=1),
+            "valid_until": review_time + timedelta(days=31),
+        }
+    )
+    repository.add_observation(future_observation)
+    session.flush()
+    repository.add_capability_estimate(future_followup)
     session.commit()
+
+    incomplete_queue = PostBlockReviewQueueProjector(session).project(
+        review_time + timedelta(minutes=1)
+    )
+    assert len(incomplete_queue.items) == 1
+    assert incomplete_queue.items[0].block_id == block.id
+    assert incomplete_queue.items[0].workflow_stage == "block_review"
+    assert incomplete_queue.items[0].status == "incomplete_history"
+    assert incomplete_queue.items[0].issues
 
     response_draft = {
         "adaptation_id": str(prescription.adaptation_id),
@@ -2064,6 +2396,24 @@ def test_completed_block_review_requires_full_history_and_is_atomic(
         safety_policy=safety_policy,
         provenance=provenance,
     )
+    preparation = BlockReviewPreparationProjector(session).project(
+        block.id, projected_at=review_time + timedelta(minutes=1)
+    )
+    assert preparation.status == "ready_for_explicit_review"
+    assert preparation.issues == ()
+    assert len(preparation.weekly_plans) == block.duration_weeks
+    assert len(preparation.session_history) == 8
+    assert preparation.prescriptions == (prescription,)
+    assert baseline in preparation.baseline_estimates
+    assert followup in preparation.followup_estimates
+    assert future_followup not in preparation.followup_estimates
+    assert review_policy in preparation.block_review_policies
+    assert followup_observation in preparation.source_observations
+    ready_queue = PostBlockReviewQueueProjector(session).project(review_time + timedelta(minutes=1))
+    assert len(ready_queue.items) == 1
+    assert ready_queue.items[0].workflow_stage == "block_review"
+    assert ready_queue.items[0].status == "ready_for_explicit_review"
+    assert ready_queue.items[0].issues == ()
     invalid_partition_command = CreateBlockReviewCommand.model_validate(
         {
             **request_body,
@@ -2103,8 +2453,33 @@ def test_completed_block_review_requires_full_history_and_is_atomic(
         for record_type in record_types
     )
     assert counts_after_failure == counts_before
+    with pytest.raises(BlockReviewValidationError, match="review authority assignment"):
+        PersistedBlockReviewService(session).execute(
+            block.id,
+            command.model_copy(update={"review_authority_assignment_id": uuid4()}),
+        )
 
-    result = PersistedBlockReviewService(session).execute(block.id, command)
+    reviewer, assignment, _, _ = set_account_role(
+        session,
+        issuer="urn:agas:development",
+        subject="authenticated-block-reviewer",
+        role=AccountRole.PLANNING_REVIEWER,
+        status=AccountRoleStatus.ACTIVE,
+        assigned_at=review_time - timedelta(days=1),
+        rationale="Exercise authenticated completed-block review.",
+    )
+    authority = AuthorizedRole(
+        account_id=reviewer.id,
+        assignment_id=assignment.id,
+        role=assignment.role,
+        assigned_at=assignment.assigned_at,
+    )
+    with pytest.raises(ValueError, match="Extra inputs are not permitted"):
+        OperatorBlockReviewRequest.model_validate(request_body)
+    operator_request = OperatorBlockReviewRequest.model_validate(
+        {key: value for key, value in request_body.items() if key != "reviewed_by"}
+    )
+    result = execute_operator_block_review(session, block.id, operator_request, authority)
     with pytest.raises(BlockReviewConflictError, match="already has a completed review"):
         PersistedBlockReviewService(session).execute(block.id, command)
     assert len(result.training_responses) == 1
@@ -2114,8 +2489,9 @@ def test_completed_block_review_requires_full_history_and_is_atomic(
     )
     assert result.block_review.outcome is BlockReviewOutcome.SUPPORTED
     assert len(result.block_review.post_session_safety_decision_ids) == 9
-    assert result.decision_record.reason.startswith("Reviewed by fixture block-review operator.")
+    assert result.decision_record.reason.startswith(f"Reviewed by account:{reviewer.id}.")
     assert f"block_review:{result.block_review.id}" in result.decision_record.evidence
+    assert f"account_role_assignment:{assignment.id}" in result.decision_record.evidence
     assert f"training_response:{result.training_responses[0].id}" in (
         result.decision_record.evidence
     )
@@ -2126,6 +2502,19 @@ def test_completed_block_review_requires_full_history_and_is_atomic(
     )
     assert repository.get_block_review_by_block(block.id) == result.block_review
     assert session.get(DecisionRecordRecord, result.decision_record.id) is not None
+    completed_preparation = BlockReviewPreparationProjector(session).project(
+        block.id, projected_at=review_time + timedelta(minutes=3)
+    )
+    assert completed_preparation.status == "already_reviewed"
+    assert completed_preparation.existing_review == result.block_review
+    replanning_queue = PostBlockReviewQueueProjector(session).project(
+        review_time + timedelta(minutes=3)
+    )
+    assert len(replanning_queue.items) == 1
+    assert replanning_queue.items[0].workflow_stage == "replanning"
+    assert replanning_queue.items[0].status == "ready_for_explicit_replanning"
+    assert replanning_queue.items[0].block_review_id == result.block_review.id
+    assert replanning_queue.items[0].review_outcome == result.block_review.outcome.value
 
 
 def test_block_prescription_and_weekly_plan_round_trip_preserves_full_chain(
@@ -2163,6 +2552,51 @@ def test_block_prescription_and_weekly_plan_round_trip_preserves_full_chain(
     record.rule_version = "silently rewritten"
     with pytest.raises(ImmutableHistoricalRecordError, match="append-only"):
         session.flush()
+
+
+def test_first_week_preparation_projects_exact_lineage_without_choosing_inputs(
+    session: Session,
+) -> None:
+    (
+        repository,
+        _strategy,
+        requirement,
+        resolution,
+        demand,
+        _,
+        block,
+        prescription,
+        _,
+        _,
+        scheduling_policy,
+        weekly_plan,
+    ) = build_and_persist_weekly_chain(session)
+
+    projection = FirstWeekPreparationProjector(session).project(block.id, NOW)
+
+    assert projection.block == block
+    assert projection.existing_first_week_plans == (weekly_plan,)
+    assert len(projection.allocation_inputs) == 1
+    allocation_input = projection.allocation_inputs[0]
+    assert allocation_input.allocation == block.allocations[0]
+    assert allocation_input.resource_demand == demand
+    assert allocation_input.stimulus_requirement == requirement
+    assert allocation_input.exercise_resolution == resolution
+    assert allocation_input.selected_exercise is not None
+    assert allocation_input.selected_exercise.id == prescription.exercise_id
+    assert {item.id for item in projection.environments} == {resolution.environment_id}
+    policy_option = next(
+        item
+        for item in projection.scheduling_policy_options
+        if item.policy.id == scheduling_policy.id
+    )
+    assert policy_option.current_review == (
+        repository.get_current_weekly_scheduling_policy_review(scheduling_policy.id)
+    )
+    assert policy_option.is_currently_approved is True
+    assert {item.id for item in projection.source_observations} == set(block.source_observation_ids)
+    assert {item.id for item in projection.evidence_claims}.issuperset(block.evidence_claim_ids)
+    assert PlanningReviewQueueProjector(session).project(NOW).items == ()
 
 
 def test_operator_weekly_plan_service_persists_explicit_session_chain_atomically(
@@ -2251,6 +2685,16 @@ def test_operator_weekly_plan_service_persists_explicit_session_chain_atomically
     with pytest.raises(ValueError, match="operator review metadata"):
         CreateWeeklyPlanCommand.model_validate({**request_body, "reviewed_by": "   "})
     command = CreateWeeklyPlanCommand.model_validate(request_body)
+    with pytest.raises(WeeklyPlanValidationError, match="authority assignment does not exist"):
+        PersistedWeeklyPlanService(session).execute(
+            block.id,
+            command.model_copy(
+                update={
+                    "reviewed_by": f"account:{uuid4()}",
+                    "review_authority_assignment_id": uuid4(),
+                }
+            ),
+        )
     input_path = tmp_path / "reviewed-weekly-plan.json"
     input_path.write_text(json.dumps(command.model_dump(mode="json")), encoding="utf-8")
     assert load_weekly_plan_command(input_path) == command
@@ -4316,6 +4760,23 @@ def test_progression_exposure_and_revised_prescription_round_trip(
         interference_cost=0.2,
         evidence_claim_ids=claim_ids,
     )
+    replanning_preparation = ReplanningPreparationProjector(session).project(
+        review.id, projected_at=review.reviewed_at + timedelta(seconds=30)
+    )
+    assert replanning_preparation.status == "ready_for_explicit_replanning"
+    assert replanning_preparation.issues == ()
+    assert replanning_preparation.training_responses == (response,)
+    assert len(replanning_preparation.adaptation_options) == 1
+    assert replanning_preparation.adaptation_options[0].training_response == response
+    assert replanning_preparation.adaptation_options[0].estimate_options == (followup,)
+    assert floor in replanning_preparation.adaptation_options[0].compatible_competency_floors
+    assert followup_observation in replanning_preparation.source_observations
+    assert followup.valid_until is not None
+    stale_replanning_preparation = ReplanningPreparationProjector(session).project(
+        review.id, projected_at=followup.valid_until + timedelta(seconds=1)
+    )
+    assert stale_replanning_preparation.status == "blocked"
+    assert stale_replanning_preparation.adaptation_options[0].estimate_options == ()
 
     request_body = {
         "candidate_contexts": [context.model_dump(mode="json")],
@@ -4371,8 +4832,33 @@ def test_progression_exposure_and_revised_prescription_round_trip(
         for record_type in replanning_record_types
     )
     assert counts_after_audit_failure == counts_before_replanning
+    with pytest.raises(ReplanningValidationError, match="review authority assignment"):
+        PersistedReplanningService(session).execute(
+            review.id,
+            replanning_command.model_copy(update={"review_authority_assignment_id": uuid4()}),
+        )
 
-    replanning_result = PersistedReplanningService(session).execute(review.id, replanning_command)
+    replanner, assignment, _, _ = set_account_role(
+        session,
+        issuer="urn:agas:development",
+        subject="authenticated-post-block-replanner",
+        role=AccountRole.PLANNING_REVIEWER,
+        status=AccountRoleStatus.ACTIVE,
+        assigned_at=review.reviewed_at - timedelta(days=1),
+        rationale="Exercise authenticated post-block replanning.",
+    )
+    authority = AuthorizedRole(
+        account_id=replanner.id,
+        assignment_id=assignment.id,
+        role=assignment.role,
+        assigned_at=assignment.assigned_at,
+    )
+    with pytest.raises(ValueError, match="Extra inputs are not permitted"):
+        OperatorReplanningRequest.model_validate(request_body)
+    operator_request = OperatorReplanningRequest.model_validate(
+        {key: value for key, value in request_body.items() if key != "reviewed_by"}
+    )
+    replanning_result = execute_operator_replanning(session, review.id, operator_request, authority)
     with pytest.raises(ReplanningConflictError, match="already has a strategy revision"):
         PersistedReplanningService(session).execute(review.id, replanning_command)
     session.expire_all()
@@ -4382,9 +4868,12 @@ def test_progression_exposure_and_revised_prescription_round_trip(
     )
     assert repository.get_long_range_strategy(strategy.id) == strategy
     assert replanning_result.decision_record.reason.startswith(
-        "Reviewed by fixture replanning operator."
+        f"Reviewed by account:{replanner.id}."
     )
     assert f"block_review:{review.id}" in replanning_result.decision_record.evidence
+    assert f"account_role_assignment:{assignment.id}" in (
+        replanning_result.decision_record.evidence
+    )
     assert f"long_range_strategy:{replanning_result.strategy.id}" in (
         replanning_result.decision_record.evidence
     )
@@ -4392,6 +4881,17 @@ def test_progression_exposure_and_revised_prescription_round_trip(
     revised_priority = replanning_result.strategy.priorities[0]
     assert block.allocations[0].priority_state.value == "develop"
     assert revised_priority.state.value == "maintain"
+    completed_replanning_preparation = ReplanningPreparationProjector(session).project(
+        review.id, projected_at=replanning_command.generated_at + timedelta(minutes=1)
+    )
+    assert completed_replanning_preparation.status == "already_replanned"
+    assert (
+        completed_replanning_preparation.existing_successor_strategy == replanning_result.strategy
+    )
+    completed_queue = PostBlockReviewQueueProjector(session).project(
+        replanning_command.generated_at + timedelta(minutes=1)
+    )
+    assert completed_queue.items == ()
 
     next_generated_at = review.reviewed_at + timedelta(minutes=3)
     next_requirement = StimulusRequirement.model_validate(

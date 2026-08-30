@@ -6,6 +6,8 @@ from typing import Annotated, TypeVar
 from uuid import UUID
 
 from agas_domain import (
+    AccountRole,
+    AccountRoleStatus,
     Adaptation,
     CapabilityEstimate,
     ClosedLoopReplanningResult,
@@ -31,6 +33,7 @@ class PostBlockReplanningCommand(BaseModel):
     generated_at: datetime
     review_after_days: int = Field(ge=1)
     reviewed_by: Annotated[str, Field(min_length=1)]
+    review_authority_assignment_id: UUID | None = None
     applicability_rationale: Annotated[str, Field(min_length=1)]
     uncertainty: Annotated[str, Field(min_length=1)]
 
@@ -112,6 +115,7 @@ class PersistedReplanningService:
         review = self.repository.get_block_review(block_review_id)
         if review is None:
             raise ReplanningNotFoundError("block review does not exist")
+        self._validate_review_authority(command)
         block = self.repository.get_block_plan(review.block_plan_id)
         if block is None:
             raise ReplanningNotFoundError("reviewed block does not exist")
@@ -174,6 +178,34 @@ class PersistedReplanningService:
             ),
         )
 
+    def _validate_review_authority(self, command: PostBlockReplanningCommand) -> None:
+        assignment_id = command.review_authority_assignment_id
+        if assignment_id is None:
+            return
+        assignment = self.repository.get_account_role_assignment(assignment_id)
+        if assignment is None:
+            raise ReplanningValidationError("review authority assignment does not exist")
+        current = self.repository.get_current_account_role_assignment(
+            assignment.account_id, AccountRole.PLANNING_REVIEWER
+        )
+        if (
+            assignment.role is not AccountRole.PLANNING_REVIEWER
+            or assignment.status is not AccountRoleStatus.ACTIVE
+            or current is None
+            or current.id != assignment.id
+        ):
+            raise ReplanningValidationError(
+                "review authority assignment is not a current planning-reviewer grant"
+            )
+        if command.reviewed_by != f"account:{assignment.account_id}":
+            raise ReplanningValidationError(
+                "reviewed_by does not match the review authority account"
+            )
+        if command.generated_at < assignment.assigned_at:
+            raise ReplanningValidationError(
+                "replanning cannot predate the reviewer role assignment"
+            )
+
     @staticmethod
     def _decision_record(
         *,
@@ -218,6 +250,8 @@ class PersistedReplanningService:
             *(f"evidence_claim:{item}" for item in replanning.strategy.evidence_claim_ids),
             f"long_range_strategy:{replanning.strategy.id}",
         ]
+        if command.review_authority_assignment_id is not None:
+            values.append(f"account_role_assignment:{command.review_authority_assignment_id}")
         return DecisionRecord(
             decision=(
                 f"Create successor strategy {replanning.strategy.id} from block review "

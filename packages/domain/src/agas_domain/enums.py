@@ -3,6 +3,7 @@ from enum import StrEnum
 
 class AccountRole(StrEnum):
     PLANNING_REVIEWER = "planning_reviewer"
+    ASSESSMENT_REVIEWER = "assessment_reviewer"
 
 
 class AccountRoleStatus(StrEnum):

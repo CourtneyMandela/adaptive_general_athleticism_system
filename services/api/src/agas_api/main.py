@@ -4,6 +4,7 @@ from datetime import date, datetime
 from typing import Annotated
 from uuid import UUID
 
+from agas_domain import InitialPlanningContextDraft, InitialPlanningContextReview
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
@@ -20,6 +21,11 @@ from agas_api.assessment_estimation import (
     AssessmentCapabilityEstimationNotFoundError,
     AssessmentCapabilityEstimationValidationError,
     PersistedAssessmentCapabilityEstimationService,
+)
+from agas_api.assessment_governance import (
+    AssessmentGovernanceProjection,
+    AssessmentGovernanceProjectionError,
+    AssessmentGovernanceProjector,
 )
 from agas_api.assessment_performance import (
     AssessmentPerformanceConflictError,
@@ -46,6 +52,24 @@ from agas_api.athletic_dashboard import (
     AthleticDashboardNotFoundError,
     AthleticDashboardProjection,
     get_athletic_dashboard_projection,
+)
+from agas_api.block_creation import (
+    BlockCreationConflictError,
+    BlockCreationNotFoundError,
+    BlockCreationValidationError,
+    BlockPlanCreationResult,
+)
+from agas_api.block_preparation import (
+    BlockPreparationNotFoundError,
+    BlockPreparationProjection,
+    BlockPreparationProjectionError,
+    BlockPreparationProjector,
+)
+from agas_api.block_review_application import (
+    BlockReviewConflictError,
+    BlockReviewCreationResult,
+    BlockReviewNotFoundError,
+    BlockReviewValidationError,
 )
 from agas_api.current_week import (
     CurrentWeekConflictError,
@@ -76,13 +100,41 @@ from agas_api.exercise_reresolution import (
     ExerciseReResolutionResult,
     ExerciseReResolutionValidationError,
 )
+from agas_api.first_week_preparation import (
+    FirstWeekPreparationNotFoundError,
+    FirstWeekPreparationProjection,
+    FirstWeekPreparationProjectionError,
+    FirstWeekPreparationProjector,
+)
 from agas_api.identity import (
     AuthenticatedPrincipal,
     AuthorizedRole,
     OwnershipAuthorizer,
+    assessment_reviewer_dependency,
     authenticated_principal_dependency,
     ownership_authorizer_dependency,
     planning_reviewer_dependency,
+)
+from agas_api.initial_planning import (
+    InitialPlanningConflictError,
+    InitialPlanningNotFoundError,
+    InitialPlanningValidationError,
+    InitialStrategyCreationResult,
+)
+from agas_api.initial_planning_context import (
+    CreateInitialStrategyFromContextReviewRequest,
+    InitialPlanningContextConflictError,
+    InitialPlanningContextNotFoundError,
+    InitialPlanningContextValidationError,
+    OperatorInitialPlanningContextDraftRequest,
+    OperatorInitialPlanningContextReviewRequest,
+    PersistedInitialPlanningContextService,
+)
+from agas_api.initial_planning_preparation import (
+    InitialPlanningPreparationNotFoundError,
+    InitialPlanningPreparationProjection,
+    InitialPlanningPreparationProjectionError,
+    InitialPlanningPreparationProjector,
 )
 from agas_api.onboarding import (
     AthleteOnboardingConflictError,
@@ -94,21 +146,58 @@ from agas_api.onboarding import (
     PersistedAthleteOnboardingService,
     list_onboarding_equipment,
 )
+from agas_api.operator_block_preparation import (
+    OperatorBlockPlanRequest,
+    execute_operator_block_creation,
+)
 from agas_api.operator_environment_review import (
     OperatorEnvironmentPrescriptionRevisionRequest,
     OperatorExerciseReResolutionRequest,
     execute_operator_environment_prescription_revision,
     execute_operator_exercise_reresolution,
 )
+from agas_api.operator_initial_planning import (
+    OperatorInitialStrategyRequest,
+    execute_operator_initial_strategy,
+)
+from agas_api.operator_planning_queue import (
+    PlanningReviewQueueProjection,
+    PlanningReviewQueueProjectionError,
+    PlanningReviewQueueProjector,
+)
+from agas_api.operator_post_block import (
+    OperatorBlockReviewRequest,
+    OperatorReplanningRequest,
+    execute_operator_block_review,
+    execute_operator_replanning,
+)
+from agas_api.operator_resource_preparation import (
+    OperatorResourceDemandRequest,
+    execute_operator_resource_preparation,
+)
 from agas_api.operator_review_queue import (
     EnvironmentReviewQueueProjection,
     EnvironmentReviewQueueProjector,
     OperatorReviewQueueProjectionError,
+    PostBlockReviewQueueProjection,
+    PostBlockReviewQueueProjector,
+)
+from agas_api.operator_weekly_planning import (
+    OperatorWeeklyPlanRequest,
+    execute_operator_weekly_plan_creation,
 )
 from agas_api.planning_status import (
     PlanningStatusNotFoundError,
     PlanningStatusProjection,
     get_planning_status_projection,
+)
+from agas_api.post_block_preparation import (
+    BlockReviewPreparationProjection,
+    BlockReviewPreparationProjector,
+    PostBlockPreparationNotFoundError,
+    PostBlockPreparationProjectionError,
+    ReplanningPreparationProjection,
+    ReplanningPreparationProjector,
 )
 from agas_api.progression_application import (
     AutomaticProgressionDecisionCommand,
@@ -117,6 +206,24 @@ from agas_api.progression_application import (
     ProgressionCreationResult,
     ProgressionNotFoundError,
     ProgressionValidationError,
+)
+from agas_api.replanning import (
+    PostBlockReplanningResult,
+    ReplanningConflictError,
+    ReplanningNotFoundError,
+    ReplanningValidationError,
+)
+from agas_api.resource_demand_preparation import (
+    ResourceDemandPreparationNotFoundError,
+    ResourceDemandPreparationProjection,
+    ResourceDemandPreparationProjectionError,
+    ResourceDemandPreparationProjector,
+)
+from agas_api.resource_preparation import (
+    ResourceDemandPreparationResult,
+    ResourcePreparationConflictError,
+    ResourcePreparationNotFoundError,
+    ResourcePreparationValidationError,
 )
 from agas_api.session_recording import (
     CreateSessionExecutionCommand,
@@ -137,6 +244,12 @@ from agas_api.weekly_availability_confirmation import (
     WeeklyAvailabilityConfirmationNotFoundError,
     WeeklyAvailabilityConfirmationResult,
     WeeklyAvailabilityConfirmationValidationError,
+)
+from agas_api.weekly_planning import (
+    WeeklyPlanConflictError,
+    WeeklyPlanCreationResult,
+    WeeklyPlanNotFoundError,
+    WeeklyPlanValidationError,
 )
 from agas_api.weekly_roll_forward import (
     PersistedWeeklyPlanRollForwardService,
@@ -178,6 +291,26 @@ def health() -> dict[str, str]:
 
 
 @app.get(
+    "/v1/operator/assessment-governance",
+    tags=["operator"],
+    response_model=AssessmentGovernanceProjection,
+)
+def get_assessment_governance(
+    session: Annotated[Session, Depends(database_session_dependency)],
+    _authority: Annotated[AuthorizedRole, Depends(assessment_reviewer_dependency)],
+    projected_at: Annotated[datetime | None, Query(alias="at")] = None,
+) -> AssessmentGovernanceProjection:
+    try:
+        return AssessmentGovernanceProjector(session).project(projected_at)
+    except AssessmentGovernanceProjectionError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.get(
     "/v1/operator/environment-review-queue",
     tags=["operator"],
     response_model=EnvironmentReviewQueueProjection,
@@ -191,6 +324,405 @@ def get_environment_review_queue(
         return EnvironmentReviewQueueProjector(session).project(projected_at)
     except (OperatorReviewQueueProjectionError, ValueError) as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+
+
+@app.get(
+    "/v1/operator/post-block-review-queue",
+    tags=["operator"],
+    response_model=PostBlockReviewQueueProjection,
+)
+def get_post_block_review_queue(
+    session: Annotated[Session, Depends(database_session_dependency)],
+    _authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+    projected_at: Annotated[datetime | None, Query(alias="at")] = None,
+) -> PostBlockReviewQueueProjection:
+    try:
+        return PostBlockReviewQueueProjector(session).project(projected_at)
+    except (OperatorReviewQueueProjectionError, ValueError) as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+
+
+@app.get(
+    "/v1/operator/planning-review-queue",
+    tags=["operator"],
+    response_model=PlanningReviewQueueProjection,
+)
+def get_planning_review_queue(
+    session: Annotated[Session, Depends(database_session_dependency)],
+    _authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+    projected_at: Annotated[datetime | None, Query(alias="at")] = None,
+) -> PlanningReviewQueueProjection:
+    try:
+        return PlanningReviewQueueProjector(session).project(projected_at)
+    except (PlanningReviewQueueProjectionError, ValueError) as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+
+
+@app.get(
+    "/v1/operator/athletes/{athlete_id}/initial-planning-preparation",
+    tags=["operator"],
+    response_model=InitialPlanningPreparationProjection,
+)
+def get_operator_initial_planning_preparation(
+    athlete_id: UUID,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    _authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+    projected_at: Annotated[datetime | None, Query(alias="at")] = None,
+) -> InitialPlanningPreparationProjection:
+    try:
+        return InitialPlanningPreparationProjector(session).project(athlete_id, projected_at)
+    except InitialPlanningPreparationNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except InitialPlanningPreparationProjectionError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.post(
+    "/v1/operator/athletes/{athlete_id}/initial-planning-context-drafts",
+    tags=["operator"],
+    response_model=InitialPlanningContextDraft,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_operator_initial_planning_context_draft(
+    athlete_id: UUID,
+    command: OperatorInitialPlanningContextDraftRequest,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+) -> InitialPlanningContextDraft:
+    try:
+        return PersistedInitialPlanningContextService(session).create_draft(
+            athlete_id, command, authority
+        )
+    except InitialPlanningContextNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except InitialPlanningContextConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except InitialPlanningContextValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.post(
+    "/v1/operator/initial-planning-context-drafts/{draft_id}/reviews",
+    tags=["operator"],
+    response_model=InitialPlanningContextReview,
+    status_code=status.HTTP_201_CREATED,
+)
+def review_operator_initial_planning_context_draft(
+    draft_id: UUID,
+    command: OperatorInitialPlanningContextReviewRequest,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+) -> InitialPlanningContextReview:
+    try:
+        return PersistedInitialPlanningContextService(session).review_draft(
+            draft_id, command, authority
+        )
+    except InitialPlanningContextNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except InitialPlanningContextConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except InitialPlanningContextValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.post(
+    "/v1/operator/initial-planning-context-reviews/{review_id}/strategy",
+    tags=["operator"],
+    response_model=InitialStrategyCreationResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_operator_initial_strategy_from_context_review(
+    review_id: UUID,
+    command: CreateInitialStrategyFromContextReviewRequest,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+) -> InitialStrategyCreationResult:
+    try:
+        return PersistedInitialPlanningContextService(session).create_strategy(
+            review_id, command, authority
+        )
+    except InitialPlanningContextNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except InitialPlanningContextConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except InitialPlanningContextValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.post(
+    "/v1/operator/athletes/{athlete_id}/initial-strategies",
+    tags=["operator"],
+    response_model=InitialStrategyCreationResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_operator_initial_strategy(
+    athlete_id: UUID,
+    command: OperatorInitialStrategyRequest,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+) -> InitialStrategyCreationResult:
+    try:
+        return execute_operator_initial_strategy(session, athlete_id, command, authority)
+    except InitialPlanningNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except InitialPlanningConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except InitialPlanningValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.get(
+    "/v1/operator/strategies/{strategy_id}/resource-demand-preparation",
+    tags=["operator"],
+    response_model=ResourceDemandPreparationProjection,
+)
+def get_operator_resource_demand_preparation(
+    strategy_id: UUID,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    _authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+    projected_at: Annotated[datetime | None, Query(alias="at")] = None,
+) -> ResourceDemandPreparationProjection:
+    try:
+        return ResourceDemandPreparationProjector(session).project(strategy_id, projected_at)
+    except ResourceDemandPreparationNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except ResourceDemandPreparationProjectionError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.post(
+    "/v1/operator/strategies/{strategy_id}/priorities/{priority_id}/resource-demands",
+    tags=["operator"],
+    response_model=ResourceDemandPreparationResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_operator_resource_demand(
+    strategy_id: UUID,
+    priority_id: UUID,
+    command: OperatorResourceDemandRequest,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+) -> ResourceDemandPreparationResult:
+    try:
+        return execute_operator_resource_preparation(
+            session,
+            strategy_id,
+            priority_id,
+            command,
+            authority,
+        )
+    except ResourcePreparationNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except ResourcePreparationConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except ResourcePreparationValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.get(
+    "/v1/operator/strategies/{strategy_id}/block-preparation",
+    tags=["operator"],
+    response_model=BlockPreparationProjection,
+)
+def get_operator_block_preparation(
+    strategy_id: UUID,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    _authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+    projected_at: Annotated[datetime | None, Query(alias="at")] = None,
+) -> BlockPreparationProjection:
+    try:
+        return BlockPreparationProjector(session).project(strategy_id, projected_at)
+    except BlockPreparationNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except BlockPreparationProjectionError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.post(
+    "/v1/operator/strategies/{strategy_id}/blocks",
+    tags=["operator"],
+    response_model=BlockPlanCreationResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_operator_block_plan(
+    strategy_id: UUID,
+    command: OperatorBlockPlanRequest,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+) -> BlockPlanCreationResult:
+    try:
+        return execute_operator_block_creation(session, strategy_id, command, authority)
+    except BlockCreationNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except BlockCreationConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except BlockCreationValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.get(
+    "/v1/operator/blocks/{block_id}/first-week-preparation",
+    tags=["operator"],
+    response_model=FirstWeekPreparationProjection,
+)
+def get_operator_first_week_preparation(
+    block_id: UUID,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    _authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+    projected_at: Annotated[datetime | None, Query(alias="at")] = None,
+) -> FirstWeekPreparationProjection:
+    try:
+        return FirstWeekPreparationProjector(session).project(block_id, projected_at)
+    except FirstWeekPreparationNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except FirstWeekPreparationProjectionError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.post(
+    "/v1/operator/blocks/{block_id}/first-week-plans",
+    tags=["operator"],
+    response_model=WeeklyPlanCreationResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_operator_first_week_plan(
+    block_id: UUID,
+    command: OperatorWeeklyPlanRequest,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+) -> WeeklyPlanCreationResult:
+    try:
+        return execute_operator_weekly_plan_creation(session, block_id, command, authority)
+    except WeeklyPlanNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except WeeklyPlanConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except WeeklyPlanValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.get(
+    "/v1/operator/blocks/{block_id}/review-preparation",
+    tags=["operator"],
+    response_model=BlockReviewPreparationProjection,
+)
+def get_operator_block_review_preparation(
+    block_id: UUID,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    _authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+    projected_at: Annotated[datetime | None, Query(alias="at")] = None,
+) -> BlockReviewPreparationProjection:
+    try:
+        return BlockReviewPreparationProjector(session).project(block_id, projected_at)
+    except PostBlockPreparationNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except PostBlockPreparationProjectionError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.post(
+    "/v1/operator/blocks/{block_id}/reviews",
+    tags=["operator"],
+    response_model=BlockReviewCreationResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_operator_block_review(
+    block_id: UUID,
+    command: OperatorBlockReviewRequest,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+) -> BlockReviewCreationResult:
+    try:
+        return execute_operator_block_review(session, block_id, command, authority)
+    except BlockReviewNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except BlockReviewConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except BlockReviewValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.get(
+    "/v1/operator/block-reviews/{block_review_id}/replanning-preparation",
+    tags=["operator"],
+    response_model=ReplanningPreparationProjection,
+)
+def get_operator_replanning_preparation(
+    block_review_id: UUID,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    _authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+    projected_at: Annotated[datetime | None, Query(alias="at")] = None,
+) -> ReplanningPreparationProjection:
+    try:
+        return ReplanningPreparationProjector(session).project(block_review_id, projected_at)
+    except PostBlockPreparationNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except PostBlockPreparationProjectionError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.post(
+    "/v1/operator/block-reviews/{block_review_id}/replanning",
+    tags=["operator"],
+    response_model=PostBlockReplanningResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_operator_replanning(
+    block_review_id: UUID,
+    command: OperatorReplanningRequest,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+) -> PostBlockReplanningResult:
+    try:
+        return execute_operator_replanning(session, block_review_id, command, authority)
+    except ReplanningNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except ReplanningConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except ReplanningValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
 
 
 @app.post(

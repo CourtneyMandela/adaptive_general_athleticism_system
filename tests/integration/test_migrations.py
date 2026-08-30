@@ -77,6 +77,12 @@ def test_baseline_migration_matches_current_metadata(
         assert "competency_floor_review_evidence_claims" in actual_tables
         assert "priority_policy_reviews" in actual_tables
         assert "priority_policy_review_evidence_claims" in actual_tables
+        assert "initial_planning_context_drafts" in actual_tables
+        assert "initial_planning_candidate_contexts" in actual_tables
+        assert "initial_planning_context_prerequisites" in actual_tables
+        assert "initial_planning_context_observations" in actual_tables
+        assert "initial_planning_context_evidence_claims" in actual_tables
+        assert "initial_planning_context_reviews" in actual_tables
         assert "weekly_scheduling_policy_reviews" in actual_tables
         assert "weekly_scheduling_policy_review_evidence_claims" in actual_tables
         assert "source_observation_id" in {
@@ -123,6 +129,11 @@ def test_baseline_migration_matches_current_metadata(
         assert any(
             constraint["name"] == "uq_account_role_assignment_superseded_once"
             for constraint in role_constraints
+        )
+        assert any(
+            "assessment_reviewer" in str(constraint.get("sqltext", ""))
+            for constraint in inspector.get_check_constraints("account_role_assignments")
+            if constraint["name"] == "ck_account_role_assignment_role"
         )
         assert any(
             constraint["name"] == "uq_athlete_owner"
@@ -198,6 +209,13 @@ def test_baseline_migration_matches_current_metadata(
         assert any(
             constraint["name"] == "uq_priority_policy_review_superseded_once"
             for constraint in priority_review_constraints
+        )
+        context_review_constraints = inspector.get_unique_constraints(
+            "initial_planning_context_reviews"
+        )
+        assert any(
+            constraint["name"] == "uq_initial_planning_context_review_draft"
+            for constraint in context_review_constraints
         )
         scheduling_review_constraints = inspector.get_unique_constraints(
             "weekly_scheduling_policy_reviews"

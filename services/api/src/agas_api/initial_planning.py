@@ -5,24 +5,20 @@ from typing import Annotated
 from uuid import UUID
 
 from agas_domain import (
+    AccountRole,
+    AccountRoleStatus,
     AdaptationPlanningCandidate,
     AssessmentReviewDecision,
     CapabilityNeed,
     DecisionRecord,
+    InitialPlanningCandidateContext,
     LongRangeStrategy,
-    ReplanningCandidateContext,
 )
 from agas_domain.persistence.repository import DomainIntegrityError, DomainRepository
 from agas_planner import CompetencyFloorDetector, LongRangeStrategyPlanner, PlanningError
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-
-
-class InitialPlanningCandidateContext(ReplanningCandidateContext):
-    """Candidate inputs pinned to an exact competency-floor governance review."""
-
-    competency_floor_review_id: UUID
 
 
 class CreateInitialStrategyCommand(BaseModel):
@@ -37,6 +33,9 @@ class CreateInitialStrategyCommand(BaseModel):
     horizon_months: int = Field(ge=6, le=24)
     review_after_days: int = Field(ge=1)
     reviewed_by: Annotated[str, Field(min_length=1)]
+    review_authority_assignment_id: UUID | None = None
+    candidate_context_draft_id: UUID | None = None
+    candidate_context_review_id: UUID | None = None
     applicability_rationale: Annotated[str, Field(min_length=1)]
     uncertainty: Annotated[str, Field(min_length=1)]
 
@@ -60,6 +59,10 @@ class CreateInitialStrategyCommand(BaseModel):
         adaptation_ids = tuple(item.adaptation_id for item in self.candidate_contexts)
         if len(set(adaptation_ids)) != len(adaptation_ids):
             raise ValueError("candidate_contexts must contain each adaptation once")
+        if (self.candidate_context_draft_id is None) != (self.candidate_context_review_id is None):
+            raise ValueError(
+                "candidate context draft and review provenance must be supplied together"
+            )
         return self
 
 
@@ -127,6 +130,13 @@ class PersistedInitialPlanningService:
                 "the athlete already has an initial long-range strategy"
             ) from error
 
+    def preview(
+        self, athlete_id: UUID, command: CreateInitialStrategyCommand
+    ) -> InitialStrategyCreationResult:
+        """Validate and derive the exact result without writing it."""
+
+        return self._build_result(athlete_id, command)
+
     def _build_result(
         self, athlete_id: UUID, command: CreateInitialStrategyCommand
     ) -> InitialStrategyCreationResult:
@@ -136,6 +146,8 @@ class PersistedInitialPlanningService:
             raise InitialPlanningConflictError(
                 "the athlete already has an initial long-range strategy"
             )
+        self._validate_review_authority(command)
+        self._validate_candidate_context_artifact(athlete_id, command)
         policy = self.repository.get_priority_policy(command.priority_policy_id)
         if policy is None:
             raise InitialPlanningNotFoundError("priority policy does not exist")
@@ -214,6 +226,10 @@ class PersistedInitialPlanningService:
             if estimate.estimated_at > command.generated_at:
                 raise InitialPlanningValidationError(
                     "capability estimate cannot come from the future"
+                )
+            if estimate.valid_until is not None and estimate.valid_until <= command.generated_at:
+                raise InitialPlanningValidationError(
+                    "capability estimate is stale at initial-strategy generation"
                 )
 
             for prerequisite_id in context.prerequisite_adaptation_ids:
@@ -309,6 +325,82 @@ class PersistedInitialPlanningService:
             decision_record=decision_record,
         )
 
+    def _validate_review_authority(self, command: CreateInitialStrategyCommand) -> None:
+        assignment_id = command.review_authority_assignment_id
+        if assignment_id is None:
+            return
+        assignment = self.repository.get_account_role_assignment(assignment_id)
+        if assignment is None:
+            raise InitialPlanningValidationError("review authority assignment does not exist")
+        current = self.repository.get_current_account_role_assignment(
+            assignment.account_id, AccountRole.PLANNING_REVIEWER
+        )
+        if (
+            assignment.role is not AccountRole.PLANNING_REVIEWER
+            or assignment.status is not AccountRoleStatus.ACTIVE
+            or current is None
+            or current.id != assignment.id
+        ):
+            raise InitialPlanningValidationError(
+                "review authority assignment is not a current active planning_reviewer assignment"
+            )
+        if command.reviewed_by != f"account:{assignment.account_id}":
+            raise InitialPlanningValidationError(
+                "reviewed_by does not match the review authority account"
+            )
+        if command.generated_at < assignment.assigned_at:
+            raise InitialPlanningValidationError(
+                "initial strategy cannot predate the reviewer role assignment"
+            )
+
+    def _validate_candidate_context_artifact(
+        self, athlete_id: UUID, command: CreateInitialStrategyCommand
+    ) -> None:
+        draft_id = command.candidate_context_draft_id
+        review_id = command.candidate_context_review_id
+        if draft_id is None or review_id is None:
+            return
+        draft = self.repository.get_initial_planning_context_draft(draft_id)
+        review = self.repository.get_initial_planning_context_review(review_id)
+        if draft is None or review is None:
+            raise InitialPlanningValidationError("initial planning context artifact does not exist")
+        if review.draft_id != draft.id or review.decision is not AssessmentReviewDecision.APPROVED:
+            raise InitialPlanningValidationError(
+                "initial planning requires the exact approved context review"
+            )
+        if (
+            draft.athlete_id != athlete_id
+            or draft.priority_policy_id != command.priority_policy_id
+            or draft.priority_policy_review_id != command.priority_policy_review_id
+            or draft.candidate_contexts != command.candidate_contexts
+            or draft.horizon_months != command.horizon_months
+            or draft.review_after_days != command.review_after_days
+        ):
+            raise InitialPlanningValidationError(
+                "initial planning command does not match the approved context draft"
+            )
+        if (
+            review.reviewed_by_account_id != self._review_account_id(command)
+            or review.review_authority_assignment_id != command.review_authority_assignment_id
+        ):
+            raise InitialPlanningValidationError(
+                "initial planning reviewer does not match the approved context review"
+            )
+        if command.generated_at < review.reviewed_at:
+            raise InitialPlanningValidationError(
+                "initial strategy cannot predate its candidate context review"
+            )
+
+    @staticmethod
+    def _review_account_id(command: CreateInitialStrategyCommand) -> UUID | None:
+        prefix = "account:"
+        if not command.reviewed_by.startswith(prefix):
+            return None
+        try:
+            return UUID(command.reviewed_by.removeprefix(prefix))
+        except ValueError:
+            return None
+
     @staticmethod
     def _decision_evidence(
         command: CreateInitialStrategyCommand, strategy: LongRangeStrategy
@@ -325,5 +417,20 @@ class PersistedInitialPlanningService:
             ),
             *(f"observation:{item}" for item in strategy.source_observation_ids),
             *(f"evidence_claim:{item}" for item in strategy.evidence_claim_ids),
+            *(
+                (f"account_role_assignment:{command.review_authority_assignment_id}",)
+                if command.review_authority_assignment_id is not None
+                else ()
+            ),
+            *(
+                (f"initial_planning_context_draft:{command.candidate_context_draft_id}",)
+                if command.candidate_context_draft_id is not None
+                else ()
+            ),
+            *(
+                (f"initial_planning_context_review:{command.candidate_context_review_id}",)
+                if command.candidate_context_review_id is not None
+                else ()
+            ),
         ]
         return tuple(dict.fromkeys(values))

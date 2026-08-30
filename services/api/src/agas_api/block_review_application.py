@@ -5,6 +5,8 @@ from typing import Annotated
 from uuid import UUID
 
 from agas_domain import (
+    AccountRole,
+    AccountRoleStatus,
     BlockPlan,
     BlockReview,
     ComparisonDirection,
@@ -58,6 +60,7 @@ class CreateBlockReviewCommand(BaseModel):
     responses_calculated_at: datetime
     reviewed_at: datetime
     reviewed_by: NonEmptyText
+    review_authority_assignment_id: UUID | None = None
     applicability_rationale: NonEmptyText
     uncertainty: NonEmptyText
 
@@ -151,6 +154,7 @@ class PersistedBlockReviewService:
         block = self.repository.get_block_plan(block_plan_id)
         if block is None:
             raise BlockReviewNotFoundError("block plan does not exist")
+        self._validate_review_authority(command)
         policy = self.repository.get_block_review_policy(command.block_review_policy_id)
         if policy is None:
             raise BlockReviewNotFoundError("block review policy does not exist")
@@ -254,6 +258,34 @@ class PersistedBlockReviewService:
             ),
         )
 
+    def _validate_review_authority(self, command: CreateBlockReviewCommand) -> None:
+        assignment_id = command.review_authority_assignment_id
+        if assignment_id is None:
+            return
+        assignment = self.repository.get_account_role_assignment(assignment_id)
+        if assignment is None:
+            raise BlockReviewValidationError("review authority assignment does not exist")
+        current = self.repository.get_current_account_role_assignment(
+            assignment.account_id, AccountRole.PLANNING_REVIEWER
+        )
+        if (
+            assignment.role is not AccountRole.PLANNING_REVIEWER
+            or assignment.status is not AccountRoleStatus.ACTIVE
+            or current is None
+            or current.id != assignment.id
+        ):
+            raise BlockReviewValidationError(
+                "review authority assignment is not a current planning-reviewer grant"
+            )
+        if command.reviewed_by != f"account:{assignment.account_id}":
+            raise BlockReviewValidationError(
+                "reviewed_by does not match the review authority account"
+            )
+        if command.reviewed_at < assignment.assigned_at:
+            raise BlockReviewValidationError(
+                "block review cannot predate the reviewer role assignment"
+            )
+
     @staticmethod
     def _decision_record(
         *,
@@ -304,6 +336,8 @@ class PersistedBlockReviewService:
             *(f"evidence_claim:{item}" for item in review.evidence_claim_ids),
             f"block_review:{review.id}",
         ]
+        if command.review_authority_assignment_id is not None:
+            values.append(f"account_role_assignment:{command.review_authority_assignment_id}")
         return DecisionRecord(
             decision=f"Complete block review {review.id} for block {block.id}.",
             reason=f"Reviewed by {command.reviewed_by}. {command.applicability_rationale}",
