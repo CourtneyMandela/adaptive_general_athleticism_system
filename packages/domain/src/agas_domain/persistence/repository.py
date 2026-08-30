@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import datetime, timedelta
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -56,6 +56,9 @@ from agas_domain.models import (
     ExposureEntry,
     ExposureProgressionPolicy,
     ExposureValidationDecision,
+    InitialPlanningCandidateContext,
+    InitialPlanningContextDraft,
+    InitialPlanningContextReview,
     LongRangeStrategy,
     Observation,
     PlannedSession,
@@ -156,6 +159,12 @@ from agas_domain.persistence.models import (
     ExposureProgressionPolicyRecord,
     ExposureValidationDecisionRecord,
     ExposureValidationEntryRecord,
+    InitialPlanningCandidateContextRecord,
+    InitialPlanningContextDraftRecord,
+    InitialPlanningContextEvidenceRecord,
+    InitialPlanningContextObservationRecord,
+    InitialPlanningContextPrerequisiteRecord,
+    InitialPlanningContextReviewRecord,
     LongRangeStrategyRecord,
     ObservationRecord,
     PlannedSessionRecord,
@@ -1438,6 +1447,16 @@ class DomainRepository:
             max_ranked_candidates=record.max_ranked_candidates,
             policy_version=record.policy_version,
         )
+
+    def list_exercise_resolver_policies(self) -> tuple[ExerciseResolverPolicy, ...]:
+        policy_ids = self.session.scalars(
+            select(ExerciseResolverPolicyRecord.id).order_by(
+                ExerciseResolverPolicyRecord.policy_version,
+                ExerciseResolverPolicyRecord.id,
+            )
+        ).all()
+        policies = (self.get_exercise_resolver_policy(policy_id) for policy_id in policy_ids)
+        return tuple(policy for policy in policies if policy is not None)
 
     def get_exercise_resolution(self, resolution_id: UUID) -> ExerciseResolution | None:
         record = self.session.get(ExerciseResolutionRecord, resolution_id)
@@ -3720,6 +3739,16 @@ class DomainRepository:
             policy_version=record.policy_version,
         )
 
+    def list_block_review_policies(self) -> tuple[BlockReviewPolicy, ...]:
+        policy_ids = self.session.scalars(
+            select(BlockReviewPolicyRecord.id).order_by(
+                BlockReviewPolicyRecord.policy_version,
+                BlockReviewPolicyRecord.id,
+            )
+        ).all()
+        policies = (self.get_block_review_policy(policy_id) for policy_id in policy_ids)
+        return tuple(policy for policy in policies if policy is not None)
+
     def add_block_review(self, review: BlockReview) -> None:
         block = self.session.get(BlockPlanRecord, review.block_plan_id)
         if (
@@ -3984,6 +4013,206 @@ class DomainRepository:
         )
         return self._priority_policy_review_from_record(record) if record is not None else None
 
+    def add_initial_planning_context_draft(self, draft: InitialPlanningContextDraft) -> None:
+        if self.get_athlete(draft.athlete_id) is None:
+            raise DomainIntegrityError("initial planning context athlete does not exist")
+        if self.get_priority_policy(draft.priority_policy_id) is None:
+            raise DomainIntegrityError("initial planning context policy does not exist")
+        if self.get_priority_policy_review(draft.priority_policy_review_id) is None:
+            raise DomainIntegrityError("initial planning context policy review does not exist")
+        if self.get_account(draft.authored_by_account_id) is None:
+            raise DomainIntegrityError("initial planning context author account does not exist")
+        if self.get_account_role_assignment(draft.author_authority_assignment_id) is None:
+            raise DomainIntegrityError("initial planning context author assignment does not exist")
+
+        candidate_records = []
+        for position, context in enumerate(draft.candidate_contexts):
+            candidate_id = uuid4()
+            candidate_records.append(
+                InitialPlanningCandidateContextRecord(
+                    id=candidate_id,
+                    draft_id=draft.id,
+                    position=position,
+                    adaptation_id=context.adaptation_id,
+                    competency_floor_id=context.competency_floor_id,
+                    competency_floor_review_id=context.competency_floor_review_id,
+                    capability_estimate_id=context.capability_estimate_id,
+                    general_relevance=context.general_relevance,
+                    goal_relevance=context.goal_relevance,
+                    prerequisite_value=context.prerequisite_value,
+                    expected_trainability=context.expected_trainability,
+                    transfer_value=context.transfer_value,
+                    fatigue_cost=context.fatigue_cost,
+                    time_cost=context.time_cost,
+                    interference_cost=context.interference_cost,
+                    safe_to_train=context.safe_to_train,
+                    introductory_exposure_needed=context.introductory_exposure_needed,
+                    prerequisites_met=context.prerequisites_met,
+                    cultivate_comparative_advantage=(context.cultivate_comparative_advantage),
+                    prerequisite_links=[
+                        InitialPlanningContextPrerequisiteRecord(
+                            candidate_context_id=candidate_id,
+                            adaptation_id=adaptation_id,
+                            position=link_position,
+                        )
+                        for link_position, adaptation_id in enumerate(
+                            context.prerequisite_adaptation_ids
+                        )
+                    ],
+                    observation_links=[
+                        InitialPlanningContextObservationRecord(
+                            candidate_context_id=candidate_id,
+                            observation_id=observation_id,
+                            position=link_position,
+                        )
+                        for link_position, observation_id in enumerate(
+                            context.source_observation_ids
+                        )
+                    ],
+                    evidence_links=[
+                        InitialPlanningContextEvidenceRecord(
+                            candidate_context_id=candidate_id,
+                            evidence_claim_id=evidence_claim_id,
+                            position=link_position,
+                        )
+                        for link_position, evidence_claim_id in enumerate(
+                            context.evidence_claim_ids
+                        )
+                    ],
+                )
+            )
+        self.session.add(
+            InitialPlanningContextDraftRecord(
+                id=draft.id,
+                schema_version=draft.schema_version,
+                created_at=draft.created_at,
+                athlete_id=draft.athlete_id,
+                priority_policy_id=draft.priority_policy_id,
+                priority_policy_review_id=draft.priority_policy_review_id,
+                horizon_months=draft.horizon_months,
+                review_after_days=draft.review_after_days,
+                authored_by_account_id=draft.authored_by_account_id,
+                author_authority_assignment_id=draft.author_authority_assignment_id,
+                authored_at=draft.authored_at,
+                applicability_rationale=draft.applicability_rationale,
+                uncertainty=draft.uncertainty,
+                draft_version=draft.draft_version,
+                candidate_links=candidate_records,
+            )
+        )
+
+    def get_initial_planning_context_draft(
+        self, draft_id: UUID
+    ) -> InitialPlanningContextDraft | None:
+        record = self.session.get(InitialPlanningContextDraftRecord, draft_id)
+        if record is None:
+            return None
+        return InitialPlanningContextDraft(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            athlete_id=record.athlete_id,
+            priority_policy_id=record.priority_policy_id,
+            priority_policy_review_id=record.priority_policy_review_id,
+            candidate_contexts=tuple(
+                InitialPlanningCandidateContext(
+                    adaptation_id=item.adaptation_id,
+                    competency_floor_id=item.competency_floor_id,
+                    competency_floor_review_id=item.competency_floor_review_id,
+                    capability_estimate_id=item.capability_estimate_id,
+                    general_relevance=item.general_relevance,
+                    goal_relevance=item.goal_relevance,
+                    prerequisite_value=item.prerequisite_value,
+                    expected_trainability=item.expected_trainability,
+                    transfer_value=item.transfer_value,
+                    fatigue_cost=item.fatigue_cost,
+                    time_cost=item.time_cost,
+                    interference_cost=item.interference_cost,
+                    safe_to_train=item.safe_to_train,
+                    introductory_exposure_needed=item.introductory_exposure_needed,
+                    prerequisites_met=item.prerequisites_met,
+                    prerequisite_adaptation_ids=tuple(
+                        link.adaptation_id for link in item.prerequisite_links
+                    ),
+                    cultivate_comparative_advantage=(item.cultivate_comparative_advantage),
+                    source_observation_ids=tuple(
+                        link.observation_id for link in item.observation_links
+                    ),
+                    evidence_claim_ids=tuple(
+                        link.evidence_claim_id for link in item.evidence_links
+                    ),
+                )
+                for item in record.candidate_links
+            ),
+            horizon_months=record.horizon_months,
+            review_after_days=record.review_after_days,
+            authored_by_account_id=record.authored_by_account_id,
+            author_authority_assignment_id=record.author_authority_assignment_id,
+            authored_at=record.authored_at,
+            applicability_rationale=record.applicability_rationale,
+            uncertainty=record.uncertainty,
+            draft_version=record.draft_version,
+        )
+
+    def add_initial_planning_context_review(self, review: InitialPlanningContextReview) -> None:
+        if self.get_initial_planning_context_draft(review.draft_id) is None:
+            raise DomainIntegrityError("initial planning context draft does not exist")
+        if self.get_initial_planning_context_review_by_draft(review.draft_id) is not None:
+            raise DomainIntegrityError("initial planning context draft already has a review")
+        if self.get_account(review.reviewed_by_account_id) is None:
+            raise DomainIntegrityError("initial planning context reviewer account does not exist")
+        if self.get_account_role_assignment(review.review_authority_assignment_id) is None:
+            raise DomainIntegrityError("initial planning context review assignment does not exist")
+        self.session.add(
+            InitialPlanningContextReviewRecord(
+                id=review.id,
+                schema_version=review.schema_version,
+                created_at=review.created_at,
+                draft_id=review.draft_id,
+                decision=review.decision.value,
+                reviewed_by_account_id=review.reviewed_by_account_id,
+                review_authority_assignment_id=review.review_authority_assignment_id,
+                reviewed_at=review.reviewed_at,
+                applicability_rationale=review.applicability_rationale,
+                uncertainty=review.uncertainty,
+                review_version=review.review_version,
+            )
+        )
+
+    def get_initial_planning_context_review(
+        self, review_id: UUID
+    ) -> InitialPlanningContextReview | None:
+        record = self.session.get(InitialPlanningContextReviewRecord, review_id)
+        return self._initial_planning_context_review_from_record(record) if record else None
+
+    def get_initial_planning_context_review_by_draft(
+        self, draft_id: UUID
+    ) -> InitialPlanningContextReview | None:
+        record = self.session.scalar(
+            select(InitialPlanningContextReviewRecord).where(
+                InitialPlanningContextReviewRecord.draft_id == draft_id
+            )
+        )
+        return self._initial_planning_context_review_from_record(record) if record else None
+
+    @staticmethod
+    def _initial_planning_context_review_from_record(
+        record: InitialPlanningContextReviewRecord,
+    ) -> InitialPlanningContextReview:
+        return InitialPlanningContextReview(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            draft_id=record.draft_id,
+            decision=record.decision,
+            reviewed_by_account_id=record.reviewed_by_account_id,
+            review_authority_assignment_id=record.review_authority_assignment_id,
+            reviewed_at=record.reviewed_at,
+            applicability_rationale=record.applicability_rationale,
+            uncertainty=record.uncertainty,
+            review_version=record.review_version,
+        )
+
     @staticmethod
     def _priority_policy_review_from_record(
         record: PriorityPolicyReviewRecord,
@@ -4172,6 +4401,20 @@ class DomainRepository:
         record = self.session.get(AssessmentDefinitionReviewRecord, review_id)
         return self._assessment_review_from_record(record) if record is not None else None
 
+    def list_assessment_definition_reviews(
+        self, definition_id: UUID
+    ) -> tuple[AssessmentDefinitionReview, ...]:
+        records = self.session.scalars(
+            select(AssessmentDefinitionReviewRecord)
+            .where(AssessmentDefinitionReviewRecord.assessment_definition_id == definition_id)
+            .order_by(
+                AssessmentDefinitionReviewRecord.sequence_number,
+                AssessmentDefinitionReviewRecord.reviewed_at,
+                AssessmentDefinitionReviewRecord.id,
+            )
+        ).all()
+        return tuple(self._assessment_review_from_record(record) for record in records)
+
     def get_current_assessment_definition_review(
         self, definition_id: UUID
     ) -> AssessmentDefinitionReview | None:
@@ -4350,6 +4593,23 @@ class DomainRepository:
         )
         return self._capability_estimation_policy_from_record(record) if record else None
 
+    def list_capability_estimation_policies(
+        self, assessment_definition_id: UUID
+    ) -> tuple[CapabilityEstimationPolicy, ...]:
+        records = self.session.scalars(
+            select(CapabilityEstimationPolicyRecord)
+            .where(
+                CapabilityEstimationPolicyRecord.assessment_definition_id
+                == assessment_definition_id
+            )
+            .order_by(
+                CapabilityEstimationPolicyRecord.sequence_number,
+                CapabilityEstimationPolicyRecord.reviewed_at,
+                CapabilityEstimationPolicyRecord.id,
+            )
+        ).all()
+        return tuple(self._capability_estimation_policy_from_record(record) for record in records)
+
     @staticmethod
     def _capability_estimation_policy_from_record(
         record: CapabilityEstimationPolicyRecord,
@@ -4460,6 +4720,18 @@ class DomainRepository:
             blocked_by_injury_flags=tuple(record.blocked_by_injury_flags),
             blocked_by_health_screening_flags=tuple(record.blocked_by_health_screening_flags),
         )
+
+    def list_assessment_definitions(self) -> tuple[AssessmentDefinition, ...]:
+        definition_ids = self.session.scalars(
+            select(AssessmentDefinitionRecord.id).order_by(
+                AssessmentDefinitionRecord.domain,
+                AssessmentDefinitionRecord.slug,
+                AssessmentDefinitionRecord.protocol_version,
+                AssessmentDefinitionRecord.id,
+            )
+        ).all()
+        definitions = (self.get_assessment_definition(item) for item in definition_ids)
+        return tuple(item for item in definitions if item is not None)
 
     def get_assessment_selection(self, selection_id: UUID) -> AssessmentSelection | None:
         record = self.session.get(AssessmentSelectionRecord, selection_id)
@@ -5079,6 +5351,16 @@ class DomainRepository:
             measurement_methods=tuple(record.measurement_methods),
         )
 
+    def list_exercises(self) -> tuple[Exercise, ...]:
+        exercise_ids = self.session.scalars(
+            select(ExerciseRecord.id).order_by(
+                ExerciseRecord.name,
+                ExerciseRecord.id,
+            )
+        ).all()
+        exercises = (self.get_exercise(exercise_id) for exercise_id in exercise_ids)
+        return tuple(exercise for exercise in exercises if exercise is not None)
+
     def get_adaptation(self, adaptation_id: UUID) -> Adaptation | None:
         record = self.session.get(AdaptationRecord, adaptation_id)
         if record is None:
@@ -5117,6 +5399,17 @@ class DomainRepository:
             ),
         )
 
+    def list_adaptations(self) -> tuple[Adaptation, ...]:
+        adaptation_ids = self.session.scalars(
+            select(AdaptationRecord.id).order_by(
+                AdaptationRecord.domain,
+                AdaptationRecord.name,
+                AdaptationRecord.id,
+            )
+        ).all()
+        adaptations = (self.get_adaptation(adaptation_id) for adaptation_id in adaptation_ids)
+        return tuple(adaptation for adaptation in adaptations if adaptation is not None)
+
     def equipment_history(self, environment_id: UUID) -> list[EquipmentAvailabilityRecord]:
         statement = (
             select(EquipmentAvailabilityRecord)
@@ -5127,6 +5420,25 @@ class DomainRepository:
             )
         )
         return list(self.session.scalars(statement))
+
+    def get_equipment_availability(self, availability_id: UUID) -> EquipmentAvailability | None:
+        record = self.session.get(EquipmentAvailabilityRecord, availability_id)
+        if record is None:
+            return None
+        return EquipmentAvailability(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            environment_id=record.environment_id,
+            equipment_id=record.equipment_id,
+            source_observation_id=record.source_observation_id,
+            is_available=record.is_available,
+            effective_from=record.effective_from,
+            effective_until=record.effective_until,
+            capabilities=record.capabilities,
+            load_limits=record.load_limits,
+            reason=record.reason,
+        )
 
     def list_equipment_availability(
         self, environment_id: UUID

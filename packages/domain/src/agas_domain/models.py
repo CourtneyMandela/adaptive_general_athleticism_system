@@ -981,6 +981,59 @@ class ReplanningCandidateContext(DomainModel):
         return self
 
 
+class InitialPlanningCandidateContext(ReplanningCandidateContext):
+    """Candidate inputs pinned to an exact competency-floor governance review."""
+
+    competency_floor_review_id: UUID
+
+
+class InitialPlanningContextDraft(VersionedRecord):
+    athlete_id: UUID
+    priority_policy_id: UUID
+    priority_policy_review_id: UUID
+    candidate_contexts: Annotated[tuple[InitialPlanningCandidateContext, ...], Field(min_length=1)]
+    horizon_months: int = Field(ge=6, le=24)
+    review_after_days: int = Field(ge=1)
+    authored_by_account_id: UUID
+    author_authority_assignment_id: UUID
+    authored_at: datetime
+    applicability_rationale: NonEmptyText
+    uncertainty: NonEmptyText
+    draft_version: NonEmptyText
+
+    @field_validator("authored_at")
+    @classmethod
+    def require_aware_authored_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("authored_at must include a timezone")
+        return value
+
+    @model_validator(mode="after")
+    def require_one_context_per_adaptation(self) -> InitialPlanningContextDraft:
+        adaptation_ids = tuple(item.adaptation_id for item in self.candidate_contexts)
+        if len(set(adaptation_ids)) != len(adaptation_ids):
+            raise ValueError("candidate_contexts must contain each adaptation once")
+        return self
+
+
+class InitialPlanningContextReview(VersionedRecord):
+    draft_id: UUID
+    decision: AssessmentReviewDecision
+    reviewed_by_account_id: UUID
+    review_authority_assignment_id: UUID
+    reviewed_at: datetime
+    applicability_rationale: NonEmptyText
+    uncertainty: NonEmptyText
+    review_version: NonEmptyText
+
+    @field_validator("reviewed_at")
+    @classmethod
+    def require_aware_reviewed_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("reviewed_at must include a timezone")
+        return value
+
+
 class AdaptationPriority(VersionedRecord):
     adaptation_id: UUID
     capability_need_id: UUID

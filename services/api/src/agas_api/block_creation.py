@@ -4,7 +4,12 @@ from datetime import date, datetime
 from typing import Annotated
 from uuid import UUID
 
-from agas_domain import BlockPlan, DecisionRecord
+from agas_domain import (
+    AccountRole,
+    AccountRoleStatus,
+    BlockPlan,
+    DecisionRecord,
+)
 from agas_domain.persistence.repository import DomainIntegrityError, DomainRepository
 from agas_planner import BlockPlanner, BlockPlanningError
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -27,6 +32,7 @@ class CreateBlockPlanCommand(BaseModel):
     constraints: tuple[NonEmptyText, ...] = ()
     generated_at: datetime
     reviewed_by: NonEmptyText
+    review_authority_assignment_id: UUID | None = None
     applicability_rationale: NonEmptyText
     uncertainty: NonEmptyText
 
@@ -43,6 +49,23 @@ class CreateBlockPlanCommand(BaseModel):
         normalized = value.strip()
         if not normalized:
             raise ValueError("operator review metadata must not be blank")
+        return normalized
+
+    @field_validator("resource_demand_ids")
+    @classmethod
+    def reject_duplicate_demands(cls, value: tuple[UUID, ...]) -> tuple[UUID, ...]:
+        if len(set(value)) != len(value):
+            raise ValueError("resource_demand_ids must not contain duplicates")
+        return value
+
+    @field_validator("constraints")
+    @classmethod
+    def normalize_constraints(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        normalized = tuple(item.strip() for item in value)
+        if any(not item for item in normalized):
+            raise ValueError("constraints must not contain blank values")
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("constraints must not contain duplicates")
         return normalized
 
 
@@ -102,6 +125,7 @@ class PersistedBlockCreationService:
             ) from error
 
     def _build_block(self, strategy_id: UUID, command: CreateBlockPlanCommand) -> BlockPlan:
+        self._validate_review_authority(command)
         strategy = self.repository.get_long_range_strategy(strategy_id)
         if strategy is None:
             raise BlockCreationNotFoundError("long-range strategy does not exist")
@@ -147,6 +171,34 @@ class PersistedBlockCreationService:
             generated_at=command.generated_at,
         )
 
+    def _validate_review_authority(self, command: CreateBlockPlanCommand) -> None:
+        assignment_id = command.review_authority_assignment_id
+        if assignment_id is None:
+            return
+        assignment = self.repository.get_account_role_assignment(assignment_id)
+        if assignment is None:
+            raise BlockCreationValidationError("review authority assignment does not exist")
+        current = self.repository.get_current_account_role_assignment(
+            assignment.account_id, AccountRole.PLANNING_REVIEWER
+        )
+        if (
+            assignment.role is not AccountRole.PLANNING_REVIEWER
+            or assignment.status is not AccountRoleStatus.ACTIVE
+            or current is None
+            or current.id != assignment.id
+        ):
+            raise BlockCreationValidationError(
+                "review authority assignment is not a current planning-reviewer grant"
+            )
+        if command.reviewed_by != f"account:{assignment.account_id}":
+            raise BlockCreationValidationError(
+                "reviewed_by does not match the review authority account"
+            )
+        if command.generated_at < assignment.assigned_at:
+            raise BlockCreationValidationError(
+                "block creation cannot predate the reviewer role assignment"
+            )
+
     @staticmethod
     def _decision_record(block: BlockPlan, command: CreateBlockPlanCommand) -> DecisionRecord:
         values = [
@@ -163,6 +215,8 @@ class PersistedBlockCreationService:
             *(f"evidence_claim:{item}" for item in block.evidence_claim_ids),
             f"block_plan:{block.id}",
         ]
+        if command.review_authority_assignment_id is not None:
+            values.append(f"account_role_assignment:{command.review_authority_assignment_id}")
         return DecisionRecord(
             decision=f"Create block plan {block.id} for strategy {block.long_range_strategy_id}.",
             reason=f"Reviewed by {command.reviewed_by}. {command.applicability_rationale}",

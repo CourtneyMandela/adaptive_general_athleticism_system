@@ -8,8 +8,25 @@ current environment without changing the athlete, strategy, block, adaptation, o
 Existing immutable session, execution, response, and block-review behavior remains in place;
 reviewed capability estimates can now drive a lineage-linked replacement strategy. Automatic
 interpretation of arbitrary raw results, candidate-context inference, workout generation, and
-next-block generation remain deferred. Governed assessment performances can create a bounded
-protocol-specific estimate only through a current reviewed estimation policy.
+production training-rule inference remain deferred. Governed assessment performances can create a
+bounded protocol-specific estimate only through a current reviewed estimation policy.
+
+`tests/integration/test_required_vertical_slice.py` composes these boundaries as one blueprint
+acceptance contract. It records direct intake and assessment observations, derives estimates and
+needs, plans and executes all sixteen occurrences of a four-week block, preserves an explicit
+hotel strength-fidelity limitation, applies deterministic safety and progression, reassesses,
+reviews response, replans, and creates a successor block whose allocation states depend on the
+follow-up estimates. Its thresholds, doses, and progression increment are synthetic test inputs,
+not application defaults or evidence-backed production rules.
+
+`python -m agas_api.demo bootstrap` provides a narrower development-only entry point. It persists
+the repository-owned synthetic travel profile, its provenance-bearing environment report,
+ownership, and separate reviewer authority with deterministic identifiers, then stops at the
+derived `capability_estimate_required` boundary. It cannot run under production or external-auth
+configuration and does not promote the vertical-slice test's synthetic thresholds, policies, or
+doses into application behavior. The browser smoke suite verifies the resulting PWA deep-link and
+reviewer-workbench navigation contracts; backend integration tests verify real persistence and
+authorization separately.
 
 ## Shape
 
@@ -161,16 +178,19 @@ strategy, but only the exact current approved reviews may authorize a new initia
 `PersistedInitialPlanningService` is the transactional boundary for the first strategy. The command
 pins the exact current priority-policy review, and each explicit candidate context names one
 persisted estimate, competency floor, floor review, and adaptation. The service verifies athlete
-ownership, approval currency, review timing, and provenance, creates one need per unique
+lineage, approval currency, review timing, and provenance, creates one need per unique
 floor-estimate pair,
 adds every estimate source observation and floor evidence claim to the candidate, and delegates
 only deterministic scoring and state assignment to the planner. It appends all needs and one root
 strategy together with a `DecisionRecord` carrying reviewer, rationale, uncertainty, and typed
 input and review identifiers. A repository guard and partial unique database index allow only one strategy
 whose `supersedes_strategy_id` is null per athlete; later changes must use review-linked replanning.
-Review histories and the service are invoked by local operator CLIs. They are deliberately absent
-from athlete-authenticated HTTP writes because hiding expert context fields in the PWA would not
-authorize their use.
+Review histories remain local administrative inputs. The service is available through both a local
+operator CLI and a role-protected operator HTTP endpoint. The HTTP request cannot supply reviewer
+identity: the server binds the authenticated account and exact current `planning_reviewer`
+assignment, then the service validates and records that authority. Initial planning remains absent
+from athlete-authenticated writes because athlete ownership does not authorize expert scoring or
+scientific-applicability decisions.
 
 The strategy is not a workout. It contains no exercise, dose, weekly schedule, or session. Safety
 restriction, introductory exposure, missing prerequisites, unresolved information, competency
@@ -403,8 +423,42 @@ target minutes plus frequency remain explicit versioned inputs. An `INFEASIBLE` 
 persisted and makes downstream block planning infeasible. A `DEFER` priority instead creates a
 zero-resource demand with no stimulus or resolution. This makes absence of training intentional
 and traceable rather than ambiguous. Active and deferred commands require reviewer, applicability,
-uncertainty, and preparation-time metadata. The application boundary is exposed only through the
-local planning-authoring CLI until administrative identities and roles exist.
+uncertainty, and preparation-time metadata. The application boundary is available through the
+local planning-authoring CLI and a role-protected operator HTTP endpoint. The HTTP request cannot
+supply reviewer identity or authority; the server binds the authenticated account and exact current
+`planning_reviewer` assignment, and the service validates and records that authority.
+
+A companion role-protected preparation projection composes the exact persisted strategy,
+priorities, adaptations, demand history, strategy-linked observations and evidence, current
+environment snapshots, resolver policies, and structured exercise catalog. It is read-only and
+does not select a stimulus, environment, candidate set, dose, or demand history. Catalog inclusion
+is not represented as scientific approval or environmental feasibility.
+
+### Authenticated block preparation
+
+`BlockPreparationProjector` composes one strategy's priorities, complete immutable demand history,
+allocation policies, existing blocks, and all observation/evidence records referenced by the
+strategy and demands. It does not select a historical demand, mark one current, approve a policy,
+calculate a budget, choose dates or duration, or author constraints.
+
+The role-protected block POST binds the authenticated account and exact active
+`planning_reviewer` assignment to an otherwise explicit block command. The application service
+revalidates that assignment and atomically appends the deterministic full, partial, or infeasible
+block with its decision audit. Exactly one demand per strategy priority remains mandatory. The
+boundary creates no prescriptions, session containers, availability, weekly schedule, or workout.
+
+### Authenticated first-week preparation
+
+`FirstWeekPreparationProjector` composes one block's exact allocation-to-demand-to-stimulus-to-
+resolution-to-exercise chains, athlete environments, scheduling policies with their current
+reviews, existing first-week plans, and the cited observation/evidence records. It does not choose
+an intensity, dose, progression reference, session grouping, availability window, or policy.
+
+The role-protected first-week POST binds the authenticated account and current reviewer assignment
+to a complete explicit command. `PersistedWeeklyPlanService` revalidates that authority, requires
+the exact current approved scheduling-policy review, runs the deterministic scheduler, and appends
+prescriptions, session templates, dated availability, the weekly plan, and decision audit in one
+transaction. Local reviewed CLI commands remain supported without account-role lineage.
 
 ### Operator-reviewed exercise re-resolution
 
@@ -564,7 +618,21 @@ appends the response/review chain and a reviewer-attributed `DecisionRecord` in 
 The audit pins all interpretations, delivered records, estimates, observations, evidence, policy,
 and created identities. One block has at most one completed review in V1. The review remains
 descriptive and the existing replanning boundary is the only component that may derive a successor
-strategy. Review and replanning are local operator commands rather than athlete HTTP writes.
+strategy.
+
+`BlockReviewPreparationProjector` is the read boundary before that write. It returns the exact
+completed block history, eligible baseline and follow-up estimates, available review policies, and
+the cited observations/evidence, with explicit incomplete-history issues. It never assigns
+prescriptions to responses or invents meaningful-change thresholds. The authenticated review POST
+binds the current `planning_reviewer` account and append-only role assignment into the command and
+decision evidence; reviewer identity is not accepted from the client.
+
+`ReplanningPreparationProjector` composes the immutable review, responses, prior strategy,
+adaptations, allowed estimates, and compatible floors. An actively trained adaptation can use only
+the follow-up estimate named by its reviewed response. It exposes choices but does not author
+relevance, trainability, transfer, or recovery-cost scores. The authenticated replanning POST uses
+the same reviewer-identity boundary and appends, rather than replaces, the successor strategy.
+The local post-block CLI remains an administrative fallback; neither write is athlete-accessible.
 
 ### Current-week read projection
 
@@ -634,16 +702,19 @@ write endpoints expose profile/environment onboarding and daily execution feedba
 accepts only non-sensitive direct reports and validates equipment identities
 against the global catalog, and atomically appends the athlete, observation, environments, and
 equipment-availability events. It creates no estimate, safety assignment, assessment, or plan.
-An account and athlete ownership are appended in the same transaction. Initial planning remains an
-operator-only application boundary from reviewed estimates, floors, adaptations, contexts, and
-policy to needs, the sole root strategy, and its decision audit. Completed-block review and
-review-linked replanning remain operator-only application boundaries invoked through the
-post-block administration CLI. They commit response/review history or successor needs/strategy
-history with immutable decision audits. Strategy-priority resource-demand preparation and
-strategy-level block creation remain operator-only application services invoked by the
-planning-authoring CLI; existing-stimulus exercise re-resolution uses the same operator-only
-transport and appends a new resolution without mutating earlier decisions. Each commits its domain
-result with an immutable review audit. First-week prescription, session-container, availability,
+An account and athlete ownership are appended in the same transaction. Initial planning is a
+role-protected operator application boundary from reviewed estimates, floors, adaptations,
+contexts, and policy to needs, the sole root strategy, and its decision audit. It binds the exact
+current reviewer assignment server-side and rejects client-authored reviewer identity.
+Completed-block review and review-linked replanning use role-protected preparation and write
+endpoints with the same binding. They commit response/review history or successor needs/strategy
+history with immutable decision audits; the post-block CLI is retained for local administration.
+Strategy-priority resource-demand preparation and
+strategy-level block creation are exposed through role-protected operator endpoints and the
+planning-authoring CLI. Existing-stimulus exercise
+re-resolution uses the same operator-only transport and appends a new resolution without mutating
+earlier decisions. Each commits its domain result with an immutable review audit. First-week
+prescription, session-container, availability,
 and scheduling creation likewise remains an operator-only service and CLI rather than an athlete
 route. Weekly-plan and planned-session IDs anchor safety evaluation and actual-performance recording
 through immutable observations.
@@ -666,7 +737,10 @@ confirmed windows and unresolved prescription, resolution, stimulus, adaptation,
 environment identifiers. It creates no mutable task row. Separate role-protected commands append
 an exercise re-resolution and a complete environment prescription revision through the existing
 deterministic services; neither command performs candidate selection, substitution inference, or
-dose generation.
+dose generation. A third role-protected operator command creates the initial strategy from exact
+reviewed authority versions and explicit candidate scores. A fourth role-protected projection and
+command expose exact strategy-to-demand inputs and append one reviewed demand. Neither boundary
+infers candidate scores, stimuli, candidate exercises, doses, blocks, or sessions.
 
 Every athlete-scoped route depends on a replaceable authenticated-principal boundary. The
 authorizer resolves strategy, block, review, weekly-plan, and execution identifiers back to their
@@ -676,13 +750,31 @@ as an absent aggregate. The equipment catalog is public because it has no athlet
 Only a development bearer verifier exists today. `dev.<subject>` maps to the configured development
 issuer, onboarding creates the account and owner atomically, and a local operator CLI handles
 pre-existing fixtures and append-only reviewer role grants/revocations. An authenticated account
-must have a current active `planning_reviewer` assignment to read or complete operator environment
-reviews; athlete ownership alone is insufficient. Operator writes bind the authenticated account
-and exact role assignment server-side and reject client-supplied reviewer identity. The role is an
+must have a current active `planning_reviewer` assignment to create an initial strategy, prepare a
+resource demand, or read and complete operator environment reviews; athlete ownership alone is
+insufficient. Operator writes bind the authenticated account and exact role assignment server-side
+and reject client-supplied reviewer identity. The role is an
 application permission, not evidence of a scientific or professional credential. Production
 configuration rejects the development verifier;
 external mode remains unavailable until a cryptographically verifying provider adapter is
 implemented.
+
+Assessment protocol governance uses a distinct append-only `assessment_reviewer` assignment. The
+role-protected `GET /v1/operator/assessment-governance` projection evaluates definitions at an
+explicit instant and returns all protocol-review and capability-estimation-policy history visible
+at that instant, current records, evidence claims, and blockers. A definition is operational for
+the current self-administered PWA chain only when its current review is approved, includes a
+versioned measurement schema, permits self-administration, and has a current approved estimation
+policy bound to that exact review. This does not replace the separate athlete-specific eligibility
+gate. The role is an application permission, not evidence of scientific qualification.
+
+The provisional local curation boundary accepts a versioned `AssessmentGovernanceBundle` containing
+one exact definition, optional review, and optional estimation policy. Stable caller-supplied record
+IDs make retries idempotent; existing IDs must match the complete immutable model. The repository
+validates evidence references and linear review/policy history, all new records commit together, and
+the governance projector reports the resulting point-in-time blockers. The command is disabled in
+production and external-authentication mode and is not exposed over HTTP. It neither ingests evidence
+claims nor verifies reviewer credentials.
 
 ## Web
 
@@ -692,6 +784,85 @@ choices, and supports multiple environments without coupling athlete identity to
 successful submission opens the authoritative current-week projection; the honest initial state is
 normally an empty week. The form does not collect sensitive health or injury data, derive capability
 estimates, assign safety policy, conduct assessment, or generate training.
+
+A separate `/review` route is the authenticated initial-planning console. Its primary workflow
+loads eligible persisted inputs, requires the reviewer to enter every candidate component value,
+and saves an immutable `InitialPlanningContextDraft`. A distinct action records one approved,
+needs-revision, or rejected `InitialPlanningContextReview`; any changed value requires a new draft.
+Only the approving account with the exact still-active assignment can create the strategy from the
+approved artifact. The resulting decision evidence names both artifact IDs. The route retains the
+externally prepared JSON path as a transitional fallback and is not part of athlete self-service.
+
+Before parsing a document, the console can call the role-protected initial-planning preparation
+projection. This read model composes each current estimate with its actual source observations,
+compatible exact-current approved floor reviews, and domain-compatible adaptations. It separately
+returns exact-current approved priority-policy reviews and all evidence claims referenced by the
+offered authorities and adaptations. Stale estimates are visible but ineligible; withdrawn or
+future authorities fail closed; an existing root strategy blocks initial creation. The projection
+does not emit any candidate scoring field and creates no durable review snapshot or planning state.
+The strategy creation boundary independently rejects an estimate that is stale at the explicit
+generation time, so bypassing or delaying the console cannot make stale derived state eligible.
+
+Candidate-context tables normalize the eight bounded score/cost components, safety and sequencing
+flags, exact authority IDs, and ordered observation/evidence/prerequisite links. Drafts and reviews
+are append-only. Eligibility is checked at draft authoring, approved review, and final strategy
+creation. Same-account authoring and approval is provisionally allowed, but actor and assignment
+fields remain separate for future separation-of-duty policy.
+
+The `/review/resource-demands` route continues one created strategy into an explicit
+priority-by-priority demand workflow. It displays every persisted priority and its immutable demand
+history, then requires the reviewer to select the environment snapshot, resolver authority,
+stimulus constraints, exercise candidate set, observation and evidence lineage, and weekly resource
+amounts. No scientific field or exercise is preselected. Ontology relationships are descriptive
+context, not a recommendation. The receipt exposes full, partial, infeasible, or deferred resolution
+and the exact decision audit; block, week, session, and workout creation remain separate downstream
+boundaries.
+
+The `/review/blocks` route continues complete demand history into explicit block-context review.
+It requires one selected demand for every priority, one allocation policy, a weekly budget, start
+date, four-to-six-week duration, constraints, applicability rationale, uncertainty, and confirmation.
+Every material control begins blank. Selected minimums and targets are summarized descriptively,
+not used to infer a budget. The resulting allocation receipt preserves shortfalls and infeasibility
+and stops before Week 1 authoring.
+
+The `/review/weeks` route loads the exact first-week preparation projection for a block. It shows
+every active allocation, selected exercise, stimulus/resolution rationale, environment count, and
+currently approved policy review without preselecting any of them. Its authoring workflow represents
+the full current discriminated intensity model, dose shape, rest, progression and substitution
+references, per-record provenance, arbitrary session composition and order, dated environment
+windows, and exact policy review. All material controls begin blank; browser validation is advisory
+and the authenticated backend remains authoritative.
+
+The `/review/queue` workbench derives each athlete's next reviewer-owned pre-block boundary from the
+current leaf of immutable strategy history. It exposes at most one initial-planning,
+resource-demand, block-creation, or first-week item per athlete and keeps missing prerequisites
+visible as blockers. Deep links only navigate; each destination reloads its own authoritative
+preparation projection. The queue stores no mutable task state and performs no training inference.
+
+The `/review/assessments` workbench is a separate read-only scientific-governance view. It exposes
+unreviewed, needs-revision, rejected, schema-incomplete, non-self-administered, missing-policy, and
+policy/review-mismatch states together with immutable histories and source identifiers. It cannot
+write a review or policy, infer scientific applicability, or authorize an athlete assessment.
+
+The `/review/post-block` route composes the two authenticated closed-loop boundaries. A completed
+block is discovered through a role-protected, read-only queue derived from due block, review, and
+successor-strategy history. The queue includes both ready and blocked work, transitions reviewed
+blocks to the replanning stage, and omits a block only after a successor strategy exists. It stores
+no mutable task state. Manual IDs remain available for deep links and recovery.
+
+Opening a block loads immutable weekly/session history, execution, adherence, post-session safety,
+eligible estimate, policy, observation, and evidence records. The form requires an exact
+non-overlapping prescription partition and explicit response interpretation; it does not suggest
+an adaptation grouping, comparison direction, or meaningful-change threshold. A successful receipt
+shows the server-derived response arithmetic and block outcome before replanning can begin.
+
+An existing or newly created block-review ID then loads prior priorities, reviewed responses,
+eligible estimates, compatible competency floors, observations, and evidence. One blank candidate
+editor is structurally created per prior adaptation, but no estimate, floor, score, safety flag,
+prerequisite, provenance record, or review interval is selected. The server revalidates all values,
+rebuilds capability needs, and appends a lineage-linked successor strategy. Future-dated estimates
+are excluded from block review and future or stale estimates are excluded from replanning
+preparation so a displayed option can pass the same temporal contract enforced by the write service.
 
 The PWA also has a provenance-first athletic dashboard and a connected current-week screen for an
 existing athlete. The dashboard shows the latest derived records per exact measurement series,
@@ -777,6 +948,7 @@ intake or production use.
 ## Configuration
 
 Configuration is environment-based and prefixed with `AGAS_`. PostgreSQL is the local/default
-authoritative store. The PWA's `NEXT_PUBLIC_AGAS_DEVELOPMENT_TOKEN` is a public local identity
-selector, not a secret. Production provider secrets and tokens must never use a `NEXT_PUBLIC_`
-variable and are not committed.
+authoritative store. The PWA's `NEXT_PUBLIC_AGAS_DEVELOPMENT_TOKEN`, provisional
+`NEXT_PUBLIC_AGAS_REVIEWER_TOKEN`, and `NEXT_PUBLIC_AGAS_ASSESSMENT_REVIEWER_TOKEN` are public local
+identity selectors, not secrets. Production provider secrets and tokens must never use a
+`NEXT_PUBLIC_` variable and are not committed.

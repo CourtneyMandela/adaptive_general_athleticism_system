@@ -1,26 +1,39 @@
 import json
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
 from agas_api.database import database_session_dependency
+from agas_api.identity import AuthorizedRole, authenticated_principal_dependency
+from agas_api.identity_admin import set_account_role
 from agas_api.initial_planning import (
     CreateInitialStrategyCommand,
-    InitialPlanningCandidateContext,
     InitialPlanningConflictError,
     InitialPlanningNotFoundError,
     InitialPlanningValidationError,
     PersistedInitialPlanningService,
 )
 from agas_api.initial_planning_admin import load_initial_planning_command
+from agas_api.initial_planning_context import (
+    CreateInitialStrategyFromContextReviewRequest,
+    InitialPlanningContextValidationError,
+    OperatorInitialPlanningContextDraftRequest,
+    OperatorInitialPlanningContextReviewRequest,
+    PersistedInitialPlanningContextService,
+)
+from agas_api.initial_planning_preparation import InitialPlanningPreparationProjector
 from agas_api.main import app
+from agas_api.operator_planning_queue import PlanningReviewQueueProjector
 from agas_api.planning_governance_admin import (
     record_competency_floor_review,
     record_priority_policy_review,
 )
 from agas_api.planning_status import get_planning_status_projection
 from agas_domain import (
+    AccountRole,
+    AccountRoleStatus,
     Adaptation,
     Applicability,
     AssessmentReviewDecision,
@@ -35,6 +48,7 @@ from agas_domain import (
     EvidenceClaim,
     EvidenceSourceIdentifier,
     EvidenceStrength,
+    InitialPlanningCandidateContext,
     Observation,
     ObservationSource,
     PriorityPolicy,
@@ -46,6 +60,8 @@ from agas_domain.persistence.models import (
     CompetencyFloorReviewRecord,
     DecisionRecordRecord,
     ImmutableHistoricalRecordError,
+    InitialPlanningContextDraftRecord,
+    InitialPlanningContextReviewRecord,
     LongRangeStrategyRecord,
 )
 from agas_domain.persistence.repository import DomainRepository
@@ -300,6 +316,344 @@ def test_operator_initial_planning_persists_need_strategy_and_decision_once(
     assert restored.source_capability_estimate_ids == (estimate.id,)
 
 
+def test_authenticated_planning_reviewer_creates_initial_strategy_with_exact_authority(
+    session: Session,
+) -> None:
+    athlete, observation, estimate, floor, adaptation, policy, floor_review, policy_review = (
+        _persist_inputs(session)
+    )
+    reviewer, assignment, _, _ = set_account_role(
+        session,
+        issuer="urn:agas:development",
+        subject="initial-planning-reviewer",
+        role=AccountRole.PLANNING_REVIEWER,
+        status=AccountRoleStatus.ACTIVE,
+        assigned_at=NOW - timedelta(minutes=10),
+        rationale="Authorize the initial-planning integration fixture.",
+    )
+    command = _command(
+        observation, estimate, floor, adaptation, policy, floor_review, policy_review
+    )
+    request_body = command.model_dump(
+        mode="json",
+        exclude={
+            "reviewed_by",
+            "review_authority_assignment_id",
+            "candidate_context_draft_id",
+            "candidate_context_review_id",
+        },
+    )
+
+    def override_session() -> Iterator[Session]:
+        yield session
+
+    app.dependency_overrides[database_session_dependency] = override_session
+    app.dependency_overrides.pop(authenticated_principal_dependency, None)
+    client = TestClient(app)
+    headers = {"Authorization": "Bearer dev.initial-planning-reviewer"}
+    try:
+        spoofed = client.post(
+            f"/v1/operator/athletes/{athlete.id}/initial-strategies",
+            json={**request_body, "reviewed_by": "forged-reviewer"},
+            headers=headers,
+        )
+        predating = client.post(
+            f"/v1/operator/athletes/{athlete.id}/initial-strategies",
+            json={
+                **request_body,
+                "generated_at": (NOW - timedelta(minutes=15)).isoformat(),
+            },
+            headers=headers,
+        )
+        created = client.post(
+            f"/v1/operator/athletes/{athlete.id}/initial-strategies",
+            json=request_body,
+            headers=headers,
+        )
+        duplicate = client.post(
+            f"/v1/operator/athletes/{athlete.id}/initial-strategies",
+            json=request_body,
+            headers=headers,
+        )
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert spoofed.status_code == 422
+    assert predating.status_code == 422
+    assert predating.json() == {
+        "detail": "initial strategy cannot predate the reviewer role assignment"
+    }
+    assert created.status_code == 201
+    assert duplicate.status_code == 409
+    payload = created.json()
+    assert f"Reviewed by account:{reviewer.id}." in payload["decision_record"]["reason"]
+    assert f"account_role_assignment:{assignment.id}" in payload["decision_record"]["evidence"]
+    assert session.scalar(select(func.count()).select_from(CapabilityNeedRecord)) == 1
+    assert session.scalar(select(func.count()).select_from(LongRangeStrategyRecord)) == 1
+    assert session.scalar(select(func.count()).select_from(DecisionRecordRecord)) == 1
+    assert DomainRepository(session).get_observation(observation.id) == observation
+    assert DomainRepository(session).get_capability_estimate(estimate.id) == estimate
+
+
+def test_reviewer_authors_approves_and_creates_strategy_from_exact_context_artifact(
+    session: Session,
+) -> None:
+    athlete, observation, estimate, floor, adaptation, policy, floor_review, policy_review = (
+        _persist_inputs(session)
+    )
+    reviewer, assignment, _, _ = set_account_role(
+        session,
+        issuer="urn:agas:development",
+        subject="context-workflow-reviewer",
+        role=AccountRole.PLANNING_REVIEWER,
+        status=AccountRoleStatus.ACTIVE,
+        assigned_at=NOW - timedelta(minutes=10),
+        rationale="Authorize the governed context workflow fixture.",
+    )
+    command = _command(
+        observation, estimate, floor, adaptation, policy, floor_review, policy_review
+    )
+    draft_body = {
+        "priority_policy_id": str(policy.id),
+        "priority_policy_review_id": str(policy_review.id),
+        "candidate_contexts": [item.model_dump(mode="json") for item in command.candidate_contexts],
+        "horizon_months": command.horizon_months,
+        "review_after_days": command.review_after_days,
+        "authored_at": NOW.isoformat(),
+        "applicability_rationale": "Explicit synthetic candidate judgments for workflow testing.",
+        "uncertainty": "Fixture judgments are not operational training guidance.",
+    }
+
+    def override_session() -> Iterator[Session]:
+        yield session
+
+    app.dependency_overrides[database_session_dependency] = override_session
+    app.dependency_overrides.pop(authenticated_principal_dependency, None)
+    client = TestClient(app)
+    headers = {"Authorization": "Bearer dev.context-workflow-reviewer"}
+    try:
+        spoofed = client.post(
+            f"/v1/operator/athletes/{athlete.id}/initial-planning-context-drafts",
+            json={**draft_body, "authored_by_account_id": str(uuid4())},
+            headers=headers,
+        )
+        drafted = client.post(
+            f"/v1/operator/athletes/{athlete.id}/initial-planning-context-drafts",
+            json=draft_body,
+            headers=headers,
+        )
+        draft_id = drafted.json()["id"]
+        reviewed = client.post(
+            f"/v1/operator/initial-planning-context-drafts/{draft_id}/reviews",
+            json={
+                "decision": "approved",
+                "reviewed_at": (NOW + timedelta(minutes=1)).isoformat(),
+                "applicability_rationale": "Exact persisted candidate inputs approved.",
+                "uncertainty": "Synthetic workflow fixture only.",
+            },
+            headers=headers,
+        )
+        duplicate_review = client.post(
+            f"/v1/operator/initial-planning-context-drafts/{draft_id}/reviews",
+            json={
+                "decision": "approved",
+                "reviewed_at": (NOW + timedelta(minutes=2)).isoformat(),
+                "applicability_rationale": "Duplicate should fail.",
+                "uncertainty": "Synthetic workflow fixture only.",
+            },
+            headers=headers,
+        )
+        review_id = reviewed.json()["id"]
+        created = client.post(
+            f"/v1/operator/initial-planning-context-reviews/{review_id}/strategy",
+            json={"generated_at": (NOW + timedelta(minutes=2)).isoformat()},
+            headers=headers,
+        )
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert spoofed.status_code == 422
+    assert drafted.status_code == 201
+    draft_payload = drafted.json()
+    assert draft_payload["authored_by_account_id"] == str(reviewer.id)
+    assert draft_payload["author_authority_assignment_id"] == str(assignment.id)
+    assert draft_payload["candidate_contexts"] == draft_body["candidate_contexts"]
+    assert reviewed.status_code == 201
+    assert reviewed.json()["reviewed_by_account_id"] == str(reviewer.id)
+    assert reviewed.json()["review_authority_assignment_id"] == str(assignment.id)
+    assert duplicate_review.status_code == 409
+    assert created.status_code == 201
+    evidence = created.json()["decision_record"]["evidence"]
+    assert f"initial_planning_context_draft:{draft_id}" in evidence
+    assert f"initial_planning_context_review:{review_id}" in evidence
+    assert session.scalar(select(func.count()).select_from(InitialPlanningContextDraftRecord)) == 1
+    assert session.scalar(select(func.count()).select_from(InitialPlanningContextReviewRecord)) == 1
+    assert session.scalar(select(func.count()).select_from(CapabilityNeedRecord)) == 1
+    assert session.scalar(select(func.count()).select_from(LongRangeStrategyRecord)) == 1
+    assert session.scalar(select(func.count()).select_from(DecisionRecordRecord)) == 1
+
+
+def test_approved_context_artifact_fails_closed_when_estimate_becomes_stale(
+    session: Session,
+) -> None:
+    athlete, observation, estimate, floor, adaptation, policy, floor_review, policy_review = (
+        _persist_inputs(session)
+    )
+    account, assignment, _, _ = set_account_role(
+        session,
+        issuer="urn:agas:development",
+        subject="stale-context-reviewer",
+        role=AccountRole.PLANNING_REVIEWER,
+        status=AccountRoleStatus.ACTIVE,
+        assigned_at=NOW - timedelta(minutes=10),
+        rationale="Authorize the stale context fixture.",
+    )
+    authority = AuthorizedRole(
+        account_id=account.id,
+        assignment_id=assignment.id,
+        role=AccountRole.PLANNING_REVIEWER,
+        assigned_at=assignment.assigned_at,
+    )
+    command = _command(
+        observation, estimate, floor, adaptation, policy, floor_review, policy_review
+    )
+    service = PersistedInitialPlanningContextService(session)
+    draft = service.create_draft(
+        athlete.id,
+        OperatorInitialPlanningContextDraftRequest(
+            priority_policy_id=policy.id,
+            priority_policy_review_id=policy_review.id,
+            candidate_contexts=command.candidate_contexts,
+            horizon_months=12,
+            review_after_days=42,
+            authored_at=NOW,
+            applicability_rationale="Persist exact candidate inputs before staleness.",
+            uncertainty="Synthetic fixture only.",
+        ),
+        authority,
+    )
+    review = service.review_draft(
+        draft.id,
+        OperatorInitialPlanningContextReviewRequest(
+            decision=AssessmentReviewDecision.APPROVED,
+            reviewed_at=NOW + timedelta(minutes=1),
+            applicability_rationale="Approve while the estimate is current.",
+            uncertainty="Synthetic fixture only.",
+        ),
+        authority,
+    )
+
+    forged = command.model_copy(
+        update={
+            "generated_at": NOW + timedelta(minutes=2),
+            "reviewed_by": f"account:{account.id}",
+            "review_authority_assignment_id": assignment.id,
+            "candidate_context_draft_id": draft.id,
+            "candidate_context_review_id": review.id,
+            "candidate_contexts": (
+                command.candidate_contexts[0].model_copy(update={"general_relevance": 0.01}),
+            ),
+        }
+    )
+    with pytest.raises(InitialPlanningValidationError, match="does not match"):
+        PersistedInitialPlanningService(session).execute(athlete.id, forged)
+
+    with pytest.raises(InitialPlanningContextValidationError, match="estimate is stale"):
+        service.create_strategy(
+            review.id,
+            CreateInitialStrategyFromContextReviewRequest(generated_at=NOW + timedelta(days=31)),
+            authority,
+        )
+
+    assert session.scalar(select(func.count()).select_from(InitialPlanningContextDraftRecord)) == 1
+    assert session.scalar(select(func.count()).select_from(InitialPlanningContextReviewRecord)) == 1
+    assert session.scalar(select(func.count()).select_from(CapabilityNeedRecord)) == 0
+    assert session.scalar(select(func.count()).select_from(LongRangeStrategyRecord)) == 0
+    assert session.scalar(select(func.count()).select_from(DecisionRecordRecord)) == 0
+
+
+def test_initial_planning_context_drafts_are_append_only(session: Session) -> None:
+    athlete, observation, estimate, floor, adaptation, policy, floor_review, policy_review = (
+        _persist_inputs(session)
+    )
+    account, assignment, _, _ = set_account_role(
+        session,
+        issuer="urn:agas:development",
+        subject="immutable-context-author",
+        role=AccountRole.PLANNING_REVIEWER,
+        status=AccountRoleStatus.ACTIVE,
+        assigned_at=NOW - timedelta(minutes=10),
+        rationale="Authorize the immutable context fixture.",
+    )
+    authority = AuthorizedRole(
+        account_id=account.id,
+        assignment_id=assignment.id,
+        role=AccountRole.PLANNING_REVIEWER,
+        assigned_at=assignment.assigned_at,
+    )
+    command = _command(
+        observation, estimate, floor, adaptation, policy, floor_review, policy_review
+    )
+    draft = PersistedInitialPlanningContextService(session).create_draft(
+        athlete.id,
+        OperatorInitialPlanningContextDraftRequest(
+            priority_policy_id=policy.id,
+            priority_policy_review_id=policy_review.id,
+            candidate_contexts=command.candidate_contexts,
+            horizon_months=12,
+            review_after_days=42,
+            authored_at=NOW,
+            applicability_rationale="Persist exact candidate inputs.",
+            uncertainty="Original immutable uncertainty.",
+        ),
+        authority,
+    )
+    record = session.get(InitialPlanningContextDraftRecord, draft.id)
+    assert record is not None
+    record.uncertainty = "Attempted silent replacement."
+
+    with pytest.raises(ImmutableHistoricalRecordError, match="append-only"):
+        session.flush()
+    session.rollback()
+
+    restored = DomainRepository(session).get_initial_planning_context_draft(draft.id)
+    assert restored is not None
+    assert restored.uncertainty == "Original immutable uncertainty."
+    assert restored.candidate_contexts == command.candidate_contexts
+
+
+def test_initial_planning_service_rejects_forged_assignment_identity_without_writes(
+    session: Session,
+) -> None:
+    athlete, observation, estimate, floor, adaptation, policy, floor_review, policy_review = (
+        _persist_inputs(session)
+    )
+    _, assignment, _, _ = set_account_role(
+        session,
+        issuer="urn:agas:development",
+        subject="defense-in-depth-reviewer",
+        role=AccountRole.PLANNING_REVIEWER,
+        status=AccountRoleStatus.ACTIVE,
+        assigned_at=NOW - timedelta(minutes=10),
+        rationale="Authorize the defense-in-depth fixture.",
+    )
+    forged = _command(
+        observation, estimate, floor, adaptation, policy, floor_review, policy_review
+    ).model_copy(
+        update={
+            "reviewed_by": "account:00000000-0000-0000-0000-000000000000",
+            "review_authority_assignment_id": assignment.id,
+        }
+    )
+
+    with pytest.raises(InitialPlanningValidationError, match="does not match"):
+        PersistedInitialPlanningService(session).execute(athlete.id, forged)
+
+    assert session.scalar(select(func.count()).select_from(CapabilityNeedRecord)) == 0
+    assert session.scalar(select(func.count()).select_from(LongRangeStrategyRecord)) == 0
+    assert session.scalar(select(func.count()).select_from(DecisionRecordRecord)) == 0
+
+
 def test_athlete_api_does_not_expose_initial_strategy_writes(session: Session) -> None:
     athlete, observation, estimate, floor, adaptation, policy, floor_review, policy_review = (
         _persist_inputs(session)
@@ -485,6 +839,25 @@ def test_initial_strategy_rejects_cross_athlete_estimate_without_partial_writes(
     assert athlete.id != other_athlete.id
 
 
+def test_initial_strategy_rejects_stale_estimate_without_partial_writes(
+    session: Session,
+) -> None:
+    athlete, observation, estimate, floor, adaptation, policy, floor_review, policy_review = (
+        _persist_inputs(session)
+    )
+    command = _command(
+        observation, estimate, floor, adaptation, policy, floor_review, policy_review
+    ).model_copy(update={"generated_at": NOW + timedelta(days=31)})
+
+    with pytest.raises(InitialPlanningValidationError, match="estimate is stale"):
+        PersistedInitialPlanningService(session).execute(athlete.id, command)
+
+    assert session.scalar(select(func.count()).select_from(CapabilityNeedRecord)) == 0
+    assert session.scalar(select(func.count()).select_from(LongRangeStrategyRecord)) == 0
+    assert session.scalar(select(func.count()).select_from(DecisionRecordRecord)) == 0
+    assert DomainRepository(session).get_initial_long_range_strategy(athlete.id) is None
+
+
 def test_initial_strategy_rolls_back_when_adaptation_and_need_domains_disagree(
     session: Session,
 ) -> None:
@@ -599,6 +972,181 @@ def test_planning_status_distinguishes_missing_current_stale_and_created_states(
         False,
         False,
     ]
+
+
+def test_initial_planning_preparation_exposes_only_eligible_reviewed_inputs(
+    session: Session,
+) -> None:
+    athlete, observation, estimate, floor, adaptation, policy, floor_review, policy_review = (
+        _persist_inputs(session)
+    )
+
+    projection = InitialPlanningPreparationProjector(session).project(athlete.id, NOW)
+
+    assert projection.status == "planning_context_review_required"
+    assert projection.initial_strategy_id is None
+    assert projection.stale_estimates == ()
+    assert len(projection.estimate_options) == 1
+    estimate_option = projection.estimate_options[0]
+    assert estimate_option.estimate == estimate
+    assert estimate_option.source_observations == (observation,)
+    assert len(estimate_option.floor_options) == 1
+    assert estimate_option.floor_options[0].floor == floor
+    assert estimate_option.floor_options[0].review == floor_review
+    assert estimate_option.adaptation_options == (adaptation,)
+    assert len(projection.priority_policy_options) == 1
+    assert projection.priority_policy_options[0].policy == policy
+    assert projection.priority_policy_options[0].review == policy_review
+    assert tuple(claim.id for claim in projection.evidence_claims) == floor.evidence_claim_ids
+    serialized = projection.model_dump()
+    assert "candidate_contexts" not in serialized
+    assert "general_relevance" not in serialized["estimate_options"][0]
+    assert "fatigue_cost" not in serialized["estimate_options"][0]
+    assert projection.projection_version == "initial-planning-preparation@1.0.0"
+
+
+def test_initial_planning_preparation_separates_stale_state_and_existing_strategy(
+    session: Session,
+) -> None:
+    athlete, observation, estimate, floor, adaptation, policy, floor_review, policy_review = (
+        _persist_inputs(session)
+    )
+
+    stale = InitialPlanningPreparationProjector(session).project(
+        athlete.id, NOW + timedelta(days=31)
+    )
+    assert stale.status == "capability_estimate_stale"
+    assert stale.estimate_options == ()
+    assert stale.stale_estimates == (estimate,)
+    stale_queue = PlanningReviewQueueProjector(session).project(NOW + timedelta(days=31))
+    assert len(stale_queue.items) == 1
+    assert stale_queue.items[0].workflow_stage == "initial_planning"
+    assert stale_queue.items[0].status == "capability_estimate_stale"
+    assert stale_queue.items[0].readiness == "blocked"
+
+    result = PersistedInitialPlanningService(session).execute(
+        athlete.id,
+        _command(
+            observation,
+            estimate,
+            floor,
+            adaptation,
+            policy,
+            floor_review,
+            policy_review,
+        ),
+    )
+    existing = InitialPlanningPreparationProjector(session).project(athlete.id, NOW)
+    assert existing.status == "initial_strategy_exists"
+    assert existing.initial_strategy_id == result.strategy.id
+    resource_queue = PlanningReviewQueueProjector(session).project(NOW)
+    assert len(resource_queue.items) == 1
+    assert resource_queue.items[0].workflow_stage == "resource_demands"
+    assert resource_queue.items[0].strategy_id == result.strategy.id
+    assert resource_queue.items[0].readiness == "blocked"
+    assert resource_queue.items[0].issues
+
+
+def test_initial_planning_preparation_fails_closed_after_authority_withdrawal(
+    session: Session,
+) -> None:
+    athlete, _, _, floor, _, policy, _, _ = _persist_inputs(session)
+    record_competency_floor_review(
+        session,
+        competency_floor_id=floor.id,
+        decision=AssessmentReviewDecision.NEEDS_REVISION,
+        evidence_claim_ids=floor.evidence_claim_ids,
+        reviewed_at=NOW - timedelta(minutes=5),
+        reviewed_by="withdrawal-reviewer",
+        applicability_rationale="Withdraw the synthetic floor from new planning decisions.",
+        uncertainty="Software fixture only.",
+        review_version="fixture-floor-review@withdrawn",
+    )
+    record_priority_policy_review(
+        session,
+        priority_policy_id=policy.id,
+        decision=AssessmentReviewDecision.REJECTED,
+        evidence_claim_ids=floor.evidence_claim_ids,
+        reviewed_at=NOW - timedelta(minutes=5),
+        reviewed_by="withdrawal-reviewer",
+        applicability_rationale="Withdraw the synthetic policy from new planning decisions.",
+        uncertainty="Software fixture only.",
+        review_version="fixture-policy-review@withdrawn",
+    )
+
+    projection = InitialPlanningPreparationProjector(session).project(athlete.id, NOW)
+
+    assert projection.status == "planning_authorities_required"
+    assert projection.priority_policy_options == ()
+    assert projection.estimate_options[0].floor_options == ()
+
+
+def test_initial_planning_preparation_api_requires_reviewer_and_preserves_state(
+    session: Session,
+) -> None:
+    athlete, observation, estimate, _, _, _, _, _ = _persist_inputs(session)
+    _, reviewer_assignment, _, _ = set_account_role(
+        session,
+        issuer="urn:agas:development",
+        subject="preparation-reviewer",
+        role=AccountRole.PLANNING_REVIEWER,
+        status=AccountRoleStatus.ACTIVE,
+        assigned_at=NOW - timedelta(minutes=10),
+        rationale="Authorize the preparation projection fixture.",
+    )
+    set_account_role(
+        session,
+        issuer="urn:agas:development",
+        subject="revoked-preparation-reviewer",
+        role=AccountRole.PLANNING_REVIEWER,
+        status=AccountRoleStatus.ACTIVE,
+        assigned_at=NOW - timedelta(minutes=30),
+        rationale="Create a reviewer account for revocation testing.",
+    )
+    set_account_role(
+        session,
+        issuer="urn:agas:development",
+        subject="revoked-preparation-reviewer",
+        role=AccountRole.PLANNING_REVIEWER,
+        status=AccountRoleStatus.REVOKED,
+        assigned_at=NOW - timedelta(minutes=20),
+        rationale="Revoke preparation access before the request.",
+    )
+
+    def override_session() -> Iterator[Session]:
+        yield session
+
+    app.dependency_overrides[database_session_dependency] = override_session
+    app.dependency_overrides.pop(authenticated_principal_dependency, None)
+    client = TestClient(app)
+    try:
+        forbidden = client.get(
+            f"/v1/operator/athletes/{athlete.id}/initial-planning-preparation",
+            headers={"Authorization": "Bearer dev.revoked-preparation-reviewer"},
+        )
+        response = client.get(
+            f"/v1/operator/athletes/{athlete.id}/initial-planning-preparation",
+            params={"at": NOW.isoformat()},
+            headers={"Authorization": "Bearer dev.preparation-reviewer"},
+        )
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert forbidden.status_code == 403
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["athlete_id"] == str(athlete.id)
+    assert payload["projected_at"] == NOW.isoformat().replace("+00:00", "Z")
+    assert payload["status"] == "planning_context_review_required"
+    assert payload["estimate_options"][0]["estimate"]["id"] == str(estimate.id)
+    assert payload["estimate_options"][0]["source_observations"][0]["id"] == str(observation.id)
+    assert "candidate_contexts" not in payload
+    assert "general_relevance" not in payload["estimate_options"][0]
+    assert "review_authority_assignment_id" not in response.text
+    assert str(reviewer_assignment.id) not in response.text
+    assert session.scalar(select(func.count()).select_from(CapabilityNeedRecord)) == 0
+    assert session.scalar(select(func.count()).select_from(LongRangeStrategyRecord)) == 0
+    assert session.scalar(select(func.count()).select_from(DecisionRecordRecord)) == 0
 
 
 def test_planning_status_api_is_owned_and_time_explicit(session: Session) -> None:

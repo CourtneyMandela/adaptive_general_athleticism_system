@@ -6,6 +6,8 @@ from uuid import UUID
 
 from agas_domain import (
     AbsoluteLoadTarget,
+    AccountRole,
+    AccountRoleStatus,
     AssessmentReviewDecision,
     AvailabilityWindow,
     BlockPlan,
@@ -139,6 +141,7 @@ class CreateWeeklyPlanCommand(BaseModel):
     scheduling_policy_review_id: UUID
     prepared_at: datetime
     reviewed_by: NonEmptyText
+    review_authority_assignment_id: UUID | None = None
     applicability_rationale: NonEmptyText
     uncertainty: NonEmptyText
 
@@ -220,6 +223,7 @@ class PersistedWeeklyPlanService:
             ) from error
 
     def _build(self, block_id: UUID, command: CreateWeeklyPlanCommand) -> WeeklyPlanCreationResult:
+        self._validate_review_authority(command)
         block = self.repository.get_block_plan(block_id)
         if block is None:
             raise WeeklyPlanNotFoundError("block plan does not exist")
@@ -374,6 +378,7 @@ class PersistedWeeklyPlanService:
                 scheduling_policy_id=policy.id,
                 scheduling_policy_review_id=policy_review.id,
                 weekly_plan=plan,
+                review_authority_assignment_id=command.review_authority_assignment_id,
             ),
             uncertainty=command.uncertainty,
             decision_version=(f"first-week-operator-review@1.0.0;scheduler={plan.rule_version}"),
@@ -387,6 +392,34 @@ class PersistedWeeklyPlanService:
             decision_record=decision_record,
         )
 
+    def _validate_review_authority(self, command: CreateWeeklyPlanCommand) -> None:
+        assignment_id = command.review_authority_assignment_id
+        if assignment_id is None:
+            return
+        assignment = self.repository.get_account_role_assignment(assignment_id)
+        if assignment is None:
+            raise WeeklyPlanValidationError("review authority assignment does not exist")
+        current = self.repository.get_current_account_role_assignment(
+            assignment.account_id, AccountRole.PLANNING_REVIEWER
+        )
+        if (
+            assignment.role is not AccountRole.PLANNING_REVIEWER
+            or assignment.status is not AccountRoleStatus.ACTIVE
+            or current is None
+            or current.id != assignment.id
+        ):
+            raise WeeklyPlanValidationError(
+                "review authority assignment is not a current planning-reviewer grant"
+            )
+        if command.reviewed_by != f"account:{assignment.account_id}":
+            raise WeeklyPlanValidationError(
+                "reviewed_by does not match the review authority account"
+            )
+        if command.prepared_at < assignment.assigned_at:
+            raise WeeklyPlanValidationError(
+                "weekly-plan creation cannot predate the reviewer role assignment"
+            )
+
     @staticmethod
     def _decision_evidence(
         *,
@@ -397,6 +430,7 @@ class PersistedWeeklyPlanService:
         scheduling_policy_id: UUID,
         scheduling_policy_review_id: UUID,
         weekly_plan: WeeklyPlan,
+        review_authority_assignment_id: UUID | None,
     ) -> tuple[str, ...]:
         allocation_ids = tuple(item.resource_allocation_id for item in prescriptions)
         values = [
@@ -434,4 +468,6 @@ class PersistedWeeklyPlanService:
             f"weekly_scheduling_policy_review:{scheduling_policy_review_id}",
             f"weekly_plan:{weekly_plan.id}",
         ]
+        if review_authority_assignment_id is not None:
+            values.append(f"account_role_assignment:{review_authority_assignment_id}")
         return tuple(dict.fromkeys(values))

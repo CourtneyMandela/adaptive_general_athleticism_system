@@ -259,3 +259,11 @@ def planning_reviewer_dependency(
     """Authorize before operator request bodies reach their application handlers."""
 
     return role_authorizer.require_role(AccountRole.PLANNING_REVIEWER)
+
+
+def assessment_reviewer_dependency(
+    role_authorizer: Annotated[RoleAuthorizer, Depends(role_authorizer_dependency)],
+) -> AuthorizedRole:
+    """Authorize access to scientific assessment-governance projections."""
+
+    return role_authorizer.require_role(AccountRole.ASSESSMENT_REVIEWER)

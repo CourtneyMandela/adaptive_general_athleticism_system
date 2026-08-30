@@ -28,6 +28,13 @@ An owned athletic-dashboard projection groups estimates by exact domain, scope, 
 confidence, validity, method, version, and source lineage, and keeps unmeasured domains explicit.
 It deliberately does not normalize unlike measurements into unsupported percentage scores.
 
+The blueprint's required first vertical slice is now protected by one automated integration
+scenario. A synthetic sedentary four-day athlete moves from intake and assessment-derived state
+through strategy, a four-week block, full-gym training, one explicitly lower-fidelity hotel week,
+return, safety-gated execution, deterministic progression, reassessment, block review, revised
+priorities, and a dependent second block. All fixture thresholds and doses remain test-only and
+are explicitly not production training rules.
+
 ## Architecture at a glance
 
 - `apps/web`: responsive Next.js interface foundation
@@ -97,6 +104,21 @@ python -m agas_api.seed
 
 The command is idempotent for the exact catalog version. It does not import the synthetic athlete.
 
+For a deterministic local walkthrough, import the catalog, create the repository-owned synthetic
+traveler with its reported home/travel equipment, register its local owner, and grant the separate
+planning-reviewer and assessment-reviewer identities in one development-only command:
+
+```bash
+python -m agas_api.demo bootstrap
+```
+
+The command is idempotent and prints machine-readable JSON containing the athlete ID, local bearer
+selectors, direct PWA path, reviewer path, and derived planning status. It refuses production or
+external-authentication configurations. It intentionally stops at `capability_estimate_required`:
+no capability score, scientific approval, policy, dose, or workout is fabricated for the demo.
+After starting both applications, open the returned `athlete_path` under `http://localhost:3000`
+or the returned reviewer path.
+
 ## Run the backend
 
 ```bash
@@ -126,6 +148,24 @@ POST /v1/athletes/{athlete_id}/environments/{environment_id}/equipment-reports
 GET  /v1/athletes/{athlete_id}/planning-status
 GET  /v1/athletes/{athlete_id}/current-week?on=YYYY-MM-DD
 GET  /v1/operator/environment-review-queue
+GET  /v1/operator/assessment-governance
+GET  /v1/operator/planning-review-queue
+GET  /v1/operator/post-block-review-queue
+GET  /v1/operator/athletes/{athlete_id}/initial-planning-preparation
+POST /v1/operator/athletes/{athlete_id}/initial-planning-context-drafts
+POST /v1/operator/initial-planning-context-drafts/{draft_id}/reviews
+POST /v1/operator/initial-planning-context-reviews/{review_id}/strategy
+POST /v1/operator/athletes/{athlete_id}/initial-strategies
+GET  /v1/operator/strategies/{strategy_id}/resource-demand-preparation
+POST /v1/operator/strategies/{strategy_id}/priorities/{priority_id}/resource-demands
+GET  /v1/operator/strategies/{strategy_id}/block-preparation
+POST /v1/operator/strategies/{strategy_id}/blocks
+GET  /v1/operator/blocks/{block_id}/first-week-preparation
+POST /v1/operator/blocks/{block_id}/first-week-plans
+GET  /v1/operator/blocks/{block_id}/review-preparation
+POST /v1/operator/blocks/{block_id}/reviews
+GET  /v1/operator/block-reviews/{block_review_id}/replanning-preparation
+POST /v1/operator/block-reviews/{block_review_id}/replanning
 POST /v1/operator/stimulus-requirements/{stimulus_requirement_id}/exercise-reresolutions
 POST /v1/operator/weekly-plans/{source_weekly_plan_id}/environment-prescription-revisions
 POST /v1/weekly-plans/{weekly_plan_id}/availability-confirmations
@@ -176,15 +216,76 @@ python -m agas_api.identity_admin revoke-role \
   --rationale "Local reviewer access removed"
 ```
 
-An active reviewer may read `GET /v1/operator/environment-review-queue`. The queue is derived from
+Assessment governance has a separate application role. The demo bootstrap grants it to
+`local-assessment-reviewer`; it can also be managed explicitly:
+
+```bash
+python -m agas_api.identity_admin grant-role \
+  --subject local-assessment-reviewer \
+  --role assessment_reviewer \
+  --rationale "Local assessment-governance inspection"
+```
+
+This permission is not a scientific credential. The role-protected
+`GET /v1/operator/assessment-governance` projection and `/review/assessments` workbench are
+read-only. They expose point-in-time protocol review, measurement schema, self-administration,
+capability-estimation policy, evidence provenance, and immutable history. They do not create
+protocol approvals or athlete eligibility decisions.
+
+Externally curated assessment authority can be loaded in local development through a versioned,
+idempotent bundle. First inspect the exact JSON contract, then import a prepared file:
+
+```bash
+python -m agas_api.assessment_governance_admin schema
+python -m agas_api.assessment_governance_admin import-bundle \
+  --input-file PATH_TO_ASSESSMENT_GOVERNANCE_BUNDLE.json
+```
+
+The bundle contains one immutable definition, an optional exact review, and an optional estimation
+policy. Policy import requires its exact review in the same bundle. Referenced evidence claims must
+already exist. Exact retries are no-ops; an existing ID with different content is rejected, and any
+failed insert rolls back the bundle. The command refuses production and external-authentication
+configuration. It transports reviewed data but does not verify scientific sources or reviewer
+credentials.
+
+An active reviewer may load the read-only initial-planning preparation projection, author an
+immutable candidate-context draft, record one immutable review of that exact draft, and create the
+root strategy only from an approved review. Draft and review endpoints bind the authenticated
+account and exact active role assignment; actor identifiers are not accepted from the browser.
+Strategy creation reloads the artifact and revalidates current policy/floor approvals and estimate
+freshness. Rejected and needs-revision drafts remain history and require a new draft.
+
+Initial planning requires explicit candidate scores and the exact current approved policy and
+competency-floor reviews. The preparation projection returns current estimates, source
+observations, compatible approved floors and adaptations, approved policy options, and their
+referenced evidence while separating stale state and existing strategy blockers. No boundary
+infers scores, selects exercises, or generates workouts. The legacy direct initial-strategy POST
+and reviewed-file CLI remain available during transition. The environment queue is derived from
 weekly plans whose confirmed next-week environments do not match their effective prescription
-resolutions. The two operator POST routes complete that narrow workflow by invoking the same
+resolutions. The environment-review POST routes complete that narrow workflow by invoking the same
 deterministic re-resolution and prescription-revision services as the local CLIs. Their request
 bodies deliberately omit `reviewed_by` and role-assignment fields: the server binds the
 authenticated account and exact current role grant to the immutable decision audit. Athlete
 ownership does not grant access, revoked roles fail closed, and a decision cannot predate its
-authorizing grant. This is provisional single-reviewer approval; production credential validation
-and author/approver separation remain unresolved.
+authorizing grant. Same-account authoring and approval is provisional; production credential
+validation and author/approver separation remain unresolved, while actor identities are stored
+separately.
+
+The same active role may load one strategy-specific resource-demand preparation projection and
+submit an active or deferred demand through the operator API. The projection returns exact strategy
+priorities, adaptations, prior demand history, strategy-linked observations and evidence, current
+environment snapshots, resolver policies, and the structured exercise catalog. It does not select
+a stimulus, environment, exercise candidate set, dose, or current demand. The write request also
+omits reviewer identity and role-assignment fields; the server binds both to the immutable decision
+audit and the application service revalidates the grant.
+
+The reviewer may then load the strategy-specific block-preparation projection and submit one
+explicit block context. The projection returns every priority's immutable demand history, allocation
+policies, existing blocks, and referenced observations and evidence without marking any history
+current. The request selects exactly one demand per priority and supplies the policy, weekly budget,
+dates, duration, constraints, applicability, and uncertainty. Reviewer identity remains server-owned
+and the application service revalidates the exact role assignment before appending the block and
+decision audit.
 
 Safety policy applicability is also governed rather than user-selectable. After a reviewed policy
 exists, a local operator can assign it to an owned athlete with:
@@ -255,7 +356,7 @@ version, applicability, uncertainty, and evidence count.
 Post-block review and replanning reconstruct persisted execution and review history, then
 atomically append their derived records and reviewer-attributed decision audits. Their scientific
 interpretation and strategy-scoring inputs are operator-only; raw review, strategy, and need CRUD
-is not exposed. Resource-demand preparation and block creation are likewise operator-only
+is not exposed. Resource-demand preparation and block creation are likewise role-protected operator
 application boundaries; they do not invent stimuli, exercise candidates, dose-resource targets,
 allocation budgets, dates, or constraints.
 
@@ -302,8 +403,10 @@ python -m agas_api.planning_governance_admin review-weekly-scheduling-policy \
   --review-version weekly-scheduling-policy-review@1.0.0
 ```
 
-After preparing and reviewing a JSON document that satisfies `CreateInitialStrategyCommand`, a
-local operator runs:
+After preparing and reviewing a JSON document, an active reviewer may submit the same explicit
+planning inputs (without `reviewed_by` or `review_authority_assignment_id`) to
+`POST /v1/operator/athletes/{athlete_id}/initial-strategies`. The server supplies both fields from
+the authenticated account and exact active role grant. The local administrative alternative is:
 
 ```bash
 python -m agas_api.initial_planning_admin \
@@ -311,16 +414,16 @@ python -m agas_api.initial_planning_admin \
   --input-file PATH_TO_REVIEWED_INITIAL_PLANNING.json
 ```
 
-The document must name the persisted priority policy and its exact current
+The request or local document must name the persisted priority policy and its exact current
 `priority_policy_review_id`, plus at least one explicit candidate context, `generated_at`,
-`horizon_months`, `review_after_days`, `reviewed_by`,
-`applicability_rationale`, and `uncertainty`. Each context must name its adaptation, competency
+`horizon_months`, `review_after_days`, `applicability_rationale`, and `uncertainty`; the local
+document additionally supplies `reviewed_by`. Each context must name its adaptation, competency
 floor, exact current `competency_floor_review_id`, capability estimate, component values, and
-provenance identifiers. This is a provisional local review workflow, not production reviewer
-authentication.
+provenance identifiers. The HTTP workflow has authenticated application authorization but remains
+provisional single-reviewer approval, not production credential verification.
 
-Strategy-to-block authoring uses a second reviewed local workflow. Each JSON document must include
-non-empty `reviewed_by`, `applicability_rationale`, and `uncertainty` fields in addition to its
+Strategy-to-block authoring uses a second reviewed workflow. The local CLI documents must include
+non-empty `reviewed_by`, `applicability_rationale`, and `uncertainty` fields in addition to their
 explicit planning inputs:
 
 ```bash
@@ -341,6 +444,13 @@ python -m agas_api.planning_authoring_admin create-block \
 Active resource-demand inputs name the stimulus, environment, exercise candidates, resolver policy,
 resource amounts, frequency, provenance, version, and preparation time. Deferred inputs preserve
 their zero-resource rationale and provenance with the same review metadata and preparation time.
+An active reviewer may submit the same active or deferred resource input, without `reviewed_by` or
+`review_authority_assignment_id`, to
+`POST /v1/operator/strategies/{strategy_id}/priorities/{priority_id}/resource-demands`; the server
+owns those authority fields. The block-preparation projection and
+`POST /v1/operator/strategies/{strategy_id}/blocks` use the same authority boundary. The block
+request omits reviewer fields and explicitly names one demand per priority, allocation policy,
+weekly budget, dates, duration, constraints, applicability, and uncertainty.
 Re-resolution inputs name a different athlete-owned environment, explicit reviewed candidate set,
 resolver policy, and resolution time for an existing immutable stimulus. The command appends an
 honest full, partial, or infeasible result and its decision audit; it does not change the stimulus,
@@ -457,12 +567,19 @@ per execution. The caller groups all executed prescriptions into adaptation resp
 explicit comparison directions and meaningful-change thresholds. The operator service derives
 training responses, loads all safety history, and appends the immutable review plus a
 `DecisionRecord` atomically; it does not update athlete state or infer scientific thresholds.
+The review-preparation endpoint assembles the exact persisted weeks, sessions, prescriptions,
+execution/adherence/safety history, eligible pre/post estimates, policies, source observations, and
+evidence for an authenticated planning reviewer. It reports missing prerequisites and never groups
+responses or chooses a threshold.
 
 Successor-strategy replanning is a separate reviewed command. Its candidate contexts must preserve
 every prior adaptation and explicitly name each estimate, competency floor, relevance and cost
 score, prerequisite/safety state, and provenance. The service uses reviewed follow-up estimates for
 trained adaptations, rebuilds capability needs, and appends one lineage-linked successor strategy
-plus its decision audit. Neither post-block boundary is athlete-accessible. A local operator runs:
+plus its decision audit. The replanning-preparation endpoint restricts trained adaptations to their
+reviewed follow-up estimate and exposes only compatible competency floors. Both HTTP writes bind
+the active reviewer account and role-assignment identity server-side; neither boundary is
+athlete-accessible. The local administrative fallback remains:
 
 ```bash
 python -m agas_api.post_block_admin review-block \
@@ -474,8 +591,10 @@ python -m agas_api.post_block_admin replan \
   --input-file PATH_TO_REVIEWED_REPLANNING.json
 ```
 
-Both JSON documents require non-empty `reviewed_by`, `applicability_rationale`, and `uncertainty`
-fields. This workflow is provisional local administration, not production reviewer authentication.
+Both CLI JSON documents require non-empty `reviewed_by`, `applicability_rationale`, and
+`uncertainty` fields. HTTP requests cannot submit `reviewed_by`; the server derives it from the
+authenticated role. The CLI remains a provisional recovery/administration path and does not claim
+production identity assurance.
 
 The current-week query is a read-only projection for daily use. It assembles athlete, weekly plan,
 session container, exercise, adaptation, safety, execution, adherence, and progression records
@@ -500,7 +619,67 @@ controlled equipment selections. The backend must have imported the seed catalog
 choices to appear. A new profile opens the authoritative empty-week state rather than receiving a
 generic workout.
 
-The secondary development path accepts an existing owned athlete ID. Set
+The provisional reviewer console is available at `http://localhost:3000/review`. Configure
+`NEXT_PUBLIC_AGAS_REVIEWER_TOKEN=dev.local-reviewer` and grant that subject the local
+`planning_reviewer` role as shown above. The console retrieves eligible estimates, their source
+observations, exact current floor and policy reviews, compatible adaptations, and referenced
+evidence. It then accepts an externally prepared initial-planning document, rejects reviewer
+identity fields, displays exact authority versions, scores, provenance, rationale, and uncertainty
+for confirmation, and submits the same parsed document. It shows
+the resulting immutable strategy and decision audit. It does not author candidate values, choose
+training content, or turn the reviewer role into a claim of professional qualification.
+
+The assessment-governance workbench is available at
+`http://localhost:3000/review/assessments`. Configure
+`NEXT_PUBLIC_AGAS_ASSESSMENT_REVIEWER_TOKEN=dev.local-assessment-reviewer` or use the demo
+bootstrap. It is a read-only explanation of the governed protocol-to-estimate chain; assessment
+review records still enter through governed local data operations.
+
+After a strategy exists, `http://localhost:3000/review/resource-demands` accepts its UUID and loads
+the exact priority, environment-snapshot, resolver-policy, exercise-ontology, observation, evidence,
+and prior-demand records available to the reviewer. All stimulus constraints, exercise candidates,
+provenance links, and resource amounts begin blank and require explicit selection. A submission may
+record an honest full, partial, infeasible, or deferred result; it never creates a block, week,
+session, or workout. A newly created strategy links directly to this second review step.
+
+When every priority has demand history, `http://localhost:3000/review/blocks` loads the exact
+block-preparation projection. No demand, policy, budget, date, duration, or constraint is
+preselected. The reviewer chooses one demand for every priority and confirms the complete context;
+the deterministic allocator may truthfully create a full, partial, or infeasible block. The receipt
+shows every allocation and immutable audit. Week 1, sessions, prescriptions, and workouts remain a
+separate downstream milestone.
+
+`http://localhost:3000/review/queue` is the primary reviewer entry point. It derives one current
+pre-block planning item per athlete from immutable history and links directly to initial planning,
+resource-demand preparation, block creation, or Week 1 authoring. Ready and blocked work remain
+visible; no queue task record is persisted.
+
+After a block exists, `http://localhost:3000/review/weeks` accepts its UUID and exposes the exact
+allocation, stimulus, exercise-resolution, selected-exercise, environment, scheduling-policy
+review, observation, and evidence lineage needed for Week 1. The structured form supports every
+current intensity-target type, explicit dose, rest, progression reference, session membership and
+order, dated environment availability, policy review, and per-record provenance. Every material
+field begins blank; the form does not infer prescription dose, session composition, availability,
+or policy selection. The backend records server-owned reviewer-role authority and remains the
+authoritative validator and deterministic scheduler.
+
+After every block week and session outcome has been recorded and a post-block estimate exists,
+`http://localhost:3000/review/post-block` closes the feedback loop. Its authenticated work queue
+derives every due block-review or replanning item from immutable history, keeps blocked items and
+their exact issues visible, and removes the need to discover internal UUIDs manually. Opening an
+item first displays the complete persisted execution, adherence, safety, estimate, policy,
+observation, and evidence history. The
+reviewer explicitly partitions prescriptions into adaptation responses and selects comparable
+baseline/follow-up estimates, comparison direction, meaningful-change threshold, applicability,
+and uncertainty. After the backend derives and persists the response review, the same route exposes
+the reviewed response and eligible successor-strategy inputs. Every estimate, compatible floor,
+score, prerequisite, safety/sequencing flag, provenance selection, and review interval begins blank.
+The resulting strategy links back to the prior strategy and exact block review and can continue to
+resource-demand preparation for the next block.
+Manual block and review ID lookup remains available as a deep-link and recovery path.
+
+The secondary development path accepts an existing owned athlete ID or an `?athleteId=UUID` deep
+link. Set
 `NEXT_PUBLIC_AGAS_ATHLETE_ID` in `.env` to prefill it for a local demo. The backend projection
 reports whether a reviewed safety policy is assigned; no policy UUID is entered in the browser.
 After connecting, an athlete with an assignment can append a pre-session readiness report,
@@ -520,11 +699,12 @@ hold, review-required, missing-policy, and unsupported-policy states remain visi
 
 This setup is provisional: there is no verified production identity provider, account recovery,
 consent/export/deletion workflow, sensitive health intake, assessment correction/attempt workflow,
-qualified protocol-review workflow, authenticated reviewer workflow, protocol-specific
+qualified protocol-review workflow, complete scientific-governance UI, protocol-specific
 structured/duration assessment-result controls, estimation-policy authoring UI, or early-retest
-override yet. Governed competency-floor, priority-policy, and initial candidate-context authoring
-workflows are also not implemented. Initial planning therefore requires an operator-reviewed JSON
-document; there is no reviewer UI or role-protected reviewer API.
+override yet. Governed competency-floor and priority-policy authoring
+workflows are also not implemented. Initial planning therefore requires externally prepared,
+reviewed authorities even though candidate-context, post-block review, and replanning inputs can be
+authored through role-protected structured forms.
 No real assessment protocol is seeded, so production assessment runs and result entry remain
 unavailable. Do not use it for sensitive or production athlete data.
 The browser does not classify raw symptoms. Selecting a concerning symptom pauses the ordinary
@@ -538,6 +718,17 @@ and ambiguous configurations are shown as requiring governed setup.
 ```bash
 pytest
 pnpm --filter @agas/web test
+pnpm --filter @agas/web test:e2e
+```
+
+Install the pinned browser runtime once before the browser smoke suite with
+`pnpm --filter @agas/web exec playwright install chromium`. The suite starts an isolated frontend
+on port 3100 and validates the local-demo athlete and reviewer navigation contracts.
+
+Run only the required end-to-end domain demonstration with:
+
+```bash
+pytest tests/integration/test_required_vertical_slice.py
 ```
 
 ## Run static checks

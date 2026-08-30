@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import {
   fetchCurrentWeek,
@@ -218,15 +218,20 @@ function SessionCard({
   );
 }
 
-export function CurrentWeekDashboard() {
-  const [athleteInput, setAthleteInput] = useState(configuredAthleteId);
-  const [athleteId, setAthleteId] = useState("");
+export function CurrentWeekDashboard({ initialAthleteId }: { initialAthleteId?: string }) {
+  const configuredInitialAthleteId = (initialAthleteId ?? configuredAthleteId).trim();
+  const validInitialAthleteId = isUuid(configuredInitialAthleteId)
+    ? configuredInitialAthleteId
+    : "";
+  const [athleteInput, setAthleteInput] = useState(configuredInitialAthleteId);
+  const [athleteId, setAthleteId] = useState(validInitialAthleteId);
   const [asOf, setAsOf] = useState(localIsoDate);
   const [projection, setProjection] = useState<CurrentWeekProjection | null>(null);
   const [state, setState] = useState<"setup" | "loading" | "ready" | "error">("setup");
   const [message, setMessage] = useState("");
+  const initialLoadStarted = useRef(false);
 
-  async function load(nextAthleteId: string, nextAsOf: string) {
+  const load = useCallback(async (nextAthleteId: string, nextAsOf: string) => {
     setState("loading");
     setMessage("");
     try {
@@ -238,7 +243,14 @@ export function CurrentWeekDashboard() {
       setMessage(error instanceof Error ? error.message : "Unable to load the current week.");
       setState("error");
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    if (validInitialAthleteId && !initialLoadStarted.current) {
+      initialLoadStarted.current = true;
+      void load(validInitialAthleteId, asOf);
+    }
+  }, [asOf, load, validInitialAthleteId]);
 
   function connectAthlete(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -294,6 +306,9 @@ export function CurrentWeekDashboard() {
               <button type="submit">Open current week</button>
             </form>
           </details>
+          <a className="reviewer-link" href="/review">
+            Open the planning reviewer console →
+          </a>
           {message ? <p className="form-error">{message}</p> : null}
         </section>
       </main>
