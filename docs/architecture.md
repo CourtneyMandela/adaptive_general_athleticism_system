@@ -789,17 +789,21 @@ authorizer resolves strategy, block, review, weekly-plan, and execution identifi
 persisted athlete before the use case runs. A different account receives the same not-found result
 as an absent aggregate. The equipment catalog is public because it has no athlete state.
 
-Only a development bearer verifier exists today. `dev.<subject>` maps to the configured development
-issuer, onboarding creates the account and owner atomically, and a local operator CLI handles
-pre-existing fixtures and append-only reviewer role grants/revocations. An authenticated account
+The local `dev.<subject>` verifier maps to the configured development issuer and remains prohibited
+in production. External mode is a provider-neutral JWT resource-server boundary: it validates an
+asymmetric signature from the configured JWKS endpoint plus exact issuer, audience, expiration,
+issued-at time, and opaque subject. Algorithms are a server-side allow-list rather than a token-
+header choice; bounded JWKS caching permits ordinary provider key rotation. Onboarding creates the
+account and owner atomically, and a local operator CLI handles pre-existing fixtures and append-only
+reviewer role grants/revocations. An authenticated account
 must have a current active `planning_reviewer` assignment to create an initial strategy, prepare a
 resource demand, or read and complete operator environment reviews; athlete ownership alone is
 insufficient. Operator writes bind the authenticated account and exact role assignment server-side
 and reject client-supplied reviewer identity. The role is an
 application permission, not evidence of a scientific or professional credential. Production
-configuration rejects the development verifier;
-external mode remains unavailable until a cryptographically verifying provider adapter is
-implemented.
+configuration rejects the development verifier and incomplete or non-HTTPS external settings.
+Provider selection, browser authorization-code/session handling, account recovery, and deployment
+remain separate from resource-server verification.
 
 Assessment protocol governance uses a distinct append-only `assessment_reviewer` assignment. The
 role-protected `GET /v1/operator/assessment-governance` projection evaluates definitions at an

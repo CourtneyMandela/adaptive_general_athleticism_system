@@ -133,8 +133,10 @@ The health endpoint is available at `http://localhost:8000/health`.
 
 Local development uses the explicit bearer `dev.local-browser` by default. It selects a local
 account identity; it is not a password or production authentication. `AGAS_AUTH_MODE=development`
-is rejected when `AGAS_ENVIRONMENT=production`. External authentication mode fails closed until a
-verified provider adapter is configured.
+is rejected when `AGAS_ENVIRONMENT=production`. External mode verifies an asymmetric JWT against
+one explicitly configured issuer, audience, JWKS endpoint, and algorithm allow-list. Production
+startup fails unless that complete configuration uses HTTPS. Browser login and provider selection
+are still separate deployment work; do not place provider secrets in `NEXT_PUBLIC_*` variables.
 
 The application endpoints are intentionally narrow:
 
@@ -750,8 +752,9 @@ reliability and provenance. The
 backend owns the consecutive date and lineage and prepares exactly one successor week. Block-end,
 hold, review-required, missing-policy, and unsupported-policy states remain visibly blocked.
 
-This setup is provisional: there is no verified production identity provider, account recovery,
-consent/export/deletion workflow, sensitive health intake, assessment correction/attempt workflow,
+This setup is provisional: no production identity provider or browser login is connected, and
+account recovery, consent/export/deletion workflow, sensitive health intake, assessment
+correction/attempt workflow,
 qualified protocol-review workflow, complete scientific-governance UI, protocol-specific
 structured/duration assessment-result controls, estimation-policy authoring UI, or early-retest
 override yet. Governed competency-floor and priority-policy authoring

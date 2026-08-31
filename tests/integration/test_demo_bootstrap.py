@@ -198,6 +198,9 @@ def test_demo_bootstrap_fails_closed_outside_local_development(session: Session)
             settings=Settings(
                 environment="production",
                 auth_mode="external",
+                external_auth_issuer="https://issuer.example/",
+                external_auth_audience="https://api.agas.example",
+                external_auth_jwks_url="https://issuer.example/.well-known/jwks.json",
                 database_url="sqlite+pysqlite:///:memory:",
             ),
             bootstrapped_at=BOOTSTRAPPED_AT,

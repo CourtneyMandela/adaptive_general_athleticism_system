@@ -361,6 +361,9 @@ def test_local_governance_bundle_import_fails_closed_outside_development(
             settings=Settings(
                 environment="production",
                 auth_mode="external",
+                external_auth_issuer="https://issuer.example/",
+                external_auth_audience="https://api.agas.example",
+                external_auth_jwks_url="https://issuer.example/.well-known/jwks.json",
                 database_url="sqlite+pysqlite:///:memory:",
             ),
             imported_at=NOW,
