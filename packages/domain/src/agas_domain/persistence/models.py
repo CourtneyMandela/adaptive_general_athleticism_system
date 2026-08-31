@@ -383,6 +383,43 @@ class EvidenceClaimSourceRecord(Base):
     position: Mapped[int] = mapped_column(Integer(), nullable=False)
 
 
+class EvidenceClaimReviewRecord(VersionedRecordMixin, Base):
+    __tablename__ = "evidence_claim_reviews"
+    __table_args__ = (
+        CheckConstraint(
+            "decision IN ('approved', 'needs_revision', 'rejected')",
+            name="ck_evidence_claim_review_decision",
+        ),
+        CheckConstraint("sequence_number >= 1", name="ck_evidence_claim_review_sequence_positive"),
+        UniqueConstraint(
+            "evidence_claim_id",
+            "sequence_number",
+            name="uq_evidence_claim_review_claim_sequence",
+        ),
+        UniqueConstraint("supersedes_review_id", name="uq_evidence_claim_review_superseded_once"),
+    )
+
+    evidence_claim_id: Mapped[UUID] = mapped_column(
+        ForeignKey("evidence_claims.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    decision: Mapped[str] = mapped_column(String(40), index=True, nullable=False)
+    sequence_number: Mapped[int] = mapped_column(Integer(), nullable=False)
+    supersedes_review_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("evidence_claim_reviews.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=True,
+    )
+    reviewed_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)
+    reviewer: Mapped[str] = mapped_column(String(160), nullable=False)
+    source_verification_rationale: Mapped[str] = mapped_column(Text(), nullable=False)
+    extraction_rationale: Mapped[str] = mapped_column(Text(), nullable=False)
+    evidence_strength_rationale: Mapped[str] = mapped_column(Text(), nullable=False)
+    applicability_rationale: Mapped[str] = mapped_column(Text(), nullable=False)
+    uncertainty: Mapped[str] = mapped_column(Text(), nullable=False)
+    conflict_disclosure: Mapped[str] = mapped_column(Text(), nullable=False)
+    review_version: Mapped[str] = mapped_column(String(120), nullable=False)
+
+
 class AssessmentDefinitionRecord(VersionedRecordMixin, Base):
     __tablename__ = "assessment_definitions"
 
@@ -3139,6 +3176,7 @@ for _record_type in (
     EvidenceSourceRecord,
     EvidenceClaimRecord,
     EvidenceClaimSourceRecord,
+    EvidenceClaimReviewRecord,
     AssessmentDefinitionRecord,
     AssessmentDefinitionReviewRecord,
     AssessmentDefinitionReviewEvidenceClaimRecord,

@@ -29,6 +29,7 @@ from agas_domain.enums import (
     Confidence,
     CostLevel,
     DoseDimension,
+    EvidenceReviewDecision,
     EvidenceStrength,
     ExposureType,
     ExposureValidationOutcome,
@@ -431,6 +432,41 @@ class EvidenceClaim(VersionedRecord):
     def validate_source_records(self) -> EvidenceClaim:
         if len(set(self.source_record_ids)) != len(self.source_record_ids):
             raise ValueError("source_record_ids must not contain duplicates")
+        return self
+
+
+class EvidenceClaimReview(VersionedRecord):
+    """One immutable scientific-review decision about an exact evidence claim."""
+
+    evidence_claim_id: UUID
+    decision: EvidenceReviewDecision
+    sequence_number: Annotated[int, Field(ge=1)]
+    supersedes_review_id: UUID | None = None
+    reviewed_at: datetime
+    reviewer: NonEmptyText
+    source_verification_rationale: NonEmptyText
+    extraction_rationale: NonEmptyText
+    evidence_strength_rationale: NonEmptyText
+    applicability_rationale: NonEmptyText
+    uncertainty: NonEmptyText
+    conflict_disclosure: NonEmptyText
+    review_version: NonEmptyText
+
+    @field_validator("reviewed_at")
+    @classmethod
+    def require_aware_reviewed_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("evidence review time must include a timezone")
+        return value
+
+    @model_validator(mode="after")
+    def validate_review_lineage(self) -> EvidenceClaimReview:
+        if self.sequence_number == 1 and self.supersedes_review_id is not None:
+            raise ValueError("the first evidence review cannot supersede another record")
+        if self.sequence_number > 1 and self.supersedes_review_id is None:
+            raise ValueError("later evidence reviews must reference their predecessor")
+        if self.supersedes_review_id == self.id:
+            raise ValueError("an evidence review cannot supersede itself")
         return self
 
 

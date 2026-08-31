@@ -59,6 +59,7 @@ def test_baseline_migration_matches_current_metadata(
         assert "catalog_imports" in actual_tables
         assert "evidence_sources" in actual_tables
         assert "evidence_claim_sources" in actual_tables
+        assert "evidence_claim_reviews" in actual_tables
         assert "accounts" in actual_tables
         assert "account_role_assignments" in actual_tables
         assert "athlete_ownerships" in actual_tables
@@ -131,6 +132,15 @@ def test_baseline_migration_matches_current_metadata(
         assert any(
             constraint["name"] == "uq_evidence_source_superseded_once"
             for constraint in evidence_source_constraints
+        )
+        evidence_review_constraints = inspector.get_unique_constraints("evidence_claim_reviews")
+        assert any(
+            constraint["name"] == "uq_evidence_claim_review_claim_sequence"
+            for constraint in evidence_review_constraints
+        )
+        assert any(
+            constraint["name"] == "uq_evidence_claim_review_superseded_once"
+            for constraint in evidence_review_constraints
         )
         role_constraints = inspector.get_unique_constraints("account_role_assignments")
         assert any(

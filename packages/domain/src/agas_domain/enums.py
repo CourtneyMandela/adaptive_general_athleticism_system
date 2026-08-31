@@ -169,6 +169,12 @@ class EvidenceStrength(StrEnum):
     HIGH = "high"
 
 
+class EvidenceReviewDecision(StrEnum):
+    APPROVED = "approved"
+    NEEDS_REVISION = "needs_revision"
+    REJECTED = "rejected"
+
+
 class Applicability(StrEnum):
     UNKNOWN = "unknown"
     LOW = "low"

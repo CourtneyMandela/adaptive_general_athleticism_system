@@ -72,6 +72,7 @@ export function PlanningReviewQueueClient() {
         </div>
         <nav className="review-route-links" aria-label="Reviewer routes">
           <Link href="/review/assessments" className="text-link">Assessment governance</Link>
+          <Link href="/review/evidence" className="text-link">Evidence governance</Link>
           <Link href="/review/post-block" className="text-link">Post-block queue</Link>
           <Link href="/" className="text-link">Athlete PWA</Link>
         </nav>
