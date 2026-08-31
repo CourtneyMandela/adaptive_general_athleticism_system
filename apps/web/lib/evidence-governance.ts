@@ -60,6 +60,14 @@ export interface EvidenceGovernanceItem {
   issues: string[];
 }
 
+export interface EvidenceAuthorityEvaluation {
+  evaluated_at: string;
+  readiness: "ready" | "blocked";
+  claim_results: EvidenceGovernanceItem[];
+  issues: string[];
+  evaluation_version: string;
+}
+
 export interface EvidenceGovernanceProjection {
   projected_at: string;
   items: EvidenceGovernanceItem[];

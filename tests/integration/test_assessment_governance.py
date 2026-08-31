@@ -27,6 +27,9 @@ from agas_domain import (
     CapabilityDomain,
     CapabilityEstimationPolicy,
     EvidenceClaim,
+    EvidenceClaimReview,
+    EvidenceReviewDecision,
+    EvidenceSource,
     EvidenceSourceIdentifier,
     EvidenceStrength,
 )
@@ -45,9 +48,34 @@ def _development_settings() -> Settings:
     )
 
 
-def _evidence() -> EvidenceClaim:
+def _source() -> EvidenceSource:
+    identifier = EvidenceSourceIdentifier(
+        scheme="other", value="urn:agas:test:assessment-governance-source"
+    )
+    return EvidenceSource(
+        created_at=NOW - timedelta(hours=3),
+        title="Synthetic assessment-governance source fixture",
+        authors=("Automated Test",),
+        publication_year=2026,
+        publication_types=("Software fixture",),
+        primary_identifier=identifier,
+        source_identifiers=(identifier,),
+        metadata_provider="manual",
+        retrieval_uri="urn:agas:test:assessment-governance-source",
+        retrieved_at=NOW - timedelta(hours=3),
+        metadata_version="software-fixture@1.0.0",
+        provenance_notes=("Not scientific evidence.",),
+    )
+
+
+def _evidence(source: EvidenceSource | None = None) -> EvidenceClaim:
+    identifiers = (
+        source.source_identifiers
+        if source
+        else (EvidenceSourceIdentifier(scheme="other", value="urn:agas:test:governance"),)
+    )
     return EvidenceClaim(
-        created_at=NOW,
+        created_at=NOW - timedelta(hours=2),
         claim="Synthetic software fixture for assessment-governance projection tests.",
         domain="software_test_fixture",
         population="No athlete population; software fixture only.",
@@ -58,12 +86,43 @@ def _evidence() -> EvidenceClaim:
         evidence_strength=EvidenceStrength.INSUFFICIENT,
         athlete_applicability=Applicability.UNKNOWN,
         applicability_notes="Not applicable to athletes.",
-        source_identifiers=(
-            EvidenceSourceIdentifier(scheme="other", value="urn:agas:test:governance"),
-        ),
+        source_identifiers=identifiers,
+        source_record_ids=(source.id,) if source else (),
         reviewer="automated-test-fixture",
         claim_version="software-fixture@1.0.0",
     )
+
+
+def _evidence_review(
+    evidence: EvidenceClaim, *, reviewed_at: datetime = NOW - timedelta(hours=1)
+) -> EvidenceClaimReview:
+    return EvidenceClaimReview(
+        created_at=reviewed_at,
+        evidence_claim_id=evidence.id,
+        decision=EvidenceReviewDecision.APPROVED,
+        sequence_number=1,
+        reviewed_at=reviewed_at,
+        reviewer="qualified-reviewer-fixture",
+        source_verification_rationale="The exact software fixture source was checked.",
+        extraction_rationale="The claim describes software behavior only.",
+        evidence_strength_rationale="Insufficient is correct for this fixture.",
+        applicability_rationale="No athlete applicability is asserted.",
+        uncertainty="This record proves only governance behavior.",
+        conflict_disclosure="No conflicts declared for the software fixture.",
+        review_version="assessment-evidence-review-fixture@1.0.0",
+    )
+
+
+def _persist_approved_evidence(session: Session) -> EvidenceClaim:
+    source = _source()
+    evidence = _evidence(source)
+    review = _evidence_review(evidence)
+    repository = DomainRepository(session)
+    repository.add_evidence_source(source)
+    repository.add_evidence_claim(evidence)
+    repository.add_evidence_claim_review(review)
+    session.flush()
+    return evidence
 
 
 def _definition(slug: str, *, created_at: datetime = NOW) -> AssessmentDefinition:
@@ -137,12 +196,11 @@ def _approved_policy(
 
 def test_governance_projection_exposes_blockers_history_and_evidence(session: Session) -> None:
     repository = DomainRepository(session)
-    evidence = _evidence()
+    evidence = _persist_approved_evidence(session)
     unreviewed = _definition("unreviewed_fixture")
     ready = _definition("ready_fixture")
     review = _approved_review(ready, evidence)
     policy = _approved_policy(ready, review, evidence)
-    repository.add_evidence_claim(evidence)
     repository.add_assessment_definition(unreviewed)
     repository.add_assessment_definition(ready)
     repository.add_assessment_definition_review(review)
@@ -165,6 +223,10 @@ def test_governance_projection_exposes_blockers_history_and_evidence(session: Se
     assert ready_item.current_estimation_policy == policy
     assert ready_item.estimation_policy_history == (policy,)
     assert ready_item.evidence_claims == (evidence,)
+    assert ready_item.review_evidence_governance is not None
+    assert ready_item.review_evidence_governance.readiness == "ready"
+    assert ready_item.estimation_policy_evidence_governance is not None
+    assert ready_item.estimation_policy_evidence_governance.readiness == "ready"
 
 
 def test_governance_projection_does_not_reveal_future_records(session: Session) -> None:
@@ -229,11 +291,10 @@ def test_assessment_governance_requires_its_distinct_role(session: Session) -> N
 
 def test_local_governance_bundle_import_is_atomic_exact_and_idempotent(session: Session) -> None:
     repository = DomainRepository(session)
-    evidence = _evidence()
+    evidence = _persist_approved_evidence(session)
     definition = _definition("curated_fixture")
     review = _approved_review(definition, evidence)
     policy = _approved_policy(definition, review, evidence)
-    repository.add_evidence_claim(evidence)
     session.commit()
     bundle = AssessmentGovernanceBundle(
         bundle_version=ASSESSMENT_GOVERNANCE_BUNDLE_VERSION,
@@ -320,7 +381,7 @@ def test_local_governance_bundle_rolls_back_definition_when_evidence_is_unknown(
         review=review,
     )
 
-    with pytest.raises(LocalAssessmentGovernanceImportError, match="unknown assessment review"):
+    with pytest.raises(LocalAssessmentGovernanceImportError, match="unknown evidence claim"):
         import_assessment_governance_bundle(
             session,
             bundle,
@@ -331,3 +392,104 @@ def test_local_governance_bundle_rolls_back_definition_when_evidence_is_unknown(
     repository = DomainRepository(session)
     assert repository.get_assessment_definition(definition.id) is None
     assert repository.get_assessment_definition_review(review.id) is None
+
+
+def test_local_governance_bundle_rejects_unreviewed_evidence_for_approved_review(
+    session: Session,
+) -> None:
+    repository = DomainRepository(session)
+    evidence = _evidence()
+    repository.add_evidence_claim(evidence)
+    session.commit()
+    definition = _definition("unready_review_evidence_fixture")
+    review = _approved_review(definition, evidence)
+    bundle = AssessmentGovernanceBundle(
+        bundle_version=ASSESSMENT_GOVERNANCE_BUNDLE_VERSION,
+        definition=definition,
+        review=review,
+    )
+
+    with pytest.raises(
+        LocalAssessmentGovernanceImportError,
+        match="approved assessment review evidence is not ready at its review time",
+    ):
+        import_assessment_governance_bundle(
+            session,
+            bundle,
+            settings=_development_settings(),
+            imported_at=NOW + timedelta(minutes=1),
+        )
+
+    assert repository.get_assessment_definition(definition.id) is None
+    assert repository.get_assessment_definition_review(review.id) is None
+    assert repository.get_evidence_claim(evidence.id) == evidence
+
+
+def test_local_governance_bundle_rejects_unreviewed_evidence_for_approved_policy(
+    session: Session,
+) -> None:
+    repository = DomainRepository(session)
+    ready_evidence = _persist_approved_evidence(session)
+    unready_evidence = _evidence()
+    repository.add_evidence_claim(unready_evidence)
+    session.commit()
+    definition = _definition("unready_policy_evidence_fixture")
+    review = _approved_review(definition, ready_evidence)
+    policy = _approved_policy(definition, review, unready_evidence)
+    bundle = AssessmentGovernanceBundle(
+        bundle_version=ASSESSMENT_GOVERNANCE_BUNDLE_VERSION,
+        definition=definition,
+        review=review,
+        estimation_policy=policy,
+    )
+
+    with pytest.raises(
+        LocalAssessmentGovernanceImportError,
+        match="approved capability-estimation policy evidence is not ready at its review time",
+    ):
+        import_assessment_governance_bundle(
+            session,
+            bundle,
+            settings=_development_settings(),
+            imported_at=NOW + timedelta(minutes=1),
+        )
+
+    assert repository.get_assessment_definition(definition.id) is None
+    assert repository.get_assessment_definition_review(review.id) is None
+    assert repository.get_capability_estimation_policy(policy.id) is None
+    assert repository.get_evidence_claim(ready_evidence.id) == ready_evidence
+    assert repository.get_evidence_claim(unready_evidence.id) == unready_evidence
+
+
+def test_later_evidence_approval_does_not_retroactively_authorize_older_assessment(
+    session: Session,
+) -> None:
+    repository = DomainRepository(session)
+    source = _source()
+    evidence = _evidence(source)
+    definition = _definition("nonretroactive_evidence_fixture")
+    review = _approved_review(definition, evidence)
+    policy = _approved_policy(definition, review, evidence)
+    late_evidence_review = _evidence_review(
+        evidence,
+        reviewed_at=NOW + timedelta(hours=1),
+    )
+    repository.add_evidence_source(source)
+    repository.add_evidence_claim(evidence)
+    repository.add_assessment_definition(definition)
+    repository.add_assessment_definition_review(review)
+    repository.add_capability_estimation_policy(policy)
+    repository.add_evidence_claim_review(late_evidence_review)
+    session.commit()
+
+    item = AssessmentGovernanceProjector(session).project(NOW + timedelta(hours=2)).items[0]
+
+    assert item.status == "approved"
+    assert item.readiness == "blocked"
+    assert item.review_evidence_governance is not None
+    assert item.review_evidence_governance.evaluated_at == NOW
+    assert item.review_evidence_governance.claim_results[0].current_review is None
+    assert item.estimation_policy_evidence_governance is not None
+    assert item.estimation_policy_evidence_governance.evaluated_at == NOW
+    assert item.estimation_policy_evidence_governance.claim_results[0].current_review is None
+    assert any("evaluation time" in issue for issue in item.issues)

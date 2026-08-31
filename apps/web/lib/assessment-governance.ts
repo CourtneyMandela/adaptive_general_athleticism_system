@@ -2,6 +2,7 @@ import {
   assessmentReviewerDevelopmentAccessToken,
   authorizedHeaders,
 } from "./identity";
+import type { EvidenceAuthorityEvaluation } from "./evidence-governance";
 
 export interface AssessmentMeasurementSchema {
   measurement_type: "number" | "integer" | "category";
@@ -79,6 +80,8 @@ export interface AssessmentGovernanceItem {
   current_estimation_policy: CapabilityEstimationPolicy | null;
   estimation_policy_history: CapabilityEstimationPolicy[];
   evidence_claims: AssessmentEvidenceClaim[];
+  review_evidence_governance: EvidenceAuthorityEvaluation | null;
+  estimation_policy_evidence_governance: EvidenceAuthorityEvaluation | null;
   issues: string[];
 }
 
@@ -95,6 +98,21 @@ export class AssessmentGovernanceError extends Error {
   }
 }
 
+function isEvidenceEvaluation(
+  value: unknown,
+): value is EvidenceAuthorityEvaluation | null {
+  if (value === null) return true;
+  if (!value || typeof value !== "object") return false;
+  const evaluation = value as Partial<EvidenceAuthorityEvaluation>;
+  return Boolean(
+    typeof evaluation.evaluated_at === "string"
+    && ["ready", "blocked"].includes(evaluation.readiness ?? "")
+    && Array.isArray(evaluation.claim_results)
+    && Array.isArray(evaluation.issues)
+    && typeof evaluation.evaluation_version === "string"
+  );
+}
+
 function isItem(value: unknown): value is AssessmentGovernanceItem {
   if (!value || typeof value !== "object") return false;
   const item = value as Partial<AssessmentGovernanceItem>;
@@ -109,6 +127,8 @@ function isItem(value: unknown): value is AssessmentGovernanceItem {
     && Array.isArray(item.review_history)
     && Array.isArray(item.estimation_policy_history)
     && Array.isArray(item.evidence_claims)
+    && isEvidenceEvaluation(item.review_evidence_governance)
+    && isEvidenceEvaluation(item.estimation_policy_evidence_governance)
     && Array.isArray(item.issues),
   );
 }

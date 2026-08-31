@@ -75,7 +75,7 @@ test("assessment workbench makes missing scientific governance explicit", async 
       contentType: "application/json",
       body: JSON.stringify({
         projected_at: "2026-08-30T16:00:00Z",
-        projection_version: "assessment-governance-workbench@1.0.0",
+        projection_version: "assessment-governance-workbench@1.1.0",
         items: [
           {
             definition: {
@@ -95,6 +95,8 @@ test("assessment workbench makes missing scientific governance explicit", async 
             current_estimation_policy: null,
             estimation_policy_history: [],
             evidence_claims: [],
+            review_evidence_governance: null,
+            estimation_policy_evidence_governance: null,
             issues: [
               "assessment definition has no protocol review history",
               "no capability-estimation policy exists for this definition",

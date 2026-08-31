@@ -198,7 +198,7 @@ def test_legacy_claim_without_source_snapshots_remains_visibly_blocked(
     assert item.status == "unreviewed"
     assert item.readiness == "blocked"
     assert "claim has no exact evidence-source snapshot links" in item.issues
-    assert "claim has no scientific review history" in item.issues
+    assert "claim had no scientific review at the evaluation time" in item.issues
 
 
 def test_evidence_review_lineage_rejects_cross_claim_predecessor(session: Session) -> None:

@@ -11,6 +11,7 @@ from uuid import UUID
 from agas_domain import (
     AssessmentDefinition,
     AssessmentDefinitionReview,
+    AssessmentReviewDecision,
     CapabilityEstimationPolicy,
 )
 from agas_domain.models import VersionedRecord
@@ -24,6 +25,11 @@ from agas_api.assessment_governance import (
     AssessmentGovernanceProjector,
 )
 from agas_api.database import database_session
+from agas_api.evidence_governance import (
+    EvidenceAuthorityEvaluationError,
+    EvidenceAuthorityEvaluator,
+    EvidenceAuthorityNotReadyError,
+)
 from agas_api.settings import Settings, get_settings
 
 ASSESSMENT_GOVERNANCE_BUNDLE_VERSION = "assessment-governance-bundle@1.0.0"
@@ -86,6 +92,7 @@ def import_assessment_governance_bundle(
         raise ValueError("assessment-governance import time must include a timezone")
 
     repository = DomainRepository(session)
+    evidence_evaluator = EvidenceAuthorityEvaluator(session)
     try:
         definition_created = _ensure_exact(
             label="assessment definition",
@@ -97,20 +104,44 @@ def import_assessment_governance_bundle(
 
         review_created = False
         if bundle.review is not None:
+            existing_review = repository.get_assessment_definition_review(bundle.review.id)
+            if (
+                existing_review is None
+                and bundle.review.decision is AssessmentReviewDecision.APPROVED
+            ):
+                _require_ready_evidence(
+                    evidence_evaluator,
+                    label="approved assessment review",
+                    evidence_claim_ids=bundle.review.evidence_claim_ids,
+                    reviewed_at=bundle.review.reviewed_at,
+                )
             review_created = _ensure_exact(
                 label="assessment definition review",
                 expected=bundle.review,
-                existing=repository.get_assessment_definition_review(bundle.review.id),
+                existing=existing_review,
                 add=repository.add_assessment_definition_review,
             )
             session.flush()
 
         estimation_policy_created = False
         if bundle.estimation_policy is not None:
+            existing_policy = repository.get_capability_estimation_policy(
+                bundle.estimation_policy.id
+            )
+            if (
+                existing_policy is None
+                and bundle.estimation_policy.decision is AssessmentReviewDecision.APPROVED
+            ):
+                _require_ready_evidence(
+                    evidence_evaluator,
+                    label="approved capability-estimation policy",
+                    evidence_claim_ids=bundle.estimation_policy.evidence_claim_ids,
+                    reviewed_at=bundle.estimation_policy.reviewed_at,
+                )
             estimation_policy_created = _ensure_exact(
                 label="capability estimation policy",
                 expected=bundle.estimation_policy,
-                existing=repository.get_capability_estimation_policy(bundle.estimation_policy.id),
+                existing=existing_policy,
                 add=repository.add_capability_estimation_policy,
             )
             session.flush()
@@ -132,6 +163,8 @@ def import_assessment_governance_bundle(
     except (
         AssessmentGovernanceProjectionError,
         DomainIntegrityError,
+        EvidenceAuthorityEvaluationError,
+        EvidenceAuthorityNotReadyError,
         IntegrityError,
         LocalAssessmentGovernanceImportError,
     ) as error:
@@ -154,6 +187,21 @@ def import_assessment_governance_bundle(
         readiness=item.readiness,
         issues=item.issues,
     )
+
+
+def _require_ready_evidence(
+    evaluator: EvidenceAuthorityEvaluator,
+    *,
+    label: str,
+    evidence_claim_ids: tuple[UUID, ...],
+    reviewed_at: datetime,
+) -> None:
+    try:
+        evaluator.require_ready(evidence_claim_ids, reviewed_at)
+    except (EvidenceAuthorityEvaluationError, EvidenceAuthorityNotReadyError) as error:
+        raise LocalAssessmentGovernanceImportError(
+            f"{label} evidence is not ready at its review time: {error}"
+        ) from error
 
 
 def _ensure_exact[Record: VersionedRecord](

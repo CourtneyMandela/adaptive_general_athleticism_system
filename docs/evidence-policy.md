@@ -62,6 +62,13 @@ scientific-governance inspection role. It contains no approval mutation. Existin
 authorities are not retroactively treated as reviewed merely because the new projection exists;
 universal operational enforcement requires deliberate replacement of provisional authorities.
 
+When an assessment protocol review or capability-estimation policy cites a claim, readiness is
+evaluated at that authority record's own review time. The claim, its exact source snapshots, and a
+current approved `EvidenceClaimReview` must all have existed by that time. Later evidence approval
+does not retroactively repair an older authority; the authority itself must receive a new review
+version. This temporal rule preserves what was actually knowable at each decision rather than
+rewriting provenance from current state.
+
 The PubMed adapter is retrieval only. Search results are identifiers, and an EFetch result is an
 unreviewed metadata snapshot—not evidence that a claim is true. Retrieval must include the NCBI
 tool/contact parameters, remain within NCBI usage limits, and respect the provider's disclaimer and
@@ -143,10 +150,11 @@ lineage only. A real deployment must supply qualified policy review before the P
 capability interpretation.
 
 The development-only assessment-governance bundle importer is a typed transport for externally
-curated records, not an evidence-review engine. It requires all referenced `EvidenceClaim` records
-to exist and preserves their exact identifiers, but it does not fetch sources, verify metadata,
-qualify the named reviewer, or turn structural validity into scientific approval. Production
-evidence ingestion and assessment approval remain separate governed workflows.
+curated records, not an evidence-review engine. New approved records must cite claims whose exact
+source snapshots and approved claim reviews were already available at the authority's review time.
+The importer preserves exact identifiers, but it does not fetch sources, verify authenticity,
+qualify the named reviewer, or turn structural validity into scientific truth. Production evidence
+ingestion and assessment approval remain separate governed workflows.
 
 ## Exercise resolution
 
