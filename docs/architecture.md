@@ -54,6 +54,38 @@ deterministic safety-gate precedence and consumes only structured, preclassified
 packages/evaluation tests behavior across synthetic athletes.
 ```
 
+## Deployment boundary
+
+The source boundaries remain one backend deployment and one browser application rather than
+becoming conceptual microservices. `services/api/Dockerfile` packages the API, domain, planner,
+safety, evidence, seed loader, and Alembic runtime into one non-root image. The same immutable image
+runs either the long-lived API command or the one-shot migration command. Migrations complete
+before the API starts; an API replica never races another replica by migrating on startup.
+
+`apps/web/Dockerfile` packages Next.js standalone output into a separate non-root image. Public and
+static assets are copied into the traced monorepo output explicitly. `NEXT_PUBLIC_API_URL` is a
+build-time browser value; API credentials, identity-provider configuration, and database settings
+are not part of the web image.
+
+`compose.production.yml` describes a bounded single-host reference topology:
+
+```text
+HTTPS reverse proxy (not included)
+        |                 |
+  loopback :3000    loopback :8000
+        |                 |
+      PWA image       API image
+                           |
+                    private PostgreSQL
+                           ^
+                    one-shot migration
+```
+
+PostgreSQL has no published host port. The PWA and API bind only to loopback so an explicitly
+configured reverse proxy can supply TLS, request limits, and public routing. Hosting provider,
+reverse proxy, identity provider, browser session, backups, secret store, and observability remain
+deployment choices rather than hidden defaults. See `docs/deployment.md` and decision 0081.
+
 ## Domain boundaries
 
 ### Observation
