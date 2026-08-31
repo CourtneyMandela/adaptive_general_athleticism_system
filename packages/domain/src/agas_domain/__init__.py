@@ -50,6 +50,10 @@ from agas_domain.enums import (
     VelocityCharacteristic,
     WeeklyPlanStatus,
 )
+from agas_domain.evidence import (
+    EvidenceClaimAuthorityState,
+    evaluate_evidence_claim_authority,
+)
 from agas_domain.models import (
     AbsoluteLoadTarget,
     Account,
@@ -212,6 +216,7 @@ __all__ = [
     "Equipment",
     "EquipmentAvailability",
     "EvidenceClaim",
+    "EvidenceClaimAuthorityState",
     "EvidenceClaimReview",
     "EvidenceReviewDecision",
     "EvidenceSource",
@@ -298,4 +303,5 @@ __all__ = [
     "WeeklyPlanStatus",
     "WeeklySchedulingPolicy",
     "WeeklySchedulingPolicyReview",
+    "evaluate_evidence_claim_authority",
 ]

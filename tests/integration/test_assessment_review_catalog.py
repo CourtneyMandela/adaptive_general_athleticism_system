@@ -16,6 +16,9 @@ from agas_domain import (
     AssessmentReviewDecision,
     CapabilityDomain,
     EvidenceClaim,
+    EvidenceClaimReview,
+    EvidenceReviewDecision,
+    EvidenceSource,
     EvidenceSourceIdentifier,
     EvidenceStrength,
 )
@@ -30,8 +33,29 @@ from sqlalchemy.orm import Session
 NOW = datetime(2026, 8, 22, 20, 0, tzinfo=UTC)
 
 
-def evidence_fixture() -> EvidenceClaim:
-    return EvidenceClaim(
+def evidence_fixture(
+    repository: DomainRepository,
+    *,
+    identifier_value: str = "urn:agas:test:assessment-review",
+    ready: bool = True,
+) -> EvidenceClaim:
+    identifier = EvidenceSourceIdentifier(scheme="other", value=identifier_value)
+    source = EvidenceSource(
+        created_at=NOW - timedelta(days=3),
+        title="Synthetic assessment-review source fixture",
+        authors=("Automated Test",),
+        publication_year=2026,
+        publication_types=("Software fixture",),
+        primary_identifier=identifier,
+        source_identifiers=(identifier,),
+        metadata_provider="manual",
+        retrieval_uri=identifier.value,
+        retrieved_at=NOW - timedelta(days=3),
+        metadata_version="software-fixture@1.0.0",
+        provenance_notes=("Not scientific evidence.",),
+    )
+    evidence = EvidenceClaim(
+        created_at=NOW - timedelta(days=2),
         claim="Synthetic claim used only to verify assessment review provenance in software tests.",
         domain="software_test_fixture",
         population="No athlete population; software fixture only.",
@@ -44,12 +68,33 @@ def evidence_fixture() -> EvidenceClaim:
         evidence_strength=EvidenceStrength.INSUFFICIENT,
         athlete_applicability=Applicability.UNKNOWN,
         applicability_notes="Not applicable to athletes.",
-        source_identifiers=(
-            EvidenceSourceIdentifier(scheme="other", value="urn:agas:test:assessment-review"),
-        ),
+        source_identifiers=(identifier,),
+        source_record_ids=(source.id,) if ready else (),
         reviewer="automated-test-fixture",
         claim_version="software-fixture@1.0.0",
     )
+    if ready:
+        repository.add_evidence_source(source)
+    repository.add_evidence_claim(evidence)
+    if ready:
+        repository.add_evidence_claim_review(
+            EvidenceClaimReview(
+                created_at=NOW - timedelta(days=1),
+                evidence_claim_id=evidence.id,
+                decision=EvidenceReviewDecision.APPROVED,
+                sequence_number=1,
+                reviewed_at=NOW - timedelta(days=1),
+                reviewer="qualified-reviewer-fixture",
+                source_verification_rationale="The exact software fixture source was checked.",
+                extraction_rationale="The claim describes software behavior only.",
+                evidence_strength_rationale="Insufficient is correct for this fixture.",
+                applicability_rationale="No athlete applicability is asserted.",
+                uncertainty="This record proves only governance behavior.",
+                conflict_disclosure="No conflicts declared for the software fixture.",
+                review_version="assessment-catalog-evidence-review-fixture@1.0.0",
+            )
+        )
+    return evidence
 
 
 def definition(slug: str) -> AssessmentDefinition:
@@ -110,15 +155,21 @@ def test_catalog_exposes_only_definitions_with_a_current_approved_review(
     session: Session,
 ) -> None:
     repository = DomainRepository(session)
-    evidence = evidence_fixture()
+    evidence = evidence_fixture(repository)
+    unready_evidence = evidence_fixture(
+        repository,
+        identifier_value="urn:agas:test:assessment-review-unready",
+        ready=False,
+    )
     approved_definition = definition("approved_fixture")
     schema_less_definition = definition("approved_without_schema_fixture")
+    evidence_unready_definition = definition("approved_with_unready_evidence_fixture")
     unreviewed_definition = definition("unreviewed_fixture")
     withdrawn_definition = definition("withdrawn_fixture")
-    repository.add_evidence_claim(evidence)
     for assessment in (
         approved_definition,
         schema_less_definition,
+        evidence_unready_definition,
         unreviewed_definition,
         withdrawn_definition,
     ):
@@ -131,9 +182,15 @@ def test_catalog_exposes_only_definitions_with_a_current_approved_review(
         include_measurement_schema=False,
     )
     withdrawn_approval = review(withdrawn_definition, evidence, AssessmentReviewDecision.APPROVED)
+    evidence_unready_approval = review(
+        evidence_unready_definition,
+        unready_evidence,
+        AssessmentReviewDecision.APPROVED,
+    )
     repository.add_assessment_definition_review(first_approved)
     repository.add_assessment_definition_review(schema_less_approved)
     repository.add_assessment_definition_review(withdrawn_approval)
+    repository.add_assessment_definition_review(evidence_unready_approval)
     repository.add_assessment_definition_review(
         review(
             withdrawn_definition,
@@ -171,9 +228,8 @@ def test_catalog_exposes_only_definitions_with_a_current_approved_review(
 
 def test_review_history_must_extend_the_current_definition_review(session: Session) -> None:
     repository = DomainRepository(session)
-    evidence = evidence_fixture()
+    evidence = evidence_fixture(repository)
     assessment = definition("linear_history_fixture")
-    repository.add_evidence_claim(evidence)
     repository.add_assessment_definition(assessment)
     first = review(assessment, evidence, AssessmentReviewDecision.NEEDS_REVISION)
     repository.add_assessment_definition_review(first)
@@ -193,9 +249,8 @@ def test_review_history_must_extend_the_current_definition_review(session: Sessi
 
 def test_assessment_review_rows_are_immutable(session: Session) -> None:
     repository = DomainRepository(session)
-    evidence = evidence_fixture()
+    evidence = evidence_fixture(repository)
     assessment = definition("immutable_fixture")
-    repository.add_evidence_claim(evidence)
     repository.add_assessment_definition(assessment)
     approved = review(assessment, evidence, AssessmentReviewDecision.APPROVED)
     repository.add_assessment_definition_review(approved)

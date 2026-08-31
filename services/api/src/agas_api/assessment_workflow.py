@@ -17,6 +17,7 @@ from agas_domain.persistence.repository import DomainRepository
 from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy.orm import Session
 
+from agas_api.assessment_catalog import list_evidence_ready_assessment_definitions
 from agas_api.assessment_schedule import resolve_assessment_reassessment_schedule
 
 AssessmentWorkflowStatus = Literal[
@@ -180,7 +181,7 @@ def get_assessment_workflow_projection(
     eligibility = repository.get_current_assessment_eligibility_review(athlete_id)
     reviewed_definitions = tuple(
         (definition, review)
-        for definition, review in repository.list_approved_assessment_definitions()
+        for definition, review in list_evidence_ready_assessment_definitions(repository)
         if review.self_administered and review.measurement_schema is not None
     )
     reassessment_schedule = resolve_assessment_reassessment_schedule(
@@ -249,6 +250,14 @@ def get_assessment_workflow_projection(
                         and performance.assessment_definition_review_id
                         == estimation_policy.assessment_definition_review_id
                         and estimation_policy.reviewed_at <= instant
+                        and repository.evidence_authority_is_ready(
+                            current_review.evidence_claim_ids,
+                            current_review.reviewed_at,
+                        )
+                        and repository.evidence_authority_is_ready(
+                            estimation_policy.evidence_claim_ids,
+                            estimation_policy.reviewed_at,
+                        )
                     )
                     if stored_estimate is not None and estimate_policy is not None:
                         estimate_projection = AssessmentCapabilityEstimateProjection(
@@ -316,6 +325,10 @@ def get_assessment_workflow_projection(
                 or current_review.decision is not AssessmentReviewDecision.APPROVED
                 or not current_review.self_administered
                 or current_review.measurement_schema is None
+                or not repository.evidence_authority_is_ready(
+                    current_review.evidence_claim_ids,
+                    current_review.reviewed_at,
+                )
             ):
                 result_status = "protocol_unavailable"
             elif (
@@ -373,7 +386,7 @@ def get_assessment_workflow_projection(
     )
     if latest_run_complete and not reviewed_definitions:
         status: AssessmentWorkflowStatus = "protocol_catalog_empty"
-        message = "No currently approved self-administered assessment protocol is available."
+        message = "No approved evidence-ready self-administered assessment protocol is available."
     elif latest_run_complete and not due_definition_ids:
         status = "reassessment_not_due"
         next_at = reassessment_schedule.next_reassessment_at
@@ -406,7 +419,7 @@ def get_assessment_workflow_projection(
         message = "The current eligibility review is not active at this time."
     elif not reviewed_definitions:
         status = "protocol_catalog_empty"
-        message = "No approved self-administered assessment protocol is available."
+        message = "No approved evidence-ready self-administered assessment protocol is available."
     elif not environments:
         status = "environment_required"
         message = "At least one persisted environment is required for assessment selection."

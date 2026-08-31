@@ -24,6 +24,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from agas_api.assessment_catalog import list_evidence_ready_assessment_definitions
 from agas_api.assessment_schedule import resolve_assessment_reassessment_schedule
 
 NonEmptyText = Annotated[str, Field(min_length=1)]
@@ -98,7 +99,7 @@ class AssessmentSelectionRunValidationError(AssessmentSelectionRunError):
 class PersistedAssessmentSelectionRunService:
     """Build one governed self-administered assessment selection snapshot atomically."""
 
-    rule_version = "assessment-selection-run@2.0.0"
+    rule_version = "assessment-selection-run@3.0.0"
 
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -156,13 +157,13 @@ class PersistedAssessmentSelectionRunService:
 
         reviewed_definitions = tuple(
             (definition, review)
-            for definition, review in self.repository.list_approved_assessment_definitions()
+            for definition, review in list_evidence_ready_assessment_definitions(self.repository)
             if review.self_administered and review.measurement_schema is not None
         )
         if not reviewed_definitions:
             raise AssessmentSelectionRunConflictError(
-                "no approved self-administered assessment definitions with measurement schemas "
-                "are available"
+                "no approved evidence-ready self-administered assessment definitions with "
+                "measurement schemas are available"
             )
 
         runs = self.repository.list_assessment_selection_runs(athlete_id)

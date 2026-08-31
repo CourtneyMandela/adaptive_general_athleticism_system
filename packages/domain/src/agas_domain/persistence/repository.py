@@ -15,6 +15,10 @@ from agas_domain.enums import (
     AssessmentEligibilityOutcome,
     AssessmentReviewDecision,
 )
+from agas_domain.evidence import EvidenceClaimAuthorityState
+from agas_domain.evidence import (
+    evaluate_evidence_claim_authority as evaluate_claim_authority,
+)
 from agas_domain.models import (
     Account,
     AccountRoleAssignment,
@@ -471,6 +475,19 @@ class DomainRepository:
                 raise DomainIntegrityError(
                     "assessment estimate requires the current approved estimation policy"
                 )
+            review = self.get_assessment_definition_review(policy.assessment_definition_review_id)
+            if review is None:
+                raise DomainIntegrityError("assessment estimate protocol review does not exist")
+            self._require_evidence_authority_ready(
+                review.evidence_claim_ids,
+                review.reviewed_at,
+                "assessment estimate protocol review",
+            )
+            self._require_evidence_authority_ready(
+                policy.evidence_claim_ids,
+                policy.reviewed_at,
+                "assessment estimate policy",
+            )
             triggering_performance_id = estimate.triggering_assessment_performance_id
             if triggering_performance_id is None:
                 raise DomainIntegrityError("assessment estimate requires a triggering performance")
@@ -4797,6 +4814,11 @@ class DomainRepository:
             raise DomainIntegrityError(
                 "assessment selection requires the current approved definition review"
             )
+        self._require_evidence_authority_ready(
+            review.evidence_claim_ids,
+            review.reviewed_at,
+            "assessment selection protocol review",
+        )
         eligibility = self.get_current_assessment_eligibility_review(selection.athlete_id)
         if (
             eligibility is None
@@ -5133,6 +5155,11 @@ class DomainRepository:
             raise DomainIntegrityError(
                 "assessment performance requires the current approved self-administered review"
             )
+        self._require_evidence_authority_ready(
+            review.evidence_claim_ids,
+            review.reviewed_at,
+            "assessment performance protocol review",
+        )
         eligibility = self.get_current_assessment_eligibility_review(performance.athlete_id)
         if (
             eligibility is None
@@ -5456,6 +5483,53 @@ class DomainRepository:
             for record in records
             if (source := self.get_evidence_source(record.id)) is not None
         )
+
+    def evaluate_evidence_claim_authority(
+        self, claim: EvidenceClaim, evaluated_at: datetime
+    ) -> EvidenceClaimAuthorityState:
+        sources_by_id = {
+            source_id: source
+            for source_id in claim.source_record_ids
+            if (source := self.get_evidence_source(source_id)) is not None
+        }
+        return evaluate_claim_authority(
+            claim,
+            sources_by_id,
+            self.list_evidence_claim_reviews(claim.id),
+            evaluated_at,
+        )
+
+    def evidence_authority_is_ready(
+        self, evidence_claim_ids: tuple[UUID, ...], evaluated_at: datetime
+    ) -> bool:
+        if not evidence_claim_ids:
+            return False
+        for claim_id in evidence_claim_ids:
+            claim = self.get_evidence_claim(claim_id)
+            if claim is None:
+                return False
+            if not self.evaluate_evidence_claim_authority(claim, evaluated_at).ready:
+                return False
+        return True
+
+    def _require_evidence_authority_ready(
+        self,
+        evidence_claim_ids: tuple[UUID, ...],
+        evaluated_at: datetime,
+        label: str,
+    ) -> None:
+        if not evidence_claim_ids:
+            raise DomainIntegrityError(f"{label} cites no evidence claims")
+        for claim_id in evidence_claim_ids:
+            claim = self.get_evidence_claim(claim_id)
+            if claim is None:
+                raise DomainIntegrityError(f"{label} references unknown evidence claim {claim_id}")
+            state = self.evaluate_evidence_claim_authority(claim, evaluated_at)
+            if not state.ready:
+                raise DomainIntegrityError(
+                    f"{label} evidence claim {claim_id} is not ready at its review time: "
+                    + "; ".join(state.issues)
+                )
 
     def get_environment(self, environment_id: UUID) -> Environment | None:
         record = self.session.get(EnvironmentRecord, environment_id)
