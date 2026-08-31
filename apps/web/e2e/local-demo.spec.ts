@@ -115,3 +115,39 @@ test("assessment workbench makes missing scientific governance explicit", async 
   await expect(page.getByText("assessment definition has no protocol review history")).toBeVisible();
   await expect(page.getByText("No capability-estimation policy exists.")).toBeVisible();
 });
+
+test("the installable shell fails closed to an honest offline screen", async ({ context, page }) => {
+  await page.goto("/");
+
+  const manifestResponse = await page.request.get("/manifest.webmanifest");
+  expect(manifestResponse.ok()).toBe(true);
+  const manifest = (await manifestResponse.json()) as {
+    display?: string;
+    icons?: { purpose?: string; src?: string }[];
+  };
+  expect(manifest.display).toBe("standalone");
+  expect(manifest.icons).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ purpose: "any", src: "/icons/agas-icon.svg" }),
+      expect.objectContaining({ purpose: "maskable", src: "/icons/agas-icon-maskable.svg" }),
+    ]),
+  );
+
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+    await navigator.serviceWorker.ready;
+    if (navigator.serviceWorker.controller) return;
+    await new Promise<void>((resolve) => {
+      navigator.serviceWorker.addEventListener("controllerchange", () => resolve(), { once: true });
+    });
+  });
+
+  await context.setOffline(true);
+  try {
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page.getByRole("heading", { name: "You’re offline" })).toBeVisible();
+    await expect(page.getByText("No athlete data is shown, changed, or queued")).toBeVisible();
+  } finally {
+    await context.setOffline(false);
+  }
+});

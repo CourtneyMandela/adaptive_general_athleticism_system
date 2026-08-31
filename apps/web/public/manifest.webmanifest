@@ -2,9 +2,25 @@
   "name": "Adaptive General Athleticism System",
   "short_name": "AGAS",
   "description": "Adaptive, evidence-grounded general athleticism",
+  "id": "/",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#f6f3e9",
-  "theme_color": "#15362d"
+  "theme_color": "#15362d",
+  "categories": ["fitness", "health"],
+  "icons": [
+    {
+      "src": "/icons/agas-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/agas-icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
 }
-

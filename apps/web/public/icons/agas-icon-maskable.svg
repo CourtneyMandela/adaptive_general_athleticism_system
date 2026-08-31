@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title description">
+  <title id="title">AGAS</title>
+  <desc id="description">A maskable green AGAS monogram with four motion marks.</desc>
+  <rect width="512" height="512" fill="#15362d"/>
+  <path d="M160 330 235 158h42l75 172h-50l-16-40h-65l-16 40h-45Zm76-78h36l-18-48-18 48Z" fill="#f6f3e9"/>
+  <path d="M143 139h50M319 139h50M122 182h44M346 182h44" stroke="#d3a44b" stroke-width="18" stroke-linecap="round"/>
+</svg>

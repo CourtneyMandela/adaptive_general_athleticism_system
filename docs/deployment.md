@@ -19,6 +19,8 @@ images on Linux for every pull request and push to `main`.
 4. API and PWA ports bind to host loopback, not every network interface.
 5. Production API startup requires external authentication with HTTPS issuer/JWKS settings.
 6. No development bearer selector is passed to a production container.
+7. The production PWA image includes an install manifest, maskable icon, and fail-closed offline
+   shell without storing athlete records.
 
 The reference database is useful for validating topology. A real deployment may use managed
 PostgreSQL instead, but it must retain migration ordering, encrypted transport where appropriate,
@@ -82,6 +84,7 @@ production athlete data. Before production use, the project still needs:
 - database backup, restore, migration rollback, and retention procedures;
 - structured logs, metrics, alerting, and availability/error objectives;
 - a staging deployment and real phone-sized end-to-end acceptance test;
+- a reviewed offline-write/outbox design if workouts must be recordable without connectivity;
 - governed scientific content sufficient to create a safe training path.
 
 The reference Compose file does not install a reverse proxy or select commercial infrastructure.
