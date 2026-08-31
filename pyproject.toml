@@ -11,6 +11,7 @@ requires-python = ">=3.12"
 dependencies = [
   "alembic>=1.16,<2",
   "fastapi>=0.116,<1",
+  "httpx>=0.28,<1",
   "psycopg[binary]>=3.2,<4",
   "pydantic>=2.11,<3",
   "pydantic-settings>=2.10,<3",
@@ -21,7 +22,6 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "build>=1.2,<2",
-  "httpx>=0.28,<1",
   "mypy>=1.16,<2",
   "pytest>=8.4,<9",
   "pytest-cov>=6.2,<7",
@@ -36,6 +36,7 @@ where = [
   "packages/safety/src",
   "packages/seed_data/src",
   "services/api/src",
+  "services/evidence/src",
   "services/planner/src",
 ]
 namespaces = false

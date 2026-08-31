@@ -27,6 +27,9 @@ contexts; it does not infer scores, select exercises, prescribe dose, or generat
 An owned athletic-dashboard projection groups estimates by exact domain, scope, and unit, exposes
 confidence, validity, method, version, and source lineage, and keeps unmeasured domains explicit.
 It deliberately does not normalize unlike measurements into unsupported percentage scores.
+Scientific publication metadata can now be stored as immutable, versioned retrieval snapshots.
+New governed claim bundles link every claim to the exact source snapshots reviewed, while the
+existing small seed remains explicitly provisional and unpromoted.
 
 The blueprint's required first vertical slice is now protected by one automated integration
 scenario. A synthetic sedentary four-day athlete moves from intake and assessment-derived state
@@ -40,7 +43,7 @@ are explicitly not production training rules.
 - `apps/web`: responsive Next.js interface foundation
 - `services/api`: FastAPI application and persistence boundary
 - `services/planner`: deterministic assessment, planning, scheduling, execution, and adherence logic
-- `services/evidence`: reserved boundary for evidence retrieval and review
+- `services/evidence`: PubMed source retrieval and metadata parsing boundary
 - `packages/domain`: versioned domain models and invariants
 - `packages/exercise_ontology`: exercise ontology boundary
 - `packages/adaptation_models`: adaptation ontology boundary
@@ -231,6 +234,42 @@ This permission is not a scientific credential. The role-protected
 read-only. They expose point-in-time protocol review, measurement schema, self-administration,
 capability-estimation policy, evidence provenance, and immutable history. They do not create
 protocol approvals or athlete eligibility decisions.
+
+The evidence service can search PubMed and retrieve one reviewable metadata snapshot through
+NCBI E-utilities. NCBI requires a developer contact and applies usage limits; the adapter makes one
+request per command and caps search output at 100 records:
+
+```bash
+python -m agas_evidence.pubmed --email YOUR_DEVELOPER_EMAIL search \
+  --query "resistance training[Title] AND systematic review[Publication Type]" \
+  --max-results 20
+
+python -m agas_evidence.pubmed --email YOUR_DEVELOPER_EMAIL fetch \
+  --pmid PMID_FROM_SEARCH \
+  --query "THE_EXACT_SEARCH_QUERY"
+```
+
+`AGAS_NCBI_EMAIL` and optional `AGAS_NCBI_API_KEY` environment variables may replace those global
+arguments. Search returns PMIDs; fetch returns one structured `EvidenceSource` JSON object. Neither
+command persists data, extracts a claim, or rates evidence. Review NCBI's
+[E-utilities usage guidance](https://www.ncbi.nlm.nih.gov/books/NBK25497/) and
+[disclaimer/copyright notice](https://www.ncbi.nlm.nih.gov/home/about/policies/) before use;
+PubMed abstracts can contain copyrighted material.
+
+Externally reviewed scientific metadata and claims can then be loaded in local development
+through a separate versioned bundle. Inspect the schema before preparing a file:
+
+```bash
+python -m agas_api.evidence_governance_admin schema
+python -m agas_api.evidence_governance_admin import-bundle \
+  --input-file PATH_TO_EVIDENCE_GOVERNANCE_BUNDLE.json
+```
+
+Each claim must cite one or more bundled immutable source snapshots, and its PMID/DOI-style
+identifiers must agree with those snapshots. Exact retries are no-ops; identifier lineage,
+immutable-content collisions, dangling references, and partial writes fail closed. This command
+does not search literature, judge study quality, qualify a reviewer, or grant production approval.
+It is disabled in production and external-authentication mode.
 
 Externally curated assessment authority can be loaded in local development through a versioned,
 idempotent bundle. First inspect the exact JSON contract, then import a prepared file:
@@ -706,7 +745,10 @@ workflows are also not implemented. Initial planning therefore requires external
 reviewed authorities even though candidate-context, post-block review, and replanning inputs can be
 authored through role-protected structured forms.
 No real assessment protocol is seeded, so production assessment runs and result entry remain
-unavailable. Do not use it for sensitive or production athlete data.
+unavailable. Crossref/OpenAlex adapters, batch retrieval, automated claim extraction, and qualified
+production claim approval are not implemented. PubMed retrieval produces a curation input only;
+the evidence bundle transports externally reviewed data. Do not use it for sensitive or production
+athlete data.
 The browser does not classify raw symptoms. Selecting a concerning symptom pauses the ordinary
 workout flow instead of fabricating a safety signal.
 Progression remains backend-governed: the PWA never chooses among policies or invents exposure
@@ -736,7 +778,7 @@ pytest tests/integration/test_required_vertical_slice.py
 ```bash
 ruff check .
 ruff format --check .
-mypy packages/domain/src packages/safety/src packages/seed_data/src services/api/src services/planner/src tests
+mypy packages/domain/src packages/safety/src packages/seed_data/src services/api/src services/evidence/src services/planner/src tests
 pnpm --filter @agas/web lint
 pnpm --filter @agas/web typecheck
 ```

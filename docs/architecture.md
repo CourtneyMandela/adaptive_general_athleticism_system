@@ -43,7 +43,8 @@ packages/domain ---- PostgreSQL
    +-- packages/exercise_ontology
    +-- packages/safety
 
-services/planner consumes domain contracts for deterministic assessment selection,
+services/evidence retrieves and parses PubMed source metadata without extracting or approving
+scientific claims. services/planner consumes domain contracts for deterministic assessment selection,
 conservative capability estimation, competency-floor comparison, adaptation priority,
 long-range strategy, environment snapshots, stimulus requirements, exercise resolution, block
 allocation, and weekly scheduling.
@@ -655,6 +656,27 @@ strength and athlete applicability are separate. Three broad claims have source-
 DOI identifiers and an explicit `secondary_ai_verified` catalog status. They remain pending owner
 or qualified-domain approval and do not authorize dose, progression, or equivalence rules.
 
+`EvidenceSource` is the immutable publication-metadata layer beneath new claims. Each record keeps
+title, authors, journal/date metadata, optional abstract, publication types, all stable identifiers,
+the primary identity, provider, retrieval URI/query/time, provenance notes, and metadata version.
+Metadata corrections append a linear source snapshot with the same primary identity; sequence and
+single-successor constraints prevent forks or silent replacement. `EvidenceClaim.source_record_ids`
+is an ordered relational link to the exact snapshots interpreted. The original identifier list is
+retained for portable citation and must agree with the snapshots at the governed import boundary.
+
+The local-only `evidence-governance-bundle@1.0.0` command imports self-contained exact source and
+claim records atomically and idempotently. It validates source/claim identifiers and immutable
+collisions but does not retrieve publications, interpret findings, approve science, or qualify the
+named reviewer. Legacy provisional seed claims have no fabricated snapshot links; they can be
+migrated only after their metadata is deliberately re-retrieved and reviewed.
+
+`agas_evidence.pubmed` is the first provider adapter. It uses NCBI ESearch for bounded operator
+queries and EFetch XML for one exact PMID, supplies the configured tool/contact parameters, and
+maps the response to an unpersisted `EvidenceSource`. Parsing retains inline title text, ordered
+authors, publication metadata and types, abstract sections, PMID/DOI identifiers, retrieval query,
+time, and adapter version. It rejects malformed, ambiguous, or PMID-mismatched responses. The
+adapter performs no claim extraction or review, and API failures do not echo an API key.
+
 ### Decision records
 
 Material architecture and training-model choices exist as both human-readable records in `docs/decision-log` and a versionable domain type for future persistence.
@@ -667,8 +689,9 @@ Provider-subject accounts and athlete ownerships are normalized immutable record
 identity is not embedded in `Athlete`; one account may own multiple athlete records, while the V1
 database constraint permits exactly one permanent owner record per athlete. Transfer, revocation,
 and delegated athlete access are not implied by this narrow schema. Administrative authority is a
-separate append-only `AccountRoleAssignment` lineage. The initial vocabulary contains only
-`planning_reviewer`; sequenced active and revoked assignments preserve every authorization change.
+separate append-only `AccountRoleAssignment` lineage. The initial vocabulary contains distinct
+`planning_reviewer` and `assessment_reviewer` permissions; sequenced active and revoked assignments
+preserve every authorization change.
 
 Historical athlete evidence, planning history, stimulus requirements, resolver policies, matches,
 resolutions, resource demands, blocks, prescriptions, availability windows, and weekly plans are
