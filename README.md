@@ -807,6 +807,40 @@ python -m build
 pnpm --filter @agas/web build
 ```
 
+## Build deployment images
+
+The repository has vendor-neutral, non-root Linux images for the FastAPI resource server and the
+standalone Next.js PWA. Build them from the repository root so both Dockerfiles can use the
+monorepo context:
+
+```bash
+docker build -f services/api/Dockerfile -t agas-api:local .
+docker build -f apps/web/Dockerfile -t agas-web:local \
+  --build-arg NEXT_PUBLIC_API_URL=https://api.agas.example .
+```
+
+`compose.production.yml` is a single-server deployment reference, not a one-command production
+launch. Copy `.env.production.example` to a secret-managed file outside version control, replace
+every example, and validate the rendered model before use:
+
+```bash
+docker compose --env-file /secure/path/agas.production.env \
+  -f compose.production.yml config
+docker compose --env-file /secure/path/agas.production.env \
+  -f compose.production.yml up -d --build
+```
+
+The reference stack keeps PostgreSQL off host ports, runs Alembic as a one-shot prerequisite, and
+binds the API and PWA only to host loopback. A separately operated HTTPS reverse proxy must expose
+their public domains. The PWA's public API URL is compiled at image-build time, while database and
+identity configuration remain runtime-only. A managed PostgreSQL deployment may replace the
+reference database by supplying its URL and adapting the Compose topology.
+
+This packaging does **not** complete production deployment: browser login/provider selection,
+HTTPS ingress, secret management, backups/restore drills, monitoring, account lifecycle, and
+production authorization administration remain required. Development bearer selectors must never
+be used for a hosted instance. See [docs/deployment.md](docs/deployment.md).
+
 ## Product guardrail
 
 The core chain is:

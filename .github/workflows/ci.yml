@@ -92,3 +92,23 @@ jobs:
 
       - name: Run browser navigation smoke tests
         run: pnpm --filter @agas/web test:e2e
+
+  containers:
+    name: Deployment containers
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Validate the production Compose model
+        run: docker compose --env-file .env.production.example --file compose.production.yml config --quiet
+
+      - name: Build API runtime image
+        run: docker build --file services/api/Dockerfile --tag agas-api:ci .
+
+      - name: Build standalone PWA runtime image
+        run: >-
+          docker build --file apps/web/Dockerfile --tag agas-web:ci
+          --build-arg NEXT_PUBLIC_API_URL=https://api.agas.example .
