@@ -16,6 +16,8 @@ from agas_domain.persistence.models import (
 )
 from agas_domain.persistence.repository import DomainRepository
 from fastapi import Depends, Header, HTTPException, status
+from jwt import PyJWKClient, decode
+from jwt.exceptions import PyJWKClientConnectionError, PyJWTError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -23,6 +25,7 @@ from agas_api.database import database_session_dependency
 from agas_api.settings import Settings, get_settings
 
 DEVELOPMENT_SUBJECT_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{2,99}$")
+ALLOWED_EXTERNAL_JWT_ALGORITHMS = frozenset({"RS256", "RS384", "RS512", "ES256", "ES384", "ES512"})
 
 
 class IdentityAuthenticationError(ValueError):
@@ -66,10 +69,86 @@ class DevelopmentBearerVerifier:
         )
 
 
+class ExternalJWTVerifier:
+    """Verify one explicitly configured asymmetric JWT resource-server contract."""
+
+    def __init__(
+        self,
+        *,
+        issuer: str,
+        audience: str,
+        jwks_url: str,
+        algorithms: tuple[str, ...],
+        leeway_seconds: int,
+        jwks_timeout_seconds: float,
+        jwks_cache_seconds: int,
+        jwks_client: PyJWKClient | None = None,
+    ) -> None:
+        if not algorithms or any(
+            algorithm not in ALLOWED_EXTERNAL_JWT_ALGORITHMS for algorithm in algorithms
+        ):
+            raise ValueError("external JWT algorithms must use the asymmetric allow-list")
+        self.issuer = issuer
+        self.audience = audience
+        self.algorithms = algorithms
+        self.leeway_seconds = leeway_seconds
+        self.jwks_client = jwks_client or PyJWKClient(
+            jwks_url,
+            cache_keys=False,
+            cache_jwk_set=True,
+            lifespan=jwks_cache_seconds,
+            timeout=jwks_timeout_seconds,
+        )
+
+    def verify(self, token: str) -> AuthenticatedPrincipal:
+        try:
+            signing_key = self.jwks_client.get_signing_key_from_jwt(token)
+            claims = decode(
+                token,
+                signing_key,
+                algorithms=list(self.algorithms),
+                audience=self.audience,
+                issuer=self.issuer,
+                leeway=self.leeway_seconds,
+                options={"require": ["iss", "aud", "exp", "iat", "sub"]},
+            )
+        except PyJWKClientConnectionError as error:
+            raise IdentityAuthenticationUnavailableError(
+                "external signing keys are temporarily unavailable"
+            ) from error
+        except PyJWTError as error:
+            raise IdentityAuthenticationError("external bearer token is invalid") from error
+
+        subject = claims.get("sub")
+        if not isinstance(subject, str) or not subject.strip():
+            raise IdentityAuthenticationError("external bearer token is invalid")
+        return AuthenticatedPrincipal(
+            issuer=self.issuer,
+            subject=subject.strip(),
+            authentication_method="external-jwt",
+        )
+
+
 def _token_verifier(settings: Settings) -> TokenVerifier:
     if settings.auth_mode == "development":
         return DevelopmentBearerVerifier(settings.development_auth_issuer)
-    raise IdentityAuthenticationUnavailableError("external token verification is not configured")
+    if (
+        settings.external_auth_issuer is None
+        or settings.external_auth_jwks_url is None
+        or not settings.external_auth_audience
+    ):
+        raise IdentityAuthenticationUnavailableError(
+            "external token verification is not configured"
+        )
+    return ExternalJWTVerifier(
+        issuer=str(settings.external_auth_issuer),
+        audience=settings.external_auth_audience,
+        jwks_url=str(settings.external_auth_jwks_url),
+        algorithms=settings.external_auth_algorithms,
+        leeway_seconds=settings.external_auth_leeway_seconds,
+        jwks_timeout_seconds=settings.external_auth_jwks_timeout_seconds,
+        jwks_cache_seconds=settings.external_auth_jwks_cache_seconds,
+    )
 
 
 def authenticated_principal_dependency(
