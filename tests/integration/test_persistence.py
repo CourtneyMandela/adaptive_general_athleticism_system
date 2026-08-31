@@ -1,5 +1,5 @@
 from datetime import UTC, datetime, timedelta
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from agas_domain import (
@@ -16,6 +16,7 @@ from agas_domain import (
     Equipment,
     EquipmentAvailability,
     EvidenceClaim,
+    EvidenceSource,
     EvidenceSourceIdentifier,
     EvidenceStrength,
     Exercise,
@@ -28,6 +29,7 @@ from agas_domain import (
 from agas_domain.persistence.models import (
     AthleteRecord,
     CapabilityEstimateRecord,
+    EvidenceSourceRecord,
     ImmutableHistoricalRecordError,
     ObservationRecord,
 )
@@ -197,6 +199,106 @@ def test_evidence_claim_round_trip_preserves_sources_and_versions(session: Sessi
     session.expire_all()
 
     assert repository.get_evidence_claim(claim.id) == claim
+
+
+def test_evidence_source_snapshots_and_claim_links_preserve_exact_history(
+    session: Session,
+) -> None:
+    repository = DomainRepository(session)
+    identifier = EvidenceSourceIdentifier(scheme="pmid", value="12345678")
+    first = EvidenceSource(
+        title="Original fixture metadata",
+        authors=("Test Author",),
+        journal="Software Test Journal",
+        publication_year=2026,
+        publication_types=("Test Fixture",),
+        primary_identifier=identifier,
+        source_identifiers=(identifier,),
+        metadata_provider="pubmed",
+        retrieval_uri="https://pubmed.ncbi.nlm.nih.gov/12345678/",
+        retrieved_at=NOW,
+        metadata_version="pubmed-xml@1",
+    )
+    repository.add_evidence_source(first)
+    session.flush()
+    second = EvidenceSource(
+        title="Corrected fixture metadata",
+        authors=("Test Author",),
+        journal="Software Test Journal",
+        publication_year=2026,
+        publication_types=("Test Fixture",),
+        primary_identifier=identifier,
+        source_identifiers=(identifier,),
+        metadata_provider="pubmed",
+        retrieval_uri="https://pubmed.ncbi.nlm.nih.gov/12345678/",
+        retrieved_at=NOW + timedelta(days=1),
+        metadata_version="pubmed-xml@2",
+        sequence_number=2,
+        supersedes_source_id=first.id,
+    )
+    repository.add_evidence_source(second)
+    session.flush()
+    claim = make_evidence_claim().model_copy(
+        update={
+            "source_identifiers": (identifier,),
+            "source_record_ids": (second.id,),
+        }
+    )
+    repository.add_evidence_claim(claim)
+    session.commit()
+    session.expire_all()
+
+    assert repository.get_evidence_source(first.id) == first
+    assert repository.get_evidence_source(second.id) == second
+    assert repository.get_evidence_claim(claim.id) == claim
+    assert repository.list_evidence_sources() == (first, second)
+
+
+def test_evidence_claim_cannot_reference_an_unknown_source_snapshot(session: Session) -> None:
+    claim = make_evidence_claim().model_copy(update={"source_record_ids": (uuid4(),)})
+
+    with pytest.raises(DomainIntegrityError, match="source records"):
+        DomainRepository(session).add_evidence_claim(claim)
+
+
+def test_evidence_claim_identifiers_must_match_linked_source_metadata(session: Session) -> None:
+    source = EvidenceSource(
+        title="Fixture metadata",
+        primary_identifier=EvidenceSourceIdentifier(scheme="pmid", value="12345678"),
+        source_identifiers=(EvidenceSourceIdentifier(scheme="pmid", value="12345678"),),
+        metadata_provider="pubmed",
+        retrieval_uri="https://pubmed.ncbi.nlm.nih.gov/12345678/",
+        retrieved_at=NOW,
+        metadata_version="pubmed-xml@1",
+    )
+    repository = DomainRepository(session)
+    repository.add_evidence_source(source)
+    session.flush()
+    mismatched_claim = make_evidence_claim().model_copy(update={"source_record_ids": (source.id,)})
+
+    with pytest.raises(DomainIntegrityError, match="omits source"):
+        repository.add_evidence_claim(mismatched_claim)
+
+
+def test_evidence_source_snapshot_cannot_be_silently_updated(session: Session) -> None:
+    source = EvidenceSource(
+        title="Immutable fixture metadata",
+        primary_identifier=EvidenceSourceIdentifier(scheme="pmid", value="12345678"),
+        source_identifiers=(EvidenceSourceIdentifier(scheme="pmid", value="12345678"),),
+        metadata_provider="pubmed",
+        retrieval_uri="https://pubmed.ncbi.nlm.nih.gov/12345678/",
+        retrieved_at=NOW,
+        metadata_version="pubmed-xml@1",
+    )
+    repository = DomainRepository(session)
+    repository.add_evidence_source(source)
+    session.commit()
+    record = session.get(EvidenceSourceRecord, source.id)
+    assert record is not None
+    record.title = "Rewritten metadata"
+
+    with pytest.raises(ImmutableHistoricalRecordError, match="add a new version"):
+        session.flush()
 
 
 def test_ontology_relationships_are_referential_and_round_trip(session: Session) -> None:

@@ -21,6 +21,13 @@ Consumer fitness media, social posts, influencers, and commercial content may no
 
 An `EvidenceClaim` records the claim, population, intervention, comparator, outcome, study design, uncertainty, limitations, strength, applicability, source identifiers, reviewer, creation time, and version. Source identifiers may include PMID, DOI, or another stable scholarly identifier.
 
+New governed claims must also link to the exact immutable `EvidenceSource` metadata snapshots that
+were reviewed. A source snapshot stores publication metadata, all identifiers, retrieval provider,
+URI/query/time, metadata version, and provenance notes. If provider metadata changes, append a new
+sequenced snapshot; do not rewrite the older snapshot or silently redirect historical claims.
+Identifiers on the claim must agree with its linked snapshots. Existing secondary-AI seed claims
+predate this relational link and remain provisional until deliberately re-retrieved and reviewed.
+
 Evidence strength and athlete applicability must be assessed separately. A strong result in a dissimilar population may have low applicability to the current athlete.
 
 ## Review and updates
@@ -31,6 +38,19 @@ Evidence strength and athlete applicability must be assessed separately. A stron
 - Re-review claims when stronger evidence appears, existing evidence is contradicted, or athlete applicability changes.
 - Seed claims require checked source metadata and interpretation. Secondary-AI verification must
   remain distinguishable from production approval in the catalog manifest and reviewer field.
+
+The development-only evidence-governance bundle importer is a typed transport for externally
+retrieved metadata and externally reviewed claims. It requires exact source-snapshot links and
+atomic, idempotent persistence. It does not search databases, verify that a provider response is
+authentic, judge evidence strength, establish reviewer qualifications, or convert a reviewer label
+into production approval. Those remain separate retrieval and scientific-review responsibilities.
+
+The PubMed adapter is retrieval only. Search results are identifiers, and an EFetch result is an
+unreviewed metadata snapshot—not evidence that a claim is true. Retrieval must include the NCBI
+tool/contact parameters, remain within NCBI usage limits, and respect the provider's disclaimer and
+copyright guidance, including the possibility that abstracts are protected. API keys must not be
+stored in source provenance or surfaced in errors. A human review boundary must remain between
+retrieved metadata and any operational `EvidenceClaim`.
 
 ## Planning thresholds
 

@@ -9,6 +9,8 @@ from agas_domain import (
     CapabilityDomain,
     CapabilityEstimate,
     Confidence,
+    EvidenceSource,
+    EvidenceSourceIdentifier,
     Observation,
     ObservationSource,
     Provenance,
@@ -111,4 +113,46 @@ def test_adaptation_relationship_requires_evidence_provenance() -> None:
             confidence=Confidence.LOW,
             population="unspecified",
             evidence_claim_ids=(),
+        )
+
+
+def test_evidence_source_requires_explicit_snapshot_lineage() -> None:
+    identifier = EvidenceSourceIdentifier(scheme="pmid", value="12345678")
+    first = EvidenceSource(
+        title="Software fixture publication",
+        primary_identifier=identifier,
+        source_identifiers=(identifier,),
+        metadata_provider="pubmed",
+        retrieval_uri="https://pubmed.ncbi.nlm.nih.gov/12345678/",
+        retrieved_at=NOW,
+        metadata_version="pubmed-xml@1",
+    )
+
+    assert first.sequence_number == 1
+    assert first.supersedes_source_id is None
+    with pytest.raises(ValidationError, match="must identify the snapshot"):
+        EvidenceSource(
+            title="Updated software fixture publication",
+            primary_identifier=identifier,
+            source_identifiers=(identifier,),
+            metadata_provider="pubmed",
+            retrieval_uri="https://pubmed.ncbi.nlm.nih.gov/12345678/",
+            retrieved_at=NOW,
+            metadata_version="pubmed-xml@2",
+            sequence_number=2,
+        )
+
+
+def test_evidence_source_primary_identifier_must_be_in_retrieved_metadata() -> None:
+    with pytest.raises(ValidationError, match="primary_identifier"):
+        EvidenceSource(
+            title="Software fixture publication",
+            primary_identifier=EvidenceSourceIdentifier(scheme="pmid", value="12345678"),
+            source_identifiers=(
+                EvidenceSourceIdentifier(scheme="doi", value="10.0000/software-fixture"),
+            ),
+            metadata_provider="manual",
+            retrieval_uri="urn:agas:test:evidence-source",
+            retrieved_at=NOW,
+            metadata_version="fixture@1",
         )

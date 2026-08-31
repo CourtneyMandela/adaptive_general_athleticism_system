@@ -304,6 +304,41 @@ class AdaptationRecord(VersionedRecordMixin, Base):
     )
 
 
+class EvidenceSourceRecord(VersionedRecordMixin, Base):
+    __tablename__ = "evidence_sources"
+    __table_args__ = (
+        CheckConstraint("sequence_number >= 1", name="ck_evidence_source_sequence_positive"),
+        UniqueConstraint(
+            "primary_identifier_scheme",
+            "primary_identifier_value",
+            "sequence_number",
+            name="uq_evidence_source_identity_sequence",
+        ),
+        UniqueConstraint("supersedes_source_id", name="uq_evidence_source_superseded_once"),
+    )
+
+    title: Mapped[str] = mapped_column(Text(), nullable=False)
+    authors: Mapped[list[str]] = mapped_column(JsonType, nullable=False)
+    journal: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    publication_year: Mapped[int | None] = mapped_column(Integer(), nullable=True)
+    publication_date: Mapped[date | None] = mapped_column(Date(), nullable=True)
+    abstract: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    publication_types: Mapped[list[str]] = mapped_column(JsonType, nullable=False)
+    primary_identifier_scheme: Mapped[str] = mapped_column(String(40), index=True, nullable=False)
+    primary_identifier_value: Mapped[str] = mapped_column(String(300), index=True, nullable=False)
+    source_identifiers: Mapped[list[dict[str, str]]] = mapped_column(JsonType, nullable=False)
+    metadata_provider: Mapped[str] = mapped_column(String(40), nullable=False)
+    retrieval_uri: Mapped[str] = mapped_column(Text(), nullable=False)
+    retrieval_query: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    retrieved_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)
+    metadata_version: Mapped[str] = mapped_column(String(120), nullable=False)
+    provenance_notes: Mapped[list[str]] = mapped_column(JsonType, nullable=False)
+    sequence_number: Mapped[int] = mapped_column(Integer(), nullable=False)
+    supersedes_source_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("evidence_sources.id", ondelete="RESTRICT"), index=True, nullable=True
+    )
+
+
 class EvidenceClaimRecord(VersionedRecordMixin, Base):
     __tablename__ = "evidence_claims"
 
@@ -325,6 +360,27 @@ class EvidenceClaimRecord(VersionedRecordMixin, Base):
     source_identifiers: Mapped[list[dict[str, str]]] = mapped_column(JsonType, nullable=False)
     reviewer: Mapped[str] = mapped_column(String(160), nullable=False)
     claim_version: Mapped[str] = mapped_column(String(80), nullable=False)
+
+    source_links: Mapped[list[EvidenceClaimSourceRecord]] = relationship(
+        cascade="save-update, merge",
+        lazy="selectin",
+        order_by="EvidenceClaimSourceRecord.position",
+    )
+
+
+class EvidenceClaimSourceRecord(Base):
+    __tablename__ = "evidence_claim_sources"
+    __table_args__ = (
+        UniqueConstraint("evidence_claim_id", "position", name="uq_evidence_claim_source_order"),
+    )
+
+    evidence_claim_id: Mapped[UUID] = mapped_column(
+        ForeignKey("evidence_claims.id", ondelete="RESTRICT"), primary_key=True
+    )
+    evidence_source_id: Mapped[UUID] = mapped_column(
+        ForeignKey("evidence_sources.id", ondelete="RESTRICT"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer(), nullable=False)
 
 
 class AssessmentDefinitionRecord(VersionedRecordMixin, Base):
@@ -3080,7 +3136,9 @@ for _record_type in (
     CapabilityEstimateRecord,
     CapabilityEstimateObservationRecord,
     EquipmentAvailabilityRecord,
+    EvidenceSourceRecord,
     EvidenceClaimRecord,
+    EvidenceClaimSourceRecord,
     AssessmentDefinitionRecord,
     AssessmentDefinitionReviewRecord,
     AssessmentDefinitionReviewEvidenceClaimRecord,

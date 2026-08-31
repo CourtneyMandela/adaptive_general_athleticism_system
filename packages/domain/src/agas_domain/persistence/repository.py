@@ -47,6 +47,7 @@ from agas_domain.models import (
     Equipment,
     EquipmentAvailability,
     EvidenceClaim,
+    EvidenceSource,
     EvidenceSourceIdentifier,
     Exercise,
     ExerciseMatch,
@@ -143,6 +144,8 @@ from agas_domain.persistence.models import (
     EquipmentAvailabilityRecord,
     EquipmentRecord,
     EvidenceClaimRecord,
+    EvidenceClaimSourceRecord,
+    EvidenceSourceRecord,
     ExerciseAdaptationRecord,
     ExerciseEquipmentRequirementRecord,
     ExerciseMatchRecord,
@@ -731,31 +734,122 @@ class DomainRepository:
         self.session.add(record)
 
     def add_evidence_claim(self, claim: EvidenceClaim) -> None:
+        self._require_ids_exist(
+            EvidenceSourceRecord.id,
+            claim.source_record_ids,
+            "evidence-claim source records",
+        )
+        if claim.source_record_ids:
+            claim_identifiers = {
+                (identifier.scheme, identifier.value.casefold())
+                for identifier in claim.source_identifiers
+            }
+            linked_identifiers: set[tuple[str, str]] = set()
+            for source_id in claim.source_record_ids:
+                source = self.get_evidence_source(source_id)
+                if source is None:
+                    raise DomainIntegrityError(f"evidence source {source_id} does not exist")
+                linked_identifiers.update(
+                    (identifier.scheme, identifier.value.casefold())
+                    for identifier in source.source_identifiers
+                )
+                primary = (
+                    source.primary_identifier.scheme,
+                    source.primary_identifier.value.casefold(),
+                )
+                if primary not in claim_identifiers:
+                    raise DomainIntegrityError(
+                        f"evidence claim omits source {source_id}'s primary identifier"
+                    )
+            if not claim_identifiers.issubset(linked_identifiers):
+                raise DomainIntegrityError(
+                    "evidence claim contains identifiers absent from its source records"
+                )
+        record = EvidenceClaimRecord(
+            id=claim.id,
+            schema_version=claim.schema_version,
+            created_at=claim.created_at,
+            claim=claim.claim,
+            domain=claim.domain,
+            population=claim.population,
+            intervention=claim.intervention,
+            comparator=claim.comparator,
+            outcome=claim.outcome,
+            study_design=claim.study_design,
+            sample_size=claim.sample_size,
+            duration=claim.duration,
+            effect_direction=claim.effect_direction,
+            uncertainty=claim.uncertainty,
+            limitations=list(claim.limitations),
+            evidence_strength=claim.evidence_strength.value,
+            athlete_applicability=claim.athlete_applicability.value,
+            applicability_notes=claim.applicability_notes,
+            source_identifiers=[item.model_dump(mode="json") for item in claim.source_identifiers],
+            reviewer=claim.reviewer,
+            claim_version=claim.claim_version,
+        )
+        record.source_links = [
+            EvidenceClaimSourceRecord(
+                evidence_claim_id=claim.id,
+                evidence_source_id=source_id,
+                position=position,
+            )
+            for position, source_id in enumerate(claim.source_record_ids)
+        ]
+        self.session.add(record)
+
+    def add_evidence_source(self, source: EvidenceSource) -> None:
+        if source.supersedes_source_id is not None:
+            predecessor = self.get_evidence_source(source.supersedes_source_id)
+            if predecessor is None:
+                raise DomainIntegrityError(
+                    f"evidence source references unknown predecessor {source.supersedes_source_id}"
+                )
+            predecessor_key = (
+                predecessor.primary_identifier.scheme,
+                predecessor.primary_identifier.value.casefold(),
+            )
+            source_key = (
+                source.primary_identifier.scheme,
+                source.primary_identifier.value.casefold(),
+            )
+            if predecessor_key != source_key:
+                raise DomainIntegrityError(
+                    "evidence source snapshots in one lineage must preserve the primary identifier"
+                )
+            if source.sequence_number != predecessor.sequence_number + 1:
+                raise DomainIntegrityError(
+                    "evidence source sequence must immediately follow its predecessor"
+                )
+            if source.retrieved_at < predecessor.retrieved_at:
+                raise DomainIntegrityError(
+                    "evidence source retrieval time cannot precede its predecessor"
+                )
         self.session.add(
-            EvidenceClaimRecord(
-                id=claim.id,
-                schema_version=claim.schema_version,
-                created_at=claim.created_at,
-                claim=claim.claim,
-                domain=claim.domain,
-                population=claim.population,
-                intervention=claim.intervention,
-                comparator=claim.comparator,
-                outcome=claim.outcome,
-                study_design=claim.study_design,
-                sample_size=claim.sample_size,
-                duration=claim.duration,
-                effect_direction=claim.effect_direction,
-                uncertainty=claim.uncertainty,
-                limitations=list(claim.limitations),
-                evidence_strength=claim.evidence_strength.value,
-                athlete_applicability=claim.athlete_applicability.value,
-                applicability_notes=claim.applicability_notes,
+            EvidenceSourceRecord(
+                id=source.id,
+                schema_version=source.schema_version,
+                created_at=source.created_at,
+                title=source.title,
+                authors=list(source.authors),
+                journal=source.journal,
+                publication_year=source.publication_year,
+                publication_date=source.publication_date,
+                abstract=source.abstract,
+                publication_types=list(source.publication_types),
+                primary_identifier_scheme=source.primary_identifier.scheme,
+                primary_identifier_value=source.primary_identifier.value,
                 source_identifiers=[
-                    item.model_dump(mode="json") for item in claim.source_identifiers
+                    item.model_dump(mode="json") for item in source.source_identifiers
                 ],
-                reviewer=claim.reviewer,
-                claim_version=claim.claim_version,
+                metadata_provider=source.metadata_provider,
+                retrieval_uri=source.retrieval_uri,
+                retrieval_query=source.retrieval_query,
+                retrieved_at=source.retrieved_at,
+                metadata_version=source.metadata_version,
+                provenance_notes=list(source.provenance_notes),
+                sequence_number=source.sequence_number,
+                supersedes_source_id=source.supersedes_source_id,
             )
         )
 
@@ -5206,8 +5300,56 @@ class DomainRepository:
             source_identifiers=tuple(
                 EvidenceSourceIdentifier.model_validate(item) for item in record.source_identifiers
             ),
+            source_record_ids=tuple(item.evidence_source_id for item in record.source_links),
             reviewer=record.reviewer,
             claim_version=record.claim_version,
+        )
+
+    def get_evidence_source(self, source_id: UUID) -> EvidenceSource | None:
+        record = self.session.get(EvidenceSourceRecord, source_id)
+        if record is None:
+            return None
+        return EvidenceSource(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            title=record.title,
+            authors=tuple(record.authors),
+            journal=record.journal,
+            publication_year=record.publication_year,
+            publication_date=record.publication_date,
+            abstract=record.abstract,
+            publication_types=tuple(record.publication_types),
+            primary_identifier=EvidenceSourceIdentifier(
+                scheme=record.primary_identifier_scheme,
+                value=record.primary_identifier_value,
+            ),
+            source_identifiers=tuple(
+                EvidenceSourceIdentifier.model_validate(item) for item in record.source_identifiers
+            ),
+            metadata_provider=record.metadata_provider,
+            retrieval_uri=record.retrieval_uri,
+            retrieval_query=record.retrieval_query,
+            retrieved_at=record.retrieved_at,
+            metadata_version=record.metadata_version,
+            provenance_notes=tuple(record.provenance_notes),
+            sequence_number=record.sequence_number,
+            supersedes_source_id=record.supersedes_source_id,
+        )
+
+    def list_evidence_sources(self) -> tuple[EvidenceSource, ...]:
+        records = self.session.scalars(
+            select(EvidenceSourceRecord).order_by(
+                EvidenceSourceRecord.primary_identifier_scheme,
+                EvidenceSourceRecord.primary_identifier_value,
+                EvidenceSourceRecord.sequence_number,
+                EvidenceSourceRecord.id,
+            )
+        )
+        return tuple(
+            source
+            for record in records
+            if (source := self.get_evidence_source(record.id)) is not None
         )
 
     def get_environment(self, environment_id: UUID) -> Environment | None:

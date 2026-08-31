@@ -357,6 +357,55 @@ class EvidenceSourceIdentifier(DomainModel):
     value: NonEmptyText
 
 
+class EvidenceSource(VersionedRecord):
+    """One immutable retrieval snapshot of a scientific publication's metadata."""
+
+    title: NonEmptyText
+    authors: tuple[NonEmptyText, ...] = ()
+    journal: str | None = None
+    publication_year: int | None = Field(default=None, ge=1600, le=3000)
+    publication_date: date | None = None
+    abstract: str | None = None
+    publication_types: tuple[NonEmptyText, ...] = ()
+    primary_identifier: EvidenceSourceIdentifier
+    source_identifiers: Annotated[tuple[EvidenceSourceIdentifier, ...], Field(min_length=1)]
+    metadata_provider: Literal["pubmed", "crossref", "openalex", "manual"]
+    retrieval_uri: NonEmptyText
+    retrieval_query: str | None = None
+    retrieved_at: datetime
+    metadata_version: NonEmptyText
+    provenance_notes: tuple[NonEmptyText, ...] = ()
+    sequence_number: int = Field(default=1, ge=1)
+    supersedes_source_id: UUID | None = None
+
+    @field_validator("retrieved_at")
+    @classmethod
+    def require_aware_retrieved_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("retrieved_at must include a timezone")
+        return value
+
+    @model_validator(mode="after")
+    def validate_source_identity(self) -> EvidenceSource:
+        identifiers = [(item.scheme, item.value.casefold()) for item in self.source_identifiers]
+        if len(set(identifiers)) != len(identifiers):
+            raise ValueError("source_identifiers must not contain duplicates")
+        primary = (self.primary_identifier.scheme, self.primary_identifier.value.casefold())
+        if primary not in identifiers:
+            raise ValueError("primary_identifier must be present in source_identifiers")
+        if self.sequence_number == 1 and self.supersedes_source_id is not None:
+            raise ValueError("the first source snapshot cannot supersede another source")
+        if self.sequence_number > 1 and self.supersedes_source_id is None:
+            raise ValueError("later source snapshots must identify the snapshot they supersede")
+        if (
+            self.publication_date is not None
+            and self.publication_year is not None
+            and self.publication_date.year != self.publication_year
+        ):
+            raise ValueError("publication_date and publication_year must agree")
+        return self
+
+
 class EvidenceClaim(VersionedRecord):
     claim: NonEmptyText
     domain: NonEmptyText
@@ -374,8 +423,15 @@ class EvidenceClaim(VersionedRecord):
     athlete_applicability: Applicability
     applicability_notes: NonEmptyText
     source_identifiers: Annotated[tuple[EvidenceSourceIdentifier, ...], Field(min_length=1)]
+    source_record_ids: tuple[UUID, ...] = ()
     reviewer: NonEmptyText
     claim_version: NonEmptyText
+
+    @model_validator(mode="after")
+    def validate_source_records(self) -> EvidenceClaim:
+        if len(set(self.source_record_ids)) != len(self.source_record_ids):
+            raise ValueError("source_record_ids must not contain duplicates")
+        return self
 
 
 class DecisionRecord(VersionedRecord):
