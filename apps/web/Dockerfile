@@ -18,12 +18,15 @@ RUN pnpm install --frozen-lockfile --filter @agas/web...
 FROM dependencies AS builder
 
 ARG NEXT_PUBLIC_API_URL
+ARG NEXT_PUBLIC_AGAS_AUTH_MODE=session
 ENV NEXT_PUBLIC_API_URL="${NEXT_PUBLIC_API_URL}"
+ENV NEXT_PUBLIC_AGAS_AUTH_MODE="${NEXT_PUBLIC_AGAS_AUTH_MODE}"
 ENV NEXT_TELEMETRY_DISABLED=1
 
 COPY apps/web ./apps/web
 
 RUN test -n "${NEXT_PUBLIC_API_URL}" && \
+    test "${NEXT_PUBLIC_AGAS_AUTH_MODE}" = "session" && \
     pnpm --filter @agas/web build
 
 

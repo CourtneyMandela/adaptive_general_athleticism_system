@@ -136,7 +136,9 @@ account identity; it is not a password or production authentication. `AGAS_AUTH_
 is rejected when `AGAS_ENVIRONMENT=production`. External mode verifies an asymmetric JWT against
 one explicitly configured issuer, audience, JWKS endpoint, and algorithm allow-list. Production
 startup fails unless that complete configuration uses HTTPS. Browser login and provider selection
-are still separate deployment work; do not place provider secrets in `NEXT_PUBLIC_*` variables.
+are still separate deployment work. Production browser requests use a same-origin server gateway;
+its encrypted `HttpOnly` session will hold the provider access token after a login adapter exists.
+Do not place provider secrets or access tokens in `NEXT_PUBLIC_*` variables.
 
 The application endpoints are intentionally narrow:
 
@@ -671,6 +673,13 @@ controlled equipment selections. The backend must have imported the seed catalog
 choices to appear. A new profile opens the authoritative empty-week state rather than receiving a
 generic workout.
 
+Production images instead compile `NEXT_PUBLIC_AGAS_AUTH_MODE=session` and
+`NEXT_PUBLIC_API_URL=/api/agas`. In that mode browser code never constructs an authorization
+header. The same-origin gateway decrypts a short-lived server session, applies origin/body/header
+controls, and forwards the access token only to private FastAPI. No public route can create that
+session yet; a missing or invalid session receives an honest `401` until the OIDC login adapter is
+connected.
+
 The provisional reviewer console is available at `http://localhost:3000/review`. Configure
 `NEXT_PUBLIC_AGAS_REVIEWER_TOKEN=dev.local-reviewer` and grant that subject the local
 `planning_reviewer` role as shown above. The console retrieves eligible estimates, their source
@@ -822,7 +831,7 @@ monorepo context:
 ```bash
 docker build -f services/api/Dockerfile -t agas-api:local .
 docker build -f apps/web/Dockerfile -t agas-web:local \
-  --build-arg NEXT_PUBLIC_API_URL=https://api.agas.example .
+  --build-arg NEXT_PUBLIC_API_URL=/api/agas .
 ```
 
 `compose.production.yml` is a single-server deployment reference, not a one-command production
@@ -836,10 +845,12 @@ docker compose --env-file /secure/path/agas.production.env \
   -f compose.production.yml up -d --build
 ```
 
-The reference stack keeps PostgreSQL off host ports, runs Alembic as a one-shot prerequisite, and
-binds the API and PWA only to host loopback. A separately operated HTTPS reverse proxy must expose
-their public domains. The PWA's public API URL is compiled at image-build time, while database and
-identity configuration remain runtime-only. A managed PostgreSQL deployment may replace the
+The reference stack keeps PostgreSQL and FastAPI off host ports, runs Alembic as a one-shot
+prerequisite, and binds only the PWA to host loopback. A separately operated HTTPS reverse proxy
+exposes the web origin. Browser API calls remain same-origin and the web container reaches FastAPI
+on the private Compose network. The relative gateway path and session auth mode are compiled at
+image-build time; database, identity, internal API, public-origin, and session-encryption settings
+remain server-only runtime configuration. A managed PostgreSQL deployment may replace the
 reference database by supplying its URL and adapting the Compose topology.
 
 This packaging does **not** complete production deployment: browser login/provider selection,

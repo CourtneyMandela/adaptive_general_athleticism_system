@@ -56,16 +56,18 @@ services:
       timeout: 5s
       start_period: 10s
       retries: 3
-    ports:
-      - "127.0.0.1:${AGAS_API_LOOPBACK_PORT:-8000}:8000"
-
   web:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?set NEXT_PUBLIC_API_URL}
+        NEXT_PUBLIC_AGAS_AUTH_MODE: session
     restart: unless-stopped
+    environment:
+      AGAS_INTERNAL_API_URL: ${AGAS_INTERNAL_API_URL:?set AGAS_INTERNAL_API_URL}
+      AGAS_PUBLIC_WEB_ORIGIN: ${AGAS_PUBLIC_WEB_ORIGIN:?set AGAS_PUBLIC_WEB_ORIGIN}
+      AGAS_SESSION_ENCRYPTION_KEY: ${AGAS_SESSION_ENCRYPTION_KEY:?set AGAS_SESSION_ENCRYPTION_KEY}
     depends_on:
       api:
         condition: service_healthy

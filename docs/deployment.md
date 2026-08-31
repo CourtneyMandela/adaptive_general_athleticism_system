@@ -16,11 +16,13 @@ images on Linux for every pull request and push to `main`.
 1. PostgreSQL is authoritative and is not published on a host port.
 2. The migration job waits for a healthy database and must finish successfully before the API.
 3. The PWA waits for API readiness.
-4. API and PWA ports bind to host loopback, not every network interface.
+4. Only the PWA port binds to host loopback; FastAPI remains on the private Compose network.
 5. Production API startup requires external authentication with HTTPS issuer/JWKS settings.
 6. No development bearer selector is passed to a production container.
 7. The production PWA image includes an install manifest, maskable icon, and fail-closed offline
    shell without storing athlete records.
+8. Production browser API calls use a relative same-origin gateway, an encrypted server session,
+   and no JavaScript-readable access token.
 
 The reference database is useful for validating topology. A real deployment may use managed
 PostgreSQL instead, but it must retain migration ordering, encrypted transport where appropriate,
@@ -31,13 +33,16 @@ backups, and restore validation.
 Copy `.env.production.example` to a secret-managed path outside the repository. The example is a
 schema, not a usable environment. Replace every hostname and credential.
 
-`NEXT_PUBLIC_API_URL` is intentionally public and is compiled into the PWA image. Changing it
-requires rebuilding the image. Never place a provider secret or access token in `NEXT_PUBLIC_*`.
+`NEXT_PUBLIC_API_URL=/api/agas` and `NEXT_PUBLIC_AGAS_AUTH_MODE=session` are intentionally public
+build values. Changing them requires rebuilding the image. Never place a provider secret or access
+token in `NEXT_PUBLIC_*`.
 
 All `AGAS_EXTERNAL_AUTH_*` values are server-only runtime configuration. The API accepts only a
 token with the configured issuer, audience, asymmetric signature, required timestamps, and subject.
-The current PWA does not yet acquire that token; browser authorization-code-with-PKCE or a reviewed
-server-session design remains the next authentication milestone.
+The web runtime's `AGAS_INTERNAL_API_URL`, `AGAS_PUBLIC_WEB_ORIGIN`, and
+`AGAS_SESSION_ENCRYPTION_KEY` are server-only. Generate the session key from exactly 32 random bytes
+encoded as unpadded base64url. The current PWA does not yet acquire an access token; provider-neutral
+authorization-code-with-PKCE and session creation remain the next authentication milestone.
 
 Passwords embedded in `AGAS_DATABASE_URL` must be URL-encoded. Prefer a deployment secret store over
 a long-lived plaintext environment file. Do not commit the populated file.
@@ -67,17 +72,19 @@ docker compose --env-file /secure/path/agas.production.env \
   -f compose.production.yml logs migrate api web
 ```
 
-The API and web ports are loopback-only. Put a maintained HTTPS reverse proxy or equivalent cloud
-ingress in front of both public hostnames. The API CORS origin must exactly match the public PWA
-origin. Apply provider-specific proxy trust, forwarded-header, request-size, timeout, and rate-limit
-settings only after reviewing that provider's deployment contract.
+The web port is loopback-only and FastAPI is private. Put a maintained HTTPS reverse proxy or
+equivalent cloud ingress in front of the one public web hostname. The exact public origin must match
+`AGAS_PUBLIC_WEB_ORIGIN`; FastAPI's CORS setting may remain restrictive because ordinary browser
+traffic is same-origin through the gateway. Apply provider-specific proxy trust, forwarded-header,
+request-size, timeout, and rate-limit settings only after reviewing that provider's deployment
+contract.
 
 ## Not production-ready yet
 
 Container packaging is necessary for independent phone access but is not authorization to handle
 production athlete data. Before production use, the project still needs:
 
-- a selected identity provider and complete browser login/logout/session flow;
+- a selected identity provider and complete authorization-code/PKCE, login, refresh, and logout flow;
 - HTTPS domains and reviewed ingress configuration;
 - account recovery, consent, export, and deletion workflows;
 - secret rotation and least-privilege production administration;
