@@ -94,6 +94,11 @@ from agas_api.environment_prescription_revision import (
     EnvironmentPrescriptionRevisionResult,
     EnvironmentPrescriptionRevisionValidationError,
 )
+from agas_api.evidence_governance import (
+    EvidenceGovernanceProjection,
+    EvidenceGovernanceProjectionError,
+    EvidenceGovernanceProjector,
+)
 from agas_api.exercise_reresolution import (
     ExerciseReResolutionConflictError,
     ExerciseReResolutionNotFoundError,
@@ -303,6 +308,26 @@ def get_assessment_governance(
     try:
         return AssessmentGovernanceProjector(session).project(projected_at)
     except AssessmentGovernanceProjectionError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.get(
+    "/v1/operator/evidence-governance",
+    tags=["operator"],
+    response_model=EvidenceGovernanceProjection,
+)
+def get_evidence_governance(
+    session: Annotated[Session, Depends(database_session_dependency)],
+    _authority: Annotated[AuthorizedRole, Depends(assessment_reviewer_dependency)],
+    projected_at: Annotated[datetime | None, Query(alias="at")] = None,
+) -> EvidenceGovernanceProjection:
+    try:
+        return EvidenceGovernanceProjector(session).project(projected_at)
+    except EvidenceGovernanceProjectionError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     except ValueError as error:
         raise HTTPException(

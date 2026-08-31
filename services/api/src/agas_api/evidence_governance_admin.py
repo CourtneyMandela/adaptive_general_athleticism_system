@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Annotated, Literal
 from uuid import UUID
 
-from agas_domain import EvidenceClaim, EvidenceSource
+from agas_domain import EvidenceClaim, EvidenceClaimReview, EvidenceSource
 from agas_domain.models import VersionedRecord
 from agas_domain.persistence.repository import DomainIntegrityError, DomainRepository
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from agas_api.database import database_session
 from agas_api.settings import Settings, get_settings
 
-EVIDENCE_GOVERNANCE_BUNDLE_VERSION = "evidence-governance-bundle@1.0.0"
+EVIDENCE_GOVERNANCE_BUNDLE_VERSION = "evidence-governance-bundle@2.0.0"
 
 
 class EvidenceGovernanceBundle(BaseModel):
@@ -25,9 +25,10 @@ class EvidenceGovernanceBundle(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    bundle_version: Literal["evidence-governance-bundle@1.0.0"]
+    bundle_version: Literal["evidence-governance-bundle@1.0.0", "evidence-governance-bundle@2.0.0"]
     sources: Annotated[tuple[EvidenceSource, ...], Field(min_length=1)]
     claims: Annotated[tuple[EvidenceClaim, ...], Field(min_length=1)]
+    reviews: tuple[EvidenceClaimReview, ...] = ()
 
     @model_validator(mode="after")
     def validate_references(self) -> EvidenceGovernanceBundle:
@@ -37,6 +38,11 @@ class EvidenceGovernanceBundle(BaseModel):
         claim_ids = [claim.id for claim in self.claims]
         if len(set(claim_ids)) != len(claim_ids):
             raise ValueError("bundled evidence claims must have unique ids")
+        review_ids = [review.id for review in self.reviews]
+        if len(set(review_ids)) != len(review_ids):
+            raise ValueError("bundled evidence reviews must have unique ids")
+        if self.bundle_version == "evidence-governance-bundle@1.0.0" and self.reviews:
+            raise ValueError("version 1 evidence bundles cannot contain review records")
 
         sources_by_id = {source.id: source for source in self.sources}
         for claim in self.claims:
@@ -73,6 +79,13 @@ class EvidenceGovernanceBundle(BaseModel):
                 raise ValueError(
                     f"evidence claim {claim.id} contains identifiers absent from its source records"
                 )
+        bundled_claim_ids = set(claim_ids)
+        for review in self.reviews:
+            if review.evidence_claim_id not in bundled_claim_ids:
+                raise ValueError(
+                    f"evidence review {review.id} references an unbundled claim "
+                    f"{review.evidence_claim_id}"
+                )
         return self
 
 
@@ -82,8 +95,10 @@ class EvidenceGovernanceImportResult(BaseModel):
     bundle_version: str
     source_ids: tuple[UUID, ...]
     claim_ids: tuple[UUID, ...]
+    review_ids: tuple[UUID, ...]
     created_source_ids: tuple[UUID, ...]
     created_claim_ids: tuple[UUID, ...]
+    created_review_ids: tuple[UUID, ...]
 
 
 class LocalEvidenceGovernanceImportError(RuntimeError):
@@ -102,6 +117,7 @@ def import_evidence_governance_bundle(
     repository = DomainRepository(session)
     created_source_ids: list[UUID] = []
     created_claim_ids: list[UUID] = []
+    created_review_ids: list[UUID] = []
     try:
         for source in sorted(
             bundle.sources,
@@ -125,6 +141,19 @@ def import_evidence_governance_bundle(
             ):
                 created_claim_ids.append(claim.id)
             session.flush()
+
+        for review in sorted(
+            bundle.reviews,
+            key=lambda item: (item.sequence_number, item.reviewed_at, str(item.id)),
+        ):
+            if _ensure_exact(
+                label="evidence claim review",
+                expected=review,
+                existing=repository.get_evidence_claim_review(review.id),
+                add=repository.add_evidence_claim_review,
+            ):
+                created_review_ids.append(review.id)
+            session.flush()
         session.commit()
     except (
         DomainIntegrityError,
@@ -143,8 +172,10 @@ def import_evidence_governance_bundle(
         bundle_version=bundle.bundle_version,
         source_ids=tuple(source.id for source in bundle.sources),
         claim_ids=tuple(claim.id for claim in bundle.claims),
+        review_ids=tuple(review.id for review in bundle.reviews),
         created_source_ids=tuple(created_source_ids),
         created_claim_ids=tuple(created_claim_ids),
+        created_review_ids=tuple(created_review_ids),
     )
 
 

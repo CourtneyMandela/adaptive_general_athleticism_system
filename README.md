@@ -674,6 +674,12 @@ The assessment-governance workbench is available at
 bootstrap. It is a read-only explanation of the governed protocol-to-estimate chain; assessment
 review records still enter through governed local data operations.
 
+The evidence-governance workbench is available at `http://localhost:3000/review/evidence` and
+uses the same read-only scientific-governance token. It traces each claim to exact source snapshots,
+shows every immutable claim-review decision, and marks legacy or non-approved claims as blocked.
+The browser cannot create or approve evidence. Version 2 evidence-governance bundles may carry
+externally prepared `EvidenceClaimReview` records; version 1 source-and-claim bundles remain valid.
+
 After a strategy exists, `http://localhost:3000/review/resource-demands` accepts its UUID and loads
 the exact priority, environment-snapshot, resolver-policy, exercise-ontology, observation, evidence,
 and prior-demand records available to the reviewer. All stimulus constraints, exercise candidates,

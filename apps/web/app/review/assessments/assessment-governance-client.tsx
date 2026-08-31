@@ -68,6 +68,7 @@ export function AssessmentGovernanceClient() {
           </p>
         </div>
         <nav className="review-route-links" aria-label="Reviewer routes">
+          <Link href="/review/evidence" className="text-link">Evidence governance</Link>
           <Link href="/review/queue" className="text-link">Planning queue</Link>
           <Link href="/" className="text-link">Athlete PWA</Link>
         </nav>

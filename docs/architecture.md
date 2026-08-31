@@ -664,11 +664,19 @@ single-successor constraints prevent forks or silent replacement. `EvidenceClaim
 is an ordered relational link to the exact snapshots interpreted. The original identifier list is
 retained for portable citation and must agree with the snapshots at the governed import boundary.
 
-The local-only `evidence-governance-bundle@1.0.0` command imports self-contained exact source and
-claim records atomically and idempotently. It validates source/claim identifiers and immutable
-collisions but does not retrieve publications, interpret findings, approve science, or qualify the
-named reviewer. Legacy provisional seed claims have no fabricated snapshot links; they can be
-migrated only after their metadata is deliberately re-retrieved and reviewed.
+`EvidenceClaimReview` is a separate append-only authorization record for one exact claim. Its
+linear chain preserves the explicit decision, reviewer label, source-verification and extraction
+rationales, separate strength and applicability rationales, uncertainty, conflict disclosure,
+time, and review version. Positive sequence, same-claim predecessor, exact increment,
+nondecreasing time, and single-successor checks prevent silent replacement or forks.
+
+The local-only evidence-governance bundle command imports self-contained exact source, claim, and
+optional review records atomically and idempotently. Version 1 bundles remain source-and-claim only;
+version 2 adds reviews. The read-only `/v1/operator/evidence-governance` projection and
+`/review/evidence` workbench resolve point-in-time state and block claims without exact snapshots or
+a current approved review. They do not retrieve publications, interpret findings, approve science,
+or qualify the named reviewer. Legacy provisional seed claims have no fabricated snapshot links or
+reviews; they can be migrated only after deliberate retrieval and qualified review.
 
 `agas_evidence.pubmed` is the first provider adapter. It uses NCBI ESearch for bounded operator
 queries and EFetch XML for one exact PMID, supplies the configured tool/contact parameters, and

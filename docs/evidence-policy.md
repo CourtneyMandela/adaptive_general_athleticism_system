@@ -19,7 +19,10 @@ Consumer fitness media, social posts, influencers, and commercial content may no
 
 ## Stored provenance
 
-An `EvidenceClaim` records the claim, population, intervention, comparator, outcome, study design, uncertainty, limitations, strength, applicability, source identifiers, reviewer, creation time, and version. Source identifiers may include PMID, DOI, or another stable scholarly identifier.
+An `EvidenceClaim` records the claim, population, intervention, comparator, outcome, study design,
+uncertainty, limitations, strength, applicability, source identifiers, extraction/reviewer label,
+creation time, and version. Source identifiers may include PMID, DOI, or another stable scholarly
+identifier. Claim storage alone is not scientific approval.
 
 New governed claims must also link to the exact immutable `EvidenceSource` metadata snapshots that
 were reviewed. A source snapshot stores publication metadata, all identifiers, retrieval provider,
@@ -29,6 +32,13 @@ Identifiers on the claim must agree with its linked snapshots. Existing secondar
 predate this relational link and remain provisional until deliberately re-retrieved and reviewed.
 
 Evidence strength and athlete applicability must be assessed separately. A strong result in a dissimilar population may have low applicability to the current athlete.
+
+An approval decision belongs to a separate append-only `EvidenceClaimReview` chain for the exact
+claim version. Every review retains source-verification, extraction, evidence-strength, and athlete-
+applicability rationales plus uncertainty, conflict disclosure, reviewer label, review time, and
+version. A claim is ready in the evidence-governance projection only when exact source snapshots are
+available and the current review is approved. A reviewer label and application permission are
+provenance, not proof of scientific qualification.
 
 ## Review and updates
 
@@ -40,10 +50,17 @@ Evidence strength and athlete applicability must be assessed separately. A stron
   remain distinguishable from production approval in the catalog manifest and reviewer field.
 
 The development-only evidence-governance bundle importer is a typed transport for externally
-retrieved metadata and externally reviewed claims. It requires exact source-snapshot links and
-atomic, idempotent persistence. It does not search databases, verify that a provider response is
-authentic, judge evidence strength, establish reviewer qualifications, or convert a reviewer label
-into production approval. Those remain separate retrieval and scientific-review responsibilities.
+retrieved metadata, claims, and explicit external review records. Version 1 accepts source and
+claim records; version 2 may also carry `EvidenceClaimReview` history. It requires exact source-
+snapshot links and atomic, idempotent persistence. Structural import does not search databases,
+verify that a provider response is authentic, judge evidence strength, establish reviewer
+qualifications, or create a review decision. Those remain separate retrieval and scientific-review
+responsibilities.
+
+The read-only evidence-governance workbench may display review history to an account with the
+scientific-governance inspection role. It contains no approval mutation. Existing planning
+authorities are not retroactively treated as reviewed merely because the new projection exists;
+universal operational enforcement requires deliberate replacement of provisional authorities.
 
 The PubMed adapter is retrieval only. Search results are identifiers, and an EFetch result is an
 unreviewed metadata snapshot—not evidence that a claim is true. Retrieval must include the NCBI

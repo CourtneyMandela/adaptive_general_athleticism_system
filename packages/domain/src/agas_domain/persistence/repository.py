@@ -47,6 +47,7 @@ from agas_domain.models import (
     Equipment,
     EquipmentAvailability,
     EvidenceClaim,
+    EvidenceClaimReview,
     EvidenceSource,
     EvidenceSourceIdentifier,
     Exercise,
@@ -144,6 +145,7 @@ from agas_domain.persistence.models import (
     EquipmentAvailabilityRecord,
     EquipmentRecord,
     EvidenceClaimRecord,
+    EvidenceClaimReviewRecord,
     EvidenceClaimSourceRecord,
     EvidenceSourceRecord,
     ExerciseAdaptationRecord,
@@ -749,6 +751,10 @@ class DomainRepository:
                 source = self.get_evidence_source(source_id)
                 if source is None:
                     raise DomainIntegrityError(f"evidence source {source_id} does not exist")
+                if claim.created_at < source.created_at or claim.created_at < source.retrieved_at:
+                    raise DomainIntegrityError(
+                        f"evidence claim cannot predate linked source snapshot {source_id}"
+                    )
                 linked_identifiers.update(
                     (identifier.scheme, identifier.value.casefold())
                     for identifier in source.source_identifiers
@@ -797,6 +803,52 @@ class DomainRepository:
             for position, source_id in enumerate(claim.source_record_ids)
         ]
         self.session.add(record)
+
+    def add_evidence_claim_review(self, review: EvidenceClaimReview) -> None:
+        claim = self.get_evidence_claim(review.evidence_claim_id)
+        if claim is None:
+            raise DomainIntegrityError(
+                f"evidence review references unknown claim {review.evidence_claim_id}"
+            )
+        if review.reviewed_at < claim.created_at:
+            raise DomainIntegrityError("evidence review cannot predate its claim")
+        if review.supersedes_review_id is not None:
+            predecessor = self.get_evidence_claim_review(review.supersedes_review_id)
+            if predecessor is None:
+                raise DomainIntegrityError(
+                    "evidence review references an unknown predecessor "
+                    f"{review.supersedes_review_id}"
+                )
+            if predecessor.evidence_claim_id != review.evidence_claim_id:
+                raise DomainIntegrityError(
+                    "evidence review predecessor must belong to the same claim"
+                )
+            if review.sequence_number != predecessor.sequence_number + 1:
+                raise DomainIntegrityError(
+                    "evidence review sequence must immediately follow its predecessor"
+                )
+            if review.reviewed_at < predecessor.reviewed_at:
+                raise DomainIntegrityError("evidence review time cannot precede its predecessor")
+        self.session.add(
+            EvidenceClaimReviewRecord(
+                id=review.id,
+                schema_version=review.schema_version,
+                created_at=review.created_at,
+                evidence_claim_id=review.evidence_claim_id,
+                decision=review.decision.value,
+                sequence_number=review.sequence_number,
+                supersedes_review_id=review.supersedes_review_id,
+                reviewed_at=review.reviewed_at,
+                reviewer=review.reviewer,
+                source_verification_rationale=review.source_verification_rationale,
+                extraction_rationale=review.extraction_rationale,
+                evidence_strength_rationale=review.evidence_strength_rationale,
+                applicability_rationale=review.applicability_rationale,
+                uncertainty=review.uncertainty,
+                conflict_disclosure=review.conflict_disclosure,
+                review_version=review.review_version,
+            )
+        )
 
     def add_evidence_source(self, source: EvidenceSource) -> None:
         if source.supersedes_source_id is not None:
@@ -5303,6 +5355,59 @@ class DomainRepository:
             source_record_ids=tuple(item.evidence_source_id for item in record.source_links),
             reviewer=record.reviewer,
             claim_version=record.claim_version,
+        )
+
+    def list_evidence_claims(self) -> tuple[EvidenceClaim, ...]:
+        records = self.session.scalars(
+            select(EvidenceClaimRecord).order_by(
+                EvidenceClaimRecord.domain,
+                EvidenceClaimRecord.created_at,
+                EvidenceClaimRecord.id,
+            )
+        )
+        return tuple(
+            claim for record in records if (claim := self.get_evidence_claim(record.id)) is not None
+        )
+
+    def get_evidence_claim_review(self, review_id: UUID) -> EvidenceClaimReview | None:
+        record = self.session.get(EvidenceClaimReviewRecord, review_id)
+        if record is None:
+            return None
+        return EvidenceClaimReview(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            evidence_claim_id=record.evidence_claim_id,
+            decision=record.decision,
+            sequence_number=record.sequence_number,
+            supersedes_review_id=record.supersedes_review_id,
+            reviewed_at=record.reviewed_at,
+            reviewer=record.reviewer,
+            source_verification_rationale=record.source_verification_rationale,
+            extraction_rationale=record.extraction_rationale,
+            evidence_strength_rationale=record.evidence_strength_rationale,
+            applicability_rationale=record.applicability_rationale,
+            uncertainty=record.uncertainty,
+            conflict_disclosure=record.conflict_disclosure,
+            review_version=record.review_version,
+        )
+
+    def list_evidence_claim_reviews(
+        self, evidence_claim_id: UUID
+    ) -> tuple[EvidenceClaimReview, ...]:
+        records = self.session.scalars(
+            select(EvidenceClaimReviewRecord)
+            .where(EvidenceClaimReviewRecord.evidence_claim_id == evidence_claim_id)
+            .order_by(
+                EvidenceClaimReviewRecord.sequence_number,
+                EvidenceClaimReviewRecord.reviewed_at,
+                EvidenceClaimReviewRecord.id,
+            )
+        )
+        return tuple(
+            review
+            for record in records
+            if (review := self.get_evidence_claim_review(record.id)) is not None
         )
 
     def get_evidence_source(self, source_id: UUID) -> EvidenceSource | None:
