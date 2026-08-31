@@ -658,6 +658,12 @@ pnpm --filter @agas/web dev
 
 Open `http://localhost:3000`.
 
+Production builds register an installable PWA shell with ordinary and maskable icons. If an
+installed client loses its connection, navigation fails closed to an explicit offline screen. The
+service worker caches only the offline/install shell and immutable compiled assets; it does not
+cache athlete pages, API responses, credentials, or queue workout writes. A connection is still
+required to view or change authoritative training records.
+
 The current PWA screen connects to `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`) and uses
 `NEXT_PUBLIC_AGAS_DEVELOPMENT_TOKEN` (default `dev.local-browser`) for local identity. It can
 create a basic athlete profile with goals, activity preferences, one or more environments, and

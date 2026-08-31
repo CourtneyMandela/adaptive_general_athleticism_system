@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#15362d" />
+    <title>AGAS — Offline</title>
+    <style>
+      :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+      * { box-sizing: border-box; }
+      body {
+        min-height: 100vh;
+        margin: 0;
+        display: grid;
+        place-items: center;
+        padding: 1.5rem;
+        color: #13231e;
+        background: #f6f3e9;
+      }
+      main {
+        width: min(32rem, 100%);
+        padding: 2rem;
+        border: 1px solid #c9d1ca;
+        border-radius: 1rem;
+        background: #fff;
+        box-shadow: 0 1rem 3rem rgb(21 54 45 / 10%);
+      }
+      img { width: 4rem; height: 4rem; }
+      h1 { margin: 1rem 0 .5rem; font-size: clamp(1.75rem, 6vw, 2.5rem); }
+      p { margin: .5rem 0; color: #4d5d57; line-height: 1.6; }
+      button {
+        margin-top: 1.25rem;
+        padding: .75rem 1rem;
+        border: 0;
+        border-radius: .65rem;
+        color: #fff;
+        background: #15362d;
+        font: inherit;
+        font-weight: 750;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <img src="/icons/agas-icon.svg" alt="" />
+      <h1>You’re offline</h1>
+      <p>AGAS needs a connection to load authoritative athlete and training records.</p>
+      <p>No athlete data is shown, changed, or queued from this offline screen.</p>
+      <button type="button" onclick="window.location.reload()">Try again</button>
+    </main>
+  </body>
+</html>

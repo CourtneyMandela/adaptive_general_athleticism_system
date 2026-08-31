@@ -963,6 +963,13 @@ set/dose/effort workout results through the existing transactional use-case endp
 the read projection. The frontend derives only descriptive execution status from the entered work;
 the backend remains authoritative for safety, execution validation, and adherence.
 
+Production web builds register a minimal install/offline service worker. It precaches only the
+offline document, manifest, and icons and may reuse same-origin compiled static assets. Navigations
+remain network-first and fall back to a page that explicitly contains no athlete state. Athlete
+pages, API responses, credentials, and writes are not cached or queued. This creates an honest
+installable shell without inventing offline conflict resolution, observation timestamps, or
+idempotency semantics.
+
 The assessment panel uses the same pattern. It renders protocol instructions and uncertainty from
 the workflow projection and creates result controls only when the exact approved review contains a
 supported versioned measurement schema. Browser validation is usability support, not authority;
