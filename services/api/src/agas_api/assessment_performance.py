@@ -151,6 +151,13 @@ class PersistedAssessmentPerformanceService:
             raise AssessmentPerformanceConflictError(
                 "selected protocol has no reviewed measurement schema"
             )
+        if not self.repository.evidence_authority_is_ready(
+            review.evidence_claim_ids,
+            review.reviewed_at,
+        ):
+            raise AssessmentPerformanceConflictError(
+                "selected protocol evidence was not ready at its review time"
+            )
         eligibility = self.repository.get_current_assessment_eligibility_review(athlete_id)
         if (
             eligibility is None

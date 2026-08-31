@@ -121,6 +121,13 @@ labeled non-scientific fixtures in isolated databases. Protocol evidence, popula
 measurement reliability, result interpretation, and self-administration suitability require
 qualified review before production use.
 
+An `approved` protocol decision alone does not authorize the athlete runtime. The public catalog,
+workflow and reassessment set, selection persistence, and result-recording boundary require every
+cited claim to have been evidence-ready at the protocol review time. Capability interpretation
+requires the same point-in-time readiness for both the exact protocol review and the current
+estimation policy. Unsupported authority remains available to protected governance and historical
+inspection; it is not deleted or silently rewritten.
+
 Athlete eligibility is a separate authority from protocol approval. A current, approved definition
 does not establish that it should be selected for a particular athlete, while an eligibility review
 does not validate a protocol's scientific basis. Eligibility decisions must retain their source

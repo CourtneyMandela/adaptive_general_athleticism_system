@@ -7,7 +7,6 @@ from uuid import UUID
 from agas_domain import (
     EvidenceClaim,
     EvidenceClaimReview,
-    EvidenceReviewDecision,
     EvidenceSource,
 )
 from agas_domain.persistence.repository import DomainRepository
@@ -111,46 +110,15 @@ class EvidenceAuthorityEvaluator:
     def evaluate_claim(
         self, claim: EvidenceClaim, evaluated_at: datetime
     ) -> EvidenceGovernanceItem:
-        issues: list[str] = []
-        if claim.created_at > evaluated_at:
-            issues.append("claim did not exist at the evaluation time")
-
-        sources: list[EvidenceSource] = []
-        if not claim.source_record_ids:
-            issues.append("claim has no exact evidence-source snapshot links")
-        for source_id in claim.source_record_ids:
-            source = self.repository.get_evidence_source(source_id)
-            if source is None:
-                issues.append(f"linked evidence source {source_id} does not exist")
-            elif source.created_at > evaluated_at or source.retrieved_at > evaluated_at:
-                issues.append(
-                    f"linked evidence source {source_id} was unavailable at the evaluation time"
-                )
-            else:
-                sources.append(source)
-
-        reviews = tuple(
-            review
-            for review in self.repository.list_evidence_claim_reviews(claim.id)
-            if review.created_at <= evaluated_at and review.reviewed_at <= evaluated_at
-        )
-        current_review = reviews[-1] if reviews else None
-        if current_review is None:
-            issues.append("claim had no scientific review at the evaluation time")
-        elif current_review.decision is not EvidenceReviewDecision.APPROVED:
-            issues.append(
-                "current evidence review decision at the evaluation time was "
-                f"{current_review.decision.value}"
-            )
-
+        state = self.repository.evaluate_evidence_claim_authority(claim, evaluated_at)
         return EvidenceGovernanceItem(
             claim=claim,
-            status=current_review.decision.value if current_review else "unreviewed",
-            readiness="blocked" if issues else "ready",
-            sources=tuple(sources),
-            current_review=current_review,
-            review_history=reviews,
-            issues=tuple(issues),
+            status=(state.current_review.decision.value if state.current_review else "unreviewed"),
+            readiness="ready" if state.ready else "blocked",
+            sources=state.sources,
+            current_review=state.current_review,
+            review_history=state.review_history,
+            issues=state.issues,
         )
 
 

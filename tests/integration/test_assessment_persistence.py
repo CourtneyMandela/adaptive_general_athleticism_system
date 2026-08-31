@@ -18,6 +18,9 @@ from agas_domain import (
     CapabilityEstimationPolicy,
     Confidence,
     EvidenceClaim,
+    EvidenceClaimReview,
+    EvidenceReviewDecision,
+    EvidenceSource,
     EvidenceSourceIdentifier,
     EvidenceStrength,
     Observation,
@@ -65,9 +68,30 @@ def assessment() -> AssessmentDefinition:
 
 
 def approve(
-    repository: DomainRepository, definition: AssessmentDefinition
+    repository: DomainRepository,
+    definition: AssessmentDefinition,
+    *,
+    evidence_ready: bool = True,
 ) -> AssessmentDefinitionReview:
+    identifier = EvidenceSourceIdentifier(
+        scheme="other", value="urn:agas:test:assessment-persistence"
+    )
+    source = EvidenceSource(
+        created_at=NOW - timedelta(days=3),
+        title="Synthetic assessment-persistence source fixture",
+        authors=("Automated Test",),
+        publication_year=2026,
+        publication_types=("Software fixture",),
+        primary_identifier=identifier,
+        source_identifiers=(identifier,),
+        metadata_provider="manual",
+        retrieval_uri=identifier.value,
+        retrieved_at=NOW - timedelta(days=3),
+        metadata_version="software-fixture@1.0.0",
+        provenance_notes=("Not scientific evidence.",),
+    )
     evidence = EvidenceClaim(
+        created_at=NOW - timedelta(days=2),
         claim="Synthetic software fixture for assessment persistence tests.",
         domain="software_test_fixture",
         population="No athlete population; software fixture only.",
@@ -78,9 +102,8 @@ def approve(
         evidence_strength=EvidenceStrength.INSUFFICIENT,
         athlete_applicability=Applicability.UNKNOWN,
         applicability_notes="Not applicable to athletes.",
-        source_identifiers=(
-            EvidenceSourceIdentifier(scheme="other", value="urn:agas:test:assessment-persistence"),
-        ),
+        source_identifiers=(identifier,),
+        source_record_ids=(source.id,) if evidence_ready else (),
         reviewer="automated-test-fixture",
         claim_version="software-fixture@1.0.0",
     )
@@ -107,7 +130,27 @@ def approve(
         uncertainty="This record does not approve a real assessment protocol.",
         review_version="assessment-review-fixture@1.0.0",
     )
+    if evidence_ready:
+        repository.add_evidence_source(source)
     repository.add_evidence_claim(evidence)
+    if evidence_ready:
+        repository.add_evidence_claim_review(
+            EvidenceClaimReview(
+                created_at=NOW - timedelta(days=1),
+                evidence_claim_id=evidence.id,
+                decision=EvidenceReviewDecision.APPROVED,
+                sequence_number=1,
+                reviewed_at=NOW - timedelta(days=1),
+                reviewer="qualified-reviewer-fixture",
+                source_verification_rationale="The exact software fixture source was checked.",
+                extraction_rationale="The claim describes software behavior only.",
+                evidence_strength_rationale="Insufficient is correct for this fixture.",
+                applicability_rationale="No athlete applicability is asserted.",
+                uncertainty="This record proves only governance behavior.",
+                conflict_disclosure="No conflicts declared for the software fixture.",
+                review_version="assessment-persistence-evidence-review-fixture@1.0.0",
+            )
+        )
     repository.add_assessment_definition_review(review)
     return review
 
@@ -256,4 +299,33 @@ def test_selection_rejects_an_unreviewed_assessment_definition(session: Session)
     )[0]
 
     with pytest.raises(DomainIntegrityError, match="current approved"):
+        repository.add_assessment_selection(selection)
+
+
+def test_selection_rejects_a_structural_approval_without_ready_evidence(
+    session: Session,
+) -> None:
+    repository = DomainRepository(session)
+    athlete = Athlete(display_name="Evidence-unready assessment athlete")
+    source = intake(athlete)
+    definition = assessment()
+    repository.add_athlete(athlete)
+    repository.add_observation(source)
+    repository.add_assessment_definition(definition)
+    approved_review = approve(repository, definition, evidence_ready=False)
+    eligibility = allow_selection(repository, athlete, source)
+    session.flush()
+    selection = AdaptiveAssessmentSelector().select_reviewed(
+        AssessmentContext(
+            athlete_id=athlete.id,
+            source_observation_ids=(source.id,),
+            health_screening_completed=True,
+            available_equipment_categories=("cycle_ergometer",),
+            evaluated_at=NOW,
+        ),
+        ((definition, approved_review),),
+        eligibility.id,
+    )[0]
+
+    with pytest.raises(DomainIntegrityError, match="not ready at its review time"):
         repository.add_assessment_selection(selection)

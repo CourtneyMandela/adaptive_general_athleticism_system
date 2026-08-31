@@ -148,4 +148,14 @@ class PersistedAssessmentCapabilityEstimationService:
             raise AssessmentCapabilityEstimationConflictError(
                 "no current approved capability estimation policy governs this protocol"
             )
+        if not self.repository.evidence_authority_is_ready(
+            current_review.evidence_claim_ids,
+            current_review.reviewed_at,
+        ) or not self.repository.evidence_authority_is_ready(
+            policy.evidence_claim_ids,
+            policy.reviewed_at,
+        ):
+            raise AssessmentCapabilityEstimationConflictError(
+                "current assessment interpretation evidence was not ready at its review time"
+            )
         return policy

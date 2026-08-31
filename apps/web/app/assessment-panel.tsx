@@ -256,7 +256,7 @@ export function AssessmentPanel({
             </dd>
           </div>
           <div>
-            <dt>Reviewed self-administered protocols</dt>
+            <dt>Evidence-ready self-administered protocols</dt>
             <dd>{workflow.approved_self_administered_protocol_count}</dd>
           </div>
           <div>
@@ -274,7 +274,7 @@ export function AssessmentPanel({
       {workflow ? (
         <p className="form-help">
           Reassessment cadence {workflow.reassessment_rule_version}; interval values come from
-          reviewed protocol history.
+          evidence-ready reviewed protocol history.
         </p>
       ) : null}
 

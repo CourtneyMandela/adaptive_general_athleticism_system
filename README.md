@@ -15,9 +15,10 @@ prior strategy and triggering review without inferring causation or rewriting at
 An initial or revised strategy can then create a persisted block only from already-governed
 resource demands, exercise resolutions, and an explicit allocation policy.
 Assessment definitions now have a separate, append-only evidence review history. Only definitions
-whose latest review is approved can appear in the API catalog or be persisted in an athlete
-selection. Operational self-service selection additionally requires a reviewed, versioned
-measurement schema; no real assessment protocols are seeded yet.
+whose latest review is approved and whose cited claims were evidence-ready at that review time can
+appear in the API catalog or authorize a new athlete action. Operational self-service selection
+additionally requires a reviewed, versioned measurement schema; no real assessment protocols are
+seeded yet.
 Assessment interpretation policies are now append-only, evidence-linked records bound to exact
 reviewed protocols. An authenticated, idempotent boundary can derive a protocol-specific estimate
 from governed performances without treating a result as a direct capability fact or applying norms.
@@ -194,8 +195,9 @@ separate governed workflow.
 
 All athlete-scoped endpoints require bearer authentication and verify aggregate ownership. Health,
 readiness, the global onboarding equipment catalog, and the reviewed assessment catalog remain
-public. The assessment catalog is empty until definitions have evidence-linked current approvals;
-the API cannot approve protocols. To grant a pre-existing local fixture athlete to the default
+public. The assessment catalog is empty until definitions have current approvals backed by exact
+source snapshots and claim approvals that existed at the protocol-review time; the API cannot
+approve protocols. To grant a pre-existing local fixture athlete to the default
 development account, run:
 
 ```bash

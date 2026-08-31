@@ -29,6 +29,9 @@ from agas_domain import (
     Equipment,
     EquipmentAvailability,
     EvidenceClaim,
+    EvidenceClaimReview,
+    EvidenceReviewDecision,
+    EvidenceSource,
     EvidenceSourceIdentifier,
     EvidenceStrength,
     Observation,
@@ -73,8 +76,29 @@ def source_observation(athlete: Athlete) -> Observation:
     )
 
 
-def evidence_fixture() -> EvidenceClaim:
-    return EvidenceClaim(
+def persist_evidence_fixture(
+    repository: DomainRepository,
+    *,
+    ready: bool = True,
+    identifier_value: str = "urn:agas:test:assessment-run",
+) -> EvidenceClaim:
+    identifier = EvidenceSourceIdentifier(scheme="other", value=identifier_value)
+    source = EvidenceSource(
+        created_at=NOW - timedelta(days=5),
+        title="Synthetic assessment-run source fixture",
+        authors=("Automated Test",),
+        publication_year=2026,
+        publication_types=("Software fixture",),
+        primary_identifier=identifier,
+        source_identifiers=(identifier,),
+        metadata_provider="manual",
+        retrieval_uri=identifier.value,
+        retrieved_at=NOW - timedelta(days=5),
+        metadata_version="software-fixture@1.0.0",
+        provenance_notes=("Not scientific evidence.",),
+    )
+    evidence = EvidenceClaim(
+        created_at=NOW - timedelta(days=4),
         claim="Synthetic software fixture for assessment-run persistence tests.",
         domain="software_test_fixture",
         population="No athlete population; software fixture only.",
@@ -85,12 +109,33 @@ def evidence_fixture() -> EvidenceClaim:
         evidence_strength=EvidenceStrength.INSUFFICIENT,
         athlete_applicability=Applicability.UNKNOWN,
         applicability_notes="Not applicable to athletes.",
-        source_identifiers=(
-            EvidenceSourceIdentifier(scheme="other", value="urn:agas:test:assessment-run"),
-        ),
+        source_identifiers=(identifier,),
+        source_record_ids=(source.id,) if ready else (),
         reviewer="automated-test-fixture",
         claim_version="software-fixture@1.0.0",
     )
+    if ready:
+        repository.add_evidence_source(source)
+    repository.add_evidence_claim(evidence)
+    if ready:
+        repository.add_evidence_claim_review(
+            EvidenceClaimReview(
+                created_at=NOW - timedelta(days=3),
+                evidence_claim_id=evidence.id,
+                decision=EvidenceReviewDecision.APPROVED,
+                sequence_number=1,
+                reviewed_at=NOW - timedelta(days=3),
+                reviewer="qualified-reviewer-fixture",
+                source_verification_rationale="The exact software fixture source was checked.",
+                extraction_rationale="The claim describes software behavior only.",
+                evidence_strength_rationale="Insufficient is correct for this fixture.",
+                applicability_rationale="No athlete applicability is asserted.",
+                uncertainty="This record proves only governance behavior.",
+                conflict_disclosure="No conflicts declared for the software fixture.",
+                review_version="assessment-run-evidence-review-fixture@1.0.0",
+            )
+        )
+    return evidence
 
 
 def definition(slug: str, *, requires_skill: bool = False) -> AssessmentDefinition:
@@ -181,20 +226,20 @@ def setup_run_state(
     include_measurement_schema: bool = True,
     include_deferred_definition: bool = True,
     eligibility_valid_for_days: int = 7,
+    evidence_ready: bool = True,
 ) -> tuple[Athlete, Environment, AssessmentEligibilityReview]:
     repository = DomainRepository(session)
     athlete = Athlete(display_name="Assessment run athlete")
     environment = Environment(athlete_id=athlete.id, name="Test gym")
     cycle = Equipment(name="Synthetic cycle", category="cycle_ergometer")
     source = source_observation(athlete)
-    evidence = evidence_fixture()
+    evidence = persist_evidence_fixture(repository, ready=evidence_ready)
     first = definition("available_fixture")
     second = definition("skill_deferred_fixture", requires_skill=True)
     repository.add_athlete(athlete)
     repository.add_environment(environment)
     repository.add_equipment(cycle)
     repository.add_observation(source)
-    repository.add_evidence_claim(evidence)
     assessments = (first, second) if include_deferred_definition else (first,)
     for assessment in assessments:
         repository.add_assessment_definition(assessment)
@@ -397,7 +442,7 @@ def test_completed_assessment_blocks_early_retesting_and_opens_when_due(
         app.dependency_overrides.pop(database_session_dependency, None)
 
     assert run_response.status_code == 201
-    assert run_result.run.rule_version == "assessment-selection-run@2.0.0"
+    assert run_result.run.rule_version == "assessment-selection-run@3.0.0"
     assert result_response.status_code == 201
     completed = AssessmentWorkflowProjection.model_validate(completed_response.json())
     assert completed.status == "reassessment_not_due"
@@ -510,6 +555,43 @@ def test_schema_less_approvals_are_not_operational_for_self_service(session: Ses
     assert "measurement schemas" in run_response.json()["detail"]
 
 
+def test_evidence_unready_approvals_are_absent_from_athlete_runtime(
+    session: Session,
+) -> None:
+    athlete, environment, _eligibility = setup_run_state(session, evidence_ready=False)
+    repository = DomainRepository(session)
+    counts_before = (
+        session.scalar(select(func.count()).select_from(ObservationRecord)),
+        session.scalar(select(func.count()).select_from(AssessmentSelectionRecord)),
+        session.scalar(select(func.count()).select_from(AssessmentSelectionRunRecord)),
+    )
+    workflow_path = f"/v1/athletes/{athlete.id}/assessment-workflow"
+    app.dependency_overrides[database_session_dependency] = lambda: session
+    try:
+        client = TestClient(app)
+        workflow_response = client.get(workflow_path, params={"at": NOW.isoformat()})
+        run_response = client.post(
+            f"/v1/athletes/{athlete.id}/assessment-runs",
+            json=request_body(environment),
+        )
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert workflow_response.status_code == 200
+    workflow = AssessmentWorkflowProjection.model_validate(workflow_response.json())
+    assert workflow.status == "protocol_catalog_empty"
+    assert workflow.approved_self_administered_protocol_count == 0
+    assert workflow.can_start_run is False
+    assert run_response.status_code == 409
+    assert "evidence-ready" in run_response.json()["detail"]
+    assert counts_before == (
+        session.scalar(select(func.count()).select_from(ObservationRecord)),
+        session.scalar(select(func.count()).select_from(AssessmentSelectionRecord)),
+        session.scalar(select(func.count()).select_from(AssessmentSelectionRunRecord)),
+    )
+    assert len(repository.list_approved_assessment_definitions()) == 2
+
+
 def create_run(session: Session) -> tuple[Athlete, AssessmentSelectionRunResult]:
     athlete, environment, _eligibility = setup_run_state(session)
     app.dependency_overrides[database_session_dependency] = lambda: session
@@ -578,6 +660,48 @@ def test_selected_assessment_records_one_direct_result_without_creating_an_estim
         session.commit()
     session.rollback()
     assert repository.get_assessment_performance(result.performance.id) == result.performance
+
+
+def test_evidence_unready_protocol_blocks_an_in_flight_result(
+    session: Session, monkeypatch: MonkeyPatch
+) -> None:
+    athlete, run_result = create_run(session)
+    selected = run_result.decisions[0].selection
+    counts_before = (
+        session.scalar(select(func.count()).select_from(ObservationRecord)),
+        session.scalar(select(func.count()).select_from(AssessmentPerformanceRecord)),
+    )
+    monkeypatch.setattr(assessment_performance_module, "_utc_now", lambda: NOW + timedelta(hours=1))
+    monkeypatch.setattr(
+        DomainRepository,
+        "evidence_authority_is_ready",
+        lambda _repository, _claim_ids, _evaluated_at: False,
+    )
+    app.dependency_overrides[database_session_dependency] = lambda: session
+    try:
+        client = TestClient(app)
+        workflow_response = client.get(
+            f"/v1/athletes/{athlete.id}/assessment-workflow",
+            params={"at": NOW.isoformat()},
+        )
+        result_response = client.post(
+            f"/v1/athletes/{athlete.id}/assessment-runs/{run_result.run.id}"
+            f"/selections/{selected.id}/result",
+            json=result_body(),
+        )
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    workflow = AssessmentWorkflowProjection.model_validate(workflow_response.json())
+    assert workflow.status == "run_blocked"
+    assert workflow.latest_run is not None
+    assert workflow.latest_run.decisions[0].result_status == "protocol_unavailable"
+    assert result_response.status_code == 409
+    assert "protocol evidence was not ready" in result_response.json()["detail"]
+    assert counts_before == (
+        session.scalar(select(func.count()).select_from(ObservationRecord)),
+        session.scalar(select(func.count()).select_from(AssessmentPerformanceRecord)),
+    )
 
 
 def test_duplicate_result_rolls_back_its_extra_observation(
@@ -752,6 +876,77 @@ def test_reviewed_policy_creates_one_traceable_capability_estimate(
     assert session.scalar(select(func.count()).select_from(CapabilityEstimateRecord)) == 1
 
 
+def test_evidence_unready_policy_cannot_create_a_capability_estimate(
+    session: Session, monkeypatch: MonkeyPatch
+) -> None:
+    athlete, run_result = create_run(session)
+    selected = run_result.decisions[0].selection
+    monkeypatch.setattr(assessment_performance_module, "_utc_now", lambda: NOW + timedelta(hours=1))
+    app.dependency_overrides[database_session_dependency] = lambda: session
+    try:
+        client = TestClient(app)
+        result_response = client.post(
+            f"/v1/athletes/{athlete.id}/assessment-runs/{run_result.run.id}"
+            f"/selections/{selected.id}/result",
+            json=result_body(),
+        )
+        assert result_response.status_code == 201
+        performance = AssessmentPerformanceResult.model_validate(result_response.json()).performance
+
+        repository = DomainRepository(session)
+        definition_record = repository.get_assessment_definition(selected.assessment_definition_id)
+        review = repository.get_current_assessment_definition_review(
+            selected.assessment_definition_id
+        )
+        assert definition_record is not None
+        assert review is not None
+        unready_evidence = persist_evidence_fixture(
+            repository,
+            ready=False,
+            identifier_value="urn:agas:test:unready-estimation-policy",
+        )
+        policy = CapabilityEstimationPolicy(
+            assessment_definition_id=definition_record.id,
+            assessment_definition_review_id=review.id,
+            decision=AssessmentReviewDecision.APPROVED,
+            sequence_number=1,
+            domain=definition_record.domain,
+            observation_type=definition_record.observation_type,
+            unit_or_scale=definition_record.unit_or_scale,
+            calculation_method="latest-matching-observation",
+            valid_for_days=28,
+            multi_observation_window_days=90,
+            evidence_claim_ids=(unready_evidence.id,),
+            reviewed_at=NOW,
+            reviewed_by="automated-test-reviewer",
+            applicability_notes="Software validation only.",
+            uncertainty="Not an operational estimation policy.",
+            rule_version="unready-estimation-policy-fixture@1.0.0",
+        )
+        repository.add_capability_estimation_policy(policy)
+        session.commit()
+
+        workflow_response = client.get(f"/v1/athletes/{athlete.id}/assessment-workflow")
+        monkeypatch.setattr(
+            assessment_estimation_module, "_utc_now", lambda: NOW + timedelta(hours=1)
+        )
+        estimate_response = client.post(
+            f"/v1/athletes/{athlete.id}/assessment-performances/{performance.id}"
+            "/capability-estimate"
+        )
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    workflow = AssessmentWorkflowProjection.model_validate(workflow_response.json())
+    assert workflow.latest_run is not None
+    result = workflow.latest_run.decisions[0].result
+    assert result is not None
+    assert result.capability_estimate_status == "policy_unavailable"
+    assert estimate_response.status_code == 409
+    assert "interpretation evidence" in estimate_response.json()["detail"]
+    assert session.scalar(select(func.count()).select_from(CapabilityEstimateRecord)) == 0
+
+
 def test_deferred_assessment_and_wrong_units_fail_without_result_history(
     session: Session, monkeypatch: MonkeyPatch
 ) -> None:
@@ -883,8 +1078,8 @@ def test_professionally_administered_catalog_fails_closed(session: Session) -> N
     assert response.status_code == 409
     assert response.json() == {
         "detail": (
-            "no approved self-administered assessment definitions with measurement schemas "
-            "are available"
+            "no approved evidence-ready self-administered assessment definitions with "
+            "measurement schemas are available"
         )
     }
 

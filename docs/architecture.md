@@ -96,10 +96,11 @@ links, applicability, uncertainty, reviewer, time, version, and an optional mach
 measurement schema. The schema supports explicitly versioned number, integer, and categorical
 entry contracts with reviewed labels, ranges, steps, or allowed values. Replacements form a linear
 sequence; a later rejection or needs-revision decision withdraws a prior approval without erasing
-it. Only definitions whose latest review is approved appear in the read-only global assessment
-catalog. A schema-less approval remains inspectable but is ineligible for self-service selection,
-and persistence rejects athlete selections against it. No operational assessment protocol is
-seeded by this boundary.
+it. Only definitions whose latest review is approved and whose cited claims were evidence-ready at
+that review time appear in the read-only global assessment catalog. A schema-less or evidence-
+unready approval remains inspectable in the governance workbench but is ineligible for self-service
+selection, and persistence rejects athlete selections against it. No operational assessment
+protocol is seeded by this boundary.
 
 Athlete-level authority is separate. `AssessmentEligibilityReview` is an append-only, linear,
 time-bounded operator decision that references the observations and screening process actually
@@ -107,9 +108,10 @@ reviewed. Its outcomes allow selection, block selection, or require further revi
 not a diagnosis or medical clearance. Athlete-facing services cannot create this authority.
 
 The persisted assessment-run service loads the athlete's current allowed eligibility decision and
-the catalog's current approved, self-administered definitions. It derives equipment categories from
-the effective-dated state of an owned environment, records the non-medical context as a direct
-observation, and atomically appends decisions, selections, and an `AssessmentSelectionRun`.
+the catalog's current approved, evidence-ready, self-administered definitions. It derives equipment
+categories from the effective-dated state of an owned environment, records the non-medical context
+as a direct observation, and atomically appends decisions, selections, and an
+`AssessmentSelectionRun`.
 Athlete input cannot supply injury, symptom, health-classification, or equipment-category fields.
 
 The selector uses exact tag matching and a versioned deterministic rule. Each selected, deferred, or excluded
@@ -150,12 +152,15 @@ latest immutable performance for each definition. An unmeasured protocol is due 
 measured protocol uses the reassessment interval on the exact historical review that authorized its
 latest result; replacement review data does not rewrite that date. The selection service evaluates
 only due definitions, rejects premature requests and an unresolved selected run before any write,
-and records the material behavior change as `assessment-selection-run@2.0.0`.
+and records reassessment enforcement as `assessment-selection-run@2.0.0`. Evidence-ready runtime
+authority is recorded by `assessment-selection-run@3.0.0`.
 
 The workflow projection exposes due count, earliest future time, schedule-rule version, and each
 result's exact interval-source review. Due status remains derived rather than a mutable workflow
-record. Eligibility, environment, current protocol approval, and measurement-schema requirements
-still fail closed independently.
+record. Eligibility, environment, current protocol approval, evidence readiness at the authority's
+own review time, and measurement-schema requirements still fail closed independently. The same
+temporal evidence check guards result recording and assessment-derived estimate creation, while
+historical selections, performances, and estimates remain readable.
 
 ### Needs and long-range strategy
 
