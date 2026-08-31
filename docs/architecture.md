@@ -63,28 +63,33 @@ runs either the long-lived API command or the one-shot migration command. Migrat
 before the API starts; an API replica never races another replica by migrating on startup.
 
 `apps/web/Dockerfile` packages Next.js standalone output into a separate non-root image. Public and
-static assets are copied into the traced monorepo output explicitly. `NEXT_PUBLIC_API_URL` is a
-build-time browser value; API credentials, identity-provider configuration, and database settings
-are not part of the web image.
+static assets are copied into the traced monorepo output explicitly. The production build compiles
+the relative `/api/agas` gateway path and session auth mode; API credentials, identity-provider
+configuration, internal API origin, session key, and database settings are not part of browser
+JavaScript.
 
 `compose.production.yml` describes a bounded single-host reference topology:
 
 ```text
 HTTPS reverse proxy (not included)
-        |                 |
-  loopback :3000    loopback :8000
-        |                 |
-      PWA image       API image
-                           |
-                    private PostgreSQL
-                           ^
-                    one-shot migration
+              |
+        loopback :3000
+              |
+   PWA + session gateway image
+              |
+       private API image
+              |
+       private PostgreSQL
+              ^
+       one-shot migration
 ```
 
-PostgreSQL has no published host port. The PWA and API bind only to loopback so an explicitly
-configured reverse proxy can supply TLS, request limits, and public routing. Hosting provider,
-reverse proxy, identity provider, browser session, backups, secret store, and observability remain
-deployment choices rather than hidden defaults. See `docs/deployment.md` and decision 0081.
+PostgreSQL and FastAPI have no published host ports. The PWA binds only to loopback so an explicitly
+configured reverse proxy can supply TLS, request limits, and public routing. The route-handler
+gateway decrypts an encrypted `HttpOnly` session and forwards an allow-listed request plus bearer
+only across the private network. Hosting provider, reverse proxy, identity provider, login adapter,
+backups, secret store, and observability remain deployment choices rather than hidden defaults. See
+`docs/deployment.md` and decisions 0081 and 0083.
 
 ## Domain boundaries
 
@@ -834,8 +839,13 @@ insufficient. Operator writes bind the authenticated account and exact role assi
 and reject client-supplied reviewer identity. The role is an
 application permission, not evidence of a scientific or professional credential. Production
 configuration rejects the development verifier and incomplete or non-HTTPS external settings.
-Provider selection, browser authorization-code/session handling, account recovery, and deployment
-remain separate from resource-server verification.
+The production PWA uses a same-origin route-handler gateway. Its compact-JWE session envelope is
+encrypted with a server-only 256-bit key, retains the access-token expiry supplied by the future
+login adapter, and is refused after that instant. The gateway bounds bodies and duration,
+allow-lists headers, rejects ambiguous or cross-origin state-changing requests, and never replaces
+FastAPI ownership or role authorization. No public route mints the session in this milestone.
+Provider selection, authorization-code/PKCE, callback, refresh, logout, account recovery, and
+deployment remain separate from resource-server verification.
 
 Assessment protocol governance uses a distinct append-only `assessment_reviewer` assignment. The
 role-protected `GET /v1/operator/assessment-governance` projection evaluates definitions at an
@@ -1042,4 +1052,6 @@ Configuration is environment-based and prefixed with `AGAS_`. PostgreSQL is the 
 authoritative store. The PWA's `NEXT_PUBLIC_AGAS_DEVELOPMENT_TOKEN`, provisional
 `NEXT_PUBLIC_AGAS_REVIEWER_TOKEN`, and `NEXT_PUBLIC_AGAS_ASSESSMENT_REVIEWER_TOKEN` are public local
 identity selectors, not secrets. Production provider secrets and tokens must never use a
-`NEXT_PUBLIC_` variable and are not committed.
+`NEXT_PUBLIC_` variable and are not committed. Production browser code uses the relative
+`/api/agas` gateway and no authorization header; `AGAS_INTERNAL_API_URL`,
+`AGAS_PUBLIC_WEB_ORIGIN`, and `AGAS_SESSION_ENCRYPTION_KEY` are server-only web-runtime settings.

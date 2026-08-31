@@ -41,7 +41,12 @@ export default async function globalSetup() {
     ["node_modules/next/dist/bin/next", "dev", "--hostname", "127.0.0.1", "--port", "3100"],
     {
       cwd: process.cwd(),
-      env: process.env,
+      env: {
+        ...process.env,
+        AGAS_INTERNAL_API_URL: "http://127.0.0.1:3999",
+        AGAS_PUBLIC_WEB_ORIGIN: baseUrl,
+        AGAS_SESSION_ENCRYPTION_KEY: "KSkpKSkpKSkpKSkpKSkpKSkpKSkpKSkpKSkpKSkpKSk",
+      },
       stdio: "inherit",
       windowsHide: true,
     },

@@ -151,3 +151,11 @@ test("the installable shell fails closed to an honest offline screen", async ({ 
     await context.setOffline(false);
   }
 });
+
+test("the same-origin API gateway fails closed without a server session", async ({ request }) => {
+  const response = await request.get("/api/agas/v1/athletes/athlete-1/current-week");
+
+  expect(response.status()).toBe(401);
+  expect(response.headers()["cache-control"]).toBe("no-store");
+  expect(await response.json()).toEqual({ detail: "Authentication is required." });
+});
