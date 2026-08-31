@@ -232,8 +232,9 @@ python -m agas_api.identity_admin grant-role \
 This permission is not a scientific credential. The role-protected
 `GET /v1/operator/assessment-governance` projection and `/review/assessments` workbench are
 read-only. They expose point-in-time protocol review, measurement schema, self-administration,
-capability-estimation policy, evidence provenance, and immutable history. They do not create
-protocol approvals or athlete eligibility decisions.
+capability-estimation policy, immutable history, and the readiness of every cited evidence claim at
+the authority record's own review time. They do not create protocol approvals or athlete
+eligibility decisions.
 
 The evidence service can search PubMed and retrieve one reviewable metadata snapshot through
 NCBI E-utilities. NCBI requires a developer contact and applies usage limits; the adapter makes one
@@ -281,11 +282,13 @@ python -m agas_api.assessment_governance_admin import-bundle \
 ```
 
 The bundle contains one immutable definition, an optional exact review, and an optional estimation
-policy. Policy import requires its exact review in the same bundle. Referenced evidence claims must
-already exist. Exact retries are no-ops; an existing ID with different content is rejected, and any
-failed insert rolls back the bundle. The command refuses production and external-authentication
-configuration. It transports reviewed data but does not verify scientific sources or reviewer
-credentials.
+policy. Policy import requires its exact review in the same bundle. A new approved review or policy
+must cite claims that already had exact source snapshots and an approved `EvidenceClaimReview` at
+that authority's own review time. A later evidence approval is not retroactive; a new authority
+review is required. Exact retries are no-ops; an existing ID with different content is rejected,
+and any failed insert rolls back the bundle. The command refuses production and external-
+authentication configuration. It transports reviewed data but does not verify source authenticity
+or reviewer credentials.
 
 An active reviewer may load the read-only initial-planning preparation projection, author an
 immutable candidate-context draft, record one immutable review of that exact draft, and create the
@@ -679,6 +682,9 @@ uses the same read-only scientific-governance token. It traces each claim to exa
 shows every immutable claim-review decision, and marks legacy or non-approved claims as blocked.
 The browser cannot create or approve evidence. Version 2 evidence-governance bundles may carry
 externally prepared `EvidenceClaimReview` records; version 1 source-and-claim bundles remain valid.
+The assessment workbench reuses that evaluator at each protocol-review and estimation-policy
+timestamp, so the screen cannot present a later evidence approval as the original basis of an older
+authority.
 
 After a strategy exists, `http://localhost:3000/review/resource-demands` accepts its UUID and loads
 the exact priority, environment-snapshot, resolver-policy, exercise-ontology, observation, evidence,

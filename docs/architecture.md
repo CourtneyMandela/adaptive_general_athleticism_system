@@ -678,6 +678,12 @@ a current approved review. They do not retrieve publications, interpret findings
 or qualify the named reviewer. Legacy provisional seed claims have no fabricated snapshot links or
 reviews; they can be migrated only after deliberate retrieval and qualified review.
 
+`EvidenceAuthorityEvaluator` applies the same rules to an ordered set of exact claims at another
+authority record's own timestamp. It returns typed per-claim sources, point-in-time review history,
+readiness, and blockers. Unknown, future, source-less, unavailable-source, unreviewed, and currently
+non-approved claims fail closed. A later claim approval does not alter an older authority's
+evaluation.
+
 `agas_evidence.pubmed` is the first provider adapter. It uses NCBI ESearch for bounded operator
 queries and EFetch XML for one exact PMID, supplies the configured tool/contact parameters, and
 maps the response to an unpersisted `EvidenceSource`. Parsing retains inline title text, ordered
@@ -793,19 +799,25 @@ implemented.
 Assessment protocol governance uses a distinct append-only `assessment_reviewer` assignment. The
 role-protected `GET /v1/operator/assessment-governance` projection evaluates definitions at an
 explicit instant and returns all protocol-review and capability-estimation-policy history visible
-at that instant, current records, evidence claims, and blockers. A definition is operational for
-the current self-administered PWA chain only when its current review is approved, includes a
-versioned measurement schema, permits self-administration, and has a current approved estimation
-policy bound to that exact review. This does not replace the separate athlete-specific eligibility
-gate. The role is an application permission, not evidence of scientific qualification.
+at that instant, current records, evidence claims, and blockers. It separately evaluates the exact
+claims cited by the current protocol review and policy at each record's own review time. Its
+governance chain is ready only when the current review is approved, includes a versioned
+measurement schema, permits self-administration, has a current approved estimation policy bound to
+that exact review, and both authorities' evidence was ready at their decision times. This does not
+replace the separate athlete-specific eligibility gate. The role is an application permission, not
+evidence of scientific qualification.
 
 The provisional local curation boundary accepts a versioned `AssessmentGovernanceBundle` containing
 one exact definition, optional review, and optional estimation policy. Stable caller-supplied record
 IDs make retries idempotent; existing IDs must match the complete immutable model. The repository
-validates evidence references and linear review/policy history, all new records commit together, and
-the governance projector reports the resulting point-in-time blockers. The command is disabled in
-production and external-authentication mode and is not exposed over HTTP. It neither ingests evidence
-claims nor verifies reviewer credentials.
+validates evidence references and linear review/policy history. Before adding a new approved review
+or policy, the importer also requires every cited claim to have exact available source snapshots and
+a current approved claim review at that authority's timestamp. All new records commit together, and
+the governance projector reports the resulting point-in-time blockers. Exact replays of historical
+records remain idempotent. The command is disabled in production and external-authentication mode
+and is not exposed over HTTP. It neither ingests evidence claims nor verifies source authenticity or
+reviewer credentials. Athlete-facing catalog and selection enforcement remains a separate,
+deliberate data-migration milestone rather than silently invalidating historical records.
 
 ## Web
 

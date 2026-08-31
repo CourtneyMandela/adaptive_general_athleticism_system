@@ -14,6 +14,11 @@ from agas_domain.persistence.repository import DomainRepository
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
+from agas_api.evidence_governance import (
+    EvidenceAuthorityEvaluation,
+    EvidenceAuthorityEvaluator,
+)
+
 
 class AssessmentGovernanceItem(BaseModel):
     """Current protocol/policy state plus the immutable history that produced it."""
@@ -28,6 +33,8 @@ class AssessmentGovernanceItem(BaseModel):
     current_estimation_policy: CapabilityEstimationPolicy | None
     estimation_policy_history: tuple[CapabilityEstimationPolicy, ...]
     evidence_claims: tuple[EvidenceClaim, ...]
+    review_evidence_governance: EvidenceAuthorityEvaluation | None
+    estimation_policy_evidence_governance: EvidenceAuthorityEvaluation | None
     issues: tuple[str, ...]
 
 
@@ -36,7 +43,7 @@ class AssessmentGovernanceProjection(BaseModel):
 
     projected_at: datetime
     items: tuple[AssessmentGovernanceItem, ...]
-    projection_version: str = "assessment-governance-workbench@1.0.0"
+    projection_version: str = "assessment-governance-workbench@1.1.0"
 
 
 class AssessmentGovernanceProjectionError(RuntimeError):
@@ -48,6 +55,7 @@ class AssessmentGovernanceProjector:
 
     def __init__(self, session: Session) -> None:
         self.repository = DomainRepository(session)
+        self.evidence_evaluator = EvidenceAuthorityEvaluator(session)
 
     def project(self, projected_at: datetime | None = None) -> AssessmentGovernanceProjection:
         instant = projected_at or datetime.now(UTC)
@@ -70,7 +78,41 @@ class AssessmentGovernanceProjector:
             )
             current_review = reviews[-1] if reviews else None
             current_policy = policies[-1] if policies else None
-            issues = self._issues(current_review, current_policy)
+            issues = list(self._issues(current_review, current_policy))
+            review_evidence = (
+                self.evidence_evaluator.evaluate(
+                    current_review.evidence_claim_ids, current_review.reviewed_at
+                )
+                if current_review
+                else None
+            )
+            policy_evidence = (
+                self.evidence_evaluator.evaluate(
+                    current_policy.evidence_claim_ids, current_policy.reviewed_at
+                )
+                if current_policy
+                else None
+            )
+            if (
+                current_review is not None
+                and current_review.decision is AssessmentReviewDecision.APPROVED
+                and review_evidence is not None
+                and review_evidence.readiness == "blocked"
+            ):
+                issues.extend(
+                    f"protocol-review evidence was not ready at its review time: {issue}"
+                    for issue in review_evidence.issues
+                )
+            if (
+                current_policy is not None
+                and current_policy.decision is AssessmentReviewDecision.APPROVED
+                and policy_evidence is not None
+                and policy_evidence.readiness == "blocked"
+            ):
+                issues.extend(
+                    f"estimation-policy evidence was not ready at its review time: {issue}"
+                    for issue in policy_evidence.issues
+                )
             evidence_ids = dict.fromkeys(
                 evidence_id for review in reviews for evidence_id in review.evidence_claim_ids
             )
@@ -98,7 +140,9 @@ class AssessmentGovernanceProjector:
                     current_estimation_policy=current_policy,
                     estimation_policy_history=policies,
                     evidence_claims=tuple(evidence_claims),
-                    issues=issues,
+                    review_evidence_governance=review_evidence,
+                    estimation_policy_evidence_governance=policy_evidence,
+                    issues=tuple(issues),
                 )
             )
         return AssessmentGovernanceProjection(projected_at=instant, items=tuple(items))

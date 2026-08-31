@@ -7,11 +7,36 @@ import {
   fetchAssessmentGovernance,
   type AssessmentGovernanceProjection,
 } from "@/lib/assessment-governance";
+import type { EvidenceAuthorityEvaluation } from "@/lib/evidence-governance";
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 function label(value: string): string {
   return value.replaceAll("_", " ");
+}
+
+function EvidenceAuthorityStatus({
+  title,
+  evaluation,
+}: {
+  title: string;
+  evaluation: EvidenceAuthorityEvaluation | null;
+}) {
+  return (
+    <details>
+      <summary>{title}</summary>
+      {evaluation ? (
+        <div className="assessment-governance-detail">
+          <strong>{evaluation.readiness} · {evaluation.claim_results.length} claim(s)</strong>
+          <span>Evaluated at the authority decision time: {new Date(evaluation.evaluated_at).toLocaleString()}</span>
+          {evaluation.issues.length ? (
+            <ul>{evaluation.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul>
+          ) : <span>Every cited claim was approved with exact source provenance by this time.</span>}
+          <span>{evaluation.evaluation_version}</span>
+        </div>
+      ) : <p className="form-help">No current authority exists to evaluate.</p>}
+    </details>
+  );
 }
 
 export function AssessmentGovernanceClient() {
@@ -178,6 +203,14 @@ export function AssessmentGovernanceClient() {
                   </div>
                 ))}
               </details>
+              <EvidenceAuthorityStatus
+                title="Protocol-review evidence readiness"
+                evaluation={item.review_evidence_governance}
+              />
+              <EvidenceAuthorityStatus
+                title="Estimation-policy evidence readiness"
+                evaluation={item.estimation_policy_evidence_governance}
+              />
               <code>{item.definition.id}</code>
             </article>
           ))}

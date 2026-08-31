@@ -9,7 +9,7 @@ describe("assessment-governance client", () => {
   it("uses the dedicated assessment-reviewer token", async () => {
     const projection = {
       projected_at: "2026-08-30T16:00:00Z",
-      projection_version: "assessment-governance-workbench@1.0.0",
+      projection_version: "assessment-governance-workbench@1.1.0",
       items: [],
     };
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
