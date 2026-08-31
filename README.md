@@ -778,7 +778,7 @@ pytest tests/integration/test_required_vertical_slice.py
 ```bash
 ruff check .
 ruff format --check .
-mypy packages/domain/src packages/safety/src packages/seed_data/src services/api/src services/planner/src tests
+mypy packages/domain/src packages/safety/src packages/seed_data/src services/api/src services/evidence/src services/planner/src tests
 pnpm --filter @agas/web lint
 pnpm --filter @agas/web typecheck
 ```
