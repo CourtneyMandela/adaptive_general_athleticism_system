@@ -120,6 +120,12 @@ def test_baseline_migration_matches_current_metadata(
         assert "assessment_eligibility_review_id" in {
             column["name"] for column in inspector.get_columns("assessment_selections")
         }
+        for delivery_table in ("training_responses", "block_reviews"):
+            delivery_columns = {column["name"] for column in inspector.get_columns(delivery_table)}
+            assert "prescribed_item_count" in delivery_columns
+            assert "completed_item_count" in delivery_columns
+            assert "prescribed_sessions" not in delivery_columns
+            assert "completed_sessions" not in delivery_columns
         assert any(
             constraint["name"] == "uq_account_issuer_subject"
             for constraint in inspector.get_unique_constraints("accounts")

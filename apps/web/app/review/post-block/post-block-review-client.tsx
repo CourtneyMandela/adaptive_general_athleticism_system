@@ -311,7 +311,7 @@ function BlockReviewReceipt({
       <dl className="review-metadata">
         <div><dt>Review</dt><dd>{result.block_review.id}</dd></div>
         <div><dt>Adherence</dt><dd>{Math.round(result.block_review.aggregate_adherence_ratio * 100)}%</dd></div>
-        <div><dt>Completed sessions</dt><dd>{result.block_review.completed_sessions}/{result.block_review.prescribed_sessions}</dd></div>
+        <div><dt>Delivered prescription items</dt><dd>{result.block_review.completed_item_count}/{result.block_review.prescribed_item_count}</dd></div>
         <div><dt>Decision audit</dt><dd>{result.decision_record.id}</dd></div>
       </dl>
       <div className="post-block-responses">
@@ -322,7 +322,7 @@ function BlockReviewReceipt({
           return (
             <article key={response.id}>
               <strong>{response.observed_change >= 0 ? "+" : ""}{response.observed_change} estimate-unit change</strong>
-              <span>{response.completed_sessions}/{response.prescribed_sessions} delivered · {Math.round(response.adherence_ratio * 100)}% adherence · {response.confidence}</span>
+              <span>{response.completed_item_count}/{response.prescribed_item_count} items delivered · {Math.round(response.adherence_ratio * 100)}% adherence · {response.confidence}</span>
               <span>{evaluation?.rationale}</span>
               <code>{response.id}</code>
             </article>

@@ -14,6 +14,7 @@ from agas_domain import (
     Observation,
     ObservationSource,
     Provenance,
+    TrainingResponse,
 )
 from pydantic import ValidationError
 
@@ -113,6 +114,49 @@ def test_adaptation_relationship_requires_evidence_provenance() -> None:
             confidence=Confidence.LOW,
             population="unspecified",
             evidence_claim_ids=(),
+        )
+
+
+def test_training_response_counts_prescription_items_not_whole_sessions() -> None:
+    execution_id = uuid4()
+    adherence_ids = (uuid4(), uuid4())
+    response = TrainingResponse(
+        athlete_id=uuid4(),
+        block_plan_id=uuid4(),
+        adaptation_id=uuid4(),
+        intervention_summary="Two prescription items delivered in one session.",
+        prescription_ids=(uuid4(), uuid4()),
+        session_execution_ids=(execution_id,),
+        session_adherence_ids=adherence_ids,
+        prescribed_item_count=2,
+        completed_item_count=2,
+        prescribed_dose_total=20,
+        actual_dose_total=20,
+        dose_unit="repetitions",
+        adherence_ratio=1,
+        baseline_capability_estimate_id=uuid4(),
+        followup_capability_estimate_id=uuid4(),
+        baseline_value=10,
+        followup_value=12,
+        observed_change=2,
+        measurement_uncertainty="Software fixture.",
+        confidence=Confidence.MODERATE,
+        source_observation_ids=(uuid4(),),
+        calculated_at=NOW,
+        calculation_method="software fixture",
+        rule_version="fixture@1.0.0",
+    )
+
+    assert response.prescribed_item_count == len(adherence_ids)
+    assert response.prescribed_item_count > len(response.session_execution_ids)
+
+    with pytest.raises(ValidationError, match="prescribed item count"):
+        TrainingResponse.model_validate(
+            {
+                **response.model_dump(),
+                "prescribed_item_count": 1,
+                "completed_item_count": 1,
+            }
         )
 
 

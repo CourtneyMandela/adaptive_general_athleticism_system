@@ -119,8 +119,8 @@ export interface TrainingResponseRecord {
   id: string;
   adaptation_id: string;
   prescription_ids: string[];
-  prescribed_sessions: number;
-  completed_sessions: number;
+  prescribed_item_count: number;
+  completed_item_count: number;
   prescribed_dose_total: number;
   actual_dose_total: number;
   dose_unit: string;
@@ -140,8 +140,8 @@ export interface BlockReviewRecord {
   block_plan_id: string;
   outcome: string;
   aggregate_adherence_ratio: number;
-  prescribed_sessions: number;
-  completed_sessions: number;
+  prescribed_item_count: number;
+  completed_item_count: number;
   response_evaluations: Array<{
     training_response_id: string;
     comparison_direction: ComparisonDirection;

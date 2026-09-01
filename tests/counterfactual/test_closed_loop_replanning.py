@@ -275,8 +275,8 @@ def _fixture() -> ReplanningFixture:
             )
             for item in responses
         ),
-        prescribed_sessions=2,
-        completed_sessions=2,
+        prescribed_item_count=2,
+        completed_item_count=2,
         aggregate_adherence_ratio=1,
         outcome=BlockReviewOutcome.INCONCLUSIVE,
         source_observation_ids=followup_observations,
@@ -367,8 +367,8 @@ def _response(
         prescription_ids=(uuid4(),),
         session_execution_ids=(uuid4(),),
         session_adherence_ids=(uuid4(),),
-        prescribed_sessions=1,
-        completed_sessions=1,
+        prescribed_item_count=1,
+        completed_item_count=1,
         prescribed_dose_total=10,
         actual_dose_total=10,
         dose_unit="fixture_units",

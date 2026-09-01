@@ -2492,8 +2492,8 @@ class TrainingResponse(VersionedRecord):
     prescription_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
     session_execution_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
     session_adherence_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
-    prescribed_sessions: int = Field(ge=1)
-    completed_sessions: int = Field(ge=0)
+    prescribed_item_count: int = Field(ge=1)
+    completed_item_count: int = Field(ge=0)
     prescribed_dose_total: float = Field(ge=0)
     actual_dose_total: float = Field(ge=0)
     dose_unit: NonEmptyText
@@ -2520,8 +2520,8 @@ class TrainingResponse(VersionedRecord):
 
     @model_validator(mode="after")
     def validate_training_response(self) -> TrainingResponse:
-        if self.completed_sessions > self.prescribed_sessions:
-            raise ValueError("completed sessions cannot exceed prescribed sessions")
+        if self.completed_item_count > self.prescribed_item_count:
+            raise ValueError("completed items cannot exceed prescribed items")
         for field_name in (
             "prescription_ids",
             "session_execution_ids",
@@ -2532,8 +2532,8 @@ class TrainingResponse(VersionedRecord):
             values = getattr(self, field_name)
             if len(set(values)) != len(values):
                 raise ValueError(f"{field_name} must not contain duplicates")
-        if len(self.session_adherence_ids) != self.prescribed_sessions:
-            raise ValueError("prescribed sessions must match item-level adherence records")
+        if len(self.session_adherence_ids) != self.prescribed_item_count:
+            raise ValueError("prescribed item count must match item-level adherence records")
         if len(self.session_execution_ids) > len(self.session_adherence_ids):
             raise ValueError("each execution requires at least one item-level adherence record")
         return self
@@ -2576,8 +2576,8 @@ class BlockReview(VersionedRecord):
     training_response_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
     response_evaluations: Annotated[tuple[ResponseEvaluation, ...], Field(min_length=1)]
     post_session_safety_decision_ids: tuple[UUID, ...] = ()
-    prescribed_sessions: int = Field(ge=1)
-    completed_sessions: int = Field(ge=0)
+    prescribed_item_count: int = Field(ge=1)
+    completed_item_count: int = Field(ge=0)
     aggregate_adherence_ratio: UnitInterval
     outcome: BlockReviewOutcome
     source_observation_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
@@ -2595,8 +2595,8 @@ class BlockReview(VersionedRecord):
 
     @model_validator(mode="after")
     def validate_review(self) -> BlockReview:
-        if self.completed_sessions > self.prescribed_sessions:
-            raise ValueError("completed sessions cannot exceed prescribed sessions")
+        if self.completed_item_count > self.prescribed_item_count:
+            raise ValueError("completed items cannot exceed prescribed items")
         if (
             tuple(item.training_response_id for item in self.response_evaluations)
             != self.training_response_ids

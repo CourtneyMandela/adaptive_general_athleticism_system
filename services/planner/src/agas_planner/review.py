@@ -36,7 +36,7 @@ class BlockReviewError(ValueError):
 
 
 class TrainingResponseCalculator:
-    def __init__(self, rule_version: str = "training-response@1.0.0") -> None:
+    def __init__(self, rule_version: str = "training-response@1.1.0") -> None:
         self.rule_version = rule_version
 
     def calculate(
@@ -152,8 +152,8 @@ class TrainingResponseCalculator:
             prescription_ids=tuple(item.id for item in prescription_items),
             session_execution_ids=tuple(item.id for item in execution_items),
             session_adherence_ids=tuple(item.id for item in adherence_items),
-            prescribed_sessions=len(adherence_items),
-            completed_sessions=sum(
+            prescribed_item_count=len(adherence_items),
+            completed_item_count=sum(
                 next(
                     item
                     for item in execution.items
@@ -189,7 +189,7 @@ class TrainingResponseCalculator:
 
 
 class BlockReviewEngine:
-    def __init__(self, rule_version: str = "block-review@1.0.0") -> None:
+    def __init__(self, rule_version: str = "block-review@1.1.0") -> None:
         self.rule_version = rule_version
 
     def review(
@@ -270,9 +270,12 @@ class BlockReviewEngine:
             outcome = BlockReviewOutcome.PARTIALLY_SUPPORTED
         else:
             outcome = BlockReviewOutcome.NOT_SUPPORTED
-        prescribed = sum(item.prescribed_sessions for item in response_items)
-        actual = sum(item.actual_dose_total for item in response_items)
-        planned = sum(item.prescribed_dose_total for item in response_items)
+        prescribed_items = sum(item.prescribed_item_count for item in response_items)
+        completed_items = sum(item.completed_item_count for item in response_items)
+        aggregate_adherence = (
+            sum(item.adherence_ratio * item.prescribed_item_count for item in response_items)
+            / prescribed_items
+        )
         observations = tuple(
             dict.fromkeys(
                 source for item in response_items for source in item.source_observation_ids
@@ -287,9 +290,9 @@ class BlockReviewEngine:
             training_response_ids=tuple(item.id for item in response_items),
             response_evaluations=tuple(evaluations),
             post_session_safety_decision_ids=tuple(item.id for item in safety_items),
-            prescribed_sessions=prescribed,
-            completed_sessions=sum(item.completed_sessions for item in response_items),
-            aggregate_adherence_ratio=min(1.0, actual / planned),
+            prescribed_item_count=prescribed_items,
+            completed_item_count=completed_items,
+            aggregate_adherence_ratio=min(1.0, aggregate_adherence),
             outcome=outcome,
             source_observation_ids=observations,
             evidence_claim_ids=evidence,

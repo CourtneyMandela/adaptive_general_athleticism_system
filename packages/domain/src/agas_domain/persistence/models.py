@@ -2685,8 +2685,8 @@ class TrainingResponseRecord(VersionedRecordMixin, Base):
         ForeignKey("adaptations.id", ondelete="RESTRICT"), index=True
     )
     intervention_summary: Mapped[str] = mapped_column(Text(), nullable=False)
-    prescribed_sessions: Mapped[int] = mapped_column(Integer(), nullable=False)
-    completed_sessions: Mapped[int] = mapped_column(Integer(), nullable=False)
+    prescribed_item_count: Mapped[int] = mapped_column(Integer(), nullable=False)
+    completed_item_count: Mapped[int] = mapped_column(Integer(), nullable=False)
     prescribed_dose_total: Mapped[float] = mapped_column(Float(), nullable=False)
     actual_dose_total: Mapped[float] = mapped_column(Float(), nullable=False)
     dose_unit: Mapped[str] = mapped_column(String(40), nullable=False)
@@ -2838,8 +2838,8 @@ class BlockReviewRecord(VersionedRecordMixin, Base):
     block_review_policy_id: Mapped[UUID] = mapped_column(
         ForeignKey("block_review_policies.id", ondelete="RESTRICT"), index=True
     )
-    prescribed_sessions: Mapped[int] = mapped_column(Integer(), nullable=False)
-    completed_sessions: Mapped[int] = mapped_column(Integer(), nullable=False)
+    prescribed_item_count: Mapped[int] = mapped_column(Integer(), nullable=False)
+    completed_item_count: Mapped[int] = mapped_column(Integer(), nullable=False)
     aggregate_adherence_ratio: Mapped[float] = mapped_column(Float(), nullable=False)
     outcome: Mapped[str] = mapped_column(String(40), nullable=False)
     rationale: Mapped[list[str]] = mapped_column(JsonType, nullable=False)

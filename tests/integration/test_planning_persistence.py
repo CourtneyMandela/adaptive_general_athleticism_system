@@ -2483,7 +2483,11 @@ def test_completed_block_review_requires_full_history_and_is_atomic(
     with pytest.raises(BlockReviewConflictError, match="already has a completed review"):
         PersistedBlockReviewService(session).execute(block.id, command)
     assert len(result.training_responses) == 1
-    assert result.training_responses[0].prescribed_sessions == 8
+    assert result.training_responses[0].prescribed_item_count == 8
+    assert result.training_responses[0].prescribed_item_count == len(
+        result.training_responses[0].session_adherence_ids
+    )
+    assert result.training_responses[0].rule_version == "training-response@1.1.0"
     assert result.training_responses[0].session_execution_ids == tuple(
         execution.id for _, execution in executions
     )
