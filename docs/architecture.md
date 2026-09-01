@@ -59,8 +59,10 @@ packages/evaluation tests behavior across synthetic athletes.
 The source boundaries remain one backend deployment and one browser application rather than
 becoming conceptual microservices. `services/api/Dockerfile` packages the API, domain, planner,
 safety, evidence, seed loader, and Alembic runtime into one non-root image. The same immutable image
-runs either the long-lived API command or the one-shot migration command. Migrations complete
-before the API starts; an API replica never races another replica by migrating on startup.
+runs either the long-lived API command or the one-shot migration command. Multi-instance and paid
+topologies complete migrations separately before the API starts. The owner-only Render Free alpha
+may explicitly set `AGAS_MIGRATE_ON_STARTUP=true` because that tier has no pre-deploy command and is
+limited to one instance; the image default remains false.
 
 `apps/web/Dockerfile` packages Next.js standalone output into a separate non-root image. Public and
 static assets are copied into the traced monorepo output explicitly. The production build compiles
@@ -84,14 +86,17 @@ HTTPS reverse proxy (not included)
        one-shot migration
 ```
 
-PostgreSQL and FastAPI have no published host ports. The PWA binds only to loopback so an explicitly
-configured reverse proxy can supply TLS, request limits, and public routing. The route-handler
-gateway decrypts an encrypted `HttpOnly` session and forwards an allow-listed request plus bearer
-only across the private network. A provider-neutral OIDC adapter creates that session only after
+PostgreSQL and FastAPI have no published host ports in the single-host and paid references. The PWA
+binds only to loopback so an explicitly configured reverse proxy can supply TLS, request limits,
+and public routing. In the no-card alpha, Vercel hosts the PWA, FastAPI has a public Render hostname,
+and Neon hosts PostgreSQL; the API still requires exact external JWT verification and does not
+allow direct browser CORS. The route-handler gateway decrypts an encrypted `HttpOnly` session and
+forwards an allow-listed request plus bearer over its server-side upstream. A provider-neutral OIDC
+adapter creates that session only after
 authorization-code, S256 PKCE, state, nonce, token-response, and ID-token verification. Hosting
 provider, reverse proxy, identity provider, client provisioning, backups, secret store, and
 observability remain deployment choices rather than hidden defaults. See `docs/deployment.md` and
-decisions 0081, 0083, and 0084.
+decisions 0081, 0083, 0084, and 0086.
 
 ## Domain boundaries
 

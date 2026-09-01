@@ -34,6 +34,7 @@ WORKDIR /app
 COPY --from=builder /opt/agas-venv /opt/agas-venv
 COPY alembic.ini ./alembic.ini
 COPY migrations ./migrations
+COPY --chmod=0555 services/api/docker-entrypoint.sh /usr/local/bin/agas-api-entrypoint
 
 USER 10001:10001
 
@@ -42,4 +43,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=3)"]
 
+ENTRYPOINT ["agas-api-entrypoint"]
 CMD ["uvicorn", "agas_api.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]

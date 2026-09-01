@@ -1,7 +1,8 @@
 import { SessionConfigurationError, readServerSessionAccessToken } from "./server-session";
 
 const MAX_REQUEST_BYTES = 1_048_576;
-const UPSTREAM_TIMEOUT_MS = 15_000;
+const DEFAULT_UPSTREAM_TIMEOUT_MS = 15_000;
+const MAX_UPSTREAM_TIMEOUT_MS = 55_000;
 const BODY_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const ALLOWED_METHODS = new Set(["GET", "HEAD", ...BODY_METHODS]);
 const REQUEST_HEADERS = ["accept", "content-type", "idempotency-key", "if-match"];
@@ -10,6 +11,7 @@ const RESPONSE_HEADERS = ["content-type", "etag", "retry-after", "x-request-id"]
 type GatewayEnvironment = Readonly<{
   AGAS_INTERNAL_API_URL?: string;
   AGAS_INTERNAL_API_HOSTPORT?: string;
+  AGAS_API_UPSTREAM_TIMEOUT_MS?: string;
   AGAS_PUBLIC_WEB_ORIGIN?: string;
   AGAS_SESSION_ENCRYPTION_KEY?: string;
 }>;
@@ -58,6 +60,18 @@ function configuredInternalOrigin(environment: GatewayEnvironment): URL {
     throw new SessionConfigurationError("Internal API host and port are invalid.");
   }
   return configuredOrigin(`http://${hostport}`, "Internal API origin");
+}
+
+function configuredUpstreamTimeout(raw: string | undefined): number {
+  if (raw === undefined || raw.trim() === "") return DEFAULT_UPSTREAM_TIMEOUT_MS;
+  if (!/^\d+$/u.test(raw.trim())) {
+    throw new SessionConfigurationError("API upstream timeout is invalid.");
+  }
+  const timeout = Number(raw.trim());
+  if (!Number.isSafeInteger(timeout) || timeout < 1_000 || timeout > MAX_UPSTREAM_TIMEOUT_MS) {
+    throw new SessionConfigurationError("API upstream timeout is outside the allowed range.");
+  }
+  return timeout;
 }
 
 function requestIsSameOriginWrite(request: Request, publicOrigin: URL): boolean {
@@ -124,6 +138,7 @@ export async function handleApiGateway(
   environment: GatewayEnvironment = {
     AGAS_INTERNAL_API_URL: process.env.AGAS_INTERNAL_API_URL,
     AGAS_INTERNAL_API_HOSTPORT: process.env.AGAS_INTERNAL_API_HOSTPORT,
+    AGAS_API_UPSTREAM_TIMEOUT_MS: process.env.AGAS_API_UPSTREAM_TIMEOUT_MS,
     AGAS_PUBLIC_WEB_ORIGIN: process.env.AGAS_PUBLIC_WEB_ORIGIN,
     AGAS_SESSION_ENCRYPTION_KEY: process.env.AGAS_SESSION_ENCRYPTION_KEY,
   },
@@ -140,9 +155,11 @@ export async function handleApiGateway(
 
   let internalOrigin: URL;
   let publicOrigin: URL;
+  let upstreamTimeoutMs: number;
   let accessToken: string | null;
   try {
     internalOrigin = configuredInternalOrigin(environment);
+    upstreamTimeoutMs = configuredUpstreamTimeout(environment.AGAS_API_UPSTREAM_TIMEOUT_MS);
     publicOrigin = configuredOrigin(
       environment.AGAS_PUBLIC_WEB_ORIGIN,
       "Public web origin",
@@ -175,7 +192,7 @@ export async function handleApiGateway(
       body,
       cache: "no-store",
       redirect: "manual",
-      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+      signal: AbortSignal.timeout(upstreamTimeoutMs),
     });
   } catch {
     return jsonError(502, "Athlete data service is unavailable.");
