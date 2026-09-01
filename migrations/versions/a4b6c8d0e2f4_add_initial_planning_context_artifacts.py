@@ -15,6 +15,31 @@ down_revision: str | None = "f3a4b5c6d7e8"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
+_DRAFT_INDEX_NAMES = {
+    "athlete_id": "ix_initial_planning_context_drafts_athlete_id",
+    "priority_policy_id": "ix_initial_planning_context_drafts_priority_policy_id",
+    "priority_policy_review_id": "ix_initial_planning_context_drafts_priority_policy_review_id",
+    "authored_by_account_id": "ix_initial_planning_context_drafts_authored_by_account_id",
+    "author_authority_assignment_id": "ix_initial_plan_draft_authority_assignment",
+    "authored_at": "ix_initial_planning_context_drafts_authored_at",
+}
+
+_CANDIDATE_INDEX_NAMES = {
+    "draft_id": "ix_initial_planning_candidate_contexts_draft_id",
+    "adaptation_id": "ix_initial_planning_candidate_contexts_adaptation_id",
+    "competency_floor_id": "ix_initial_planning_candidate_contexts_competency_floor_id",
+    "competency_floor_review_id": "ix_initial_plan_candidate_floor_review",
+    "capability_estimate_id": "ix_initial_planning_candidate_contexts_capability_estimate_id",
+}
+
+_REVIEW_INDEX_NAMES = {
+    "draft_id": "ix_initial_planning_context_reviews_draft_id",
+    "decision": "ix_initial_planning_context_reviews_decision",
+    "reviewed_by_account_id": "ix_initial_planning_context_reviews_reviewed_by_account_id",
+    "review_authority_assignment_id": "ix_initial_plan_review_authority_assignment",
+    "reviewed_at": "ix_initial_planning_context_reviews_reviewed_at",
+}
+
 
 def _version_columns() -> list[sa.Column[object]]:
     return [
@@ -56,16 +81,9 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id"),
     )
-    for column in (
-        "athlete_id",
-        "priority_policy_id",
-        "priority_policy_review_id",
-        "authored_by_account_id",
-        "author_authority_assignment_id",
-        "authored_at",
-    ):
+    for column, index_name in _DRAFT_INDEX_NAMES.items():
         op.create_index(
-            f"ix_initial_planning_context_drafts_{column}",
+            index_name,
             "initial_planning_context_drafts",
             [column],
             unique=False,
@@ -124,15 +142,9 @@ def upgrade() -> None:
             "draft_id", "adaptation_id", name="uq_initial_planning_draft_adaptation"
         ),
     )
-    for column in (
-        "draft_id",
-        "adaptation_id",
-        "competency_floor_id",
-        "competency_floor_review_id",
-        "capability_estimate_id",
-    ):
+    for column, index_name in _CANDIDATE_INDEX_NAMES.items():
         op.create_index(
-            f"ix_initial_planning_candidate_contexts_{column}",
+            index_name,
             "initial_planning_candidate_contexts",
             [column],
             unique=False,
@@ -184,15 +196,9 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("draft_id", name="uq_initial_planning_context_review_draft"),
     )
-    for column in (
-        "draft_id",
-        "decision",
-        "reviewed_by_account_id",
-        "review_authority_assignment_id",
-        "reviewed_at",
-    ):
+    for column, index_name in _REVIEW_INDEX_NAMES.items():
         op.create_index(
-            f"ix_initial_planning_context_reviews_{column}",
+            index_name,
             "initial_planning_context_reviews",
             [column],
             unique=False,
@@ -222,43 +228,24 @@ def _create_candidate_link(
 
 
 def downgrade() -> None:
-    for column in (
-        "reviewed_at",
-        "review_authority_assignment_id",
-        "reviewed_by_account_id",
-        "decision",
-        "draft_id",
-    ):
+    for index_name in reversed(_REVIEW_INDEX_NAMES.values()):
         op.drop_index(
-            f"ix_initial_planning_context_reviews_{column}",
+            index_name,
             table_name="initial_planning_context_reviews",
         )
     op.drop_table("initial_planning_context_reviews")
     op.drop_table("initial_planning_context_evidence_claims")
     op.drop_table("initial_planning_context_observations")
     op.drop_table("initial_planning_context_prerequisites")
-    for column in (
-        "capability_estimate_id",
-        "competency_floor_review_id",
-        "competency_floor_id",
-        "adaptation_id",
-        "draft_id",
-    ):
+    for index_name in reversed(_CANDIDATE_INDEX_NAMES.values()):
         op.drop_index(
-            f"ix_initial_planning_candidate_contexts_{column}",
+            index_name,
             table_name="initial_planning_candidate_contexts",
         )
     op.drop_table("initial_planning_candidate_contexts")
-    for column in (
-        "authored_at",
-        "author_authority_assignment_id",
-        "authored_by_account_id",
-        "priority_policy_review_id",
-        "priority_policy_id",
-        "athlete_id",
-    ):
+    for index_name in reversed(_DRAFT_INDEX_NAMES.values()):
         op.drop_index(
-            f"ix_initial_planning_context_drafts_{column}",
+            index_name,
             table_name="initial_planning_context_drafts",
         )
     op.drop_table("initial_planning_context_drafts")
