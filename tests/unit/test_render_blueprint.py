@@ -37,6 +37,7 @@ def test_default_blueprint_is_a_no_card_single_service_alpha() -> None:
     assert api["plan"] == "free"
     assert api["healthCheckPath"] == "/ready"
     assert api["autoDeployTrigger"] == "checksPass"
+    assert "maxShutdownDelaySeconds" not in api
     assert "preDeployCommand" not in api
 
     assert api_environment["AGAS_MIGRATE_ON_STARTUP"]["value"] == "true"

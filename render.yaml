@@ -8,7 +8,6 @@ services:
     dockerContext: .
     autoDeployTrigger: checksPass
     healthCheckPath: /ready
-    maxShutdownDelaySeconds: 30
     envVars:
       - key: AGAS_AUTH_MODE
         value: external
