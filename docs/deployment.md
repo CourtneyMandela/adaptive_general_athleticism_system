@@ -102,3 +102,10 @@ production athlete data. Before production use, the project still needs:
 
 The reference Compose file does not install a reverse proxy or select commercial infrastructure.
 Those choices affect cost, privacy, operations, and account behavior and should be made explicitly.
+
+The Playwright suite exercises the provider-neutral login contract against an ephemeral local OIDC
+authority and private API. It verifies authorization-code flow, S256 PKCE, state and nonce binding,
+asymmetric ID-token verification through JWKS, encrypted session creation, one-time code rejection,
+and bearer forwarding without exposing the browser cookie upstream. This is deployment-contract
+coverage, not evidence that any future hosted provider has been configured correctly; staging must
+repeat the flow against the selected provider.
