@@ -864,11 +864,14 @@ hosted-flow acceptance, secret management, backups/restore drills, monitoring, a
 lifecycle, and production authorization administration remain required. Development bearer
 selectors must never be used for a hosted instance. See [docs/deployment.md](docs/deployment.md).
 
-The provisional first staging target is captured in `render.yaml`: one public Next.js service, one
-private FastAPI service, and private managed PostgreSQL on Render, with Auth0 as the external OIDC
-authority. It intentionally uses paid durable Render resources and prompts for every secret. Review
-the current price and follow the Auth0/Render checklist in [docs/deployment.md](docs/deployment.md)
-before creating resources.
+The first owner-only hosted alpha uses a no-card topology: Vercel Hobby runs the Next.js PWA,
+`render.yaml` creates one Render Free public-but-authenticated FastAPI service, Neon Free supplies
+PostgreSQL, and Auth0 Free supplies OIDC. The browser still calls only the same-origin encrypted
+gateway; it never receives an API bearer token or calls FastAPI directly. Free services may sleep,
+pause at quota, and provide limited restore history. Follow the exact checklist in
+[docs/deployment.md](docs/deployment.md) and do not add a payment method. The previous private,
+paid Render topology remains available only as a future upgrade reference in
+`deploy/render-paid.yaml`.
 
 ## Product guardrail
 

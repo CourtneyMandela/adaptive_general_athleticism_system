@@ -1,0 +1,83 @@
+# Optional future topology. The no-card single-user alpha uses the root render.yaml instead.
+services:
+  - type: pserv
+    name: agas-api-staging
+    runtime: docker
+    plan: 0.5c-512mb
+    region: virginia
+    dockerfilePath: ./services/api/Dockerfile
+    dockerContext: .
+    preDeployCommand: alembic upgrade head
+    autoDeployTrigger: checksPass
+    maxShutdownDelaySeconds: 30
+    envVars:
+      - key: AGAS_AUTH_MODE
+        value: external
+      - key: AGAS_CORS_ORIGINS
+        value: '[]'
+      - key: AGAS_DATABASE_URL
+        fromDatabase:
+          name: agas-postgres-staging
+          property: connectionString
+      - key: AGAS_ENVIRONMENT
+        value: production
+      - key: AGAS_EXTERNAL_AUTH_ALGORITHMS
+        value: '["RS256"]'
+      - key: AGAS_EXTERNAL_AUTH_AUDIENCE
+        value: https://api.agas.staging
+      - key: AGAS_EXTERNAL_AUTH_ISSUER
+        sync: false
+      - key: AGAS_EXTERNAL_AUTH_JWKS_URL
+        sync: false
+
+  - type: web
+    name: agas-courtneymandela-staging
+    runtime: docker
+    plan: 0.5c-512mb
+    region: virginia
+    dockerfilePath: ./apps/web/Dockerfile
+    dockerContext: .
+    autoDeployTrigger: checksPass
+    healthCheckPath: /
+    maxShutdownDelaySeconds: 30
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        value: /api/agas
+      - key: NEXT_PUBLIC_AGAS_AUTH_MODE
+        value: session
+      - key: AGAS_INTERNAL_API_HOSTPORT
+        fromService:
+          name: agas-api-staging
+          type: pserv
+          property: hostport
+      - key: AGAS_PUBLIC_WEB_ORIGIN
+        value: https://agas-courtneymandela-staging.onrender.com
+      - key: AGAS_SESSION_ENCRYPTION_KEY
+        sync: false
+      - key: AGAS_OIDC_ISSUER
+        sync: false
+      - key: AGAS_OIDC_AUTHORIZATION_URL
+        sync: false
+      - key: AGAS_OIDC_TOKEN_URL
+        sync: false
+      - key: AGAS_OIDC_JWKS_URL
+        sync: false
+      - key: AGAS_OIDC_CLIENT_ID
+        sync: false
+      - key: AGAS_OIDC_CLIENT_SECRET
+        sync: false
+      - key: AGAS_OIDC_SCOPES
+        value: openid
+      - key: AGAS_OIDC_AUDIENCE
+        value: https://api.agas.staging
+      - key: AGAS_OIDC_ID_TOKEN_ALGORITHMS
+        value: RS256
+
+databases:
+  - name: agas-postgres-staging
+    plan: 0.1c-256mb
+    region: virginia
+    databaseName: agas
+    user: agas
+    postgresMajorVersion: "16"
+    ipAllowList: []

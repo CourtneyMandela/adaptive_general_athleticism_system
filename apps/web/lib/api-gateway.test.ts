@@ -52,6 +52,29 @@ describe("same-origin API gateway", () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 
+  it("accepts a bounded timeout for a sleeping public API and rejects unsafe values", async () => {
+    const fetcher = vi.fn<typeof fetch>(async (_input, init) => {
+      expect(init?.signal).toBeInstanceOf(AbortSignal);
+      return Response.json({ ok: true });
+    });
+    const request = new Request("https://app.agas.test/api/agas/v1/health", {
+      headers: { Cookie: await sessionCookie() },
+    });
+    const response = await handleApiGateway(request.clone(), ["v1", "health"], fetcher, {
+      ...environment,
+      AGAS_INTERNAL_API_URL: "https://agas-api-staging.onrender.com",
+      AGAS_API_UPSTREAM_TIMEOUT_MS: "55000",
+    });
+    const invalid = await handleApiGateway(request, ["v1", "health"], fetcher, {
+      ...environment,
+      AGAS_API_UPSTREAM_TIMEOUT_MS: "55001",
+    });
+
+    expect(response.status).toBe(200);
+    expect(invalid.status).toBe(503);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
   it("requires a configured encrypted session before contacting FastAPI", async () => {
     const fetcher = vi.fn<typeof fetch>();
     const response = await handleApiGateway(

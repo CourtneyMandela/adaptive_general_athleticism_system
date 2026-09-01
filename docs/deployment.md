@@ -39,8 +39,9 @@ token in `NEXT_PUBLIC_*`.
 
 All `AGAS_EXTERNAL_AUTH_*` values are server-only runtime configuration. The API accepts only a
 token with the configured issuer, audience, asymmetric signature, required timestamps, and subject.
-The web runtime's `AGAS_INTERNAL_API_URL` (or one platform-supplied
-`AGAS_INTERNAL_API_HOSTPORT`), `AGAS_PUBLIC_WEB_ORIGIN`, and
+The web runtime's server-side `AGAS_INTERNAL_API_URL` (or one platform-supplied
+`AGAS_INTERNAL_API_HOSTPORT`), optional `AGAS_API_UPSTREAM_TIMEOUT_MS`,
+`AGAS_PUBLIC_WEB_ORIGIN`, and
 `AGAS_SESSION_ENCRYPTION_KEY` are server-only. Generate the session key from exactly 32 random bytes
 encoded as unpadded base64url. Every `AGAS_OIDC_*` value is also server-only. The configured provider
 must support a confidential client using authorization code, S256 PKCE, OIDC nonce,
@@ -87,37 +88,104 @@ traffic is same-origin through the gateway. Apply provider-specific proxy trust,
 request-size, timeout, and rate-limit settings only after reviewing that provider's deployment
 contract.
 
-## First staging deployment: Auth0 and Render
+## First owner-only alpha: no-card hosting
 
-`render.yaml` is the provisional single-user staging topology. It creates the smallest paid web and
-private-service instances plus a paid PostgreSQL instance in Virginia. Confirm the live total in
-Render before creation; the expected baseline is approximately USD 20 per month before overages.
-The PWA is the only public service. FastAPI and PostgreSQL remain private, migrations run once before
-each API deploy, and deploys wait for GitHub checks.
+Decision 0086 selects Vercel Hobby, one Render Free API, Neon Free PostgreSQL, and Auth0 Free. Do not
+add a payment method and do not opt into a trial. Without a payment method, quota exhaustion should
+pause service instead of producing an overage. Recheck every dashboard before confirming because
+provider plans can change.
 
-Create an Auth0 tenant on the free plan, then configure:
+The topology is:
+
+```text
+phone browser
+    |
+Vercel Next.js PWA + encrypted session gateway
+    |
+HTTPS + Auth0 bearer (server-side only)
+    |
+Render Free FastAPI
+    |
+TLS
+    |
+Neon Free PostgreSQL
+```
+
+FastAPI is publicly reachable in this topology, but athlete and operator routes remain protected by
+the exact Auth0 issuer/audience/signature contract. Keep `AGAS_CORS_ORIGINS=[]`; ordinary browser
+traffic must go through the Vercel gateway. Never expose the Neon URL or Auth0 client secret through
+`NEXT_PUBLIC_*`.
+
+### 1. Create Neon Free PostgreSQL
+
+Create one free project in a US East region where available. Do not add a card. Copy the **direct**
+connection string, not the pooled hostname, and retain `sslmode=require`. The direct URL is the
+single low-concurrency alpha secret used by both Alembic and SQLAlchemy. Store it only as Render's
+`AGAS_DATABASE_URL` secret.
+
+Neon's free storage and restore window are limited. Before irreplaceable training history
+accumulates, implement and test an owner export plus restore procedure.
+
+### 2. Create Auth0 Free identity
+
+Create a free tenant without a custom domain, then configure:
 
 1. A custom API named `AGAS staging`, identifier `https://api.agas.staging`, and RS256 signing.
 2. A Regular Web Application named `AGAS staging web` with token endpoint authentication method
    `client_secret_basic`.
-3. Allowed callback URL
-   `https://agas-courtneymandela-staging.onrender.com/auth/callback`.
-4. Allowed logout URL and web origin
-   `https://agas-courtneymandela-staging.onrender.com`.
+3. Temporarily leave its callback, logout, and web-origin lists ready for the exact Vercel production
+   URL created in step 4. Do not enter a preview-deployment wildcard.
 
-When creating the Render Blueprint from `render.yaml`, supply these prompted secrets exactly:
+### 3. Create the Render Free API
+
+Create a Blueprint from the repository's root `render.yaml`. It must show exactly one Web Service,
+`agas-api-staging`, on plan `free`, and no Render database. If the dashboard displays a charge or
+requests a paid plan, cancel instead of continuing.
+
+Supply these prompted secrets:
 
 | Render key | Value |
 | --- | --- |
-| `AGAS_EXTERNAL_AUTH_ISSUER` | `https://YOUR_AUTH0_DOMAIN/` |
+| `AGAS_DATABASE_URL` | Neon direct TLS connection string |
+| `AGAS_EXTERNAL_AUTH_ISSUER` | `https://YOUR_AUTH0_DOMAIN/` including trailing slash |
 | `AGAS_EXTERNAL_AUTH_JWKS_URL` | `https://YOUR_AUTH0_DOMAIN/.well-known/jwks.json` |
+
+The free tier cannot run a pre-deploy command. `AGAS_MIGRATE_ON_STARTUP=true` therefore runs Alembic
+before Uvicorn in this single-instance alpha. Do not reuse that setting in a scaled deployment;
+`deploy/render-paid.yaml` retains the separate pre-deploy migration pattern.
+
+After the first deploy, record the exact HTTPS hostname, expected to resemble
+`https://agas-api-staging.onrender.com`. Confirm `/health` responds and `/ready` reports readiness.
+
+### 4. Create the Vercel Hobby PWA
+
+Import the GitHub repository as a personal Hobby project and select `apps/web` as its Root
+Directory. Do not start a Pro trial. Vercel should detect the root pnpm workspace and Next.js.
+
+Set these public build variables for Production only:
+
+| Vercel key | Value |
+| --- | --- |
+| `NEXT_PUBLIC_API_URL` | `/api/agas` |
+| `NEXT_PUBLIC_AGAS_AUTH_MODE` | `session` |
+
+Set these server-only Production variables:
+
+| Vercel key | Value |
+| --- | --- |
+| `AGAS_INTERNAL_API_URL` | Exact Render API HTTPS origin, with no trailing path |
+| `AGAS_API_UPSTREAM_TIMEOUT_MS` | `55000` |
+| `AGAS_PUBLIC_WEB_ORIGIN` | Exact Vercel production origin |
 | `AGAS_SESSION_ENCRYPTION_KEY` | 32 random bytes encoded as unpadded base64url |
-| `AGAS_OIDC_ISSUER` | Same issuer, including its trailing slash |
+| `AGAS_OIDC_ISSUER` | Auth0 issuer including trailing slash |
 | `AGAS_OIDC_AUTHORIZATION_URL` | `https://YOUR_AUTH0_DOMAIN/authorize` |
 | `AGAS_OIDC_TOKEN_URL` | `https://YOUR_AUTH0_DOMAIN/oauth/token` |
-| `AGAS_OIDC_JWKS_URL` | Same JWKS URL used by FastAPI |
+| `AGAS_OIDC_JWKS_URL` | Auth0 JWKS URL |
 | `AGAS_OIDC_CLIENT_ID` | Regular Web Application client ID |
 | `AGAS_OIDC_CLIENT_SECRET` | Regular Web Application client secret |
+| `AGAS_OIDC_SCOPES` | `openid` |
+| `AGAS_OIDC_AUDIENCE` | `https://api.agas.staging` |
+| `AGAS_OIDC_ID_TOKEN_ALGORITHMS` | `RS256` |
 
 Generate the browser-session key locally without saving it to a file:
 
@@ -125,15 +193,27 @@ Generate the browser-session key locally without saving it to a file:
 node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
 ```
 
-Before approving Blueprint creation, verify that the public hostname is exactly the provisional
-origin above, PostgreSQL public access is disabled, FastAPI is a private service, and the quoted
-monthly amount is acceptable. If Render changes the hostname, update `render.yaml`, both Auth0 URL
-lists, and the public-origin setting before entering athlete data.
+Deploy once to obtain the stable production origin. Put that exact origin into
+`AGAS_PUBLIC_WEB_ORIGIN`, then configure Auth0 with:
 
-After deployment, create one Auth0 user, sign in from the public web origin, complete onboarding,
-and verify on a real phone that no local computer or same-Wi-Fi connection is required. Treat the
-result as staging: use synthetic or low-sensitivity data until backup/restore, account deletion,
-retention, monitoring, and governed scientific authorities are reviewed.
+- allowed callback URL: `https://YOUR-VERCEL-ORIGIN/auth/callback`;
+- allowed logout URL: `https://YOUR-VERCEL-ORIGIN`;
+- allowed web origin: `https://YOUR-VERCEL-ORIGIN`.
+
+Redeploy after all variables and Auth0 URLs are exact. Preview URLs are intentionally not login
+origins in the first alpha.
+
+### 5. Acceptance and cost checks
+
+Create one Auth0 user and verify login, onboarding, API reads/writes, logout, and a second login.
+Then install and exercise the PWA on a real phone using cellular data, not the workstation's Wi-Fi.
+Expect the first authenticated data request after 15 idle minutes to take longer or require one
+retry while Render and Neon wake.
+
+Confirm all four dashboards show their free/personal plan and no payment method. Use synthetic or
+low-sensitivity data until owner export/restore, deletion, retention, monitoring, and governed
+scientific authorities are reviewed. The paid private topology in `deploy/render-paid.yaml` is a
+future upgrade option, not authorization to create paid resources.
 
 ## Not production-ready yet
 

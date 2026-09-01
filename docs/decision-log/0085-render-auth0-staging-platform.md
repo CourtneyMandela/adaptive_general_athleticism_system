@@ -2,7 +2,8 @@
 
 Date: 2026-09-01
 
-Status: accepted provisionally for single-user staging
+Status: superseded as the immediate alpha target by decision 0086; retained as the paid,
+private-network upgrade option
 
 ## Decision
 
