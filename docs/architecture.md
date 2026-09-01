@@ -1057,6 +1057,7 @@ authoritative store. The PWA's `NEXT_PUBLIC_AGAS_DEVELOPMENT_TOKEN`, provisional
 `NEXT_PUBLIC_AGAS_REVIEWER_TOKEN`, and `NEXT_PUBLIC_AGAS_ASSESSMENT_REVIEWER_TOKEN` are public local
 identity selectors, not secrets. Production provider secrets and tokens must never use a
 `NEXT_PUBLIC_` variable and are not committed. Production browser code uses the relative
-`/api/agas` gateway and no authorization header; `AGAS_INTERNAL_API_URL`,
+`/api/agas` gateway and no authorization header; `AGAS_INTERNAL_API_URL` or the mutually exclusive
+platform-supplied `AGAS_INTERNAL_API_HOSTPORT`,
 `AGAS_PUBLIC_WEB_ORIGIN`, `AGAS_SESSION_ENCRYPTION_KEY`, and every `AGAS_OIDC_*` value are
 server-only web-runtime settings.

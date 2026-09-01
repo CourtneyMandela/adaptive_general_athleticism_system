@@ -61,6 +61,7 @@ export default async function globalSetup() {
         AGAS_OIDC_CLIENT_ID: mockOidcClientId,
         AGAS_OIDC_CLIENT_SECRET: mockOidcClientSecret,
         AGAS_OIDC_SCOPES: "openid agas:api",
+        AGAS_OIDC_AUDIENCE: "http://127.0.0.1:3999",
         AGAS_OIDC_RESOURCE: "http://127.0.0.1:3999",
         AGAS_OIDC_ID_TOKEN_ALGORITHMS: "RS256",
       },

@@ -95,6 +95,7 @@ export async function startMockServices(): Promise<{ close: () => Promise<void> 
           record.redirectUri === redirectUri &&
           url.searchParams.get("code_challenge_method") === "S256" &&
           url.searchParams.get("scope") === "openid agas:api" &&
+          url.searchParams.get("audience") === privateApiOrigin &&
           url.searchParams.get("resource") === privateApiOrigin &&
           record.challenge.length >= 43 &&
           record.nonce.length >= 16 &&

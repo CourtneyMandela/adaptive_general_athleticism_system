@@ -142,6 +142,19 @@ def test_production_configuration_rejects_development_authentication() -> None:
         Settings(external_auth_algorithms=("HS256",))
 
 
+def test_managed_postgres_urls_select_the_installed_psycopg_driver() -> None:
+    assert (
+        Settings(database_url="postgresql://agas:secret@database:5432/agas").database_url
+        == "postgresql+psycopg://agas:secret@database:5432/agas"
+    )
+    assert (
+        Settings(database_url="postgres://agas:secret@database:5432/agas").database_url
+        == "postgresql+psycopg://agas:secret@database:5432/agas"
+    )
+    explicit = "postgresql+psycopg://agas:secret@database:5432/agas"
+    assert Settings(database_url=explicit).database_url == explicit
+
+
 def test_external_mode_fails_closed_until_a_verifier_is_connected(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

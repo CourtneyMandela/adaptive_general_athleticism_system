@@ -18,6 +18,40 @@ async function sessionCookie(): Promise<string> {
 }
 
 describe("same-origin API gateway", () => {
+  it("accepts one platform-provided private host and port without making FastAPI public", async () => {
+    const fetcher = vi.fn<typeof fetch>(async () => Response.json({ ok: true }));
+    const response = await handleApiGateway(
+      new Request("https://app.agas.test/api/agas/v1/health", {
+        headers: { Cookie: await sessionCookie() },
+      }),
+      ["v1", "health"],
+      fetcher,
+      {
+        AGAS_INTERNAL_API_HOSTPORT: "agas-api-staging:8000",
+        AGAS_PUBLIC_WEB_ORIGIN: environment.AGAS_PUBLIC_WEB_ORIGIN,
+        AGAS_SESSION_ENCRYPTION_KEY: key,
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(String(fetcher.mock.calls[0]?.[0])).toBe("http://agas-api-staging:8000/v1/health");
+  });
+
+  it("fails closed when private API configuration is ambiguous", async () => {
+    const fetcher = vi.fn<typeof fetch>();
+    const response = await handleApiGateway(
+      new Request("https://app.agas.test/api/agas/v1/health", {
+        headers: { Cookie: await sessionCookie() },
+      }),
+      ["v1", "health"],
+      fetcher,
+      { ...environment, AGAS_INTERNAL_API_HOSTPORT: "other-api:8000" },
+    );
+
+    expect(response.status).toBe(503);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
   it("requires a configured encrypted session before contacting FastAPI", async () => {
     const fetcher = vi.fn<typeof fetch>();
     const response = await handleApiGateway(

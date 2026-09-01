@@ -29,6 +29,7 @@ const environment: OidcEnvironment = {
   AGAS_OIDC_CLIENT_ID: "agas-client",
   AGAS_OIDC_CLIENT_SECRET: "super-secret",
   AGAS_OIDC_SCOPES: "openid agas:api",
+  AGAS_OIDC_AUDIENCE: "https://api.agas.test",
   AGAS_OIDC_RESOURCE: "https://api.agas.test",
   AGAS_OIDC_ID_TOKEN_ALGORITHMS: "RS256",
 };
@@ -87,6 +88,7 @@ describe("provider-neutral OIDC browser login", () => {
       "https://app.agas.test/auth/callback",
     );
     expect(authorization.searchParams.get("scope")).toBe("openid agas:api");
+    expect(authorization.searchParams.get("audience")).toBe("https://api.agas.test");
     expect(authorization.searchParams.get("resource")).toBe("https://api.agas.test");
     expect(authorization.searchParams.get("state")).toHaveLength(43);
     expect(authorization.searchParams.get("nonce")).toHaveLength(43);
@@ -316,6 +318,12 @@ describe("provider-neutral OIDC browser login", () => {
       deterministicRandom(),
       now,
     );
+    const unsafeAudience = await handleOidcLogin(
+      new Request("https://app.agas.test/auth/login"),
+      { ...environment, AGAS_OIDC_AUDIENCE: "https://api.agas.test invalid" },
+      deterministicRandom(),
+      now,
+    );
     const externalReturn = await handleOidcLogin(
       new Request("https://app.agas.test/auth/login?return_to=https%3A%2F%2Fattacker.test"),
       environment,
@@ -324,6 +332,7 @@ describe("provider-neutral OIDC browser login", () => {
     );
 
     expect(unsafeProvider.status).toBe(503);
+    expect(unsafeAudience.status).toBe(503);
     expect(externalReturn.status).toBe(400);
   });
 
