@@ -798,8 +798,11 @@ pnpm --filter @agas/web test:e2e
 ```
 
 Install the pinned browser runtime once before the browser smoke suite with
-`pnpm --filter @agas/web exec playwright install chromium`. The suite starts an isolated frontend
-on port 3100 and validates the local-demo athlete and reviewer navigation contracts.
+`pnpm --filter @agas/web exec playwright install chromium`. The suite starts an isolated frontend,
+a standards-shaped local OIDC authority, and a private API test double. It validates the local-demo
+athlete and reviewer navigation contracts plus the complete authorization-code/PKCE, signed-ID-token,
+encrypted-session, and authenticated same-origin gateway path. The authority and credentials exist
+only inside the test process; they are not a development or production identity provider.
 
 Run only the required end-to-end domain demonstration with:
 

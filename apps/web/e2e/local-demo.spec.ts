@@ -1,4 +1,7 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type APIResponse } from "@playwright/test";
+
+import { OIDC_TRANSACTION_COOKIE_NAME } from "../lib/oidc-login";
+import { SESSION_COOKIE_NAME } from "../lib/server-session";
 
 const athleteId = "d0000000-0000-4000-8000-000000000001";
 
@@ -160,10 +163,58 @@ test("the same-origin API gateway fails closed without a server session", async 
   expect(await response.json()).toEqual({ detail: "Authentication is required." });
 });
 
-test("browser login fails closed until an OIDC provider is configured", async ({ request }) => {
-  const response = await request.get("/auth/login");
+function responseCookie(response: APIResponse, name: string): string {
+  const header = response
+    .headersArray()
+    .find(({ name: headerName, value }) =>
+      headerName.toLowerCase() === "set-cookie" && value.startsWith(`${name}=`),
+    )?.value;
+  const match = new RegExp(`^${name}=([^;,]+)`).exec(header ?? "");
+  expect(match, `${name} must be set`).not.toBeNull();
+  return `${name}=${match?.[1] ?? ""}`;
+}
 
-  expect(response.status()).toBe(503);
-  expect(response.headers()["cache-control"]).toBe("no-store");
-  expect(await response.json()).toEqual({ detail: "Login service is unavailable." });
+test("browser login establishes an encrypted session that reaches the private API", async ({
+  request,
+}) => {
+  const login = await request.get("/auth/login?return_to=%2F", { maxRedirects: 0 });
+  expect(login.status()).toBe(303);
+  expect(login.headers()["cache-control"]).toBe("no-store");
+  const transactionCookie = responseCookie(login, OIDC_TRANSACTION_COOKIE_NAME);
+  const authorizationUrl = login.headers().location;
+  expect(authorizationUrl).toContain("http://127.0.0.1:3998/authorize?");
+  expect(authorizationUrl).toContain("code_challenge_method=S256");
+
+  const authorization = await request.get(authorizationUrl, { maxRedirects: 0 });
+  expect(authorization.status()).toBe(303);
+  const callbackUrl = authorization.headers().location;
+  expect(callbackUrl).toContain("http://127.0.0.1:3100/auth/callback?");
+
+  const callback = await request.get(callbackUrl, {
+    headers: { cookie: transactionCookie },
+    maxRedirects: 0,
+  });
+  expect(callback.status()).toBe(303);
+  expect(callback.headers().location).toBe("http://127.0.0.1:3100/");
+  const sessionCookie = responseCookie(callback, SESSION_COOKIE_NAME);
+  expect(sessionCookie).not.toContain("agas-e2e-access-token");
+
+  const privateResponse = await request.get("/api/agas/v1/conformance/session", {
+    headers: { cookie: sessionCookie },
+  });
+  expect(privateResponse.status()).toBe(200);
+  expect(privateResponse.headers()["cache-control"]).toBe("no-store");
+  expect(await privateResponse.json()).toEqual({
+    authorization_received: true,
+    subject: "e2e-athlete-owner",
+  });
+
+  const replay = await request.get(callbackUrl, {
+    headers: { cookie: transactionCookie },
+    maxRedirects: 0,
+  });
+  expect(replay.status()).toBe(502);
+  expect(await replay.json()).toEqual({
+    detail: "Identity provider returned an invalid response.",
+  });
 });
