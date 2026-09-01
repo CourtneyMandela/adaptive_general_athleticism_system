@@ -9,6 +9,7 @@ const RESPONSE_HEADERS = ["content-type", "etag", "retry-after", "x-request-id"]
 
 type GatewayEnvironment = Readonly<{
   AGAS_INTERNAL_API_URL?: string;
+  AGAS_INTERNAL_API_HOSTPORT?: string;
   AGAS_PUBLIC_WEB_ORIGIN?: string;
   AGAS_SESSION_ENCRYPTION_KEY?: string;
 }>;
@@ -40,6 +41,23 @@ function configuredOrigin(raw: string | undefined, label: string, requireSecure 
     throw new SessionConfigurationError(`${label} must use HTTPS outside local development.`);
   }
   return url;
+}
+
+function configuredInternalOrigin(environment: GatewayEnvironment): URL {
+  const origin = environment.AGAS_INTERNAL_API_URL?.trim();
+  const hostport = environment.AGAS_INTERNAL_API_HOSTPORT?.trim();
+  if (origin && hostport) {
+    throw new SessionConfigurationError("Internal API configuration is ambiguous.");
+  }
+  if (origin) return configuredOrigin(origin, "Internal API origin");
+  if (!hostport || !/^[a-z0-9.-]+:\d{1,5}$/iu.test(hostport)) {
+    throw new SessionConfigurationError("Internal API host and port are not configured.");
+  }
+  const port = Number(hostport.slice(hostport.lastIndexOf(":") + 1));
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+    throw new SessionConfigurationError("Internal API host and port are invalid.");
+  }
+  return configuredOrigin(`http://${hostport}`, "Internal API origin");
 }
 
 function requestIsSameOriginWrite(request: Request, publicOrigin: URL): boolean {
@@ -105,6 +123,7 @@ export async function handleApiGateway(
   fetcher: typeof fetch = fetch,
   environment: GatewayEnvironment = {
     AGAS_INTERNAL_API_URL: process.env.AGAS_INTERNAL_API_URL,
+    AGAS_INTERNAL_API_HOSTPORT: process.env.AGAS_INTERNAL_API_HOSTPORT,
     AGAS_PUBLIC_WEB_ORIGIN: process.env.AGAS_PUBLIC_WEB_ORIGIN,
     AGAS_SESSION_ENCRYPTION_KEY: process.env.AGAS_SESSION_ENCRYPTION_KEY,
   },
@@ -123,7 +142,7 @@ export async function handleApiGateway(
   let publicOrigin: URL;
   let accessToken: string | null;
   try {
-    internalOrigin = configuredOrigin(environment.AGAS_INTERNAL_API_URL, "Internal API origin");
+    internalOrigin = configuredInternalOrigin(environment);
     publicOrigin = configuredOrigin(
       environment.AGAS_PUBLIC_WEB_ORIGIN,
       "Public web origin",

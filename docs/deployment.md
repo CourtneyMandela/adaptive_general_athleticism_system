@@ -39,14 +39,17 @@ token in `NEXT_PUBLIC_*`.
 
 All `AGAS_EXTERNAL_AUTH_*` values are server-only runtime configuration. The API accepts only a
 token with the configured issuer, audience, asymmetric signature, required timestamps, and subject.
-The web runtime's `AGAS_INTERNAL_API_URL`, `AGAS_PUBLIC_WEB_ORIGIN`, and
+The web runtime's `AGAS_INTERNAL_API_URL` (or one platform-supplied
+`AGAS_INTERNAL_API_HOSTPORT`), `AGAS_PUBLIC_WEB_ORIGIN`, and
 `AGAS_SESSION_ENCRYPTION_KEY` are server-only. Generate the session key from exactly 32 random bytes
 encoded as unpadded base64url. Every `AGAS_OIDC_*` value is also server-only. The configured provider
 must support a confidential client using authorization code, S256 PKCE, OIDC nonce,
 `client_secret_basic`, and asymmetric signed ID tokens. Register the exact callback
 `https://YOUR-WEB-ORIGIN/auth/callback`. The optional resource URI and configured scopes must cause
 the provider to issue a JWT access token whose issuer and API audience satisfy FastAPI's separate
-`AGAS_EXTERNAL_AUTH_*` contract. The reference Compose model deliberately maps the API's external
+`AGAS_EXTERNAL_AUTH_*` contract. `AGAS_OIDC_AUDIENCE` supports providers that select a custom API
+with the OAuth audience parameter; `AGAS_OIDC_RESOURCE` remains available for providers that use
+the resource parameter. The reference Compose model deliberately maps the API's external
 issuer and JWKS URL into the web verifier so those two trust boundaries cannot drift independently.
 
 Passwords embedded in `AGAS_DATABASE_URL` must be URL-encoded. Prefer a deployment secret store over
@@ -84,12 +87,60 @@ traffic is same-origin through the gateway. Apply provider-specific proxy trust,
 request-size, timeout, and rate-limit settings only after reviewing that provider's deployment
 contract.
 
+## First staging deployment: Auth0 and Render
+
+`render.yaml` is the provisional single-user staging topology. It creates the smallest paid web and
+private-service instances plus a paid PostgreSQL instance in Virginia. Confirm the live total in
+Render before creation; the expected baseline is approximately USD 20 per month before overages.
+The PWA is the only public service. FastAPI and PostgreSQL remain private, migrations run once before
+each API deploy, and deploys wait for GitHub checks.
+
+Create an Auth0 tenant on the free plan, then configure:
+
+1. A custom API named `AGAS staging`, identifier `https://api.agas.staging`, and RS256 signing.
+2. A Regular Web Application named `AGAS staging web` with token endpoint authentication method
+   `client_secret_basic`.
+3. Allowed callback URL
+   `https://agas-courtneymandela-staging.onrender.com/auth/callback`.
+4. Allowed logout URL and web origin
+   `https://agas-courtneymandela-staging.onrender.com`.
+
+When creating the Render Blueprint from `render.yaml`, supply these prompted secrets exactly:
+
+| Render key | Value |
+| --- | --- |
+| `AGAS_EXTERNAL_AUTH_ISSUER` | `https://YOUR_AUTH0_DOMAIN/` |
+| `AGAS_EXTERNAL_AUTH_JWKS_URL` | `https://YOUR_AUTH0_DOMAIN/.well-known/jwks.json` |
+| `AGAS_SESSION_ENCRYPTION_KEY` | 32 random bytes encoded as unpadded base64url |
+| `AGAS_OIDC_ISSUER` | Same issuer, including its trailing slash |
+| `AGAS_OIDC_AUTHORIZATION_URL` | `https://YOUR_AUTH0_DOMAIN/authorize` |
+| `AGAS_OIDC_TOKEN_URL` | `https://YOUR_AUTH0_DOMAIN/oauth/token` |
+| `AGAS_OIDC_JWKS_URL` | Same JWKS URL used by FastAPI |
+| `AGAS_OIDC_CLIENT_ID` | Regular Web Application client ID |
+| `AGAS_OIDC_CLIENT_SECRET` | Regular Web Application client secret |
+
+Generate the browser-session key locally without saving it to a file:
+
+```bash
+node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
+```
+
+Before approving Blueprint creation, verify that the public hostname is exactly the provisional
+origin above, PostgreSQL public access is disabled, FastAPI is a private service, and the quoted
+monthly amount is acceptable. If Render changes the hostname, update `render.yaml`, both Auth0 URL
+lists, and the public-origin setting before entering athlete data.
+
+After deployment, create one Auth0 user, sign in from the public web origin, complete onboarding,
+and verify on a real phone that no local computer or same-Wi-Fi connection is required. Treat the
+result as staging: use synthetic or low-sensitivity data until backup/restore, account deletion,
+retention, monitoring, and governed scientific authorities are reviewed.
+
 ## Not production-ready yet
 
 Container packaging is necessary for independent phone access but is not authorization to handle
 production athlete data. Before production use, the project still needs:
 
-- a selected/provisioned identity provider and a tested hosted login/logout flow;
+- a provisioned identity provider and a tested hosted login/logout flow;
 - a reviewed refresh/revocation and provider-wide logout policy, or acceptance of hourly re-login;
 - HTTPS domains and reviewed ingress configuration;
 - account recovery, consent, export, and deletion workflows;

@@ -38,6 +38,7 @@ export type OidcEnvironment = Readonly<{
   AGAS_OIDC_CLIENT_ID?: string;
   AGAS_OIDC_CLIENT_SECRET?: string;
   AGAS_OIDC_SCOPES?: string;
+  AGAS_OIDC_AUDIENCE?: string;
   AGAS_OIDC_RESOURCE?: string;
   AGAS_OIDC_ID_TOKEN_ALGORITHMS?: string;
 }>;
@@ -51,6 +52,7 @@ type OidcConfig = Readonly<{
   clientId: string;
   clientSecret: string;
   scopes: readonly string[];
+  audience?: string;
   resource?: string;
   idTokenAlgorithms: readonly string[];
 }>;
@@ -89,6 +91,7 @@ function currentEnvironment(): OidcEnvironment {
     AGAS_OIDC_CLIENT_ID: process.env.AGAS_OIDC_CLIENT_ID,
     AGAS_OIDC_CLIENT_SECRET: process.env.AGAS_OIDC_CLIENT_SECRET,
     AGAS_OIDC_SCOPES: process.env.AGAS_OIDC_SCOPES,
+    AGAS_OIDC_AUDIENCE: process.env.AGAS_OIDC_AUDIENCE,
     AGAS_OIDC_RESOURCE: process.env.AGAS_OIDC_RESOURCE,
     AGAS_OIDC_ID_TOKEN_ALGORITHMS: process.env.AGAS_OIDC_ID_TOKEN_ALGORITHMS,
   };
@@ -149,6 +152,10 @@ function oidcConfig(environment: OidcEnvironment): OidcConfig {
     throw new OidcConfigurationError("OIDC ID-token algorithms must use the asymmetric allow-list.");
   }
 
+  const audience = environment.AGAS_OIDC_AUDIENCE?.trim();
+  if (audience && !/^[\x21-\x7e]+$/u.test(requiredValue(audience, "OIDC audience", 2_048))) {
+    throw new OidcConfigurationError("OIDC audience must be one printable token.");
+  }
   const resource = environment.AGAS_OIDC_RESOURCE?.trim();
   if (resource) secureUrl(resource, "OIDC resource");
   const issuer = secureUrl(environment.AGAS_OIDC_ISSUER, "OIDC issuer");
@@ -168,6 +175,7 @@ function oidcConfig(environment: OidcEnvironment): OidcConfig {
     clientId: requiredValue(environment.AGAS_OIDC_CLIENT_ID, "OIDC client ID", 512),
     clientSecret: requiredValue(environment.AGAS_OIDC_CLIENT_SECRET, "OIDC client secret"),
     scopes,
+    audience: audience || undefined,
     resource: resource || undefined,
     idTokenAlgorithms,
   };
@@ -472,6 +480,7 @@ export async function handleOidcLogin(
   authorization.searchParams.set("nonce", nonce);
   authorization.searchParams.set("code_challenge", challenge);
   authorization.searchParams.set("code_challenge_method", "S256");
+  if (config.audience) authorization.searchParams.set("audience", config.audience);
   if (config.resource) authorization.searchParams.set("resource", config.resource);
 
   return new Response(null, {

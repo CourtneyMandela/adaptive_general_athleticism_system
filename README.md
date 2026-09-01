@@ -859,10 +859,16 @@ remain server-only runtime configuration. OIDC issuer, endpoint, client, scope/r
 and secret settings are also server-only. A managed PostgreSQL deployment may replace the
 reference database by supplying its URL and adapting the Compose topology.
 
-This packaging does **not** complete production deployment: identity-provider selection and client
-provisioning, HTTPS ingress, secret management, backups/restore drills, monitoring, account
+This packaging does **not** complete production deployment: identity-provider client provisioning,
+hosted-flow acceptance, secret management, backups/restore drills, monitoring, account
 lifecycle, and production authorization administration remain required. Development bearer
 selectors must never be used for a hosted instance. See [docs/deployment.md](docs/deployment.md).
+
+The provisional first staging target is captured in `render.yaml`: one public Next.js service, one
+private FastAPI service, and private managed PostgreSQL on Render, with Auth0 as the external OIDC
+authority. It intentionally uses paid durable Render resources and prompts for every secret. Review
+the current price and follow the Auth0/Render checklist in [docs/deployment.md](docs/deployment.md)
+before creating resources.
 
 ## Product guardrail
 
