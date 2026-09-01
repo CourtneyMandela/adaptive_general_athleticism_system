@@ -10,6 +10,8 @@ the immediate deployment target
 Deploy the owner-only alpha with services that can be created without a payment method:
 
 - Vercel Hobby hosts the Next.js PWA and its encrypted server-session gateway.
+- Vercel uses its managed Next.js output adapter; `output: "standalone"` remains enabled only for
+  the separately deployable Docker image.
 - One Render Free public web service runs the FastAPI container.
 - Neon Free supplies authoritative PostgreSQL using its direct TLS connection string.
 - Auth0 Free remains the OpenID Connect authority.
