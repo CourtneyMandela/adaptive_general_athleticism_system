@@ -18,6 +18,7 @@ import { OnboardingForm } from "./onboarding-form";
 import { AssessmentPanel } from "./assessment-panel";
 import { AthleticDashboardPanel } from "./athletic-dashboard-panel";
 import { EnvironmentPanel } from "./environment-panel";
+import { FirstSessionPath } from "./first-session-path";
 import { PlanningStatusPanel } from "./planning-status-panel";
 import {
   PostSessionSafetyForm,
@@ -334,6 +335,14 @@ export function CurrentWeekDashboard({ initialAthleteId }: { initialAthleteId?: 
           Change athlete
         </button>
       </header>
+
+      {state === "ready" && projection ? (
+        <FirstSessionPath
+          apiBaseUrl={apiBaseUrl}
+          athleteId={athleteId}
+          hasScheduledWeek={projection.week !== null}
+        />
+      ) : null}
 
       <AssessmentPanel apiBaseUrl={apiBaseUrl} athleteId={athleteId} />
       <AthleticDashboardPanel apiBaseUrl={apiBaseUrl} athleteId={athleteId} />
