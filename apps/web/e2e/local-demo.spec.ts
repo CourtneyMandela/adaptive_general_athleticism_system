@@ -159,3 +159,11 @@ test("the same-origin API gateway fails closed without a server session", async 
   expect(response.headers()["cache-control"]).toBe("no-store");
   expect(await response.json()).toEqual({ detail: "Authentication is required." });
 });
+
+test("browser login fails closed until an OIDC provider is configured", async ({ request }) => {
+  const response = await request.get("/auth/login");
+
+  expect(response.status()).toBe(503);
+  expect(response.headers()["cache-control"]).toBe("no-store");
+  expect(await response.json()).toEqual({ detail: "Login service is unavailable." });
+});

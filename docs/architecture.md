@@ -87,9 +87,11 @@ HTTPS reverse proxy (not included)
 PostgreSQL and FastAPI have no published host ports. The PWA binds only to loopback so an explicitly
 configured reverse proxy can supply TLS, request limits, and public routing. The route-handler
 gateway decrypts an encrypted `HttpOnly` session and forwards an allow-listed request plus bearer
-only across the private network. Hosting provider, reverse proxy, identity provider, login adapter,
-backups, secret store, and observability remain deployment choices rather than hidden defaults. See
-`docs/deployment.md` and decisions 0081 and 0083.
+only across the private network. A provider-neutral OIDC adapter creates that session only after
+authorization-code, S256 PKCE, state, nonce, token-response, and ID-token verification. Hosting
+provider, reverse proxy, identity provider, client provisioning, backups, secret store, and
+observability remain deployment choices rather than hidden defaults. See `docs/deployment.md` and
+decisions 0081, 0083, and 0084.
 
 ## Domain boundaries
 
@@ -840,12 +842,14 @@ and reject client-supplied reviewer identity. The role is an
 application permission, not evidence of a scientific or professional credential. Production
 configuration rejects the development verifier and incomplete or non-HTTPS external settings.
 The production PWA uses a same-origin route-handler gateway. Its compact-JWE session envelope is
-encrypted with a server-only 256-bit key, retains the access-token expiry supplied by the future
-login adapter, and is refused after that instant. The gateway bounds bodies and duration,
+encrypted with a server-only 256-bit key, retains the access-token expiry supplied by the login
+adapter, and is refused after that instant. The OIDC adapter binds a ten-minute encrypted
+transaction to state, nonce, and S256 PKCE, verifies the provider ID token against explicit
+issuer/client/JWKS/algorithm settings, and caps the local session at one hour. The gateway bounds
+bodies and duration,
 allow-lists headers, rejects ambiguous or cross-origin state-changing requests, and never replaces
-FastAPI ownership or role authorization. No public route mints the session in this milestone.
-Provider selection, authorization-code/PKCE, callback, refresh, logout, account recovery, and
-deployment remain separate from resource-server verification.
+FastAPI ownership or role authorization. Provider selection and provisioning, refresh, provider-
+wide logout, account recovery, and deployment remain separate from resource-server verification.
 
 Assessment protocol governance uses a distinct append-only `assessment_reviewer` assignment. The
 role-protected `GET /v1/operator/assessment-governance` projection evaluates definitions at an
@@ -1054,4 +1058,5 @@ authoritative store. The PWA's `NEXT_PUBLIC_AGAS_DEVELOPMENT_TOKEN`, provisional
 identity selectors, not secrets. Production provider secrets and tokens must never use a
 `NEXT_PUBLIC_` variable and are not committed. Production browser code uses the relative
 `/api/agas` gateway and no authorization header; `AGAS_INTERNAL_API_URL`,
-`AGAS_PUBLIC_WEB_ORIGIN`, and `AGAS_SESSION_ENCRYPTION_KEY` are server-only web-runtime settings.
+`AGAS_PUBLIC_WEB_ORIGIN`, `AGAS_SESSION_ENCRYPTION_KEY`, and every `AGAS_OIDC_*` value are
+server-only web-runtime settings.

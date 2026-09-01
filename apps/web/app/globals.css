@@ -983,6 +983,16 @@ button { cursor: pointer; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
+.auth-controls {
+  display: flex;
+  justify-content: flex-end;
+  padding: .65rem clamp(1rem, 4vw, 2rem) 0;
+  background: transparent;
+}
+.auth-controls form { display: flex; align-items: center; gap: .8rem; }
+.auth-controls span { color: var(--muted); font-size: .78rem; font-weight: 750; }
+.auth-controls a { color: var(--accent); font-weight: 800; }
+
 @media (min-width: 54rem) {
   .dashboard-shell { padding: 2rem; }
   .session-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

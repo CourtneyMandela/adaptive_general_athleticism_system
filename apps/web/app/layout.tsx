@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 
+import { AuthControls } from "./auth-controls";
 import { PwaServiceWorker } from "./pwa-service-worker";
 import "./globals.css";
 
@@ -23,6 +24,7 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
     <html lang="en">
       <body>
         <PwaServiceWorker />
+        <AuthControls />
         {children}
       </body>
     </html>
