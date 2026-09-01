@@ -19,7 +19,7 @@ export class SessionConfigurationError extends Error {
   }
 }
 
-function sessionKey(encodedKey: string | undefined): Uint8Array {
+export function sessionEncryptionKey(encodedKey: string | undefined): Uint8Array {
   const normalized = encodedKey?.trim();
   if (!normalized) {
     throw new SessionConfigurationError("Session encryption is not configured.");
@@ -88,7 +88,7 @@ export async function sealServerSession(
 
   return new CompactEncrypt(encoder.encode(JSON.stringify(envelope)))
     .setProtectedHeader({ alg: "dir", enc: "A256GCM", typ: "agas-session+jwe" })
-    .encrypt(sessionKey(encodedKey));
+    .encrypt(sessionEncryptionKey(encodedKey));
 }
 
 export async function readServerSessionAccessToken(
@@ -96,7 +96,7 @@ export async function readServerSessionAccessToken(
   encodedKey = process.env.AGAS_SESSION_ENCRYPTION_KEY,
   nowEpochSeconds = Math.floor(Date.now() / 1000),
 ): Promise<string | null> {
-  const key = sessionKey(encodedKey);
+  const key = sessionEncryptionKey(encodedKey);
   const encrypted = cookieValue(cookieHeader, SESSION_COOKIE_NAME);
   if (encrypted === null) return null;
 

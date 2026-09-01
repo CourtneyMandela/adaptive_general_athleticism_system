@@ -41,8 +41,13 @@ All `AGAS_EXTERNAL_AUTH_*` values are server-only runtime configuration. The API
 token with the configured issuer, audience, asymmetric signature, required timestamps, and subject.
 The web runtime's `AGAS_INTERNAL_API_URL`, `AGAS_PUBLIC_WEB_ORIGIN`, and
 `AGAS_SESSION_ENCRYPTION_KEY` are server-only. Generate the session key from exactly 32 random bytes
-encoded as unpadded base64url. The current PWA does not yet acquire an access token; provider-neutral
-authorization-code-with-PKCE and session creation remain the next authentication milestone.
+encoded as unpadded base64url. Every `AGAS_OIDC_*` value is also server-only. The configured provider
+must support a confidential client using authorization code, S256 PKCE, OIDC nonce,
+`client_secret_basic`, and asymmetric signed ID tokens. Register the exact callback
+`https://YOUR-WEB-ORIGIN/auth/callback`. The optional resource URI and configured scopes must cause
+the provider to issue a JWT access token whose issuer and API audience satisfy FastAPI's separate
+`AGAS_EXTERNAL_AUTH_*` contract. The reference Compose model deliberately maps the API's external
+issuer and JWKS URL into the web verifier so those two trust boundaries cannot drift independently.
 
 Passwords embedded in `AGAS_DATABASE_URL` must be URL-encoded. Prefer a deployment secret store over
 a long-lived plaintext environment file. Do not commit the populated file.
@@ -84,7 +89,8 @@ contract.
 Container packaging is necessary for independent phone access but is not authorization to handle
 production athlete data. Before production use, the project still needs:
 
-- a selected identity provider and complete authorization-code/PKCE, login, refresh, and logout flow;
+- a selected/provisioned identity provider and a tested hosted login/logout flow;
+- a reviewed refresh/revocation and provider-wide logout policy, or acceptance of hourly re-login;
 - HTTPS domains and reviewed ingress configuration;
 - account recovery, consent, export, and deletion workflows;
 - secret rotation and least-privilege production administration;

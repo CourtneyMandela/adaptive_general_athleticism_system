@@ -135,10 +135,11 @@ Local development uses the explicit bearer `dev.local-browser` by default. It se
 account identity; it is not a password or production authentication. `AGAS_AUTH_MODE=development`
 is rejected when `AGAS_ENVIRONMENT=production`. External mode verifies an asymmetric JWT against
 one explicitly configured issuer, audience, JWKS endpoint, and algorithm allow-list. Production
-startup fails unless that complete configuration uses HTTPS. Browser login and provider selection
-are still separate deployment work. Production browser requests use a same-origin server gateway;
-its encrypted `HttpOnly` session will hold the provider access token after a login adapter exists.
-Do not place provider secrets or access tokens in `NEXT_PUBLIC_*` variables.
+startup fails unless that complete configuration uses HTTPS. The web runtime now supplies a
+provider-neutral authorization-code/PKCE adapter with encrypted transaction and session cookies;
+an operator must still select and configure the identity provider and confidential client.
+Production browser requests use a same-origin server gateway. Do not place provider secrets or
+access tokens in `NEXT_PUBLIC_*` variables.
 
 The application endpoints are intentionally narrow:
 
@@ -677,8 +678,8 @@ Production images instead compile `NEXT_PUBLIC_AGAS_AUTH_MODE=session` and
 `NEXT_PUBLIC_API_URL=/api/agas`. In that mode browser code never constructs an authorization
 header. The same-origin gateway decrypts a short-lived server session, applies origin/body/header
 controls, and forwards the access token only to private FastAPI. No public route can create that
-session yet; a missing or invalid session receives an honest `401` until the OIDC login adapter is
-connected.
+session without completing the configured OIDC authorization-code, S256 PKCE, state, nonce, token,
+and ID-token verification flow. A missing or invalid session receives an honest `401`.
 
 The provisional reviewer console is available at `http://localhost:3000/review`. Configure
 `NEXT_PUBLIC_AGAS_REVIEWER_TOKEN=dev.local-reviewer` and grant that subject the local
@@ -767,8 +768,9 @@ reliability and provenance. The
 backend owns the consecutive date and lineage and prepares exactly one successor week. Block-end,
 hold, review-required, missing-policy, and unsupported-policy states remain visibly blocked.
 
-This setup is provisional: no production identity provider or browser login is connected, and
-account recovery, consent/export/deletion workflow, sensitive health intake, assessment
+This setup is provisional: the provider-neutral browser-login code exists, but no production
+identity provider or hosted client is selected or provisioned. Account recovery,
+consent/export/deletion workflow, sensitive health intake, assessment
 correction/attempt workflow,
 qualified protocol-review workflow, complete scientific-governance UI, protocol-specific
 structured/duration assessment-result controls, estimation-policy authoring UI, or early-retest
@@ -850,13 +852,14 @@ prerequisite, and binds only the PWA to host loopback. A separately operated HTT
 exposes the web origin. Browser API calls remain same-origin and the web container reaches FastAPI
 on the private Compose network. The relative gateway path and session auth mode are compiled at
 image-build time; database, identity, internal API, public-origin, and session-encryption settings
-remain server-only runtime configuration. A managed PostgreSQL deployment may replace the
+remain server-only runtime configuration. OIDC issuer, endpoint, client, scope/resource, algorithm,
+and secret settings are also server-only. A managed PostgreSQL deployment may replace the
 reference database by supplying its URL and adapting the Compose topology.
 
-This packaging does **not** complete production deployment: browser login/provider selection,
-HTTPS ingress, secret management, backups/restore drills, monitoring, account lifecycle, and
-production authorization administration remain required. Development bearer selectors must never
-be used for a hosted instance. See [docs/deployment.md](docs/deployment.md).
+This packaging does **not** complete production deployment: identity-provider selection and client
+provisioning, HTTPS ingress, secret management, backups/restore drills, monitoring, account
+lifecycle, and production authorization administration remain required. Development bearer
+selectors must never be used for a hosted instance. See [docs/deployment.md](docs/deployment.md).
 
 ## Product guardrail
 
