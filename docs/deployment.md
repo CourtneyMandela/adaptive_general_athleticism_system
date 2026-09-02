@@ -142,6 +142,11 @@ Create a Blueprint from the repository's root `render.yaml`. It must show exactl
 `agas-api-staging`, on plan `free`, and no Render database. If the dashboard displays a charge or
 requests a paid plan, cancel instead of continuing.
 
+The alpha Blueprint deploys on each commit to `main`. Do not select "After CI Checks Pass" unless
+the repository first gains a required CI check; Render does not deploy when that mode observes zero
+checks. The future paid topology retains a CI-gated trigger and must not be activated until its CI
+gate exists.
+
 Supply these prompted secrets:
 
 | Render key | Value |
