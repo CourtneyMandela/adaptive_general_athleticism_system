@@ -1,6 +1,8 @@
 from importlib import import_module
+from typing import cast
 
 from sqlalchemy.dialects.postgresql import dialect
+from sqlalchemy.engine import Dialect
 
 
 def test_initial_planning_index_names_fit_postgresql_identifier_limit() -> None:
@@ -15,4 +17,7 @@ def test_initial_planning_index_names_fit_postgresql_identifier_limit() -> None:
 
     assert len(index_names) == 16
     assert len(index_names) == len(set(index_names))
-    assert all(len(index_name) <= dialect().max_identifier_length for index_name in index_names)
+    postgresql_dialect = cast(type[Dialect], dialect)()
+    assert all(
+        len(index_name) <= postgresql_dialect.max_identifier_length for index_name in index_names
+    )

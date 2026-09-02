@@ -36,7 +36,7 @@ def test_default_blueprint_is_a_no_card_single_service_alpha() -> None:
     assert api["type"] == "web"
     assert api["plan"] == "free"
     assert api["healthCheckPath"] == "/ready"
-    assert api["autoDeployTrigger"] == "commit"
+    assert api["autoDeployTrigger"] == "checksPass"
     assert "maxShutdownDelaySeconds" not in api
     assert "preDeployCommand" not in api
 

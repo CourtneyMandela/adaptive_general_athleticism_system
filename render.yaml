@@ -6,7 +6,7 @@ services:
     region: virginia
     dockerfilePath: ./services/api/Dockerfile
     dockerContext: .
-    autoDeployTrigger: commit
+    autoDeployTrigger: checksPass
     healthCheckPath: /ready
     envVars:
       - key: AGAS_AUTH_MODE
