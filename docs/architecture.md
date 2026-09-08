@@ -879,6 +879,19 @@ and is not exposed over HTTP. It neither ingests evidence claims nor verifies so
 reviewer credentials. Athlete-facing catalog and selection enforcement remains a separate,
 deliberate data-migration milestone rather than silently invalidating historical records.
 
+The production-safe counterpart is deliberately narrower than CRUD. An authenticated
+`POST /v1/operator/assessment-governance/releases` request contains one complete candidate chain:
+exact evidence sources and claims, one review draft per claim, one self-administered assessment
+definition, a protocol-review draft, and a capability-estimation-policy draft. Drafts contain no
+approval decision, reviewer identity, or authority-record creation time. The service binds those
+fields to the exact active `assessment_reviewer` assignment and explicit ratification time, requires
+all referenced evidence to be ready at that instant, verifies the resulting assessment projection,
+and atomically appends a digest-bearing `DecisionRecord`. Stable IDs provide exact retry semantics;
+content collisions fail rather than rewriting history. This owner-alpha ratification records who
+accepted the content but does not infer their professional qualification. No real protocol is
+created automatically, and a browser presentation is required before the first real release is
+submitted.
+
 ## Web
 
 The Next.js App Router PWA begins with a bounded profile/environment onboarding form. It submits

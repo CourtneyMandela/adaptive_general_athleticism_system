@@ -160,8 +160,17 @@ The development-only assessment-governance bundle importer is a typed transport 
 curated records, not an evidence-review engine. New approved records must cite claims whose exact
 source snapshots and approved claim reviews were already available at the authority's review time.
 The importer preserves exact identifiers, but it does not fetch sources, verify authenticity,
-qualify the named reviewer, or turn structural validity into scientific truth. Production evidence
-ingestion and assessment approval remain separate governed workflows.
+qualify the named reviewer, or turn structural validity into scientific truth.
+
+The owner-only alpha also has one narrow production release boundary for a complete assessment
+chain. A release packages exact source snapshots, claims, claim-review content, one
+self-administered definition, its protocol review, and its estimation policy. The API rejects
+caller-supplied approval identities and decisions, binds the authenticated account and exact
+assessment-reviewer assignment, verifies point-in-time evidence readiness, stores a canonical
+content digest and decision audit, and commits all records atomically. This is ratification of exact
+content, not source retrieval, evidence extraction, credential verification, medical clearance, or
+automatic scientific truth. The application role is not a professional credential, and every real
+release must retain that limitation in its applicability and uncertainty language.
 
 ## Exercise resolution
 

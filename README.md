@@ -158,6 +158,7 @@ GET  /v1/athletes/{athlete_id}/planning-status
 GET  /v1/athletes/{athlete_id}/current-week?on=YYYY-MM-DD
 GET  /v1/operator/environment-review-queue
 GET  /v1/operator/assessment-governance
+POST /v1/operator/assessment-governance/releases
 GET  /v1/operator/planning-review-queue
 GET  /v1/operator/post-block-review-queue
 GET  /v1/operator/athletes/{athlete_id}/initial-planning-preparation
@@ -201,8 +202,9 @@ separate governed workflow.
 All athlete-scoped endpoints require bearer authentication and verify aggregate ownership. Health,
 readiness, the global onboarding equipment catalog, and the reviewed assessment catalog remain
 public. The assessment catalog is empty until definitions have current approvals backed by exact
-source snapshots and claim approvals that existed at the protocol-review time; the API cannot
-approve protocols. To grant a pre-existing local fixture athlete to the default
+source snapshots and claim approvals that existed at the protocol-review time. Only the protected,
+complete-chain governance release boundary can create those approvals; athlete routes cannot. To
+grant a pre-existing local fixture athlete to the default
 development account, run:
 
 ```bash
@@ -237,11 +239,14 @@ python -m agas_api.identity_admin grant-role \
 ```
 
 This permission is not a scientific credential. The role-protected
-`GET /v1/operator/assessment-governance` projection and `/review/assessments` workbench are
-read-only. They expose point-in-time protocol review, measurement schema, self-administration,
-capability-estimation policy, immutable history, and the readiness of every cited evidence claim at
-the authority record's own review time. They do not create protocol approvals or athlete
-eligibility decisions.
+`GET /v1/operator/assessment-governance` projection and `/review/assessments` workbench expose
+point-in-time protocol review, measurement schema, self-administration, capability-estimation
+policy, immutable history, and the readiness of every cited evidence claim at the authority
+record's own review time. The current workbench remains read-only. The narrow release endpoint can
+atomically ratify one externally prepared complete evidence-to-estimate chain, rejects
+caller-supplied approval identity, and records the authenticated account, exact role assignment,
+content digest, and decision audit. It does not retrieve or interpret research, verify reviewer
+credentials, create athlete eligibility decisions, or generate a workout.
 
 The evidence service can search PubMed and retrieve one reviewable metadata snapshot through
 NCBI E-utilities. NCBI requires a developer contact and applies usage limits; the adapter makes one
@@ -694,8 +699,10 @@ training content, or turn the reviewer role into a claim of professional qualifi
 The assessment-governance workbench is available at
 `http://localhost:3000/review/assessments`. Configure
 `NEXT_PUBLIC_AGAS_ASSESSMENT_REVIEWER_TOKEN=dev.local-assessment-reviewer` or use the demo
-bootstrap. It is a read-only explanation of the governed protocol-to-estimate chain; assessment
-review records still enter through governed local data operations.
+bootstrap. It is currently a read-only explanation of the governed protocol-to-estimate chain.
+The production release API now provides an authenticated, atomic ratification boundary for a
+complete externally prepared chain; the understandable web review and confirmation flow is the
+next milestone and must exist before a real release is submitted.
 
 The evidence-governance workbench is available at `http://localhost:3000/review/evidence` and
 uses the same read-only scientific-governance token. It traces each claim to exact source snapshots,

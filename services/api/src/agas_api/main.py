@@ -27,6 +27,13 @@ from agas_api.assessment_governance import (
     AssessmentGovernanceProjectionError,
     AssessmentGovernanceProjector,
 )
+from agas_api.assessment_governance_release import (
+    AssessmentGovernanceReleaseConflictError,
+    AssessmentGovernanceReleaseRequest,
+    AssessmentGovernanceReleaseResult,
+    AssessmentGovernanceReleaseValidationError,
+    ratify_assessment_governance_release,
+)
 from agas_api.assessment_performance import (
     AssessmentPerformanceConflictError,
     AssessmentPerformanceNotFoundError,
@@ -310,6 +317,27 @@ def get_assessment_governance(
     except AssessmentGovernanceProjectionError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.post(
+    "/v1/operator/assessment-governance/releases",
+    tags=["operator"],
+    response_model=AssessmentGovernanceReleaseResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_assessment_governance_release(
+    command: AssessmentGovernanceReleaseRequest,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authority: Annotated[AuthorizedRole, Depends(assessment_reviewer_dependency)],
+) -> AssessmentGovernanceReleaseResult:
+    try:
+        return ratify_assessment_governance_release(session, command, authority)
+    except AssessmentGovernanceReleaseConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except AssessmentGovernanceReleaseValidationError as error:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
         ) from error

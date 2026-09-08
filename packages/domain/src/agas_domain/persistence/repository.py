@@ -938,6 +938,23 @@ class DomainRepository:
             )
         )
 
+    def get_decision_record(self, decision_id: UUID) -> DecisionRecord | None:
+        record = self.session.get(DecisionRecordRecord, decision_id)
+        if record is None:
+            return None
+        return DecisionRecord(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            decision=record.decision,
+            reason=record.reason,
+            alternatives_considered=tuple(record.alternatives_considered),
+            evidence=tuple(record.evidence),
+            uncertainty=record.uncertainty,
+            decision_version=record.decision_version,
+            decided_on=record.decided_on,
+        )
+
     def add_catalog_import(self, catalog_import: CatalogImport) -> None:
         self._require_ids_exist(
             EvidenceClaimRecord.id, catalog_import.evidence_claim_ids, "catalog evidence claims"
