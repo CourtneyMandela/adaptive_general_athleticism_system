@@ -7,7 +7,12 @@ import agas_api.assessment_selection as assessment_selection_module
 import pytest
 from agas_api.assessment_eligibility_admin import record_assessment_eligibility_review
 from agas_api.assessment_performance import AssessmentPerformanceResult
-from agas_api.assessment_selection import AssessmentSelectionRunResult
+from agas_api.assessment_selection import (
+    AssessmentSelectionRunConflictError,
+    AssessmentSelectionRunResult,
+    CreateAssessmentSelectionRunCommand,
+    PersistedAssessmentSelectionRunService,
+)
 from agas_api.assessment_workflow import AssessmentWorkflowProjection
 from agas_api.database import database_session_dependency
 from agas_api.main import app
@@ -138,13 +143,18 @@ def persist_evidence_fixture(
     return evidence
 
 
-def definition(slug: str, *, requires_skill: bool = False) -> AssessmentDefinition:
+def definition(
+    slug: str,
+    *,
+    requires_skill: bool = False,
+    intensity: AssessmentIntensity = AssessmentIntensity.LOW,
+) -> AssessmentDefinition:
     return AssessmentDefinition(
         slug=slug,
         name=slug.replace("_", " ").title(),
         domain=CapabilityDomain.AEROBIC_CAPACITY,
         observation_type=f"{slug}_result",
-        intensity=AssessmentIntensity.LOW,
+        intensity=intensity,
         unit_or_scale="test_fixture_unit",
         protocol_version=f"{slug}@1.0.0",
         required_equipment_categories=("cycle_ergometer",),
@@ -198,6 +208,7 @@ def allow(
     *,
     outcome: AssessmentEligibilityOutcome = AssessmentEligibilityOutcome.SELECTION_ALLOWED,
     valid_for_days: int = 7,
+    maximum_assessment_intensity: AssessmentIntensity = AssessmentIntensity.MAXIMAL,
 ) -> AssessmentEligibilityReview:
     review = AssessmentEligibilityReview(
         athlete_id=athlete.id,
@@ -206,6 +217,7 @@ def allow(
         source_observation_ids=(source.id,),
         reviewed_at=NOW - timedelta(hours=1),
         valid_until=NOW + timedelta(days=valid_for_days),
+        maximum_assessment_intensity=maximum_assessment_intensity,
         reviewed_by="automated-test-reviewer",
         screening_process_reference="software-test-screening@1.0.0",
         rationale="Software fixture only; not an athlete screening decision.",
@@ -227,6 +239,8 @@ def setup_run_state(
     include_deferred_definition: bool = True,
     eligibility_valid_for_days: int = 7,
     evidence_ready: bool = True,
+    definition_intensity: AssessmentIntensity = AssessmentIntensity.LOW,
+    maximum_assessment_intensity: AssessmentIntensity = AssessmentIntensity.MAXIMAL,
 ) -> tuple[Athlete, Environment, AssessmentEligibilityReview]:
     repository = DomainRepository(session)
     athlete = Athlete(display_name="Assessment run athlete")
@@ -234,8 +248,12 @@ def setup_run_state(
     cycle = Equipment(name="Synthetic cycle", category="cycle_ergometer")
     source = source_observation(athlete)
     evidence = persist_evidence_fixture(repository, ready=evidence_ready)
-    first = definition("available_fixture")
-    second = definition("skill_deferred_fixture", requires_skill=True)
+    first = definition("available_fixture", intensity=definition_intensity)
+    second = definition(
+        "skill_deferred_fixture",
+        requires_skill=True,
+        intensity=definition_intensity,
+    )
     repository.add_athlete(athlete)
     repository.add_environment(environment)
     repository.add_equipment(cycle)
@@ -265,6 +283,7 @@ def setup_run_state(
         source,
         outcome=eligibility_outcome,
         valid_for_days=eligibility_valid_for_days,
+        maximum_assessment_intensity=maximum_assessment_intensity,
     )
     session.commit()
     return athlete, environment, eligibility
@@ -328,6 +347,26 @@ def test_owned_athlete_creates_a_provenance_complete_assessment_selection_run(
     assert repository.get_assessment_selection_run(result.run.id) == result.run
     for item in result.decisions:
         assert repository.get_assessment_selection(item.selection.id) == item.selection
+
+
+def test_eligibility_intensity_scope_cannot_authorize_a_harder_protocol(
+    session: Session,
+) -> None:
+    athlete, environment, _eligibility = setup_run_state(
+        session,
+        include_deferred_definition=False,
+        definition_intensity=AssessmentIntensity.HIGH,
+        maximum_assessment_intensity=AssessmentIntensity.MODERATE,
+    )
+    command = CreateAssessmentSelectionRunCommand.model_validate(request_body(environment))
+
+    with pytest.raises(
+        AssessmentSelectionRunConflictError,
+        match="no approved evidence-ready self-administered assessment definitions",
+    ):
+        PersistedAssessmentSelectionRunService(session).execute(athlete.id, command)
+
+    assert DomainRepository(session).list_assessment_selection_runs(athlete.id) == ()
 
 
 def test_assessment_workflow_projects_readiness_decisions_and_completion(

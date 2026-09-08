@@ -49,6 +49,12 @@ AssessmentCapabilityEstimateStatus = Literal[
     "policy_superseded",
     "stale",
 ]
+ASSESSMENT_INTENSITY_RANK = {
+    AssessmentIntensity.LOW: 0,
+    AssessmentIntensity.MODERATE: 1,
+    AssessmentIntensity.HIGH: 2,
+    AssessmentIntensity.MAXIMAL: 3,
+}
 
 
 class AssessmentWorkflowNotFoundError(LookupError):
@@ -69,6 +75,7 @@ class AssessmentEligibilityProjection(BaseModel):
     outcome: AssessmentEligibilityOutcome
     reviewed_at: datetime
     valid_until: datetime
+    maximum_assessment_intensity: AssessmentIntensity
     rule_version: str
 
 
@@ -182,7 +189,13 @@ def get_assessment_workflow_projection(
     reviewed_definitions = tuple(
         (definition, review)
         for definition, review in list_evidence_ready_assessment_definitions(repository)
-        if review.self_administered and review.measurement_schema is not None
+        if review.self_administered
+        and review.measurement_schema is not None
+        and (
+            eligibility is None
+            or ASSESSMENT_INTENSITY_RANK[definition.intensity]
+            <= ASSESSMENT_INTENSITY_RANK[eligibility.maximum_assessment_intensity]
+        )
     )
     reassessment_schedule = resolve_assessment_reassessment_schedule(
         repository,
@@ -407,7 +420,7 @@ def get_assessment_workflow_projection(
         message = "The latest run selected no protocol; review its explicit decision reasons."
     elif eligibility is None:
         status = "eligibility_required"
-        message = "An operator eligibility review is required before assessment selection."
+        message = "A current readiness report is required before assessment selection."
     elif eligibility.outcome is AssessmentEligibilityOutcome.REVIEW_REQUIRED:
         status = "eligibility_review_required"
         message = "The current eligibility decision requires further review."
@@ -449,6 +462,7 @@ def get_assessment_workflow_projection(
                 outcome=eligibility.outcome,
                 reviewed_at=eligibility.reviewed_at,
                 valid_until=eligibility.valid_until,
+                maximum_assessment_intensity=eligibility.maximum_assessment_intensity,
                 rule_version=eligibility.rule_version,
             )
             if eligibility

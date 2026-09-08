@@ -671,6 +671,7 @@ class AssessmentDefinitionReview(VersionedRecord):
 
 
 class AssessmentEligibilityReview(VersionedRecord):
+    schema_version: str = "1.1.0"
     athlete_id: UUID
     outcome: AssessmentEligibilityOutcome
     sequence_number: Annotated[int, Field(ge=1)]
@@ -678,6 +679,7 @@ class AssessmentEligibilityReview(VersionedRecord):
     source_observation_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
     reviewed_at: datetime
     valid_until: datetime
+    maximum_assessment_intensity: AssessmentIntensity = AssessmentIntensity.MAXIMAL
     reviewed_by: NonEmptyText
     screening_process_reference: NonEmptyText
     rationale: NonEmptyText

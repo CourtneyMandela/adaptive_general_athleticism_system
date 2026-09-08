@@ -147,12 +147,17 @@ selection, and persistence rejects athlete selections against it. No operational
 protocol is seeded by this boundary.
 
 Athlete-level authority is separate. `AssessmentEligibilityReview` is an append-only, linear,
-time-bounded operator decision that references the observations and screening process actually
-reviewed. Its outcomes allow selection, block selection, or require further review; the record is
-not a diagnosis or medical clearance. Athlete-facing services cannot create this authority.
+time-bounded decision that references the observations and screening process actually reviewed.
+The owner-alpha readiness service stores a grouped factual self-report and its deterministic
+eligibility result in one transaction; the caller cannot select the result, validity window,
+reviewer, or intensity ceiling. The initial rule expires after 24 hours and caps downstream
+selection at moderate intensity. An independent operator can still append a separately reviewed
+decision through the local administration boundary. Outcomes allow selection, block selection, or
+require further review; no record is a diagnosis or medical clearance.
 
 The persisted assessment-run service loads the athlete's current allowed eligibility decision and
-the catalog's current approved, evidence-ready, self-administered definitions. It derives equipment
+the catalog's current approved, evidence-ready, self-administered definitions at or below that
+decision's persisted maximum intensity. It derives equipment
 categories from the effective-dated state of an owned environment, records the non-medical context
 as a direct observation, and atomically appends decisions, selections, and an
 `AssessmentSelectionRun`.

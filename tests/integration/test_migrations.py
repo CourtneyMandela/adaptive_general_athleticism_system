@@ -70,6 +70,9 @@ def test_baseline_migration_matches_current_metadata(
             column["name"] for column in inspector.get_columns("assessment_definition_reviews")
         }
         assert "assessment_eligibility_reviews" in actual_tables
+        assert "maximum_assessment_intensity" in {
+            column["name"] for column in inspector.get_columns("assessment_eligibility_reviews")
+        }
         assert "assessment_eligibility_review_observations" in actual_tables
         assert "assessment_selection_runs" in actual_tables
         assert "assessment_selection_run_items" in actual_tables
@@ -196,6 +199,10 @@ def test_baseline_migration_matches_current_metadata(
         assert any(
             constraint["name"] == "uq_assessment_eligibility_superseded_once"
             for constraint in eligibility_constraints
+        )
+        assert any(
+            constraint["name"] == "ck_assessment_eligibility_maximum_intensity"
+            for constraint in inspector.get_check_constraints("assessment_eligibility_reviews")
         )
         assert any(
             constraint["name"] == "uq_assessment_run_context_observation"

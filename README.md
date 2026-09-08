@@ -148,6 +148,7 @@ GET  /v1/onboarding/equipment
 GET  /v1/assessments/catalog
 POST /v1/onboarding/athletes
 GET  /v1/athletes/{athlete_id}/assessment-workflow
+POST /v1/athletes/{athlete_id}/assessment-readiness-reports
 POST /v1/athletes/{athlete_id}/assessment-runs
 POST /v1/athletes/{athlete_id}/assessment-runs/{run_id}/selections/{selection_id}/result
 POST /v1/athletes/{athlete_id}/assessment-performances/{performance_id}/capability-estimate
@@ -359,8 +360,14 @@ python -m agas_api.safety_policy_admin assign \
 Replacements append a sequenced predecessor-linked assignment. The PWA and session API resolve the
 current assignment from the athlete; clients cannot choose a policy ID per safety report.
 
-Assessment eligibility is likewise governed outside the athlete-facing API. After reviewing direct
-observations through an appropriate process, a local operator can append a time-bounded decision:
+Assessment eligibility remains separate from protocol approval. The hosted owner-alpha PWA now
+offers a minimal current-state report: the athlete answers factual grouped questions, while a
+versioned deterministic rule—not the caller—chooses allowed, blocked, or review-required. Any
+reported or uncertain safety-relevant factor stops self-service. A clear decision lasts 24 hours
+and is permanently scoped to low/moderate self-administered assessments. The report observation and
+derived review commit atomically and later reports append rather than overwrite history.
+
+The local operator command remains available for an independently reviewed process:
 
 ```bash
 python -m agas_api.assessment_eligibility_admin \
@@ -368,14 +375,16 @@ python -m agas_api.assessment_eligibility_admin \
   --outcome selection_allowed \
   --source-observation-id REVIEWED_OBSERVATION_UUID \
   --valid-until 2026-09-30T12:00:00Z \
+  --maximum-assessment-intensity moderate \
   --reviewed-by "REVIEWER_OR_OPERATOR" \
   --screening-process-reference "REVIEWED_PROCESS_REFERENCE" \
   --rationale "WHY_ASSESSMENT_SELECTION_IS_ALLOWED" \
   --uncertainty "KNOWN_LIMITS_OF_THIS_REVIEW"
 ```
 
-This record authorizes assessment selection only; it is not a diagnosis or medical clearance. The
-authenticated assessment-run endpoint accepts non-medical body-mass, training-history, skill, and
+Neither path is a diagnosis or medical clearance. The hosted screen stores only grouped answers,
+does not collect diagnosis or symptom narratives, and cannot assess urgency. The authenticated
+assessment-run endpoint accepts non-medical body-mass, training-history, skill, and
 exposure context plus an owned environment. It derives current equipment availability from the
 database and persists the direct context observation, deterministic decisions, exact protocol and
 eligibility authorities, and selection run atomically. Clients cannot submit injury, symptom,

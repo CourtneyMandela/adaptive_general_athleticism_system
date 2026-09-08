@@ -10,6 +10,7 @@ from agas_domain import (
     AssessmentDefinition,
     AssessmentDefinitionReview,
     AssessmentEligibilityOutcome,
+    AssessmentIntensity,
     AssessmentSelection,
     AssessmentSelectionRun,
     CapabilityDomain,
@@ -28,6 +29,12 @@ from agas_api.assessment_catalog import list_evidence_ready_assessment_definitio
 from agas_api.assessment_schedule import resolve_assessment_reassessment_schedule
 
 NonEmptyText = Annotated[str, Field(min_length=1)]
+ASSESSMENT_INTENSITY_RANK = {
+    AssessmentIntensity.LOW: 0,
+    AssessmentIntensity.MODERATE: 1,
+    AssessmentIntensity.HIGH: 2,
+    AssessmentIntensity.MAXIMAL: 3,
+}
 
 
 def _utc_now() -> datetime:
@@ -158,7 +165,10 @@ class PersistedAssessmentSelectionRunService:
         reviewed_definitions = tuple(
             (definition, review)
             for definition, review in list_evidence_ready_assessment_definitions(self.repository)
-            if review.self_administered and review.measurement_schema is not None
+            if review.self_administered
+            and review.measurement_schema is not None
+            and ASSESSMENT_INTENSITY_RANK[definition.intensity]
+            <= ASSESSMENT_INTENSITY_RANK[eligibility.maximum_assessment_intensity]
         )
         if not reviewed_definitions:
             raise AssessmentSelectionRunConflictError(

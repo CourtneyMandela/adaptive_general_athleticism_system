@@ -87,9 +87,9 @@ export function buildFirstSessionPath(
     assessmentStep = {
       id: "assessment",
       title: "Reviewed assessment",
-      state: "system_action",
+      state: "your_action",
       detail:
-        "An authorized eligibility review must open assessment selection. The athlete account cannot approve itself.",
+        "Complete the factual current-readiness check below. AGAS—not the form—derives the narrow, time-bounded decision.",
     };
   } else if (assessmentNeedsAthleteAction(assessment)) {
     assessmentStep = {

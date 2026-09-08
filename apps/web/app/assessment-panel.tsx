@@ -4,13 +4,16 @@ import { FormEvent, useEffect, useState } from "react";
 
 import {
   buildAssessmentResultCommand,
+  buildAssessmentReadinessReportCommand,
   buildAssessmentRunCommand,
   fetchAssessmentWorkflow,
   submitAssessmentCapabilityEstimate,
+  submitAssessmentReadinessReport,
   submitAssessmentResult,
   submitAssessmentRun,
   type AssessmentDecisionProjection,
   type AssessmentWorkflowProjection,
+  type ReadinessAnswer,
 } from "@/lib/assessment";
 import type { Confidence } from "@/lib/current-week";
 
@@ -41,6 +44,36 @@ function displayValue(value: unknown): string {
 
 function statusLabel(status: string): string {
   return status.replaceAll("_", " ");
+}
+
+const readinessAnswerOptions = [
+  ["unsure", "I’m not sure"],
+  ["no", "No"],
+  ["yes", "Yes"],
+] as const;
+
+function ReadinessSelect({
+  label,
+  help,
+  value,
+  onChange,
+}: {
+  label: string;
+  help?: string;
+  value: ReadinessAnswer;
+  onChange: (value: ReadinessAnswer) => void;
+}) {
+  return (
+    <label>
+      {label}
+      {help ? <span>{help}</span> : null}
+      <select value={value} onChange={(event) => onChange(event.target.value as ReadinessAnswer)}>
+        {readinessAnswerOptions.map(([option, text]) => (
+          <option value={option} key={option}>{text}</option>
+        ))}
+      </select>
+    </label>
+  );
 }
 
 function AssessmentResultForm({
@@ -148,6 +181,15 @@ export function AssessmentPanel({
   const [exposures, setExposures] = useState("");
   const [trainingHistory, setTrainingHistory] = useState<Record<string, string>>({});
   const [reliability, setReliability] = useState<Confidence>("moderate");
+  const [adultConfirmed, setAdultConfirmed] = useState(false);
+  const [activity, setActivity] = useState<ReadinessAnswer>("unsure");
+  const [knownDisease, setKnownDisease] = useState<ReadinessAnswer>("unsure");
+  const [symptoms, setSymptoms] = useState<ReadinessAnswer>("unsure");
+  const [restriction, setRestriction] = useState<ReadinessAnswer>("unsure");
+  const [movementConcern, setMovementConcern] = useState<ReadinessAnswer>("unsure");
+  const [controlledRepetition, setControlledRepetition] = useState<ReadinessAnswer>("unsure");
+  const [readinessConfirmed, setReadinessConfirmed] = useState(false);
+  const [readinessAction, setReadinessAction] = useState("");
 
   async function load() {
     setState("loading");
@@ -211,6 +253,34 @@ export function AssessmentPanel({
     }
   }
 
+  async function submitReadiness(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setState("saving");
+    setMessage("");
+    setReadinessAction("");
+    try {
+      const result = await submitAssessmentReadinessReport(
+        apiBaseUrl,
+        athleteId,
+        buildAssessmentReadinessReportCommand({
+          adultConfirmed,
+          regularModerateActivityLastThreeMonths: activity,
+          knownCardiovascularMetabolicOrRenalDisease: knownDisease,
+          concerningSignsOrSymptoms: symptoms,
+          clinicianExerciseRestriction: restriction,
+          currentLowerBodyOrBalanceConcern: movementConcern,
+          controlledChairStandWithoutArms: controlledRepetition,
+          answersConfirmed: readinessConfirmed,
+        }),
+      );
+      setReadinessAction(result.next_action);
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to save readiness.");
+      setState("error");
+    }
+  }
+
   async function createCapabilityEstimate(performanceId: string) {
     setState("saving");
     setMessage("");
@@ -251,8 +321,10 @@ export function AssessmentPanel({
               {workflow.eligibility
                 ? `${statusLabel(workflow.eligibility.outcome)} until ${new Date(
                     workflow.eligibility.valid_until,
-                  ).toLocaleDateString()}`
-                : "Operator review required"}
+                  ).toLocaleString()} · up to ${statusLabel(
+                    workflow.eligibility.maximum_assessment_intensity,
+                  )} intensity`
+                : "Current readiness check required"}
             </dd>
           </div>
           <div>
@@ -270,6 +342,87 @@ export function AssessmentPanel({
             </dd>
           </div>
         </dl>
+      ) : null}
+      {readinessAction ? <p className="form-success" role="status">{readinessAction}</p> : null}
+
+      {workflow && workflow.approved_self_administered_protocol_count > 0 && [
+        "eligibility_required",
+        "eligibility_review_required",
+        "selection_blocked",
+        "eligibility_inactive",
+      ].includes(workflow.status) ? (
+        <details className="assessment-start" open>
+          <summary>Complete the current readiness check</summary>
+          <form className="assessment-form" onSubmit={submitReadiness}>
+            <aside className="review-boundary">
+              <strong>This is a stop/go screen, not medical clearance.</strong>
+              <span>
+                Answer facts only. AGAS does not diagnose a symptom or decide whether a known
+                condition is safe; “yes” or “unsure” stops the assessment and asks for qualified
+                guidance.
+              </span>
+            </aside>
+            <label>
+              <input
+                type="checkbox"
+                checked={adultConfirmed}
+                onChange={(event) => setAdultConfirmed(event.target.checked)}
+              />
+              I confirm that I am an adult (18 or older).
+            </label>
+            <ReadinessSelect
+              label="For the last 3 months, have you done planned moderate exercise at least 3 days per week for 30 minutes?"
+              help="This records context. It is not converted to a fitness score."
+              value={activity}
+              onChange={setActivity}
+            />
+            <ReadinessSelect
+              label="Has a healthcare professional told you that you have cardiovascular disease, diabetes, or kidney disease?"
+              value={knownDisease}
+              onChange={setKnownDisease}
+            />
+            <ReadinessSelect
+              label="Do you currently have any concerning signs or symptoms?"
+              help="Examples: chest/neck/jaw/arm discomfort; fainting or dizziness; unusual breathlessness at rest, with mild activity, or during usual activities; unexplained ankle swelling; or an unexplained racing/irregular heartbeat."
+              value={symptoms}
+              onChange={setSymptoms}
+            />
+            <ReadinessSelect
+              label="Has a healthcare professional told you to avoid or limit exercise that would include repeated chair stands?"
+              value={restriction}
+              onChange={setRestriction}
+            />
+            <ReadinessSelect
+              label="Do you currently have lower-body pain, an injury, or a balance concern that could affect repeated chair stands?"
+              value={movementConcern}
+              onChange={setMovementConcern}
+            />
+            <ReadinessSelect
+              label="Using the exact stable chair setup, can you comfortably stand once and sit with control without using your arms?"
+              value={controlledRepetition}
+              onChange={setControlledRepetition}
+            />
+            <label>
+              <input
+                type="checkbox"
+                checked={readinessConfirmed}
+                onChange={(event) => setReadinessConfirmed(event.target.checked)}
+              />
+              These answers describe my current state and are accurate to the best of my
+              knowledge. I understand that AGAS stores these grouped answers in my private
+              assessment history.
+            </label>
+            <button type="submit" disabled={state === "saving" || !readinessConfirmed}>
+              {state === "saving" ? "Checking…" : "Evaluate current readiness"}
+            </button>
+            <p className="form-help">
+              A clear result expires after 24 hours and can authorize only evidence-ready
+              low/moderate self-administered assessment selection. Stop if your condition changes.
+              This app cannot assess urgency; if you think you may have a medical emergency, use
+              local emergency services.
+            </p>
+          </form>
+        </details>
       ) : null}
       {workflow ? (
         <p className="form-help">

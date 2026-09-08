@@ -110,6 +110,7 @@ export interface AssessmentWorkflowProjection {
     outcome: "selection_allowed" | "selection_blocked" | "review_required";
     reviewed_at: string;
     valid_until: string;
+    maximum_assessment_intensity: "low" | "moderate" | "high" | "maximal";
     rule_version: string;
   } | null;
   environments: Array<{ environment_id: string; name: string }>;
@@ -121,6 +122,43 @@ export interface AssessmentWorkflowProjection {
     rule_version: string;
     decisions: AssessmentDecisionProjection[];
   } | null;
+}
+
+export type ReadinessAnswer = "no" | "yes" | "unsure";
+
+export interface AssessmentReadinessInput {
+  adultConfirmed: boolean;
+  regularModerateActivityLastThreeMonths: ReadinessAnswer;
+  knownCardiovascularMetabolicOrRenalDisease: ReadinessAnswer;
+  concerningSignsOrSymptoms: ReadinessAnswer;
+  clinicianExerciseRestriction: ReadinessAnswer;
+  currentLowerBodyOrBalanceConcern: ReadinessAnswer;
+  controlledChairStandWithoutArms: ReadinessAnswer;
+  answersConfirmed: boolean;
+}
+
+export interface AssessmentReadinessReportCommand {
+  report_id: string;
+  reported_at: string;
+  adult_confirmed: boolean;
+  regular_moderate_activity_last_three_months: ReadinessAnswer;
+  known_cardiovascular_metabolic_or_renal_disease: ReadinessAnswer;
+  concerning_signs_or_symptoms: ReadinessAnswer;
+  clinician_exercise_restriction: ReadinessAnswer;
+  current_lower_body_or_balance_concern: ReadinessAnswer;
+  controlled_chair_stand_without_arms: ReadinessAnswer;
+  answers_confirmed: true;
+}
+
+export interface AssessmentReadinessReportResult {
+  observation_id: string;
+  eligibility_review_id: string;
+  outcome: "selection_allowed" | "selection_blocked" | "review_required";
+  maximum_assessment_intensity: "low" | "moderate" | "high" | "maximal";
+  valid_until: string;
+  next_action: string;
+  created: boolean;
+  rule_version: string;
 }
 
 export interface AssessmentRunInput {
@@ -172,6 +210,36 @@ export class AssessmentRequestError extends Error {
     super(message);
     this.name = "AssessmentRequestError";
   }
+}
+
+export function buildAssessmentReadinessReportCommand(
+  input: AssessmentReadinessInput,
+  reportedAt: Date = new Date(),
+  reportId: string = crypto.randomUUID(),
+): AssessmentReadinessReportCommand {
+  if (!input.answersConfirmed) {
+    throw new Error("Confirm that the readiness answers are current and accurate.");
+  }
+  if (!Number.isFinite(reportedAt.valueOf())) {
+    throw new Error("The readiness report time is invalid.");
+  }
+  if (!isUuid(reportId)) {
+    throw new Error("The readiness report identity is invalid.");
+  }
+  return {
+    report_id: reportId,
+    reported_at: reportedAt.toISOString(),
+    adult_confirmed: input.adultConfirmed,
+    regular_moderate_activity_last_three_months:
+      input.regularModerateActivityLastThreeMonths,
+    known_cardiovascular_metabolic_or_renal_disease:
+      input.knownCardiovascularMetabolicOrRenalDisease,
+    concerning_signs_or_symptoms: input.concerningSignsOrSymptoms,
+    clinician_exercise_restriction: input.clinicianExerciseRestriction,
+    current_lower_body_or_balance_concern: input.currentLowerBodyOrBalanceConcern,
+    controlled_chair_stand_without_arms: input.controlledChairStandWithoutArms,
+    answers_confirmed: true,
+  };
 }
 
 function normalizedTags(values: string[], label: string): string[] {
@@ -272,6 +340,32 @@ async function responseDetail(response: Response, fallback: string): Promise<str
   } catch {
     return fallback;
   }
+}
+
+export async function submitAssessmentReadinessReport(
+  apiBaseUrl: string,
+  athleteId: string,
+  command: AssessmentReadinessReportCommand,
+  fetcher: typeof fetch = fetch,
+): Promise<AssessmentReadinessReportResult> {
+  const response = await fetcher(
+    `${apiBaseUrl.replace(/\/$/, "")}/v1/athletes/${athleteId}/assessment-readiness-reports`,
+    {
+      method: "POST",
+      headers: authorizedHeaders({
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      }),
+      body: JSON.stringify(command),
+    },
+  );
+  if (!response.ok) {
+    throw new AssessmentRequestError(
+      await responseDetail(response, "Unable to save the readiness report."),
+      response.status,
+    );
+  }
+  return response.json() as Promise<AssessmentReadinessReportResult>;
 }
 
 export async function fetchAssessmentWorkflow(

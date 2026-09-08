@@ -72,6 +72,105 @@ test("the bootstrap athlete deep link opens the PWA without UUID copy and paste"
   await expect(page.getByText("There is no persisted plan covering")).toBeVisible();
 });
 
+test("the phone workflow turns a factual readiness report into a narrow decision", async ({
+  page,
+}) => {
+  let readinessAllowed = false;
+  let submittedBody: Record<string, unknown> | null = null;
+  await page.route("http://localhost:8000/v1/**", async (route) => {
+    const request = route.request();
+    if (request.url().includes(`/athletes/${athleteId}/assessment-readiness-reports`)) {
+      submittedBody = request.postDataJSON() as Record<string, unknown>;
+      readinessAllowed = true;
+      return route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({
+          observation_id: "d1000000-0000-4000-8000-000000000001",
+          eligibility_review_id: "d1000000-0000-4000-8000-000000000002",
+          outcome: "selection_allowed",
+          maximum_assessment_intensity: "moderate",
+          valid_until: "2026-09-09T16:00:00Z",
+          next_action: "Continue to governed low/moderate assessment selection.",
+          created: true,
+          rule_version: "assessment-readiness-screen@1.0.0",
+        }),
+      });
+    }
+    if (request.url().includes(`/athletes/${athleteId}/assessment-workflow`)) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          athlete_id: athleteId,
+          athlete_display_name: "Synthetic four-day traveler",
+          as_of: "2026-09-08T16:00:00Z",
+          status: readinessAllowed ? "environment_required" : "eligibility_required",
+          message: readinessAllowed
+            ? "At least one persisted environment is required for assessment selection."
+            : "A current readiness decision is required before assessment selection.",
+          can_start_run: false,
+          can_record_results: false,
+          approved_self_administered_protocol_count: 1,
+          due_protocol_count: 1,
+          next_reassessment_at: null,
+          reassessment_rule_version: "assessment-reassessment-schedule@1.0.0",
+          eligibility: readinessAllowed
+            ? {
+                eligibility_review_id: "d1000000-0000-4000-8000-000000000002",
+                outcome: "selection_allowed",
+                reviewed_at: "2026-09-08T16:00:00Z",
+                valid_until: "2026-09-09T16:00:00Z",
+                maximum_assessment_intensity: "moderate",
+                rule_version: "assessment-readiness-screen@1.0.0",
+              }
+            : null,
+          environments: [],
+          latest_run: null,
+        }),
+      });
+    }
+    if (request.url().includes(`/athletes/${athleteId}/current-week`)) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          athlete_id: athleteId,
+          athlete_display_name: "Synthetic four-day traveler",
+          as_of: "2026-09-08",
+          safety_policy_assignment: null,
+          week: null,
+        }),
+      });
+    }
+    return route.fulfill({
+      status: 404,
+      contentType: "application/json",
+      body: JSON.stringify({ detail: "not needed by readiness browser test" }),
+    });
+  });
+
+  await page.goto(`/?athleteId=${athleteId}`);
+  await expect(page.getByText("This is a stop/go screen, not medical clearance.")).toBeVisible();
+  const submit = page.getByRole("button", { name: "Evaluate current readiness" });
+  await expect(submit).toBeDisabled();
+  await page.getByLabel("I confirm that I am an adult").check();
+  await page.getByLabel("Has a healthcare professional told you that you have cardiovascular").selectOption("no");
+  await page.getByLabel("Do you currently have any concerning signs or symptoms?").selectOption("no");
+  await page.getByLabel("Has a healthcare professional told you to avoid or limit exercise").selectOption("no");
+  await page.getByLabel("Do you currently have lower-body pain").selectOption("no");
+  await page.getByLabel("Using the exact stable chair setup").selectOption("yes");
+  await page.getByLabel("These answers describe my current state").check();
+  await submit.click();
+
+  await expect(page.getByText("Continue to governed low/moderate assessment selection.")).toBeVisible();
+  expect(submittedBody).toMatchObject({
+    adult_confirmed: true,
+    concerning_signs_or_symptoms: "no",
+    controlled_chair_stand_without_arms: "yes",
+    answers_confirmed: true,
+  });
+  expect(submittedBody).not.toHaveProperty("outcome");
+});
+
 test("assessment workbench makes missing scientific governance explicit", async ({ page }) => {
   await page.route("http://localhost:8000/v1/operator/assessment-governance**", (route) => {
     if (route.request().url().endsWith("/candidates")) {

@@ -134,9 +134,13 @@ Athlete eligibility is a separate authority from protocol approval. A current, a
 does not establish that it should be selected for a particular athlete, while an eligibility review
 does not validate a protocol's scientific basis. Eligibility decisions must retain their source
 observations, process reference, reviewer, rationale, uncertainty, review time, validity window, and
-rule version. They authorize selection only and must not be represented as diagnoses or medical
-clearance. Persisted selection requires both exact authorities so later changes do not rewrite why
-the historical decision was permitted.
+rule version. The owner-alpha current-state screen also records its ACSM-method PubMed identifiers
+and persists a maximum authorized assessment intensity. Those identifiers provide traceable method
+provenance but do not substitute for a governed `EvidenceClaim` review; expansion beyond the narrow
+owner alpha requires a dedicated reviewed screening-policy release. Eligibility decisions authorize
+selection only and must not be represented as diagnoses or medical clearance. Persisted selection
+requires both exact authorities so later changes do not rewrite why the historical decision was
+permitted.
 
 Recording a selected assessment result preserves the reported measurement as a direct observation
 and repeats the exact protocol and eligibility authorities in relational lineage. Unit agreement is

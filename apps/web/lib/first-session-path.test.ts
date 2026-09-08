@@ -63,6 +63,18 @@ describe("first-session path", () => {
     expect(result.steps.find((step) => step.id === "assessment")?.state).toBe("your_action");
   });
 
+  it("makes current readiness the athlete action once a protocol exists", () => {
+    const result = buildFirstSessionPath(
+      assessment({ approved_self_administered_protocol_count: 1 }),
+      planning(),
+      false,
+    );
+
+    const step = result.steps.find((item) => item.id === "assessment");
+    expect(step?.state).toBe("your_action");
+    expect(step?.detail).toContain("current-readiness check");
+  });
+
   it("identifies reviewed estimate creation after a result is recorded", () => {
     const result = buildFirstSessionPath(
       assessment({

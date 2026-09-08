@@ -48,6 +48,14 @@ from agas_api.assessment_performance import (
     PersistedAssessmentPerformanceService,
     RecordAssessmentPerformanceCommand,
 )
+from agas_api.assessment_readiness import (
+    AssessmentReadinessConflictError,
+    AssessmentReadinessNotFoundError,
+    AssessmentReadinessReportResult,
+    AssessmentReadinessValidationError,
+    PersistedAssessmentReadinessService,
+    SubmitAssessmentReadinessReportCommand,
+)
 from agas_api.assessment_selection import (
     AssessmentSelectionRunConflictError,
     AssessmentSelectionRunNotFoundError,
@@ -993,6 +1001,32 @@ def get_assessment_workflow(
     except AssessmentWorkflowNotFoundError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
     except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.post(
+    "/v1/athletes/{athlete_id}/assessment-readiness-reports",
+    tags=["assessment"],
+    response_model=AssessmentReadinessReportResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def submit_assessment_readiness_report(
+    athlete_id: UUID,
+    command: SubmitAssessmentReadinessReportCommand,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    principal: Annotated[AuthenticatedPrincipal, Depends(authenticated_principal_dependency)],
+    authorizer: Annotated[OwnershipAuthorizer, Depends(ownership_authorizer_dependency)],
+) -> AssessmentReadinessReportResult:
+    authorizer.require_athlete(athlete_id)
+    try:
+        return PersistedAssessmentReadinessService(session).execute(athlete_id, command, principal)
+    except AssessmentReadinessNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except AssessmentReadinessConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except AssessmentReadinessValidationError as error:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
         ) from error

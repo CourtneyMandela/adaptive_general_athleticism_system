@@ -5,7 +5,11 @@ import json
 from datetime import UTC, datetime
 from uuid import UUID
 
-from agas_domain import AssessmentEligibilityOutcome, AssessmentEligibilityReview
+from agas_domain import (
+    AssessmentEligibilityOutcome,
+    AssessmentEligibilityReview,
+    AssessmentIntensity,
+)
 from agas_domain.persistence.repository import DomainIntegrityError, DomainRepository
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -23,6 +27,7 @@ def record_assessment_eligibility_review(
     source_observation_ids: tuple[UUID, ...],
     reviewed_at: datetime,
     valid_until: datetime,
+    maximum_assessment_intensity: AssessmentIntensity = AssessmentIntensity.MAXIMAL,
     reviewed_by: str,
     screening_process_reference: str,
     rationale: str,
@@ -36,6 +41,7 @@ def record_assessment_eligibility_review(
         current.outcome == outcome
         and current.source_observation_ids == source_observation_ids
         and current.valid_until == valid_until
+        and current.maximum_assessment_intensity == maximum_assessment_intensity
         and current.reviewed_by == reviewed_by
         and current.screening_process_reference == screening_process_reference
         and current.rationale == rationale
@@ -52,6 +58,7 @@ def record_assessment_eligibility_review(
         source_observation_ids=source_observation_ids,
         reviewed_at=reviewed_at,
         valid_until=valid_until,
+        maximum_assessment_intensity=maximum_assessment_intensity,
         reviewed_by=reviewed_by,
         screening_process_reference=screening_process_reference,
         rationale=rationale,
@@ -86,6 +93,12 @@ def main() -> None:
     )
     parser.add_argument("--source-observation-id", type=UUID, action="append", required=True)
     parser.add_argument("--valid-until", type=_aware_datetime, required=True)
+    parser.add_argument(
+        "--maximum-assessment-intensity",
+        type=AssessmentIntensity,
+        choices=AssessmentIntensity,
+        default=AssessmentIntensity.MAXIMAL,
+    )
     parser.add_argument("--reviewed-by", required=True)
     parser.add_argument("--screening-process-reference", required=True)
     parser.add_argument("--rationale", required=True)
@@ -101,6 +114,7 @@ def main() -> None:
                 source_observation_ids=tuple(arguments.source_observation_id),
                 reviewed_at=datetime.now(UTC),
                 valid_until=arguments.valid_until,
+                maximum_assessment_intensity=arguments.maximum_assessment_intensity,
                 reviewed_by=arguments.reviewed_by,
                 screening_process_reference=arguments.screening_process_reference,
                 rationale=arguments.rationale,

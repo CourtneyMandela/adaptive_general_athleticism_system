@@ -617,6 +617,10 @@ class AssessmentEligibilityReviewRecord(VersionedRecordMixin, Base):
         ),
         CheckConstraint("sequence_number >= 1", name="ck_assessment_eligibility_sequence_positive"),
         CheckConstraint("valid_until > reviewed_at", name="ck_assessment_eligibility_valid_window"),
+        CheckConstraint(
+            "maximum_assessment_intensity IN ('low', 'moderate', 'high', 'maximal')",
+            name="ck_assessment_eligibility_maximum_intensity",
+        ),
         UniqueConstraint(
             "athlete_id",
             "sequence_number",
@@ -637,6 +641,9 @@ class AssessmentEligibilityReviewRecord(VersionedRecordMixin, Base):
     )
     reviewed_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)
     valid_until: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)
+    maximum_assessment_intensity: Mapped[str] = mapped_column(
+        String(40), nullable=False, default="maximal"
+    )
     reviewed_by: Mapped[str] = mapped_column(String(160), nullable=False)
     screening_process_reference: Mapped[str] = mapped_column(String(160), nullable=False)
     rationale: Mapped[str] = mapped_column(Text(), nullable=False)

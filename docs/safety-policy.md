@@ -13,14 +13,16 @@ Safety validation executes before LLM discretion and ordinary planning. The LLM 
 An assessment protocol must have a current evidence-linked approval before it can enter persisted
 athlete selection. Approval records exact instructions, applicability, uncertainty, and whether
 self-administration was reviewed; it is not a medical clearance or a substitute for athlete-level
-screening. The repository currently seeds no assessment protocols and exposes no sensitive
-screening workflow. Unreviewed or withdrawn definitions fail closed, and future intake must not
+screening. Unreviewed or withdrawn definitions fail closed, and intake must not
 infer health, injury, or symptom classifications from free text.
 
-Assessment selection additionally requires a current, time-bounded operator eligibility review
-linked to the observations and process actually reviewed. Allowed, blocked, and review-required
-outcomes are preserved as append-only history. This authority controls selection only; it is not a
-diagnosis or medical clearance. The athlete-facing assessment-run request contains no health,
+Assessment selection additionally requires a current, time-bounded eligibility review linked to
+the observations and exact process used. In the owner alpha, a deterministic current-state rule
+accepts only grouped factual answers, treats “yes” and “unsure” conservatively, expires after 24
+hours, and caps selection at moderate intensity. The athlete cannot submit an outcome or intensity
+ceiling. Allowed, blocked, and review-required outcomes are preserved as append-only history. This
+authority controls selection only; it is not a diagnosis or medical clearance. The ordinary
+athlete-facing assessment-run request contains no health,
 injury, symptom, or raw screening fields and cannot override its eligibility or persisted equipment
 state.
 

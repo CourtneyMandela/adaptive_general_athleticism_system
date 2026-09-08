@@ -2,10 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   AssessmentRequestError,
+  buildAssessmentReadinessReportCommand,
   buildAssessmentResultCommand,
   buildAssessmentRunCommand,
   fetchAssessmentWorkflow,
   submitAssessmentCapabilityEstimate,
+  submitAssessmentReadinessReport,
   submitAssessmentRun,
   submitAssessmentResult,
   type AssessmentDecisionProjection,
@@ -45,6 +47,46 @@ const decision: AssessmentDecisionProjection = {
 };
 
 describe("assessment workflow client", () => {
+  it("builds and sends a current factual readiness report without a caller-selected outcome", async () => {
+    const command = buildAssessmentReadinessReportCommand(
+      {
+        adultConfirmed: true,
+        regularModerateActivityLastThreeMonths: "no",
+        knownCardiovascularMetabolicOrRenalDisease: "no",
+        concerningSignsOrSymptoms: "no",
+        clinicianExerciseRestriction: "no",
+        currentLowerBodyOrBalanceConcern: "no",
+        controlledChairStandWithoutArms: "yes",
+        answersConfirmed: true,
+      },
+      new Date("2026-09-08T16:00:00Z"),
+      "00000000-0000-4000-8000-000000000008",
+    );
+    expect(command).not.toHaveProperty("outcome");
+    expect(command.reported_at).toBe("2026-09-08T16:00:00.000Z");
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ outcome: "selection_allowed" }), { status: 201 }),
+    );
+    await submitAssessmentReadinessReport("http://localhost:8000", athleteId, command, fetcher);
+    expect(fetcher).toHaveBeenCalledWith(
+      `http://localhost:8000/v1/athletes/${athleteId}/assessment-readiness-reports`,
+      expect.objectContaining({ method: "POST", body: JSON.stringify(command) }),
+    );
+  });
+
+  it("requires an explicit current-answer attestation before building readiness transport", () => {
+    expect(() => buildAssessmentReadinessReportCommand({
+      adultConfirmed: true,
+      regularModerateActivityLastThreeMonths: "unsure",
+      knownCardiovascularMetabolicOrRenalDisease: "unsure",
+      concerningSignsOrSymptoms: "unsure",
+      clinicianExerciseRestriction: "unsure",
+      currentLowerBodyOrBalanceConcern: "unsure",
+      controlledChairStandWithoutArms: "unsure",
+      answersConfirmed: false,
+    })).toThrow("Confirm that the readiness answers");
+  });
+
   it("builds a narrow non-medical selection command with explicit provenance", () => {
     const command = buildAssessmentRunCommand({
       environmentId,
