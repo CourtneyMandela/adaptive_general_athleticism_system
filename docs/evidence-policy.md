@@ -116,10 +116,12 @@ retesting must not invent a default interval. The schedule uses the exact histor
 to the latest performance, and a different interval requires a new review version. The software
 fixture intervals in tests are not scientific recommendations.
 
-The repository ships no fabricated assessment protocol or norm. Software tests may use explicitly
-labeled non-scientific fixtures in isolated databases. Protocol evidence, population validity,
-measurement reliability, result interpretation, and self-administration suitability require
-qualified review before production use.
+The repository ships no fabricated assessment norm. Software tests may use explicitly labeled
+non-scientific fixtures in isolated databases. One real 30-second chair-stand candidate is now
+prepared from exact PubMed source snapshots, but it remains non-authoritative until explicit
+owner-alpha ratification. Its low-strength, low-applicability claims, self-report bias, population
+mismatch, disclosed conflicts, protocol adaptation, and absence of independent domain-expert review
+remain visible. It authorizes no normative conversion or universal score.
 
 An `approved` protocol decision alone does not authorize the athlete runtime. The public catalog,
 workflow and reassessment set, selection persistence, and result-recording boundary require every
@@ -152,9 +154,10 @@ alone is insufficient: assessment-derived sources must be persisted performances
 definition. The initial calculation preserves the latest protocol-specific measurement and grades
 confidence conservatively; it is not a population norm or whole-domain athletic score.
 
-No estimation policy is shipped as production evidence. Synthetic test policies prove software
-lineage only. A real deployment must supply qualified policy review before the PWA will offer
-capability interpretation.
+The prepared chair-stand candidate includes a narrow estimation policy that preserves the direct
+repetition count as assessment-specific state. It is not production authority until ratified, and
+even after ratification it authorizes no normative, maximum-strength, sport-performance, or training
+interpretation. Other synthetic test policies prove software lineage only.
 
 The development-only assessment-governance bundle importer is a typed transport for externally
 curated records, not an evidence-review engine. New approved records must cite claims whose exact
@@ -171,6 +174,12 @@ content digest and decision audit, and commits all records atomically. This is r
 content, not source retrieval, evidence extraction, credential verification, medical clearance, or
 automatic scientific truth. The application role is not a professional credential, and every real
 release must retain that limitation in its applicability and uncertainty language.
+
+Prepared candidates are server-owned reviewed artifacts, not editable browser forms. The client
+submits only the exact candidate version, SHA-256 digest, and explicit attestation. The server binds
+the actual content and ratification time, and changed content requires a fresh review. A candidate
+may include exact supporting equipment needed to make its environmental constraints enforceable;
+that equipment is committed within the same decision transaction.
 
 ## Exercise resolution
 

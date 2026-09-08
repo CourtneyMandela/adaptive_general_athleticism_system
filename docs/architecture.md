@@ -881,8 +881,9 @@ deliberate data-migration milestone rather than silently invalidating historical
 
 The production-safe counterpart is deliberately narrower than CRUD. An authenticated
 `POST /v1/operator/assessment-governance/releases` request contains one complete candidate chain:
-exact evidence sources and claims, one review draft per claim, one self-administered assessment
-definition, a protocol-review draft, and a capability-estimation-policy draft. Drafts contain no
+exact evidence sources and claims, optional supporting equipment, one review draft per claim, one
+self-administered assessment definition, a protocol-review draft, and a
+capability-estimation-policy draft. Drafts contain no
 approval decision, reviewer identity, or authority-record creation time. The service binds those
 fields to the exact active `assessment_reviewer` assignment and explicit ratification time, requires
 all referenced evidence to be ready at that instant, verifies the resulting assessment projection,
@@ -891,6 +892,16 @@ content collisions fail rather than rewriting history. This owner-alpha ratifica
 accepted the content but does not infer their professional qualification. No real protocol is
 created automatically, and a browser presentation is required before the first real release is
 submitted.
+
+The first browser presentation is backed by a server-owned candidate registry rather than editable
+scientific fields. `GET /v1/operator/assessment-governance/candidates` returns each immutable
+candidate's human-readable meaning, exclusions, setup, steps, stop conditions, operational choices,
+source summaries, conflicts, limitations, version, and SHA-256 digest. Candidate ratification posts
+only that version, digest, and an explicit attestation. The server supplies the authority time and
+resolves the exact prepared records. Supporting equipment commits in the same transaction; the
+first chair-stand candidate creates a specific `chair` ontology item so environment selection can
+fail closed until the athlete reports it available. Exact retries return the original authority,
+while an occupied release identity or changed digest fails closed.
 
 ## Web
 

@@ -25,6 +25,7 @@ from agas_domain import (
     AssessmentMeasurementSchema,
     AssessmentMeasurementType,
     CapabilityDomain,
+    Equipment,
     EvidenceClaim,
     EvidenceSource,
     EvidenceSourceIdentifier,
@@ -103,6 +104,14 @@ def _release() -> AssessmentGovernanceReleaseRequest:
         prepared_at=NOW - timedelta(hours=1),
         ratified_at=NOW,
         sources=(source,),
+        supporting_equipment=(
+            Equipment(
+                created_at=NOW - timedelta(hours=2),
+                name="Synthetic assessment fixture",
+                category="synthetic_fixture",
+                capabilities={"software_test_only": True},
+            ),
+        ),
         claims=(claim,),
         evidence_reviews=(
             EvidenceClaimReviewDraft(
@@ -173,6 +182,7 @@ def test_ratified_release_is_atomic_idempotent_and_binds_authority(session: Sess
     decision = repository.get_decision_record(request.release_id)
 
     assert first.created_source_ids == (request.sources[0].id,)
+    assert first.created_equipment_ids == (request.supporting_equipment[0].id,)
     assert first.created_claim_ids == (request.claims[0].id,)
     assert first.created_evidence_review_ids == (request.evidence_reviews[0].id,)
     assert first.definition_created is True
@@ -181,6 +191,7 @@ def test_ratified_release_is_atomic_idempotent_and_binds_authority(session: Sess
     assert first.decision_record_created is True
     assert first.assessment.readiness == "ready"
     assert second.created_source_ids == ()
+    assert second.created_equipment_ids == ()
     assert second.created_claim_ids == ()
     assert second.created_evidence_review_ids == ()
     assert second.definition_created is False
@@ -312,4 +323,5 @@ def test_release_rolls_back_when_review_lineage_is_invalid(session: Session) -> 
     repository = DomainRepository(session)
     assert repository.get_evidence_source(request.sources[0].id) is None
     assert repository.get_evidence_claim(request.claims[0].id) is None
+    assert repository.get_equipment(request.supporting_equipment[0].id) is None
     assert repository.get_assessment_definition(request.definition.id) is None

@@ -27,6 +27,12 @@ from agas_api.assessment_governance import (
     AssessmentGovernanceProjectionError,
     AssessmentGovernanceProjector,
 )
+from agas_api.assessment_governance_candidates import (
+    AssessmentGovernanceCandidateProjection,
+    RatifyAssessmentGovernanceCandidateCommand,
+    list_assessment_governance_candidates,
+    ratify_assessment_governance_candidate,
+)
 from agas_api.assessment_governance_release import (
     AssessmentGovernanceReleaseConflictError,
     AssessmentGovernanceReleaseRequest,
@@ -338,6 +344,47 @@ def create_assessment_governance_release(
     except AssessmentGovernanceReleaseConflictError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     except AssessmentGovernanceReleaseValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.get(
+    "/v1/operator/assessment-governance/candidates",
+    tags=["operator"],
+    response_model=AssessmentGovernanceCandidateProjection,
+)
+def get_assessment_governance_candidates(
+    session: Annotated[Session, Depends(database_session_dependency)],
+    _authority: Annotated[AuthorizedRole, Depends(assessment_reviewer_dependency)],
+) -> AssessmentGovernanceCandidateProjection:
+    return list_assessment_governance_candidates(session)
+
+
+@app.post(
+    "/v1/operator/assessment-governance/candidates/{candidate_id}/ratifications",
+    tags=["operator"],
+    response_model=AssessmentGovernanceReleaseResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def ratify_prepared_assessment_governance_candidate(
+    candidate_id: UUID,
+    command: RatifyAssessmentGovernanceCandidateCommand,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authority: Annotated[AuthorizedRole, Depends(assessment_reviewer_dependency)],
+) -> AssessmentGovernanceReleaseResult:
+    try:
+        return ratify_assessment_governance_candidate(
+            session,
+            candidate_id,
+            command,
+            authority,
+        )
+    except KeyError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except AssessmentGovernanceReleaseConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except (AssessmentGovernanceReleaseValidationError, ValueError) as error:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
         ) from error

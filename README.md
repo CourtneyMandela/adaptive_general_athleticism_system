@@ -158,6 +158,8 @@ GET  /v1/athletes/{athlete_id}/planning-status
 GET  /v1/athletes/{athlete_id}/current-week?on=YYYY-MM-DD
 GET  /v1/operator/environment-review-queue
 GET  /v1/operator/assessment-governance
+GET  /v1/operator/assessment-governance/candidates
+POST /v1/operator/assessment-governance/candidates/{candidate_id}/ratifications
 POST /v1/operator/assessment-governance/releases
 GET  /v1/operator/planning-review-queue
 GET  /v1/operator/post-block-review-queue
@@ -242,10 +244,12 @@ This permission is not a scientific credential. The role-protected
 `GET /v1/operator/assessment-governance` projection and `/review/assessments` workbench expose
 point-in-time protocol review, measurement schema, self-administration, capability-estimation
 policy, immutable history, and the readiness of every cited evidence claim at the authority
-record's own review time. The current workbench remains read-only. The narrow release endpoint can
-atomically ratify one externally prepared complete evidence-to-estimate chain, rejects
-caller-supplied approval identity, and records the authenticated account, exact role assignment,
-content digest, and decision audit. It does not retrieve or interpret research, verify reviewer
+record's own review time. The workbench also presents immutable server-owned candidates with their
+meaning, exclusions, procedure, sources, conflicts, limitations, version, and digest. It accepts
+only an explicit attestation to the exact displayed candidate; the browser cannot edit the
+scientific payload. The narrow release endpoint can atomically ratify one complete
+evidence-to-estimate chain, rejects caller-supplied approval identity, and records the authenticated
+account, exact role assignment, content digest, and decision audit. It does not verify reviewer
 credentials, create athlete eligibility decisions, or generate a workout.
 
 The evidence service can search PubMed and retrieve one reviewable metadata snapshot through
@@ -785,11 +789,15 @@ override yet. Governed competency-floor and priority-policy authoring
 workflows are also not implemented. Initial planning therefore requires externally prepared,
 reviewed authorities even though candidate-context, post-block review, and replanning inputs can be
 authored through role-protected structured forms.
-No real assessment protocol is seeded, so production assessment runs and result entry remain
-unavailable. Crossref/OpenAlex adapters, batch retrieval, automated claim extraction, and qualified
-production claim approval are not implemented. PubMed retrieval produces a curation input only;
-the evidence bundle transports externally reviewed data. Do not use it for sensitive or production
-athlete data.
+No real assessment protocol is automatically approved. The protected assessment workbench now
+presents one immutable 30-second chair-stand candidate authored from exact PubMed source snapshots,
+including its narrow meaning, procedure, conflicts, and limitations. Explicit owner-alpha
+ratification records the exact digest and authority and atomically creates the evidence, supporting
+chair equipment, protocol, and assessment-specific estimation policy. Athlete selection still
+requires separate current eligibility and reported chair availability. Crossref/OpenAlex adapters,
+batch retrieval, automated claim extraction, independent domain-expert approval, and a complete
+assessment battery are not implemented. PubMed retrieval produces a curation input only; do not use
+the development importer for sensitive or production athlete data.
 The browser does not classify raw symptoms. Selecting a concerning symptom pauses the ordinary
 workout flow instead of fabricating a safety signal.
 Progression remains backend-governed: the PWA never chooses among policies or invents exposure

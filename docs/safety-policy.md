@@ -44,6 +44,20 @@ blocks a competing run.
 
 ## Policy classes
 
+### Assessment candidates
+
+Protocol ratification and athlete eligibility are separate. The first prepared chair-stand
+candidate requires a stable armless 43–45 cm chair against a wall on a nonslip surface and remains
+environment-ineligible until that exact `chair` category is reported available. Its athlete-facing
+procedure requires a clear area, controlled movement without arm assistance, and an invalid/stopped
+result rather than a guessed count when the setup changes or the attempt cannot continue.
+
+The candidate tells the athlete not to start without a current eligibility decision and to stop for
+pain, dizziness, chest discomfort, unusual shortness of breath, loss of balance, or uncontrolled
+movement. These are conservative stop boundaries, not symptom classification, diagnosis, medical
+clearance, or proof that self-administration is suitable for a particular person. Candidate
+ratification cannot bypass the separate eligibility gate.
+
 ### Escalation
 
 Concerning or unexplained symptoms must be able to interrupt ordinary programming and advise

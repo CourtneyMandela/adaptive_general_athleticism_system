@@ -15,6 +15,7 @@ from agas_domain import (
     CapabilityDomain,
     CapabilityEstimationPolicy,
     DecisionRecord,
+    Equipment,
     EvidenceClaim,
     EvidenceClaimReview,
     EvidenceReviewDecision,
@@ -149,9 +150,11 @@ class AssessmentGovernanceReleaseRequest(BaseModel):
     release_version: Literal["assessment-governance-release@1.0.0"]
     release_id: UUID
     release_label: NonEmptyText
+    candidate_content_digest: Annotated[str | None, Field(pattern=r"^sha256:[0-9a-f]{64}$")] = None
     prepared_at: datetime
     ratified_at: datetime
     sources: Annotated[tuple[EvidenceSource, ...], Field(min_length=1)]
+    supporting_equipment: tuple[Equipment, ...] = ()
     claims: Annotated[tuple[EvidenceClaim, ...], Field(min_length=1)]
     evidence_reviews: Annotated[tuple[EvidenceClaimReviewDraft, ...], Field(min_length=1)]
     definition: AssessmentDefinition
@@ -179,6 +182,9 @@ class AssessmentGovernanceReleaseRequest(BaseModel):
             claims=self.claims,
         )
         claim_ids = {claim.id for claim in self.claims}
+        equipment_ids = tuple(item.id for item in self.supporting_equipment)
+        if len(set(equipment_ids)) != len(equipment_ids):
+            raise ValueError("supporting equipment must have unique ids")
         review_claim_ids = tuple(review.evidence_claim_id for review in self.evidence_reviews)
         if len(set(review_claim_ids)) != len(review_claim_ids):
             raise ValueError("a release must contain exactly one review for each evidence claim")
@@ -201,7 +207,12 @@ class AssessmentGovernanceReleaseRequest(BaseModel):
             raise ValueError("estimation policy observation type must match the bundled definition")
         if self.estimation_policy.unit_or_scale != self.definition.unit_or_scale:
             raise ValueError("estimation policy unit must match the bundled definition")
-        records: tuple[VersionedRecord, ...] = (*self.sources, *self.claims, self.definition)
+        records: tuple[VersionedRecord, ...] = (
+            *self.sources,
+            *self.supporting_equipment,
+            *self.claims,
+            self.definition,
+        )
         if any(record.created_at > self.prepared_at for record in records):
             raise ValueError("prepared content cannot be timestamped after prepared_at")
         return self
@@ -216,6 +227,7 @@ class AssessmentGovernanceReleaseResult(BaseModel):
     authority_account_id: UUID
     authority_assignment_id: UUID
     created_source_ids: tuple[UUID, ...]
+    created_equipment_ids: tuple[UUID, ...] = ()
     created_claim_ids: tuple[UUID, ...]
     created_evidence_review_ids: tuple[UUID, ...]
     definition_created: bool
@@ -293,9 +305,15 @@ def ratify_assessment_governance_release(
         ),
         evidence=(
             f"content_digest:{content_digest}",
+            *(
+                (f"candidate_content_digest:{request.candidate_content_digest}",)
+                if request.candidate_content_digest is not None
+                else ()
+            ),
             f"authority_account_id:{authority.account_id}",
             f"authority_assignment_id:{authority.assignment_id}",
             *(f"evidence_claim_id:{claim.id}" for claim in request.claims),
+            *(f"supporting_equipment_id:{item.id}" for item in request.supporting_equipment),
         ),
         uncertainty=request.release_uncertainty,
         decision_version=f"{request.release_version}:ratification@1.0.0",
@@ -303,6 +321,7 @@ def ratify_assessment_governance_release(
     )
 
     created_source_ids: list[UUID] = []
+    created_equipment_ids: list[UUID] = []
     created_claim_ids: list[UUID] = []
     created_evidence_review_ids: list[UUID] = []
     try:
@@ -327,6 +346,16 @@ def ratify_assessment_governance_release(
                 add=repository.add_evidence_claim,
             ):
                 created_claim_ids.append(claim.id)
+            session.flush()
+
+        for equipment in request.supporting_equipment:
+            if _ensure_exact(
+                label="supporting equipment",
+                expected=equipment,
+                existing=repository.get_equipment(equipment.id),
+                add=repository.add_equipment,
+            ):
+                created_equipment_ids.append(equipment.id)
             session.flush()
 
         for review in sorted(
@@ -410,6 +439,7 @@ def ratify_assessment_governance_release(
         authority_account_id=authority.account_id,
         authority_assignment_id=authority.assignment_id,
         created_source_ids=tuple(created_source_ids),
+        created_equipment_ids=tuple(created_equipment_ids),
         created_claim_ids=tuple(created_claim_ids),
         created_evidence_review_ids=tuple(created_evidence_review_ids),
         definition_created=definition_created,

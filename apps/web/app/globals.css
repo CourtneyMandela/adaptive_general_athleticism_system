@@ -815,6 +815,9 @@ button { cursor: pointer; }
 .status-badge--ready { background: var(--accent-soft); color: var(--accent); }
 .status-badge--incomplete_history,
 .status-badge--blocked { background: var(--danger-soft); color: var(--danger); }
+.status-badge--ratified { background: var(--accent-soft); color: var(--accent); }
+.status-badge--available { background: #f2e8c9; color: #765c13; }
+.status-badge--conflict { background: var(--danger-soft); color: var(--danger); }
 
 .planning-queue-summary {
   display: grid;
@@ -856,6 +859,42 @@ button { cursor: pointer; }
 .assessment-governance-detail { display: grid; gap: .3rem; margin-top: .55rem; padding: .7rem; border: 1px solid var(--line); border-radius: .65rem; background: #fff; }
 .assessment-governance-detail span { color: var(--muted); font-size: .78rem; line-height: 1.45; }
 .assessment-governance-detail code { overflow-wrap: anywhere; font-size: .72rem; }
+.assessment-candidate {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: .85rem;
+  background: var(--surface);
+}
+.assessment-candidate > header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
+.assessment-candidate > header h2,
+.assessment-candidate > p,
+.assessment-candidate h3 { margin: 0; }
+.assessment-candidate > p { color: var(--muted); line-height: 1.55; }
+.assessment-candidate details { padding: .8rem; border: 1px solid var(--line); border-radius: .7rem; background: #fff; }
+.assessment-candidate details > summary { color: var(--accent); cursor: pointer; font-weight: 850; }
+.assessment-candidate details ul,
+.assessment-candidate details ol { margin: .65rem 0 0; padding-left: 1.3rem; }
+.assessment-candidate details li { margin-top: .35rem; line-height: 1.5; }
+.assessment-candidate-meaning { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+.assessment-candidate-meaning section { display: grid; gap: .45rem; padding: .8rem; border-radius: .7rem; background: #f4f6f1; }
+.assessment-candidate-meaning p,
+.assessment-candidate-meaning ul { margin: 0; line-height: 1.5; }
+.assessment-candidate-meaning ul { padding-left: 1.2rem; }
+.assessment-candidate-evidence { display: grid; gap: .65rem; margin-top: .7rem; }
+.assessment-candidate-evidence article { display: grid; gap: .45rem; padding: .8rem; border-radius: .65rem; background: #f4f6f1; }
+.assessment-candidate-evidence article p,
+.assessment-candidate-evidence article ul { margin: 0; line-height: 1.5; }
+.assessment-candidate-evidence article ul { padding-left: 1.2rem; }
+.assessment-candidate-integrity { display: grid; gap: .3rem; padding: .75rem; border-radius: .7rem; background: #f4f6f1; color: var(--muted); font-size: .75rem; }
+.assessment-candidate-integrity code { overflow-wrap: anywhere; }
+.assessment-candidate-approval { display: grid; gap: .8rem; padding: .9rem; border: 1px solid var(--accent); border-radius: .75rem; background: var(--accent-soft); }
+.assessment-candidate-approval label { display: flex; align-items: flex-start; gap: .6rem; font-weight: 700; line-height: 1.45; }
+.assessment-candidate-approval input { width: auto; margin-top: .18rem; }
+.assessment-candidate-approval button { justify-self: start; }
+.assessment-candidate-approval button:disabled { cursor: not-allowed; opacity: .55; }
 
 .post-block-queue {
   display: grid;
@@ -1083,6 +1122,8 @@ button { cursor: pointer; }
   .planning-queue-items { grid-template-columns: 1fr; }
   .planning-queue-summary > header,
   .planning-queue-items article > header { flex-direction: column; }
+  .assessment-candidate > header { flex-direction: column; }
+  .assessment-candidate-meaning { grid-template-columns: 1fr; }
   .resource-strategy-loader, .resource-priority-grid, .resource-history, .resource-check-grid, .resource-ceilings, .resource-exercise-grid, .resource-option-grid { grid-template-columns: 1fr; }
   .resource-provenance > header { flex-direction: column; }
   .block-demand-options, .block-policy-grid, .block-context-grid, .block-context-summary, .block-allocation-grid { grid-template-columns: 1fr; }

@@ -73,8 +73,48 @@ test("the bootstrap athlete deep link opens the PWA without UUID copy and paste"
 });
 
 test("assessment workbench makes missing scientific governance explicit", async ({ page }) => {
-  await page.route("http://localhost:8000/v1/operator/assessment-governance**", (route) =>
-    route.fulfill({
+  await page.route("http://localhost:8000/v1/operator/assessment-governance**", (route) => {
+    if (route.request().url().endsWith("/candidates")) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          projected_at: "2026-09-08T15:00:00Z",
+          projection_version: "assessment-governance-candidates@1.0.0",
+          items: [{
+            status: "available",
+            ratified_at: null,
+            issues: [],
+            candidate: {
+              candidate_version: "assessment-governance-candidate@1.0.0",
+              candidate_id: "94000000-0000-4000-8000-000000000001",
+              slug: "thirty_second_chair_stand",
+              release_label: "30-second chair stand owner-alpha release",
+              prepared_at: "2026-09-08T10:45:00Z",
+              content_digest: `sha256:${"a".repeat(64)}`,
+              summary: "A narrow, repeatable first measurement.",
+              measures: "Assessment-specific sit-to-stand performance.",
+              does_not_measure: ["A universal athleticism score."],
+              capability_domain: "muscular_endurance",
+              estimate_scope: "assessment_specific:thirty_second_chair_stand_repetitions",
+              setup_requirements: ["A stable armless chair."],
+              protocol_steps: ["Complete controlled stands for 30 seconds."],
+              stop_conditions: ["Stop for pain or dizziness."],
+              operational_choices: ["A single result remains low confidence."],
+              unresolved_limitations: ["Population transfer is uncertain."],
+              evidence: [{
+                title: "Primary validity study",
+                source_url: "https://pubmed.ncbi.nlm.nih.gov/35949374/",
+                population: "81 healthy adults aged 19-35.",
+                finding: "Count correlated with comparator tests.",
+                limitations: ["Single cross-sectional study."],
+                conflict_disclosure: "No declared conflicts.",
+              }],
+            },
+          }],
+        }),
+      });
+    }
+    return route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
         projected_at: "2026-08-30T16:00:00Z",
@@ -107,13 +147,16 @@ test("assessment workbench makes missing scientific governance explicit", async 
           },
         ],
       }),
-    }),
-  );
+    });
+  });
 
   await page.goto("/review/assessments");
 
   await expect(page.getByRole("heading", { name: "Assessment governance" })).toBeVisible();
   await expect(page.getByText("Access is not scientific qualification.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "30-second chair stand owner-alpha release" })).toBeVisible();
+  await expect(page.getByText("A universal athleticism score.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Approve exact release" })).toBeDisabled();
   await expect(page.getByRole("heading", { name: "Fixture cycle" })).toBeVisible();
   await expect(page.getByText("assessment definition has no protocol review history")).toBeVisible();
   await expect(page.getByText("No capability-estimation policy exists.")).toBeVisible();

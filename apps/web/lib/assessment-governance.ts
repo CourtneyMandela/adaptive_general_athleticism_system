@@ -91,6 +91,48 @@ export interface AssessmentGovernanceProjection {
   projection_version: string;
 }
 
+export interface AssessmentCandidateEvidenceSummary {
+  title: string;
+  source_url: string;
+  population: string;
+  finding: string;
+  limitations: string[];
+  conflict_disclosure: string;
+}
+
+export interface AssessmentGovernanceCandidate {
+  candidate_version: "assessment-governance-candidate@1.0.0";
+  candidate_id: string;
+  slug: string;
+  release_label: string;
+  prepared_at: string;
+  content_digest: string;
+  summary: string;
+  measures: string;
+  does_not_measure: string[];
+  capability_domain: string;
+  estimate_scope: string;
+  setup_requirements: string[];
+  protocol_steps: string[];
+  stop_conditions: string[];
+  operational_choices: string[];
+  unresolved_limitations: string[];
+  evidence: AssessmentCandidateEvidenceSummary[];
+}
+
+export interface AssessmentGovernanceCandidateItem {
+  candidate: AssessmentGovernanceCandidate;
+  status: "available" | "ratified" | "conflict";
+  ratified_at: string | null;
+  issues: string[];
+}
+
+export interface AssessmentGovernanceCandidateProjection {
+  projected_at: string;
+  items: AssessmentGovernanceCandidateItem[];
+  projection_version: string;
+}
+
 export class AssessmentGovernanceError extends Error {
   constructor(message: string, readonly status?: number) {
     super(message);
@@ -129,6 +171,30 @@ function isItem(value: unknown): value is AssessmentGovernanceItem {
     && Array.isArray(item.evidence_claims)
     && isEvidenceEvaluation(item.review_evidence_governance)
     && isEvidenceEvaluation(item.estimation_policy_evidence_governance)
+    && Array.isArray(item.issues),
+  );
+}
+
+function isCandidateItem(value: unknown): value is AssessmentGovernanceCandidateItem {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Partial<AssessmentGovernanceCandidateItem>;
+  const candidate = item.candidate as Partial<AssessmentGovernanceCandidate> | undefined;
+  return Boolean(
+    candidate
+    && candidate.candidate_version === "assessment-governance-candidate@1.0.0"
+    && typeof candidate.candidate_id === "string"
+    && typeof candidate.release_label === "string"
+    && typeof candidate.content_digest === "string"
+    && typeof candidate.summary === "string"
+    && typeof candidate.measures === "string"
+    && Array.isArray(candidate.does_not_measure)
+    && Array.isArray(candidate.setup_requirements)
+    && Array.isArray(candidate.protocol_steps)
+    && Array.isArray(candidate.stop_conditions)
+    && Array.isArray(candidate.operational_choices)
+    && Array.isArray(candidate.unresolved_limitations)
+    && Array.isArray(candidate.evidence)
+    && ["available", "ratified", "conflict"].includes(item.status ?? "")
     && Array.isArray(item.issues),
   );
 }
@@ -172,4 +238,59 @@ export async function fetchAssessmentGovernance(
     );
   }
   return body as AssessmentGovernanceProjection;
+}
+
+export async function fetchAssessmentGovernanceCandidates(
+  apiBaseUrl: string,
+  fetcher: typeof fetch = fetch,
+): Promise<AssessmentGovernanceCandidateProjection> {
+  const response = await fetcher(
+    `${apiBaseUrl.replace(/\/$/, "")}/v1/operator/assessment-governance/candidates`,
+    {
+      headers: authorizedHeaders(
+        { Accept: "application/json" },
+        assessmentReviewerDevelopmentAccessToken,
+      ),
+    },
+  );
+  if (!response.ok) throw await responseError(response);
+  const body = (await response.json()) as Partial<AssessmentGovernanceCandidateProjection>;
+  if (
+    !body
+    || !Array.isArray(body.items)
+    || !body.items.every(isCandidateItem)
+    || typeof body.projected_at !== "string"
+    || typeof body.projection_version !== "string"
+  ) {
+    throw new AssessmentGovernanceError(
+      "Assessment candidate response is invalid.",
+      response.status,
+    );
+  }
+  return body as AssessmentGovernanceCandidateProjection;
+}
+
+export async function ratifyAssessmentGovernanceCandidate(
+  apiBaseUrl: string,
+  candidate: AssessmentGovernanceCandidate,
+  fetcher: typeof fetch = fetch,
+): Promise<unknown> {
+  const response = await fetcher(
+    `${apiBaseUrl.replace(/\/$/, "")}/v1/operator/assessment-governance/candidates/`
+      + `${candidate.candidate_id}/ratifications`,
+    {
+      method: "POST",
+      headers: authorizedHeaders(
+        { Accept: "application/json", "Content-Type": "application/json" },
+        assessmentReviewerDevelopmentAccessToken,
+      ),
+      body: JSON.stringify({
+        candidate_version: candidate.candidate_version,
+        content_digest: candidate.content_digest,
+        approval_attestation: true,
+      }),
+    },
+  );
+  if (!response.ok) throw await responseError(response);
+  return response.json();
 }

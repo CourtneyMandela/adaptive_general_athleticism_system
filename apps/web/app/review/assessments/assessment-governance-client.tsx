@@ -5,6 +5,9 @@ import { useCallback, useEffect, useState } from "react";
 
 import {
   fetchAssessmentGovernance,
+  fetchAssessmentGovernanceCandidates,
+  ratifyAssessmentGovernanceCandidate,
+  type AssessmentGovernanceCandidateProjection,
   type AssessmentGovernanceProjection,
 } from "@/lib/assessment-governance";
 import type { EvidenceAuthorityEvaluation } from "@/lib/evidence-governance";
@@ -41,15 +44,25 @@ function EvidenceAuthorityStatus({
 
 export function AssessmentGovernanceClient() {
   const [projection, setProjection] = useState<AssessmentGovernanceProjection | null>(null);
+  const [candidates, setCandidates] = useState<AssessmentGovernanceCandidateProjection | null>(null);
   const [loading, setLoading] = useState(true);
+  const [ratifying, setRatifying] = useState<string | null>(null);
+  const [attestations, setAttestations] = useState<Record<string, boolean>>({});
   const [message, setMessage] = useState("");
+  const [messageKind, setMessageKind] = useState<"error" | "success">("error");
 
   const refresh = useCallback(async () => {
     setLoading(true);
     setMessage("");
     try {
-      setProjection(await fetchAssessmentGovernance(apiBaseUrl));
+      const [nextProjection, nextCandidates] = await Promise.all([
+        fetchAssessmentGovernance(apiBaseUrl),
+        fetchAssessmentGovernanceCandidates(apiBaseUrl),
+      ]);
+      setProjection(nextProjection);
+      setCandidates(nextCandidates);
     } catch (error) {
+      setMessageKind("error");
       setMessage(error instanceof Error ? error.message : "Unable to load assessment governance.");
     } finally {
       setLoading(false);
@@ -58,12 +71,19 @@ export function AssessmentGovernanceClient() {
 
   useEffect(() => {
     let active = true;
-    fetchAssessmentGovernance(apiBaseUrl)
-      .then((result) => {
-        if (active) setProjection(result);
+    Promise.all([
+      fetchAssessmentGovernance(apiBaseUrl),
+      fetchAssessmentGovernanceCandidates(apiBaseUrl),
+    ])
+      .then(([governanceResult, candidateResult]) => {
+        if (active) {
+          setProjection(governanceResult);
+          setCandidates(candidateResult);
+        }
       })
       .catch((error: unknown) => {
         if (active) {
+          setMessageKind("error");
           setMessage(
             error instanceof Error ? error.message : "Unable to load assessment governance.",
           );
@@ -76,6 +96,32 @@ export function AssessmentGovernanceClient() {
       active = false;
     };
   }, []);
+
+  async function ratify(candidateId: string) {
+    const item = candidates?.items.find((entry) => entry.candidate.candidate_id === candidateId);
+    if (!item || !attestations[candidateId] || item.status !== "available") return;
+    setRatifying(candidateId);
+    setMessage("");
+    try {
+      await ratifyAssessmentGovernanceCandidate(apiBaseUrl, item.candidate);
+      const [nextProjection, nextCandidates] = await Promise.all([
+        fetchAssessmentGovernance(apiBaseUrl),
+        fetchAssessmentGovernanceCandidates(apiBaseUrl),
+      ]);
+      setProjection(nextProjection);
+      setCandidates(nextCandidates);
+      setAttestations((current) => ({ ...current, [candidateId]: false }));
+      setMessageKind("success");
+      setMessage(
+        "The exact candidate was ratified and its evidence, protocol, policy, and decision history were saved atomically.",
+      );
+    } catch (error) {
+      setMessageKind("error");
+      setMessage(error instanceof Error ? error.message : "Unable to ratify the candidate.");
+    } finally {
+      setRatifying(null);
+    }
+  }
 
   const readyCount = projection?.items.filter((item) => item.readiness === "ready").length ?? 0;
   const blockedCount = projection?.items.filter((item) => item.readiness === "blocked").length ?? 0;
@@ -102,10 +148,143 @@ export function AssessmentGovernanceClient() {
       <aside className="review-boundary" aria-label="Assessment-review authority boundary">
         <strong>Access is not scientific qualification.</strong>
         <span>
-          This workbench is read-only. It exposes immutable review history and missing governance;
-          it cannot approve a protocol, invent evidence, or authorize an athlete to perform a test.
+          This workbench can ratify only an exact prepared release after you review it below. It
+          cannot edit scientific content or authorize an athlete to perform a test; athlete-specific
+          eligibility remains a separate decision.
         </span>
       </aside>
+
+      <section className="planning-queue-summary" aria-labelledby="candidate-title">
+        <header>
+          <div>
+            <p className="eyebrow">Prepared by engineering and evidence review</p>
+            <h2 id="candidate-title">Assessment candidates</h2>
+          </div>
+        </header>
+        <p>
+          These are complete, immutable proposals. Your role is to decide whether the exact narrow
+          meaning and limitations are acceptable for the owner-only alpha—not to write the science.
+        </p>
+      </section>
+
+      {candidates?.items.map((item) => {
+        const candidate = item.candidate;
+        const busy = ratifying === candidate.candidate_id;
+        return (
+          <section
+            className="assessment-candidate"
+            aria-labelledby={`candidate-${candidate.candidate_id}`}
+            key={candidate.candidate_id}
+          >
+            <header>
+              <div>
+                <p className="eyebrow">{label(candidate.capability_domain)} · prepared candidate</p>
+                <h2 id={`candidate-${candidate.candidate_id}`}>{candidate.release_label}</h2>
+              </div>
+              <span className={`status-badge status-badge--${item.status}`}>
+                {item.status}
+              </span>
+            </header>
+            <p>{candidate.summary}</p>
+
+            <div className="assessment-candidate-meaning">
+              <section>
+                <h3>What it measures</h3>
+                <p>{candidate.measures}</p>
+              </section>
+              <section>
+                <h3>What it does not measure</h3>
+                <ul>{candidate.does_not_measure.map((value) => <li key={value}>{value}</li>)}</ul>
+              </section>
+            </div>
+
+            <details open>
+              <summary>Required setup</summary>
+              <ol>{candidate.setup_requirements.map((value) => <li key={value}>{value}</li>)}</ol>
+            </details>
+            <details open>
+              <summary>Exact athlete protocol</summary>
+              <ol>{candidate.protocol_steps.map((value) => <li key={value}>{value}</li>)}</ol>
+            </details>
+            <details open>
+              <summary>Do not start or stop</summary>
+              <ul>{candidate.stop_conditions.map((value) => <li key={value}>{value}</li>)}</ul>
+            </details>
+            <details>
+              <summary>Product choices and interpretation</summary>
+              <ul>{candidate.operational_choices.map((value) => <li key={value}>{value}</li>)}</ul>
+              <p className="form-help">Stored scope: {candidate.estimate_scope}</p>
+            </details>
+            <details open>
+              <summary>Important unresolved limitations</summary>
+              <ul>{candidate.unresolved_limitations.map((value) => <li key={value}>{value}</li>)}</ul>
+            </details>
+            <details>
+              <summary>{candidate.evidence.length} primary evidence source(s)</summary>
+              <div className="assessment-candidate-evidence">
+                {candidate.evidence.map((evidence) => (
+                  <article key={evidence.source_url}>
+                    <h3>{evidence.title}</h3>
+                    <p><strong>Population:</strong> {evidence.population}</p>
+                    <p><strong>Finding:</strong> {evidence.finding}</p>
+                    <ul>{evidence.limitations.map((value) => <li key={value}>{value}</li>)}</ul>
+                    <p><strong>Conflicts:</strong> {evidence.conflict_disclosure}</p>
+                    <a href={evidence.source_url} target="_blank" rel="noreferrer" className="text-link">
+                      Open primary PubMed record
+                    </a>
+                  </article>
+                ))}
+              </div>
+            </details>
+
+            <div className="assessment-candidate-integrity">
+              <span>Prepared {new Date(candidate.prepared_at).toLocaleString()}</span>
+              <code>{candidate.candidate_version}</code>
+              <code>{candidate.content_digest}</code>
+            </div>
+
+            {item.issues.length ? (
+              <p className="form-error" role="alert">{item.issues.join(" ")}</p>
+            ) : null}
+            {item.status === "ratified" ? (
+              <p className="form-success">
+                Ratified {item.ratified_at ? new Date(item.ratified_at).toLocaleString() : "previously"}.
+                The protocol is now eligible for the separate athlete-screening workflow.
+              </p>
+            ) : item.status === "available" ? (
+              <div className="assessment-candidate-approval">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={attestations[candidate.candidate_id] ?? false}
+                    onChange={(event) => setAttestations((current) => ({
+                      ...current,
+                      [candidate.candidate_id]: event.target.checked,
+                    }))}
+                  />
+                  <span>
+                    I reviewed the measures, non-measures, protocol, evidence, conflicts, and
+                    limitations above. I approve this exact release for the owner-only alpha.
+                  </span>
+                </label>
+                <button
+                  type="button"
+                  className="primary-button"
+                  disabled={!attestations[candidate.candidate_id] || busy}
+                  onClick={() => void ratify(candidate.candidate_id)}
+                >
+                  {busy ? "Ratifying exact release…" : "Approve exact release"}
+                </button>
+                <p className="form-help">
+                  This records your account and exact active reviewer-role assignment. It does not
+                  claim that you are a clinician or independently qualified scientific reviewer.
+                </p>
+              </div>
+            ) : null}
+          </section>
+        );
+      })}
+      {!candidates && loading ? <p className="planning-queue-empty">Loading prepared candidates…</p> : null}
 
       <section className="planning-queue-summary" aria-labelledby="assessment-summary-title">
         <header>
@@ -124,7 +303,14 @@ export function AssessmentGovernanceClient() {
         </dl>
       </section>
 
-      {message ? <p className="form-error review-message" role="alert">{message}</p> : null}
+      {message ? (
+        <p
+          className={`${messageKind === "success" ? "form-success" : "form-error"} review-message`}
+          role={messageKind === "error" ? "alert" : "status"}
+        >
+          {message}
+        </p>
+      ) : null}
       {!projection && loading ? <p className="planning-queue-empty">Loading assessment governance…</p> : null}
       {projection && !projection.items.length ? (
         <p className="planning-queue-empty">
