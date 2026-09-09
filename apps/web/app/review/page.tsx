@@ -106,6 +106,14 @@ function PreparationContext({
 
       <section className="preparation-group" aria-labelledby="policy-options-title">
         <h3 id="policy-options-title">Approved priority policies</h3>
+        {!projection.priority_policy_options.length ? (
+          <p className="form-help">
+            No policy is approved yet. Review the engineering-prepared candidate under{" "}
+            <Link href="/review/planning-authorities" className="text-link">
+              Planning authorities
+            </Link>.
+          </p>
+        ) : null}
         {projection.priority_policy_options.length ? (
           <div className="preparation-options">
             {projection.priority_policy_options.map(({ policy, review }) => (

@@ -185,6 +185,13 @@ the actual content and ratification time, and changed content requires a fresh r
 may include exact supporting equipment needed to make its environmental constraints enforceable;
 that equipment is committed within the same decision transaction.
 
+The same distinction applies to planning-policy candidates. The first prepared priority policy
+cites PMID 41843416 for the broad finding that resistance training improves multiple adult
+physical-capacity outcomes. That evidence does not establish the candidate's numeric weights,
+thresholds, or maximum simultaneous priorities. Those values are explicitly identified as a
+versioned engineering prior and require counterfactual and personal-response evaluation. Evidence
+provenance must never be presented as scientific validation of values the source did not study.
+
 ## Exercise resolution
 
 Exercise ontology metadata and resolver scores are not evidence of exercise equivalence. A full

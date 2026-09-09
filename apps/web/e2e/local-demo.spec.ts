@@ -261,6 +261,69 @@ test("assessment workbench makes missing scientific governance explicit", async 
   await expect(page.getByText("No capability-estimation policy exists.")).toBeVisible();
 });
 
+test("owner can ratify an exact prepared planning policy without authoring values", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  let ratified = false;
+  let submittedBody: Record<string, unknown> = {};
+  const candidate = {
+    candidate_version: "planning-governance-candidate@1.0.0",
+    candidate_id: "98400000-0000-4000-8000-000000000001",
+    slug: "owner_alpha_conservative_priority_policy",
+    release_label: "Conservative owner-alpha priority policy",
+    prepared_at: "2026-09-09T10:30:00Z",
+    content_digest: `sha256:${"b".repeat(64)}`,
+    summary: "A transparent first ranking policy.",
+    governs: ["How reviewed inputs are combined."],
+    does_not_establish: ["Which adaptation Courtney should develop."],
+    operational_choices: ["At most two adaptations may receive DEVELOP status."],
+    unresolved_limitations: ["The numerical policy is an engineering prior."],
+    evidence: [{
+      title: "ACSM resistance-training position stand (2026)",
+      source_url: "https://pubmed.ncbi.nlm.nih.gov/41843416/",
+      population: "Healthy adults.",
+      finding: "Resistance training improved multiple outcomes.",
+      limitations: ["The source does not validate ranking weights."],
+      conflict_disclosure: "Full-text review remains pending.",
+    }],
+  };
+  await page.route("http://localhost:8000/v1/operator/planning-governance/candidates**", async (route) => {
+    if (route.request().method() === "POST") {
+      submittedBody = route.request().postDataJSON() as Record<string, unknown>;
+      ratified = true;
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify({ ok: true }) });
+    }
+    return route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        projected_at: "2026-09-09T15:00:00Z",
+        projection_version: "planning-governance-candidates@1.0.0",
+        items: [{
+          candidate,
+          status: ratified ? "ratified" : "available",
+          ratified_at: ratified ? "2026-09-09T15:00:00Z" : null,
+          issues: [],
+        }],
+      }),
+    });
+  });
+
+  await page.goto("/review/planning-authorities");
+
+  await expect(page.getByRole("heading", { name: "Prepared planning authorities" })).toBeVisible();
+  await expect(page.getByText("Which adaptation Courtney should develop.")).toBeVisible();
+  const approve = page.getByRole("button", { name: "Approve exact policy" });
+  await expect(approve).toBeDisabled();
+  await page.getByLabel(/I reviewed the policy scope/).check();
+  await approve.click();
+  await expect(page.getByText(/This policy can now appear in initial-planning preparation/)).toBeVisible();
+  expect(submittedBody).toEqual({
+    candidate_version: candidate.candidate_version,
+    content_digest: candidate.content_digest,
+    approval_attestation: true,
+  });
+  expect(submittedBody).not.toHaveProperty("deficit_weight");
+});
+
 test("the installable shell fails closed to an honest offline screen", async ({ context, page }) => {
   await page.goto("/");
 

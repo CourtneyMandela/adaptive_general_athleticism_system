@@ -908,6 +908,15 @@ first chair-stand candidate creates a specific `chair` ontology item so environm
 fail closed until the athlete reports it available. Exact retries return the original authority,
 while an occupied release identity or changed digest fails closed.
 
+Planning-authority preparation follows the same content-addressed boundary. `GET
+/v1/operator/planning-governance/candidates` exposes immutable owner-readable policy proposals and
+`POST /v1/operator/planning-governance/candidates/{candidate_id}/ratifications` accepts only the
+exact version, digest, and attestation. The first candidate atomically creates a PubMed-backed
+evidence source and reviewed claim plus a conservative versioned `PriorityPolicy`, its exact
+current review, actor provenance, and a decision record. The cited research supports only the
+broad training claim; the policy's numeric weights are labeled as replaceable engineering priors.
+Ratification creates no floor, athlete-specific score, strategy, block, exercise, dose, or session.
+
 ## Web
 
 The Next.js App Router PWA begins with a bounded profile/environment onboarding form. It submits

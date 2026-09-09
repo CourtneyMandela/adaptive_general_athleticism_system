@@ -212,6 +212,15 @@ from agas_api.operator_weekly_planning import (
     OperatorWeeklyPlanRequest,
     execute_operator_weekly_plan_creation,
 )
+from agas_api.planning_governance_candidates import (
+    PlanningGovernanceCandidateConflictError,
+    PlanningGovernanceCandidateProjection,
+    PlanningGovernanceCandidateValidationError,
+    PlanningGovernanceRatificationResult,
+    RatifyPlanningGovernanceCandidateCommand,
+    list_planning_governance_candidates,
+    ratify_planning_governance_candidate,
+)
 from agas_api.planning_status import (
     PlanningStatusNotFoundError,
     PlanningStatusProjection,
@@ -464,6 +473,42 @@ def get_planning_review_queue(
         return PlanningReviewQueueProjector(session).project(projected_at)
     except (PlanningReviewQueueProjectionError, ValueError) as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+
+
+@app.get(
+    "/v1/operator/planning-governance/candidates",
+    tags=["operator"],
+    response_model=PlanningGovernanceCandidateProjection,
+)
+def get_planning_governance_candidates(
+    session: Annotated[Session, Depends(database_session_dependency)],
+    _authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+) -> PlanningGovernanceCandidateProjection:
+    return list_planning_governance_candidates(session)
+
+
+@app.post(
+    "/v1/operator/planning-governance/candidates/{candidate_id}/ratifications",
+    tags=["operator"],
+    response_model=PlanningGovernanceRatificationResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def ratify_prepared_planning_governance_candidate(
+    candidate_id: UUID,
+    command: RatifyPlanningGovernanceCandidateCommand,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+) -> PlanningGovernanceRatificationResult:
+    try:
+        return ratify_planning_governance_candidate(session, candidate_id, command, authority)
+    except KeyError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except PlanningGovernanceCandidateConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except (PlanningGovernanceCandidateValidationError, ValueError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
 
 
 @app.get(

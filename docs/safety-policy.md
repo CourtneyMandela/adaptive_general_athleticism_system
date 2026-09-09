@@ -60,6 +60,13 @@ movement. These are conservative stop boundaries, not symptom classification, di
 clearance, or proof that self-administration is suitable for a particular person. Candidate
 ratification cannot bypass the separate eligibility gate.
 
+### Planning-policy candidates
+
+Approving a priority policy authorizes only deterministic ranking of later reviewed inputs. It is
+not medical clearance, athlete-specific safety approval, or permission to train. A policy
+ratification cannot create a competency floor, strategy, block, exercise, dose, session, or bypass
+the current safety-policy assignment and session-safety checks.
+
 ### Escalation
 
 Concerning or unexplained symptoms must be able to interrupt ordinary programming and advise

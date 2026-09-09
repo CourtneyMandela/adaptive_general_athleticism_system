@@ -161,6 +161,8 @@ GET  /v1/operator/environment-review-queue
 GET  /v1/operator/assessment-governance
 GET  /v1/operator/assessment-governance/candidates
 POST /v1/operator/assessment-governance/candidates/{candidate_id}/ratifications
+GET  /v1/operator/planning-governance/candidates
+POST /v1/operator/planning-governance/candidates/{candidate_id}/ratifications
 POST /v1/operator/assessment-governance/releases
 GET  /v1/operator/planning-review-queue
 GET  /v1/operator/post-block-review-queue
