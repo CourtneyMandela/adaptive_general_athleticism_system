@@ -159,6 +159,7 @@ export interface InitialPlanningPreparationProjection {
   athlete_id: string;
   athlete_display_name: string;
   projected_at: string;
+  athlete_age_years: number | null;
   status: InitialPlanningPreparationStatus;
   message: string;
   initial_strategy_id: string | null;
@@ -199,6 +200,8 @@ export interface InitialPlanningPreparationProjection {
         threshold: number;
         comparison_direction: string;
         population: string;
+        minimum_age_years: number | null;
+        maximum_age_years: number | null;
         applicability_notes: string;
         uncertainty: string;
         evidence_claim_ids: string[];
@@ -273,6 +276,12 @@ export interface InitialPlanningPreparationProjection {
     applicability_notes: string;
     source_identifiers: Array<{ scheme: string; value: string }>;
     claim_version: string;
+  }>;
+  floor_applicability_issues: Array<{
+    competency_floor_id: string;
+    capability_estimate_id: string;
+    status: "not_applicable" | "unknown";
+    reason: string;
   }>;
   projection_version: string;
 }

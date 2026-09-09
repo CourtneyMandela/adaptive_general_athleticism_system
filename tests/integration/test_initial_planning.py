@@ -1,12 +1,21 @@
 import json
 from collections.abc import Iterator
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from agas_api.athlete_demographics import (
+    AthleteDemographicsConflictError,
+    DateOfBirthReportCommand,
+    PersistedDateOfBirthReportService,
+)
 from agas_api.database import database_session_dependency
-from agas_api.identity import AuthorizedRole, authenticated_principal_dependency
+from agas_api.identity import (
+    AuthenticatedPrincipal,
+    AuthorizedRole,
+    authenticated_principal_dependency,
+)
 from agas_api.identity_admin import set_account_role
 from agas_api.initial_planning import (
     CreateInitialStrategyCommand,
@@ -123,6 +132,8 @@ def _persist_inputs(
     session: Session,
     *,
     adaptation_domain: CapabilityDomain = CapabilityDomain.MAXIMUM_STRENGTH,
+    floor_minimum_age_years: int | None = None,
+    floor_maximum_age_years: int | None = None,
 ) -> tuple[
     Athlete,
     Observation,
@@ -171,6 +182,8 @@ def _persist_inputs(
         threshold=100,
         comparison_direction=ComparisonDirection.HIGHER_IS_BETTER,
         population="synthetic test population",
+        minimum_age_years=floor_minimum_age_years,
+        maximum_age_years=floor_maximum_age_years,
         applicability_notes="Software fixture only.",
         uncertainty="Not an operational scientific threshold.",
         evidence_claim_ids=(claim.id,),
@@ -1002,7 +1015,7 @@ def test_initial_planning_preparation_exposes_only_eligible_reviewed_inputs(
     assert "candidate_contexts" not in serialized
     assert "general_relevance" not in serialized["estimate_options"][0]
     assert "fatigue_cost" not in serialized["estimate_options"][0]
-    assert projection.projection_version == "initial-planning-preparation@1.0.0"
+    assert projection.projection_version == "initial-planning-preparation@1.1.0"
 
 
 def test_initial_planning_preparation_separates_stale_state_and_existing_strategy(
@@ -1167,7 +1180,7 @@ def test_planning_status_api_is_owned_and_time_explicit(session: Session) -> Non
     assert payload["status"] == "planning_context_review_required"
     assert payload["approved_priority_policy_count"] == 1
     assert payload["approved_compatible_competency_floor_count"] == 1
-    assert payload["projection_version"] == "athlete-planning-status-projection@1.3.0"
+    assert payload["projection_version"] == "athlete-planning-status-projection@1.4.0"
 
 
 def test_planning_status_fails_closed_when_current_authority_reviews_are_not_approved(
@@ -1234,3 +1247,196 @@ def test_planning_status_does_not_restore_superseded_approval_before_future_revi
     assert projection.approved_compatible_competency_floor_count == 0
     assert projection.covered_current_capability_estimate_count == 0
     assert projection.uncovered_current_capability_estimate_count == 1
+
+
+def test_date_of_birth_corrections_append_and_preserve_prior_reports(session: Session) -> None:
+    athlete = Athlete(display_name="Demographics athlete")
+    repository = DomainRepository(session)
+    repository.add_athlete(athlete)
+    session.commit()
+    principal = AuthenticatedPrincipal(
+        issuer="urn:agas:test",
+        subject="demographics-athlete",
+        authentication_method="test",
+    )
+    service = PersistedDateOfBirthReportService(session)
+    first = DateOfBirthReportCommand(
+        report_id=uuid4(),
+        date_of_birth=date(1990, 1, 2),
+        reported_at=NOW - timedelta(minutes=2),
+        date_of_birth_confirmed=True,
+    )
+    correction = DateOfBirthReportCommand(
+        report_id=uuid4(),
+        date_of_birth=date(1990, 1, 3),
+        reported_at=NOW - timedelta(minutes=1),
+        date_of_birth_confirmed=True,
+    )
+
+    first_result = service.execute(athlete.id, first, principal, recorded_at=NOW)
+    correction_result = service.execute(athlete.id, correction, principal, recorded_at=NOW)
+    retry = service.execute(athlete.id, correction, principal, recorded_at=NOW)
+    with pytest.raises(AthleteDemographicsConflictError, match="different content"):
+        service.execute(
+            athlete.id,
+            correction.model_copy(update={"date_of_birth": date(1991, 1, 3)}),
+            principal,
+            recorded_at=NOW,
+        )
+    with pytest.raises(AthleteDemographicsConflictError, match="must postdate"):
+        service.execute(
+            athlete.id,
+            first.model_copy(update={"report_id": uuid4()}),
+            principal,
+            recorded_at=NOW,
+        )
+
+    assert first_result.created is True
+    assert correction_result.created is True
+    assert retry.created is False
+    assert correction_result.demographics.date_of_birth == date(1990, 1, 3)
+    assert correction_result.demographics.age_years == 36
+    assert correction_result.demographics.report_count == 2
+    reports = repository.list_observations(
+        athlete.id, observation_type="athlete_date_of_birth_report"
+    )
+    assert tuple(report.id for report in reports) == (correction.report_id, first.report_id)
+    assert reports[1].measurement == {"date_of_birth": "1990-01-02"}
+
+
+def test_date_of_birth_report_api_is_owned_and_returns_current_projection(session: Session) -> None:
+    athlete = Athlete(display_name="Demographics API athlete")
+    DomainRepository(session).add_athlete(athlete)
+    session.commit()
+    reported_at = datetime.now(UTC)
+    app.dependency_overrides[database_session_dependency] = lambda: session
+    try:
+        client = TestClient(app)
+        created = client.post(
+            f"/v1/athletes/{athlete.id}/date-of-birth-reports",
+            json={
+                "report_id": str(uuid4()),
+                "date_of_birth": "1990-01-03",
+                "reported_at": reported_at.isoformat(),
+                "date_of_birth_confirmed": True,
+            },
+        )
+        current = client.get(f"/v1/athletes/{athlete.id}/demographics")
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert created.status_code == 201
+    assert created.json()["created"] is True
+    assert created.json()["demographics"]["date_of_birth"] == "1990-01-03"
+    assert current.status_code == 200
+    assert current.json()["source_observation_id"] == created.json()["observation_id"]
+    assert current.json()["report_count"] == 1
+
+
+def test_age_bounded_floor_fails_closed_until_demographics_are_known(session: Session) -> None:
+    athlete, _, _, _, _, _, _, _ = _persist_inputs(
+        session,
+        floor_minimum_age_years=19,
+        floor_maximum_age_years=35,
+    )
+
+    unknown = InitialPlanningPreparationProjector(session).project(athlete.id, NOW)
+    unknown_status = get_planning_status_projection(session, athlete.id, NOW)
+
+    assert unknown.athlete_age_years is None
+    assert unknown.estimate_options[0].floor_options == ()
+    assert unknown.floor_applicability_issues[0].status == "unknown"
+    assert unknown_status.approved_compatible_competency_floor_count == 0
+    assert unknown_status.age_limited_floor_issue_count == 1
+    assert unknown_status.status == "planning_authorities_required"
+
+
+def test_age_bounded_floor_becomes_eligible_only_inside_reviewed_range(session: Session) -> None:
+    athlete, observation, estimate, floor, adaptation, policy, floor_review, policy_review = (
+        _persist_inputs(
+            session,
+            floor_minimum_age_years=19,
+            floor_maximum_age_years=35,
+        )
+    )
+    principal = AuthenticatedPrincipal(
+        issuer="urn:agas:test",
+        subject="age-applicability-athlete",
+        authentication_method="test",
+    )
+    PersistedDateOfBirthReportService(session).execute(
+        athlete.id,
+        DateOfBirthReportCommand(
+            report_id=uuid4(),
+            date_of_birth=date(1992, 9, 10),
+            reported_at=NOW - timedelta(minutes=1),
+            date_of_birth_confirmed=True,
+        ),
+        principal,
+        recorded_at=NOW,
+    )
+
+    preparation = InitialPlanningPreparationProjector(session).project(athlete.id, NOW)
+    result = PersistedInitialPlanningService(session).execute(
+        athlete.id,
+        _command(
+            observation,
+            estimate,
+            floor,
+            adaptation,
+            policy,
+            floor_review,
+            policy_review,
+        ),
+    )
+
+    assert preparation.athlete_age_years == 33
+    assert preparation.floor_applicability_issues == ()
+    assert preparation.estimate_options[0].floor_options[0].floor.id == floor.id
+    assert result.strategy.athlete_id == athlete.id
+
+
+def test_initial_planning_rejects_age_incompatible_floor_without_partial_writes(
+    session: Session,
+) -> None:
+    athlete, observation, estimate, floor, adaptation, policy, floor_review, policy_review = (
+        _persist_inputs(
+            session,
+            floor_minimum_age_years=19,
+            floor_maximum_age_years=35,
+        )
+    )
+    principal = AuthenticatedPrincipal(
+        issuer="urn:agas:test",
+        subject="older-athlete",
+        authentication_method="test",
+    )
+    PersistedDateOfBirthReportService(session).execute(
+        athlete.id,
+        DateOfBirthReportCommand(
+            report_id=uuid4(),
+            date_of_birth=date(1980, 1, 1),
+            reported_at=NOW - timedelta(minutes=1),
+            date_of_birth_confirmed=True,
+        ),
+        principal,
+        recorded_at=NOW,
+    )
+
+    with pytest.raises(InitialPlanningValidationError, match="not age-applicable"):
+        PersistedInitialPlanningService(session).execute(
+            athlete.id,
+            _command(
+                observation,
+                estimate,
+                floor,
+                adaptation,
+                policy,
+                floor_review,
+                policy_review,
+            ),
+        )
+
+    assert session.scalar(select(func.count()).select_from(CapabilityNeedRecord)) == 0
+    assert session.scalar(select(func.count()).select_from(LongRangeStrategyRecord)) == 0
+    assert session.scalar(select(func.count()).select_from(DecisionRecordRecord)) == 0

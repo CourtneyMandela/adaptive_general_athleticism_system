@@ -192,6 +192,13 @@ thresholds, or maximum simultaneous priorities. Those values are explicitly iden
 versioned engineering prior and require counterfactual and personal-response evaluation. Evidence
 provenance must never be presented as scientific validation of values the source did not study.
 
+Competency-floor applicability must be enforceable where a source population has a meaningful age
+boundary. `minimum_age_years` and `maximum_age_years` record inclusive reviewed bounds; missing
+athlete age or an age outside those bounds makes the floor unavailable for new planning. Age
+compatibility does not establish full applicability and does not turn a reference distribution
+into a health, safety, or universal athletic threshold. The 19–35-year population in PMID 35949374
+therefore cannot silently support an all-adult chair-stand floor.
+
 ## Exercise resolution
 
 Exercise ontology metadata and resolver scores are not evidence of exercise equivalence. A full

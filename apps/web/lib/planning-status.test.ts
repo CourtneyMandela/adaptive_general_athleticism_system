@@ -15,6 +15,8 @@ describe("planning status client", () => {
       capability_estimate_count: 1,
       current_capability_estimate_count: 1,
       stale_capability_estimate_count: 0,
+      athlete_age_years: 36,
+      age_limited_floor_issue_count: 0,
       approved_priority_policy_count: 1,
       approved_compatible_competency_floor_count: 1,
       covered_current_capability_estimate_count: 1,
@@ -30,7 +32,7 @@ describe("planning status client", () => {
       initial_strategy: null,
       first_block_readiness: null,
       first_week_readiness: null,
-      projection_version: "athlete-planning-status-projection@1.3.0",
+      projection_version: "athlete-planning-status-projection@1.4.0",
     };
     const fetcher = vi
       .fn<typeof fetch>()

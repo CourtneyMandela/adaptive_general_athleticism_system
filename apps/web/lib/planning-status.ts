@@ -41,6 +41,8 @@ export interface PlanningStatusProjection {
   capability_estimate_count: number;
   current_capability_estimate_count: number;
   stale_capability_estimate_count: number;
+  athlete_age_years: number | null;
+  age_limited_floor_issue_count: number;
   approved_priority_policy_count: number;
   approved_compatible_competency_floor_count: number;
   covered_current_capability_estimate_count: number;

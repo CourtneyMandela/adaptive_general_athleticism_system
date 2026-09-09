@@ -104,6 +104,12 @@ decisions 0081, 0083, 0084, and 0086.
 
 An observation is an append-only fact reported, measured, performed, or imported. It retains source, timestamp, value, context, reliability, provenance, and schema version. It is never a capability score.
 
+Date-of-birth corrections follow the same rule. The owned demographics projection derives the
+current value and completed-years age from the latest effective `athlete_date_of_birth_report`
+observation, with the legacy athlete-row value used only as a disclosed fallback. A correction
+adds history rather than mutating identity state. Exact date of birth is not exposed outside the
+athlete ownership boundary.
+
 ### Capability estimate
 
 A capability estimate is explicitly derived. Creation requires at least one existing observation owned by the same athlete, a method identifier, confidence, timestamp, and rule/model version. Source links are stored relationally. New estimates supersede by addition; they do not rewrite source observations or prior estimates.
@@ -214,9 +220,12 @@ historical selections, performances, and estimates remain readable.
 ### Needs and long-range strategy
 
 A `CompetencyFloor` is a versioned, metric-scoped comparison target with explicit population,
-applicability, uncertainty, direction, unit, and evidence-claim links. No operational floors are
-seeded yet. Comparing a compatible capability estimate creates an immutable `CapabilityNeed` and
-preserves below-floor, meets-floor, above-floor, unknown, stale, and incomparable outcomes.
+applicability, uncertainty, direction, unit, and evidence-claim links. Optional inclusive minimum
+and maximum ages make one important population boundary executable. An age-bounded floor fails
+closed when the athlete's age is unknown or outside the range; domain, scope, and unit compatibility
+alone are insufficient. No operational floors are seeded yet. Comparing an applicable compatible
+capability estimate creates an immutable `CapabilityNeed` and preserves below-floor, meets-floor,
+above-floor, unknown, stale, and incomparable outcomes.
 
 A versioned `PriorityPolicy` makes every scoring weight, confidence multiplier, threshold, cost
 penalty, and development-slot limit explicit. `AdaptationPlanningCandidate` inputs keep user and
@@ -246,6 +255,12 @@ identity: the server binds the authenticated account and exact current `planning
 assignment, then the service validates and records that authority. Initial planning remains absent
 from athlete-authenticated writes because athlete ownership does not authorize expert scoring or
 scientific-applicability decisions.
+
+Initial-planning preparation and execution calculate age at the exact projection or generation
+instant from the effective demographics observation. Preparation omits inapplicable floors and
+returns structured reasons; execution repeats the check so a hand-built request cannot bypass it.
+The athlete-facing planning-status projection applies the same rule to its approved-floor and
+covered-estimate counts.
 
 The strategy is not a workout. It contains no exercise, dose, weekly schedule, or session. Safety
 restriction, introductory exposure, missing prerequisites, unresolved information, competency

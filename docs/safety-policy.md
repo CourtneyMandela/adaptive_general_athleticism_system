@@ -38,6 +38,11 @@ for the exact current protocol review. It cannot admit manual same-type observat
 browser-supplied formula, or reinterpret a withdrawn protocol. Its output remains a bounded,
 protocol-specific derived record and is not a diagnosis, medical clearance, or safety decision.
 
+Date of birth is an authenticated, ownership-protected applicability input. Corrections append a
+new observation rather than erasing the earlier report. Age may block an age-bounded assessment or
+planning authority, but it must not be treated as a capability score, diagnosis, clearance, or
+standalone safety decision. Exact date of birth must not appear in public or operator-wide queues.
+
 Ordinary self-service reassessment is unavailable until the exact historical protocol review's
 recommended interval ends. This is a conservative cadence boundary, not a medical judgment or a
 claim that earlier testing is universally unsafe. Any early-retest path requires separate governed

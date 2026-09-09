@@ -69,6 +69,16 @@ from agas_api.assessment_workflow import (
     AssessmentWorkflowProjection,
     get_assessment_workflow_projection,
 )
+from agas_api.athlete_demographics import (
+    AthleteDemographicsConflictError,
+    AthleteDemographicsNotFoundError,
+    AthleteDemographicsProjection,
+    AthleteDemographicsValidationError,
+    DateOfBirthReportCommand,
+    DateOfBirthReportResult,
+    PersistedDateOfBirthReportService,
+    project_athlete_demographics,
+)
 from agas_api.athletic_dashboard import (
     AthleticDashboardNotFoundError,
     AthleticDashboardProjection,
@@ -976,6 +986,54 @@ def get_athletic_dashboard(
     except AthleticDashboardNotFoundError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
     except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.get(
+    "/v1/athletes/{athlete_id}/demographics",
+    tags=["athlete"],
+    response_model=AthleteDemographicsProjection,
+)
+def get_athlete_demographics(
+    athlete_id: UUID,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authorizer: Annotated[OwnershipAuthorizer, Depends(ownership_authorizer_dependency)],
+    at: Annotated[datetime | None, Query()] = None,
+) -> AthleteDemographicsProjection:
+    authorizer.require_athlete(athlete_id)
+    try:
+        return project_athlete_demographics(session, athlete_id, at)
+    except AthleteDemographicsNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except AthleteDemographicsValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.post(
+    "/v1/athletes/{athlete_id}/date-of-birth-reports",
+    tags=["athlete"],
+    response_model=DateOfBirthReportResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def submit_date_of_birth_report(
+    athlete_id: UUID,
+    command: DateOfBirthReportCommand,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    principal: Annotated[AuthenticatedPrincipal, Depends(authenticated_principal_dependency)],
+    authorizer: Annotated[OwnershipAuthorizer, Depends(ownership_authorizer_dependency)],
+) -> DateOfBirthReportResult:
+    authorizer.require_athlete(athlete_id)
+    try:
+        return PersistedDateOfBirthReportService(session).execute(athlete_id, command, principal)
+    except AthleteDemographicsNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except AthleteDemographicsConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except AthleteDemographicsValidationError as error:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
         ) from error

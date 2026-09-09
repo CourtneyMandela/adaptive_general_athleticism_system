@@ -850,6 +850,8 @@ class CompetencyFloor(VersionedRecord):
     threshold: float = Field(gt=0)
     comparison_direction: ComparisonDirection
     population: NonEmptyText
+    minimum_age_years: int | None = Field(default=None, ge=0, le=130)
+    maximum_age_years: int | None = Field(default=None, ge=0, le=130)
     applicability_notes: NonEmptyText
     uncertainty: NonEmptyText
     evidence_claim_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
@@ -859,6 +861,12 @@ class CompetencyFloor(VersionedRecord):
     def validate_evidence(self) -> CompetencyFloor:
         if len(set(self.evidence_claim_ids)) != len(self.evidence_claim_ids):
             raise ValueError("evidence_claim_ids must not contain duplicates")
+        if (
+            self.minimum_age_years is not None
+            and self.maximum_age_years is not None
+            and self.minimum_age_years > self.maximum_age_years
+        ):
+            raise ValueError("minimum_age_years cannot exceed maximum_age_years")
         return self
 
 

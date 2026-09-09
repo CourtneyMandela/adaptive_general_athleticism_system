@@ -868,6 +868,26 @@ button { cursor: pointer; }
   border-radius: .85rem;
   background: var(--surface);
 }
+
+.demographics-panel {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: clamp(1.15rem, 3vw, 2rem);
+  border: 1px solid var(--line);
+  border-radius: 1.15rem;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.demographics-panel__heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.demographics-panel h2 { margin: .25rem 0 0; font-family: Georgia, "Times New Roman", serif; font-size: clamp(1.6rem, 4vw, 2.35rem); font-weight: 500; letter-spacing: -.035em; }
+.demographics-form { display: grid; gap: .8rem; padding: .9rem; border: 1px solid var(--line); border-radius: .8rem; background: #f9faf6; }
+.demographics-form > label:first-child { display: grid; gap: .35rem; color: var(--muted); font-size: .78rem; font-weight: 750; }
+.demographics-form input[type="date"] { width: 100%; padding: .65rem .7rem; border: 1px solid #b9c2bb; border-radius: .65rem; background: #fff; color: var(--ink); }
+.demographics-confirmation { display: flex; align-items: flex-start; gap: .55rem; font-weight: 650; }
+.demographics-confirmation input { width: auto; margin-top: .15rem; }
+.demographics-form button { justify-self: start; border: 0; border-radius: .7rem; background: var(--accent); color: #fff; padding: .8rem 1rem; font-weight: 800; }
+.demographics-form button:disabled { cursor: not-allowed; opacity: .55; }
 .assessment-candidate > header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
 .assessment-candidate > header h2,
 .assessment-candidate > p,
@@ -1109,7 +1129,7 @@ button { cursor: pointer; }
   .assessment-summary, .assessment-history__grid, .dashboard-coverage, .capability-domain-grid, .environment-constraints, .equipment-state-list, .equipment-change-timing { grid-template-columns: 1fr; }
   .assessment-result-form { grid-template-columns: 1fr; align-items: stretch; }
   .assessment-unit { align-self: auto; }
-  .assessment-panel__heading, .assessment-decision > header, .athletic-dashboard__heading, .environment-panel__heading { flex-direction: column; }
+  .assessment-panel__heading, .assessment-decision > header, .athletic-dashboard__heading, .environment-panel__heading, .demographics-panel__heading { flex-direction: column; }
   .unestimated-domains ul { grid-template-columns: 1fr; }
   .section-heading { align-items: flex-start; flex-direction: column; }
   .review-topbar, .review-preview > header, .review-candidate > header { flex-direction: column; }

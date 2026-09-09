@@ -20,6 +20,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from agas_api.athlete_demographics import (
+    evaluate_floor_age_applicability,
+    project_athlete_demographics,
+)
+
 
 class CreateInitialStrategyCommand(BaseModel):
     """Governed inputs for the first strategy; scores are explicit, not inferred."""
@@ -148,6 +153,7 @@ class PersistedInitialPlanningService:
             )
         self._validate_review_authority(command)
         self._validate_candidate_context_artifact(athlete_id, command)
+        demographics = project_athlete_demographics(self.session, athlete_id, command.generated_at)
         policy = self.repository.get_priority_policy(command.priority_policy_id)
         if policy is None:
             raise InitialPlanningNotFoundError("priority policy does not exist")
@@ -213,6 +219,15 @@ class PersistedInitialPlanningService:
             if floor_review.reviewed_at > command.generated_at:
                 raise InitialPlanningValidationError(
                     "competency floor review cannot come from the future"
+                )
+            floor_age_applicability = evaluate_floor_age_applicability(
+                floor.minimum_age_years,
+                floor.maximum_age_years,
+                demographics,
+            )
+            if floor_age_applicability.status != "applicable":
+                raise InitialPlanningValidationError(
+                    f"competency floor is not age-applicable: {floor_age_applicability.reason}"
                 )
             estimate = self.repository.get_capability_estimate(context.capability_estimate_id)
             if estimate is None:

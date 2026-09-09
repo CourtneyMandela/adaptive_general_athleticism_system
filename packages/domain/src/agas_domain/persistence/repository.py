@@ -1028,6 +1028,8 @@ class DomainRepository:
             threshold=floor.threshold,
             comparison_direction=floor.comparison_direction.value,
             population=floor.population,
+            minimum_age_years=floor.minimum_age_years,
+            maximum_age_years=floor.maximum_age_years,
             applicability_notes=floor.applicability_notes,
             uncertainty=floor.uncertainty,
             floor_version=floor.floor_version,
@@ -4063,6 +4065,8 @@ class DomainRepository:
             threshold=record.threshold,
             comparison_direction=record.comparison_direction,
             population=record.population,
+            minimum_age_years=record.minimum_age_years,
+            maximum_age_years=record.maximum_age_years,
             applicability_notes=record.applicability_notes,
             uncertainty=record.uncertainty,
             evidence_claim_ids=tuple(item.evidence_claim_id for item in record.evidence_links),
@@ -5289,6 +5293,25 @@ class DomainRepository:
         record = self.session.get(ObservationRecord, observation_id)
         if record is None:
             return None
+        return self._observation_from_record(record)
+
+    def list_observations(
+        self, athlete_id: UUID, *, observation_type: str | None = None
+    ) -> tuple[Observation, ...]:
+        statement = select(ObservationRecord).where(ObservationRecord.athlete_id == athlete_id)
+        if observation_type is not None:
+            statement = statement.where(ObservationRecord.observation_type == observation_type)
+        records = self.session.scalars(
+            statement.order_by(
+                ObservationRecord.observed_at.desc(),
+                ObservationRecord.created_at.desc(),
+                ObservationRecord.id.desc(),
+            )
+        )
+        return tuple(self._observation_from_record(record) for record in records)
+
+    @staticmethod
+    def _observation_from_record(record: ObservationRecord) -> Observation:
         return Observation(
             id=record.id,
             schema_version=record.schema_version,

@@ -19,6 +19,12 @@ from agas_domain.persistence.repository import DomainRepository
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
+from agas_api.athlete_demographics import (
+    AthleteDemographicsProjection,
+    evaluate_floor_age_applicability,
+    project_athlete_demographics,
+)
+
 InitialPlanningPreparationStatus = Literal[
     "capability_estimate_required",
     "capability_estimate_stale",
@@ -59,12 +65,22 @@ class InitialPlanningPriorityPolicyOption(BaseModel):
     review: PriorityPolicyReview
 
 
+class InitialPlanningFloorApplicabilityIssue(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    competency_floor_id: UUID
+    capability_estimate_id: UUID
+    status: Literal["not_applicable", "unknown"]
+    reason: str
+
+
 class InitialPlanningPreparationProjection(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     athlete_id: UUID
     athlete_display_name: str
     projected_at: datetime
+    athlete_age_years: int | None
     status: InitialPlanningPreparationStatus
     message: str
     initial_strategy_id: UUID | None
@@ -72,7 +88,8 @@ class InitialPlanningPreparationProjection(BaseModel):
     stale_estimates: tuple[CapabilityEstimate, ...]
     priority_policy_options: tuple[InitialPlanningPriorityPolicyOption, ...]
     evidence_claims: tuple[EvidenceClaim, ...]
-    projection_version: str = "initial-planning-preparation@1.0.0"
+    floor_applicability_issues: tuple[InitialPlanningFloorApplicabilityIssue, ...]
+    projection_version: str = "initial-planning-preparation@1.1.0"
 
 
 class InitialPlanningPreparationProjector:
@@ -107,11 +124,15 @@ class InitialPlanningPreparationProjector:
             if estimate.valid_until is not None and estimate.valid_until <= instant
         )
         adaptations = self.repository.list_adaptations()
+        demographics = project_athlete_demographics(self.repository.session, athlete.id, instant)
         floor_options = self._approved_floor_options(instant)
         policy_options = self._approved_policy_options(instant)
         estimate_options = tuple(
-            self._estimate_option(estimate, adaptations, floor_options)
+            self._estimate_option(estimate, adaptations, floor_options, demographics)
             for estimate in current_estimates
+        )
+        floor_applicability_issues = self._floor_applicability_issues(
+            current_estimates, floor_options, demographics
         )
         evidence_claims = self._evidence_claims(policy_options, estimate_options)
         strategy = self.repository.get_initial_long_range_strategy(athlete.id)
@@ -126,6 +147,7 @@ class InitialPlanningPreparationProjector:
             athlete_id=athlete.id,
             athlete_display_name=athlete.display_name,
             projected_at=instant,
+            athlete_age_years=demographics.age_years,
             status=status,
             message=message,
             initial_strategy_id=strategy.id if strategy is not None else None,
@@ -133,6 +155,7 @@ class InitialPlanningPreparationProjector:
             stale_estimates=stale_estimates,
             priority_policy_options=policy_options,
             evidence_claims=evidence_claims,
+            floor_applicability_issues=floor_applicability_issues,
         )
 
     def _approved_floor_options(self, instant: datetime) -> tuple[InitialPlanningFloorOption, ...]:
@@ -166,6 +189,7 @@ class InitialPlanningPreparationProjector:
         estimate: CapabilityEstimate,
         adaptations: tuple[Adaptation, ...],
         floors: tuple[InitialPlanningFloorOption, ...],
+        demographics: AthleteDemographicsProjection,
     ) -> InitialPlanningEstimateOption:
         observations = []
         for observation_id in estimate.source_observation_ids:
@@ -183,12 +207,47 @@ class InitialPlanningPreparationProjector:
             estimate=estimate,
             source_observations=tuple(observations),
             floor_options=tuple(
-                item for item in floors if self._floor_matches_estimate(item.floor, estimate)
+                item
+                for item in floors
+                if self._floor_matches_estimate(item.floor, estimate)
+                and evaluate_floor_age_applicability(
+                    item.floor.minimum_age_years,
+                    item.floor.maximum_age_years,
+                    demographics,
+                ).status
+                == "applicable"
             ),
             adaptation_options=tuple(
                 adaptation for adaptation in adaptations if adaptation.domain is estimate.domain
             ),
         )
+
+    def _floor_applicability_issues(
+        self,
+        estimates: tuple[CapabilityEstimate, ...],
+        floors: tuple[InitialPlanningFloorOption, ...],
+        demographics: AthleteDemographicsProjection,
+    ) -> tuple[InitialPlanningFloorApplicabilityIssue, ...]:
+        issues = []
+        for estimate in estimates:
+            for option in floors:
+                if not self._floor_matches_estimate(option.floor, estimate):
+                    continue
+                applicability = evaluate_floor_age_applicability(
+                    option.floor.minimum_age_years,
+                    option.floor.maximum_age_years,
+                    demographics,
+                )
+                if applicability.status != "applicable":
+                    issues.append(
+                        InitialPlanningFloorApplicabilityIssue(
+                            competency_floor_id=option.floor.id,
+                            capability_estimate_id=estimate.id,
+                            status=applicability.status,
+                            reason=applicability.reason,
+                        )
+                    )
+        return tuple(issues)
 
     def _evidence_claims(
         self,

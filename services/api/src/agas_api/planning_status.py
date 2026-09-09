@@ -19,6 +19,11 @@ from agas_domain.persistence.repository import DomainRepository
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
+from agas_api.athlete_demographics import (
+    evaluate_floor_age_applicability,
+    project_athlete_demographics,
+)
+
 PlanningStatus = Literal[
     "capability_estimate_required",
     "capability_estimate_stale",
@@ -142,6 +147,8 @@ class PlanningStatusProjection(BaseModel):
     capability_estimate_count: int
     current_capability_estimate_count: int
     stale_capability_estimate_count: int
+    athlete_age_years: int | None
+    age_limited_floor_issue_count: int
     approved_priority_policy_count: int
     approved_compatible_competency_floor_count: int
     covered_current_capability_estimate_count: int
@@ -150,7 +157,7 @@ class PlanningStatusProjection(BaseModel):
     initial_strategy: InitialStrategySummary | None
     first_block_readiness: FirstBlockReadiness | None
     first_week_readiness: FirstWeekReadiness | None
-    projection_version: str = "athlete-planning-status-projection@1.3.0"
+    projection_version: str = "athlete-planning-status-projection@1.4.0"
 
 
 def get_planning_status_projection(
@@ -179,6 +186,7 @@ def get_planning_status_projection(
         for estimate in estimates
         if estimate.valid_until is not None and estimate.valid_until <= instant
     )
+    demographics = project_athlete_demographics(session, athlete_id, instant)
     strategy = repository.get_initial_long_range_strategy(athlete_id)
     approved_policies = tuple(
         policy
@@ -189,7 +197,7 @@ def get_planning_status_projection(
             and policy_review.reviewed_at <= instant
         )
     )
-    approved_floors = tuple(
+    reviewed_matching_floors = tuple(
         floor
         for floor in repository.list_competency_floors()
         if (
@@ -198,6 +206,25 @@ def get_planning_status_projection(
             and floor_review.reviewed_at <= instant
             and any(_floor_matches_estimate(floor, estimate) for estimate in current_estimates)
         )
+    )
+    floor_age_applicabilities = tuple(
+        (
+            floor,
+            evaluate_floor_age_applicability(
+                floor.minimum_age_years,
+                floor.maximum_age_years,
+                demographics,
+            ),
+        )
+        for floor in reviewed_matching_floors
+    )
+    approved_floors = tuple(
+        floor
+        for floor, applicability in floor_age_applicabilities
+        if applicability.status == "applicable"
+    )
+    age_limited_floor_issue_count = sum(
+        applicability.status != "applicable" for _, applicability in floor_age_applicabilities
     )
     covered_estimate_ids = {
         estimate.id
@@ -228,11 +255,18 @@ def get_planning_status_projection(
             )
         else:
             status = "planning_authorities_required"
-            message = (
-                "Current capability estimates are available, but approved planning authorities "
-                "are incomplete. No strategy can be created until a current approved priority "
-                "policy and at least one compatible reviewed competency floor exist."
-            )
+            if age_limited_floor_issue_count:
+                message = (
+                    "Current estimates exist, but one or more otherwise compatible floors cannot "
+                    "be used because age applicability is unknown or outside the reviewed range. "
+                    "Report date of birth or provide an age-applicable reviewed floor."
+                )
+            else:
+                message = (
+                    "Current capability estimates are available, but approved planning authorities "
+                    "are incomplete. No strategy can be created until a current approved priority "
+                    "policy and at least one compatible reviewed competency floor exist."
+                )
         strategy_summary = None
         requirements = _planning_requirements(
             approved_priority_policy_count=len(approved_policies),
@@ -271,6 +305,8 @@ def get_planning_status_projection(
         capability_estimate_count=len(estimates),
         current_capability_estimate_count=len(current_estimates),
         stale_capability_estimate_count=len(stale_estimates),
+        athlete_age_years=demographics.age_years,
+        age_limited_floor_issue_count=age_limited_floor_issue_count,
         approved_priority_policy_count=len(approved_policies),
         approved_compatible_competency_floor_count=len(approved_floors),
         covered_current_capability_estimate_count=len(covered_estimate_ids),

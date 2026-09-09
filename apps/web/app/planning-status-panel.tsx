@@ -88,6 +88,10 @@ export function PlanningStatusPanel({
               <dd>{projection.approved_compatible_competency_floor_count}</dd>
             </div>
             <div>
+              <dt>Age applicability issues</dt>
+              <dd>{projection.age_limited_floor_issue_count}</dd>
+            </div>
+            <div>
               <dt>Approved policies</dt>
               <dd>{projection.approved_priority_policy_count}</dd>
             </div>

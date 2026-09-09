@@ -58,6 +58,10 @@ def test_baseline_migration_matches_current_metadata(
         assert "triggering_block_review_id" in strategy_columns
         assert "catalog_imports" in actual_tables
         assert "evidence_sources" in actual_tables
+        competency_floor_columns = {
+            column["name"] for column in inspector.get_columns("competency_floors")
+        }
+        assert {"minimum_age_years", "maximum_age_years"}.issubset(competency_floor_columns)
         assert "evidence_claim_sources" in actual_tables
         assert "evidence_claim_reviews" in actual_tables
         assert "accounts" in actual_tables

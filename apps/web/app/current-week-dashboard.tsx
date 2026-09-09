@@ -17,6 +17,7 @@ import {
 import { OnboardingForm } from "./onboarding-form";
 import { AssessmentPanel } from "./assessment-panel";
 import { AthleticDashboardPanel } from "./athletic-dashboard-panel";
+import { AthleteDemographicsPanel } from "./athlete-demographics-panel";
 import { EnvironmentPanel } from "./environment-panel";
 import { FirstSessionPath } from "./first-session-path";
 import { PlanningStatusPanel } from "./planning-status-panel";
@@ -230,6 +231,7 @@ export function CurrentWeekDashboard({ initialAthleteId }: { initialAthleteId?: 
   const [projection, setProjection] = useState<CurrentWeekProjection | null>(null);
   const [state, setState] = useState<"setup" | "loading" | "ready" | "error">("setup");
   const [message, setMessage] = useState("");
+  const [planningInputRevision, setPlanningInputRevision] = useState(0);
   const initialLoadStarted = useRef(false);
 
   const load = useCallback(async (nextAthleteId: string, nextAsOf: string) => {
@@ -338,16 +340,26 @@ export function CurrentWeekDashboard({ initialAthleteId }: { initialAthleteId?: 
 
       {state === "ready" && projection ? (
         <FirstSessionPath
+          key={`first-session-path-${planningInputRevision}`}
           apiBaseUrl={apiBaseUrl}
           athleteId={athleteId}
           hasScheduledWeek={projection.week !== null}
         />
       ) : null}
 
+      <AthleteDemographicsPanel
+        apiBaseUrl={apiBaseUrl}
+        athleteId={athleteId}
+        onSaved={() => setPlanningInputRevision((value) => value + 1)}
+      />
       <AssessmentPanel apiBaseUrl={apiBaseUrl} athleteId={athleteId} />
       <AthleticDashboardPanel apiBaseUrl={apiBaseUrl} athleteId={athleteId} />
       <EnvironmentPanel apiBaseUrl={apiBaseUrl} athleteId={athleteId} />
-      <PlanningStatusPanel apiBaseUrl={apiBaseUrl} athleteId={athleteId} />
+      <PlanningStatusPanel
+        key={`planning-status-${planningInputRevision}`}
+        apiBaseUrl={apiBaseUrl}
+        athleteId={athleteId}
+      />
 
       <nav className="week-nav" aria-label="Week navigation">
         <button type="button" onClick={() => selectDate(shiftIsoDate(asOf, -7))}>

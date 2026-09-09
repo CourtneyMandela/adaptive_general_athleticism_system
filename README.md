@@ -28,6 +28,9 @@ contexts; it does not infer scores, select exercises, prescribe dose, or generat
 An owned athletic-dashboard projection groups estimates by exact domain, scope, and unit, exposes
 confidence, validity, method, version, and source lineage, and keeps unmeasured domains explicit.
 It deliberately does not normalize unlike measurements into unsupported percentage scores.
+Date of birth can now be reported or corrected from the PWA as append-only observation history.
+Structured competency-floor age bounds fail closed when age is unknown or outside the reviewed
+range; age is used only for applicability and is never converted into a capability score.
 Scientific publication metadata can now be stored as immutable, versioned retrieval snapshots.
 New governed claim bundles link every claim to the exact source snapshots reviewed, while the
 existing small seed remains explicitly provisional and unpromoted.
@@ -153,6 +156,8 @@ POST /v1/athletes/{athlete_id}/assessment-runs
 POST /v1/athletes/{athlete_id}/assessment-runs/{run_id}/selections/{selection_id}/result
 POST /v1/athletes/{athlete_id}/assessment-performances/{performance_id}/capability-estimate
 GET  /v1/athletes/{athlete_id}/dashboard
+GET  /v1/athletes/{athlete_id}/demographics
+POST /v1/athletes/{athlete_id}/date-of-birth-reports
 GET  /v1/athletes/{athlete_id}/environments
 POST /v1/athletes/{athlete_id}/environments/{environment_id}/equipment-reports
 GET  /v1/athletes/{athlete_id}/planning-status

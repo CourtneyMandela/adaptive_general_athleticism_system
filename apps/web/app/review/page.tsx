@@ -96,7 +96,25 @@ function PreparationContext({
           <dt>Referenced evidence</dt>
           <dd>{projection.evidence_claims.length}</dd>
         </div>
+        <div>
+          <dt>Athlete age</dt>
+          <dd>{projection.athlete_age_years ?? "Unknown"}</dd>
+        </div>
+        <div>
+          <dt>Floor applicability issues</dt>
+          <dd>{projection.floor_applicability_issues.length}</dd>
+        </div>
       </dl>
+
+      {projection.floor_applicability_issues.length ? (
+        <ul className="planning-queue-blockers">
+          {projection.floor_applicability_issues.map((issue) => (
+            <li key={`${issue.competency_floor_id}:${issue.capability_estimate_id}`}>
+              {issue.reason} Floor <code>{issue.competency_floor_id}</code>
+            </li>
+          ))}
+        </ul>
+      ) : null}
 
       {projection.initial_strategy_id ? (
         <p className="review-existing-strategy">
@@ -187,7 +205,10 @@ function PreparationContext({
                           {floor.comparison_direction.replaceAll("_", " ")} {floor.threshold}{" "}
                           {floor.unit_or_scale}
                         </strong>
-                        <span>{floor.population} · {floor.floor_version}</span>
+                        <span>
+                          {floor.population} · ages {floor.minimum_age_years ?? "any"}–
+                          {floor.maximum_age_years ?? "any"} · {floor.floor_version}
+                        </span>
                         <code>{floor.id}</code>
                         <span>Exact review</span>
                         <code>{review.id}</code>

@@ -809,6 +809,21 @@ class AssessmentPerformanceRecord(VersionedRecordMixin, Base):
 
 class CompetencyFloorRecord(VersionedRecordMixin, Base):
     __tablename__ = "competency_floors"
+    __table_args__ = (
+        CheckConstraint(
+            "minimum_age_years IS NULL OR (minimum_age_years >= 0 AND minimum_age_years <= 130)",
+            name="ck_competency_floor_minimum_age",
+        ),
+        CheckConstraint(
+            "maximum_age_years IS NULL OR (maximum_age_years >= 0 AND maximum_age_years <= 130)",
+            name="ck_competency_floor_maximum_age",
+        ),
+        CheckConstraint(
+            "minimum_age_years IS NULL OR maximum_age_years IS NULL OR "
+            "minimum_age_years <= maximum_age_years",
+            name="ck_competency_floor_age_order",
+        ),
+    )
 
     domain: Mapped[str] = mapped_column(String(80), index=True, nullable=False)
     estimate_scope: Mapped[str] = mapped_column(String(160), nullable=False)
@@ -816,6 +831,8 @@ class CompetencyFloorRecord(VersionedRecordMixin, Base):
     threshold: Mapped[float] = mapped_column(Float(), nullable=False)
     comparison_direction: Mapped[str] = mapped_column(String(40), nullable=False)
     population: Mapped[str] = mapped_column(Text(), nullable=False)
+    minimum_age_years: Mapped[int | None] = mapped_column(Integer(), nullable=True)
+    maximum_age_years: Mapped[int | None] = mapped_column(Integer(), nullable=True)
     applicability_notes: Mapped[str] = mapped_column(Text(), nullable=False)
     uncertainty: Mapped[str] = mapped_column(Text(), nullable=False)
     floor_version: Mapped[str] = mapped_column(String(80), nullable=False)

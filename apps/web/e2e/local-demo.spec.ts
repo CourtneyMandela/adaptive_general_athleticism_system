@@ -171,6 +171,86 @@ test("the phone workflow turns a factual readiness report into a narrow decision
   expect(submittedBody).not.toHaveProperty("outcome");
 });
 
+test("the phone workflow appends a date-of-birth report for age applicability", async ({
+  page,
+}) => {
+  let submittedBody: Record<string, unknown> | null = null;
+  await page.route("http://localhost:8000/v1/**", async (route) => {
+    const request = route.request();
+    if (request.url().includes(`/athletes/${athleteId}/date-of-birth-reports`)) {
+      submittedBody = request.postDataJSON() as Record<string, unknown>;
+      return route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({
+          observation_id: "d2000000-0000-4000-8000-000000000001",
+          demographics: {
+            athlete_id: athleteId,
+            as_of: "2026-09-09T12:00:00Z",
+            date_of_birth: "1990-01-03",
+            age_years: 36,
+            source_observation_id: "d2000000-0000-4000-8000-000000000001",
+            source_kind: "reported_observation",
+            report_count: 1,
+            message: "Earlier reports remain in history.",
+            projection_version: "athlete-demographics-projection@1.0.0",
+          },
+          created: true,
+          rule_version: "athlete-date-of-birth-report@1.0.0",
+        }),
+      });
+    }
+    if (request.url().includes(`/athletes/${athleteId}/demographics`)) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          athlete_id: athleteId,
+          as_of: "2026-09-09T12:00:00Z",
+          date_of_birth: null,
+          age_years: null,
+          source_observation_id: null,
+          source_kind: "unknown",
+          report_count: 0,
+          message: "Date of birth has not been reported.",
+          projection_version: "athlete-demographics-projection@1.0.0",
+        }),
+      });
+    }
+    if (request.url().includes(`/athletes/${athleteId}/current-week`)) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          athlete_id: athleteId,
+          athlete_display_name: "Synthetic four-day traveler",
+          as_of: "2026-09-09",
+          safety_policy_assignment: null,
+          week: null,
+        }),
+      });
+    }
+    return route.fulfill({
+      status: 404,
+      contentType: "application/json",
+      body: JSON.stringify({ detail: "not needed by demographics browser test" }),
+    });
+  });
+
+  await page.goto(`/?athleteId=${athleteId}`);
+  await expect(page.getByText("Age needed")).toBeVisible();
+  await expect(page.getByText("Loading age information…")).toBeHidden();
+  await page.getByLabel("Date of birth").fill("1990-01-03");
+  await page.getByLabel("I confirm this date is correct.").check();
+  await page.getByRole("button", { name: "Save date of birth" }).click();
+
+  await expect(page.getByText("Date of birth saved as a new historical report.")).toBeVisible();
+  await expect(page.getByText("Age 36")).toBeVisible();
+  expect(submittedBody).toMatchObject({
+    date_of_birth: "1990-01-03",
+    date_of_birth_confirmed: true,
+  });
+  expect(submittedBody).not.toHaveProperty("age_years");
+});
+
 test("assessment workbench makes missing scientific governance explicit", async ({ page }) => {
   await page.route("http://localhost:8000/v1/operator/assessment-governance**", (route) => {
     if (route.request().url().endsWith("/candidates")) {
