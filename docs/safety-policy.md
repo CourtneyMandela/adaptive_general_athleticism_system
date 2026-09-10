@@ -65,6 +65,12 @@ movement. These are conservative stop boundaries, not symptom classification, di
 clearance, or proof that self-administration is suitable for a particular person. Candidate
 ratification cannot bypass the separate eligibility gate.
 
+An approved competency floor is not a safety policy. The first prepared chair-stand floor compares
+only an age-compatible, current, matching assessment estimate with a provisional lower reference.
+Meeting it cannot clear an athlete to train, and falling below it cannot diagnose impairment or
+authorize a dose. Eligibility review, stop conditions, and session-level safety decisions remain
+independent and controlling.
+
 ### Planning-policy candidates
 
 Approving a priority policy authorizes only deterministic ranking of later reviewed inputs. It is

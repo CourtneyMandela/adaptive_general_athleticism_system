@@ -344,7 +344,9 @@ test("assessment workbench makes missing scientific governance explicit", async 
 test("owner can ratify an exact prepared planning policy without authoring values", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   let ratified = false;
+  let floorRatified = false;
   let submittedBody: Record<string, unknown> = {};
+  let submittedFloorBody: Record<string, unknown> = {};
   const candidate = {
     candidate_version: "planning-governance-candidate@1.0.0",
     candidate_id: "98400000-0000-4000-8000-000000000001",
@@ -386,6 +388,53 @@ test("owner can ratify an exact prepared planning policy without authoring value
       }),
     });
   });
+  const floorCandidate = {
+    candidate_version: "competency-floor-candidate@1.0.0",
+    candidate_id: "98400000-0000-4000-8000-000000000002",
+    slug: "chair_stand_age_30_39_lower_reference_floor",
+    release_label: "Age 30-39 chair-stand lower-reference floor",
+    prepared_at: "2026-09-09T00:10:00Z",
+    content_digest: `sha256:${"c".repeat(64)}`,
+    summary: "A deliberately low, provisional comparison point.",
+    domain: "muscular_endurance",
+    estimate_scope: "assessment_specific:thirty_second_chair_stand_repetitions",
+    unit_or_scale: "repetitions",
+    threshold: 11,
+    comparison_direction: "higher_is_better",
+    minimum_age_years: 30,
+    maximum_age_years: 39,
+    governs: ["Whether a matching estimate is below this provisional lower reference."],
+    does_not_establish: ["Medical safety, diagnosis, or clearance to train."],
+    unresolved_limitations: ["The source is Colombian and the subgroup is small."],
+    evidence: [{
+      title: "Colombian adult sit-to-stand reference values (2025)",
+      source_url: "https://pmc.ncbi.nlm.nih.gov/articles/PMC13193711/",
+      population: "Colombian adults aged 30-39.",
+      finding: "The p2.5 value was 11 repetitions in both sex strata.",
+      limitations: ["A reference percentile is not a health or safety cutoff."],
+      conflict_disclosure: "The authors reported no relevant financial involvement.",
+    }],
+  };
+  await page.route("http://localhost:8000/v1/operator/competency-floor-candidates**", async (route) => {
+    if (route.request().method() === "POST") {
+      submittedFloorBody = route.request().postDataJSON() as Record<string, unknown>;
+      floorRatified = true;
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify({ ok: true }) });
+    }
+    return route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        projected_at: "2026-09-10T15:00:00Z",
+        projection_version: "competency-floor-candidates@1.0.0",
+        items: [{
+          candidate: floorCandidate,
+          status: floorRatified ? "ratified" : "available",
+          ratified_at: floorRatified ? "2026-09-10T15:00:00Z" : null,
+          issues: [],
+        }],
+      }),
+    });
+  });
 
   await page.goto("/review/planning-authorities");
 
@@ -402,6 +451,20 @@ test("owner can ratify an exact prepared planning policy without authoring value
     approval_attestation: true,
   });
   expect(submittedBody).not.toHaveProperty("deficit_weight");
+
+  await expect(page.getByRole("heading", { name: "Competency-floor candidates" })).toBeVisible();
+  await expect(page.getByText("Medical safety, diagnosis, or clearance to train.")).toBeVisible();
+  const approveFloor = page.getByRole("button", { name: "Approve exact floor" });
+  await expect(approveFloor).toBeDisabled();
+  await page.getByLabel(/I reviewed the population, exact threshold/).check();
+  await approveFloor.click();
+  await expect(page.getByText(/The floor can now be applied only/)).toBeVisible();
+  expect(submittedFloorBody).toEqual({
+    candidate_version: floorCandidate.candidate_version,
+    content_digest: floorCandidate.content_digest,
+    approval_attestation: true,
+  });
+  expect(submittedFloorBody).not.toHaveProperty("threshold");
 });
 
 test("the installable shell fails closed to an honest offline screen", async ({ context, page }) => {

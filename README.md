@@ -799,12 +799,14 @@ This setup is provisional: the provider-neutral browser-login code exists, but n
 identity provider or hosted client is selected or provisioned. Account recovery,
 consent/export/deletion workflow, sensitive health intake, assessment
 correction/attempt workflow,
-qualified protocol-review workflow, complete scientific-governance UI, protocol-specific
+qualified independent protocol-review workflow, complete scientific-governance UI, protocol-specific
 structured/duration assessment-result controls, estimation-policy authoring UI, or early-retest
-override yet. Governed competency-floor and priority-policy authoring
-workflows are also not implemented. Initial planning therefore requires externally prepared,
-reviewed authorities even though candidate-context, post-block review, and replanning inputs can be
-authored through role-protected structured forms.
+override yet. General governed competency-floor and priority-policy authoring workflows are also
+not implemented. The protected planning-authorities screen instead presents one immutable prepared
+priority policy and one immutable, age-bounded chair-stand floor; explicit owner-alpha ratification
+persists each exact authority chain without asking the owner to author scientific JSON. Other
+domains still require externally prepared, reviewed authorities even though candidate-context,
+post-block review, and replanning inputs can be authored through role-protected structured forms.
 No real assessment protocol is automatically approved. The protected assessment workbench now
 presents one immutable 30-second chair-stand candidate authored from exact PubMed source snapshots,
 including its narrow meaning, procedure, conflicts, and limitations. Explicit owner-alpha

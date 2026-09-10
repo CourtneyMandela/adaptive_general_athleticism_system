@@ -102,6 +102,15 @@ from agas_api.block_review_application import (
     BlockReviewNotFoundError,
     BlockReviewValidationError,
 )
+from agas_api.competency_floor_candidates import (
+    CompetencyFloorCandidateConflictError,
+    CompetencyFloorCandidateProjection,
+    CompetencyFloorCandidateValidationError,
+    CompetencyFloorRatificationResult,
+    RatifyCompetencyFloorCandidateCommand,
+    list_competency_floor_candidates,
+    ratify_competency_floor_candidate,
+)
 from agas_api.current_week import (
     CurrentWeekConflictError,
     CurrentWeekNotFoundError,
@@ -516,6 +525,42 @@ def ratify_prepared_planning_governance_candidate(
     except PlanningGovernanceCandidateConflictError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     except (PlanningGovernanceCandidateValidationError, ValueError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.get(
+    "/v1/operator/competency-floor-candidates",
+    tags=["operator"],
+    response_model=CompetencyFloorCandidateProjection,
+)
+def get_competency_floor_candidates(
+    session: Annotated[Session, Depends(database_session_dependency)],
+    _authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+) -> CompetencyFloorCandidateProjection:
+    return list_competency_floor_candidates(session)
+
+
+@app.post(
+    "/v1/operator/competency-floor-candidates/{candidate_id}/ratifications",
+    tags=["operator"],
+    response_model=CompetencyFloorRatificationResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def ratify_prepared_competency_floor_candidate(
+    candidate_id: UUID,
+    command: RatifyCompetencyFloorCandidateCommand,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+) -> CompetencyFloorRatificationResult:
+    try:
+        return ratify_competency_floor_candidate(session, candidate_id, command, authority)
+    except KeyError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except CompetencyFloorCandidateConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except (CompetencyFloorCandidateValidationError, ValueError) as error:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
         ) from error

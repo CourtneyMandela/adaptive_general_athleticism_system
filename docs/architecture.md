@@ -932,6 +932,17 @@ current review, actor provenance, and a decision record. The cited research supp
 broad training claim; the policy's numeric weights are labeled as replaceable engineering priors.
 Ratification creates no floor, athlete-specific score, strategy, block, exercise, dose, or session.
 
+Competency-floor preparation is a separate content-addressed boundary. `GET
+/v1/operator/competency-floor-candidates` exposes the exact threshold, estimate scope, unit,
+comparison direction, inclusive age bounds, source summary, and interpretation limits. `POST
+/v1/operator/competency-floor-candidates/{candidate_id}/ratifications` accepts only the exact
+version, digest, and attestation. The first candidate atomically creates the source snapshot,
+reviewed descriptive claim, age-bounded `CompetencyFloor`, exact current floor review, actor
+provenance, and decision record. The release treats an empirical population lower-reference value
+as a provisional owner-alpha screening floor while explicitly denying universal, medical, safety,
+or workout meaning. Age, scope, unit, evidence-readiness, and review checks remain enforced again
+at planning time.
+
 ## Web
 
 The Next.js App Router PWA begins with a bounded profile/environment onboarding form. It submits

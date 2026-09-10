@@ -199,6 +199,14 @@ compatibility does not establish full applicability and does not turn a referenc
 into a health, safety, or universal athletic threshold. The 19–35-year population in PMID 35949374
 therefore cannot silently support an all-adult chair-stand floor.
 
+The first prepared floor uses PMID 42183074 / PMCID PMC13193711. Its exact evidence claim is only
+that the empirical p2.5 value was 11 repetitions in both reported 30-to-39-year sex strata. The
+separate floor review—not the paper—is responsible for the provisional product interpretation of
+that lower reference as a screening boundary. The record preserves the small subgroup sizes,
+Colombian population, protocol differences, low athlete applicability, and the fact that the study
+does not validate a minimum useful athletic competency. Approval must never be described as proof
+of safety, health, ideal performance, or training effectiveness.
+
 ## Exercise resolution
 
 Exercise ontology metadata and resolver scores are not evidence of exercise equivalence. A full

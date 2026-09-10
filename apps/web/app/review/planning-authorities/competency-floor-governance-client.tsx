@@ -1,20 +1,17 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import {
-  fetchPlanningGovernanceCandidates,
-  ratifyPlanningGovernanceCandidate,
-  type PlanningGovernanceCandidateProjection,
-} from "@/lib/planning-governance";
-
-import { CompetencyFloorGovernanceClient } from "./competency-floor-governance-client";
+  fetchCompetencyFloorCandidates,
+  ratifyCompetencyFloorCandidate,
+  type CompetencyFloorCandidateProjection,
+} from "@/lib/competency-floor-governance";
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-export function PlanningGovernanceClient() {
-  const [projection, setProjection] = useState<PlanningGovernanceCandidateProjection | null>(null);
+export function CompetencyFloorGovernanceClient() {
+  const [projection, setProjection] = useState<CompetencyFloorCandidateProjection | null>(null);
   const [loading, setLoading] = useState(true);
   const [ratifying, setRatifying] = useState<string | null>(null);
   const [attestations, setAttestations] = useState<Record<string, boolean>>({});
@@ -25,10 +22,10 @@ export function PlanningGovernanceClient() {
     setLoading(true);
     setMessage("");
     try {
-      setProjection(await fetchPlanningGovernanceCandidates(apiBaseUrl));
+      setProjection(await fetchCompetencyFloorCandidates(apiBaseUrl));
     } catch (error) {
       setMessageKind("error");
-      setMessage(error instanceof Error ? error.message : "Unable to load planning governance.");
+      setMessage(error instanceof Error ? error.message : "Unable to load competency floors.");
     } finally {
       setLoading(false);
     }
@@ -36,14 +33,14 @@ export function PlanningGovernanceClient() {
 
   useEffect(() => {
     let active = true;
-    void fetchPlanningGovernanceCandidates(apiBaseUrl)
+    void fetchCompetencyFloorCandidates(apiBaseUrl)
       .then((result) => {
         if (active) setProjection(result);
       })
       .catch((error: unknown) => {
         if (active) {
           setMessageKind("error");
-          setMessage(error instanceof Error ? error.message : "Unable to load planning governance.");
+          setMessage(error instanceof Error ? error.message : "Unable to load competency floors.");
         }
       })
       .finally(() => {
@@ -60,12 +57,12 @@ export function PlanningGovernanceClient() {
     setRatifying(candidateId);
     setMessage("");
     try {
-      await ratifyPlanningGovernanceCandidate(apiBaseUrl, item.candidate);
-      setProjection(await fetchPlanningGovernanceCandidates(apiBaseUrl));
+      await ratifyCompetencyFloorCandidate(apiBaseUrl, item.candidate);
+      setProjection(await fetchCompetencyFloorCandidates(apiBaseUrl));
       setAttestations((current) => ({ ...current, [candidateId]: false }));
       setMessageKind("success");
       setMessage(
-        "The exact policy, evidence review, approval, and decision history were saved atomically.",
+        "The source, extracted claim, evidence review, age-bounded floor, approval, and decision history were saved atomically.",
       );
     } catch (error) {
       setMessageKind("error");
@@ -76,46 +73,20 @@ export function PlanningGovernanceClient() {
   }
 
   return (
-    <main className="review-shell">
-      <header className="review-topbar">
-        <div>
-          <p className="eyebrow">AGAS · Planning governance</p>
-          <h1>Prepared planning authorities</h1>
-          <p>
-            Review the engineering and evidence work behind a versioned planning policy. You are
-            approving exact prepared content, not being asked to invent the algorithm.
-          </p>
-        </div>
-        <nav className="review-route-links" aria-label="Reviewer routes">
-          <Link href="/review/assessments" className="text-link">Assessment governance</Link>
-          <Link href="/review" className="text-link">Initial planning</Link>
-          <Link href="/review/queue" className="text-link">Planning queue</Link>
-          <Link href="/" className="text-link">Athlete PWA</Link>
-        </nav>
-      </header>
-
-      <aside className="review-boundary" aria-label="Planning-review authority boundary">
-        <strong>Approval is narrow and reversible through versioning.</strong>
-        <span>
-          Ratification permits this exact policy to rank later reviewed inputs. It does not decide
-          your priority, create a workout, authorize unsafe training, or prove its numeric weights
-          are scientifically optimal.
-        </span>
-      </aside>
-
-      <section className="planning-queue-summary" aria-labelledby="candidate-title">
+    <>
+      <section className="planning-queue-summary" aria-labelledby="floor-candidate-title">
         <header>
           <div>
             <p className="eyebrow">Prepared by engineering and evidence review</p>
-            <h2 id="candidate-title">Priority-policy candidates</h2>
+            <h2 id="floor-candidate-title">Competency-floor candidates</h2>
           </div>
           <button type="button" className="secondary-button" onClick={() => void refresh()}>
             {loading ? "Refreshing…" : "Refresh"}
           </button>
         </header>
         <p>
-          The first candidate is deliberately conservative and transparent. It removes hidden
-          defaults and the prior requirement for you to author numeric policy JSON.
+          A floor is a narrow comparison point for a matching estimate. It is not a medical cutoff,
+          ideal target, or permission to train.
         </p>
       </section>
 
@@ -125,13 +96,13 @@ export function PlanningGovernanceClient() {
         return (
           <section
             className="assessment-candidate"
-            aria-labelledby={`planning-candidate-${candidate.candidate_id}`}
+            aria-labelledby={`floor-candidate-${candidate.candidate_id}`}
             key={candidate.candidate_id}
           >
             <header>
               <div>
-                <p className="eyebrow">Versioned ranking policy · owner alpha</p>
-                <h2 id={`planning-candidate-${candidate.candidate_id}`}>
+                <p className="eyebrow">Age-bounded lower reference · owner alpha</p>
+                <h2 id={`floor-candidate-${candidate.candidate_id}`}>
                   {candidate.release_label}
                 </h2>
               </div>
@@ -141,8 +112,12 @@ export function PlanningGovernanceClient() {
 
             <div className="assessment-candidate-meaning">
               <section>
-                <h3>What it governs</h3>
-                <ul>{candidate.governs.map((value) => <li key={value}>{value}</li>)}</ul>
+                <h3>Exact comparison</h3>
+                <p>
+                  <strong>{candidate.threshold} {candidate.unit_or_scale}</strong>, higher is better,
+                  ages {candidate.minimum_age_years}-{candidate.maximum_age_years} only.
+                </p>
+                <p><strong>Scope:</strong> {candidate.estimate_scope}</p>
               </section>
               <section>
                 <h3>What it does not establish</h3>
@@ -151,8 +126,8 @@ export function PlanningGovernanceClient() {
             </div>
 
             <details open>
-              <summary>Exact operational choices</summary>
-              <ul>{candidate.operational_choices.map((value) => <li key={value}>{value}</li>)}</ul>
+              <summary>What this floor governs</summary>
+              <ul>{candidate.governs.map((value) => <li key={value}>{value}</li>)}</ul>
             </details>
             <details open>
               <summary>Important unresolved limitations</summary>
@@ -169,7 +144,7 @@ export function PlanningGovernanceClient() {
                     <ul>{evidence.limitations.map((value) => <li key={value}>{value}</li>)}</ul>
                     <p><strong>Conflicts:</strong> {evidence.conflict_disclosure}</p>
                     <a href={evidence.source_url} target="_blank" rel="noreferrer" className="text-link">
-                      Open primary PubMed record
+                      Open primary full-text record
                     </a>
                   </article>
                 ))}
@@ -186,7 +161,7 @@ export function PlanningGovernanceClient() {
             {item.status === "ratified" ? (
               <p className="form-success">
                 Ratified {item.ratified_at ? new Date(item.ratified_at).toLocaleString() : "previously"}.
-                This policy can now appear in initial-planning preparation.
+                The floor can now be applied only to an age-compatible matching estimate.
               </p>
             ) : item.status === "available" ? (
               <div className="assessment-candidate-approval">
@@ -200,8 +175,8 @@ export function PlanningGovernanceClient() {
                     }))}
                   />
                   <span>
-                    I reviewed the policy scope, operational choices, evidence, and limitations. I
-                    approve this exact release for the owner-only alpha.
+                    I reviewed the population, exact threshold, scope, and limitations. I approve
+                    this exact provisional floor for the owner-only alpha.
                   </span>
                 </label>
                 <button
@@ -210,7 +185,7 @@ export function PlanningGovernanceClient() {
                   disabled={!attestations[candidate.candidate_id] || busy}
                   onClick={() => void ratify(candidate.candidate_id)}
                 >
-                  {busy ? "Ratifying exact policy…" : "Approve exact policy"}
+                  {busy ? "Ratifying exact floor…" : "Approve exact floor"}
                 </button>
               </div>
             ) : null}
@@ -218,13 +193,12 @@ export function PlanningGovernanceClient() {
         );
       })}
 
-      {!projection && loading ? <p className="planning-queue-empty">Loading prepared policy…</p> : null}
+      {!projection && loading ? <p className="planning-queue-empty">Loading prepared floor…</p> : null}
       {message ? (
         <p className={messageKind === "success" ? "form-success" : "form-error"} role="status">
           {message}
         </p>
       ) : null}
-      <CompetencyFloorGovernanceClient />
-    </main>
+    </>
   );
 }
