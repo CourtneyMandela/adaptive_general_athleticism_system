@@ -935,6 +935,15 @@ weight. The cited research supports population-level trainability, not either nu
 Ratification creates no floor, athlete-specific context, strategy, block, exercise, dose, or
 session.
 
+Resource-authority preparation uses the same content-addressed contract at `GET
+/v1/operator/resource-governance/candidates` and its candidate-specific ratification route. The
+first bundle reuses the exact reviewed ACSM source, adds a narrower reviewed frequency/function
+claim, and creates one equipment record, one exercise ontology record, one resolver policy, one
+allocation policy, and an actor-bound decision audit atomically. It remains blocked until the
+source and controlled muscular-endurance adaptation exist. These artifacts are eligible inputs for
+a later athlete-specific preparation; they do not report environmental availability or create a
+training dose.
+
 Competency-floor preparation is a separate content-addressed boundary. `GET
 /v1/operator/competency-floor-candidates` exposes the exact threshold, estimate scope, unit,
 comparison direction, inclusive age bounds, source summary, and interpretation limits. `POST

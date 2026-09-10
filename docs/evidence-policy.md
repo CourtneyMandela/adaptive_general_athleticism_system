@@ -198,6 +198,12 @@ because evidence establishes zero relevance or cost. Its `0.01` threshold is an 
 against zero and numerical noise rather than a scientific meaningful-change threshold. The
 athlete-specific prepared context must expose that distinction for every field.
 
+The first resource-authority bundle extracts the 2026 ACSM position stand's broad resistance-
+training function findings and at-least-twice-weekly primary recommendation into a distinct claim
+and review. That claim does not establish chair sit-to-stand as an optimal exercise, a weekly-minute
+amount, sets, repetitions, effort target, rest interval, or the bundle's resolver/allocation
+constants. The candidate presentation and decision history must preserve those exclusions.
+
 Competency-floor applicability must be enforceable where a source population has a meaningful age
 boundary. `minimum_age_years` and `maximum_age_years` record inclusive reviewed bounds; missing
 athlete age or an age outside those bounds makes the floor unavailable for new planning. Age

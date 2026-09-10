@@ -345,8 +345,10 @@ test("owner can ratify an exact prepared planning policy without authoring value
   await page.setViewportSize({ width: 390, height: 844 });
   let ratified = false;
   let floorRatified = false;
+  let resourceRatified = false;
   let submittedBody: Record<string, unknown> = {};
   let submittedFloorBody: Record<string, unknown> = {};
+  let submittedResourceBody: Record<string, unknown> = {};
   const candidate = {
     candidate_version: "planning-governance-candidate@1.0.0",
     candidate_id: "98400000-0000-4000-8000-000000000001",
@@ -435,6 +437,46 @@ test("owner can ratify an exact prepared planning policy without authoring value
       }),
     });
   });
+  const resourceCandidate = {
+    candidate_version: "resource-governance-candidate@1.0.0",
+    candidate_id: "98600000-0000-4000-8000-000000000001",
+    content_digest: `sha256:${"e".repeat(64)}`,
+    prepared_at: "2026-09-10T17:00:00Z",
+    release_label: "First owner-alpha resource authorities",
+    summary: "Exact first-block prerequisites.",
+    exact_artifacts: ["Exercise: Chair sit-to-stand"],
+    governs: ["Exact ontology and policy records."],
+    does_not_establish: ["Sets, repetitions, effort target, rest, or a workout."],
+    operational_choices: ["Partial exercise resolutions are not allocatable."],
+    unresolved_limitations: ["Stable-chair availability must be reported separately."],
+    evidence: [{
+      title: "ACSM resistance-training position stand (2026)",
+      source_url: "https://pmc.ncbi.nlm.nih.gov/articles/PMC12965823/",
+      population: "Healthy adults.",
+      finding: "Resistance training improved function.",
+      limitations: ["No exact dose."],
+    }],
+  };
+  await page.route("http://localhost:8000/v1/operator/resource-governance/candidates**", async (route) => {
+    if (route.request().method() === "POST") {
+      submittedResourceBody = route.request().postDataJSON() as Record<string, unknown>;
+      resourceRatified = true;
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify({ ok: true }) });
+    }
+    return route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        projected_at: "2026-09-10T18:00:00Z",
+        projection_version: "resource-governance-candidates@1.0.0",
+        items: [{
+          candidate: resourceCandidate,
+          status: resourceRatified ? "ratified" : "available",
+          ratified_at: resourceRatified ? "2026-09-10T18:00:00Z" : null,
+          issues: [],
+        }],
+      }),
+    });
+  });
 
   await page.goto("/review/planning-authorities");
 
@@ -465,6 +507,20 @@ test("owner can ratify an exact prepared planning policy without authoring value
     approval_attestation: true,
   });
   expect(submittedFloorBody).not.toHaveProperty("threshold");
+
+  await expect(page.getByRole("heading", { name: "First-block authority candidates" })).toBeVisible();
+  await expect(page.getByText("Exercise: Chair sit-to-stand")).toBeVisible();
+  const approveResource = page.getByRole("button", { name: "Approve resource authorities" });
+  await expect(approveResource).toBeDisabled();
+  await page.getByLabel(/I reviewed the exact artifacts/).check();
+  await approveResource.click();
+  await expect(page.getByText(/support a prepared resource demand/)).toBeVisible();
+  expect(submittedResourceBody).toEqual({
+    candidate_version: resourceCandidate.candidate_version,
+    content_digest: resourceCandidate.content_digest,
+    approval_attestation: true,
+  });
+  expect(submittedResourceBody).not.toHaveProperty("adaptation_role_weight");
 });
 
 test("owner can accept a system-prepared planning context without inventing scores", async ({

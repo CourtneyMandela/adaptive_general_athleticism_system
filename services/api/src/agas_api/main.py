@@ -282,6 +282,15 @@ from agas_api.resource_demand_preparation import (
     ResourceDemandPreparationProjectionError,
     ResourceDemandPreparationProjector,
 )
+from agas_api.resource_governance_candidates import (
+    RatifyResourceGovernanceCandidateCommand,
+    ResourceGovernanceCandidateConflictError,
+    ResourceGovernanceCandidateProjection,
+    ResourceGovernanceCandidateValidationError,
+    ResourceGovernanceRatificationResult,
+    list_resource_governance_candidates,
+    ratify_resource_governance_candidate,
+)
 from agas_api.resource_preparation import (
     ResourceDemandPreparationResult,
     ResourcePreparationConflictError,
@@ -534,6 +543,42 @@ def ratify_prepared_planning_governance_candidate(
     except PlanningGovernanceCandidateConflictError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     except (PlanningGovernanceCandidateValidationError, ValueError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.get(
+    "/v1/operator/resource-governance/candidates",
+    tags=["operator"],
+    response_model=ResourceGovernanceCandidateProjection,
+)
+def get_resource_governance_candidates(
+    session: Annotated[Session, Depends(database_session_dependency)],
+    _authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+) -> ResourceGovernanceCandidateProjection:
+    return list_resource_governance_candidates(session)
+
+
+@app.post(
+    "/v1/operator/resource-governance/candidates/{candidate_id}/ratifications",
+    tags=["operator"],
+    response_model=ResourceGovernanceRatificationResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def ratify_prepared_resource_governance_candidate(
+    candidate_id: UUID,
+    command: RatifyResourceGovernanceCandidateCommand,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+) -> ResourceGovernanceRatificationResult:
+    try:
+        return ratify_resource_governance_candidate(session, candidate_id, command, authority)
+    except KeyError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except ResourceGovernanceCandidateConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except (ResourceGovernanceCandidateValidationError, ValueError) as error:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
         ) from error

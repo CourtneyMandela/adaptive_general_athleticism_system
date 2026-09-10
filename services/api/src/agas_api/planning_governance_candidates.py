@@ -569,6 +569,12 @@ def _conservative_priority_policy_release() -> PreparedPlanningPolicyRelease:
     )
 
 
+def prepared_acsm_resistance_training_source() -> EvidenceSource:
+    """Return the exact source snapshot shared by prepared training authorities."""
+
+    return _conservative_priority_policy_release().source
+
+
 def _conservative_priority_policy_presentation_fields() -> dict[str, object]:
     return {
         "candidate_id": UUID("98400000-0000-4000-8000-000000000001"),

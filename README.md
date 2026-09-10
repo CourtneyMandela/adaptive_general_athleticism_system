@@ -731,6 +731,13 @@ The production release API now provides an authenticated, atomic ratification bo
 complete externally prepared chain; the understandable web review and confirmation flow is the
 next milestone and must exist before a real release is submitted.
 
+The planning-authority workbench also exposes a content-addressed first-block resource bundle after
+the exact deficit-only policy and controlled adaptation catalog exist. The bundle prepares a stable-
+chair equipment record, chair sit-to-stand exercise metadata, a full-match-only resolver, a single-
+DEVELOP-priority allocator, and the separately reviewed evidence claim behind its narrow scope.
+Approval creates those authorities atomically; it does not assert chair availability or create a
+resource demand, dose, block, week, session, or workout.
+
 The evidence-governance workbench is available at `http://localhost:3000/review/evidence` and
 uses the same read-only scientific-governance token. It traces each claim to exact source snapshots,
 shows every immutable claim-review decision, and marks legacy or non-approved claims as blocked.
