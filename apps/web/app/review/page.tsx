@@ -263,7 +263,8 @@ function PreparationContext({
       </details>
       <p className="form-help">
         This projection contains no candidate relevance, trainability, transfer, fatigue, time, or
-        interference scores. Those remain explicit reviewed inputs.
+        interference scores. The narrow prepared-context step uses only the governed deficit and
+        labels the unavailable fields as unused; broader planning still requires reviewed inputs.
       </p>
     </section>
   );
@@ -310,7 +311,9 @@ function ReviewPreview({ draft }: { draft: OperatorInitialStrategyRequest }) {
               <span
                 className={`status-badge${candidate.safe_to_train ? " status-badge--cleared" : " status-badge--held"}`}
               >
-                {candidate.safe_to_train ? "Safe to train" : "Not authorized for training"}
+                {candidate.safe_to_train
+                  ? "Planning inclusion allowed"
+                  : "Planning inclusion deferred"}
               </span>
             </header>
             <dl className="review-lineage">

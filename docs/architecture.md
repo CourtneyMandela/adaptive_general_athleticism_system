@@ -926,11 +926,14 @@ while an occupied release identity or changed digest fails closed.
 Planning-authority preparation follows the same content-addressed boundary. `GET
 /v1/operator/planning-governance/candidates` exposes immutable owner-readable policy proposals and
 `POST /v1/operator/planning-governance/candidates/{candidate_id}/ratifications` accepts only the
-exact version, digest, and attestation. The first candidate atomically creates a PubMed-backed
-evidence source and reviewed claim plus a conservative versioned `PriorityPolicy`, its exact
-current review, actor provenance, and a decision record. The cited research supports only the
-broad training claim; the policy's numeric weights are labeled as replaceable engineering priors.
-Ratification creates no floor, athlete-specific score, strategy, block, exercise, dose, or session.
+exact version, digest, and attestation. The candidates atomically create PubMed-backed reviewed
+claims plus versioned `PriorityPolicy` records, exact current reviews, actor provenance, and
+decision records. The first multi-factor policy remains immutable. A second deficit-only initial
+policy gives nonzero weight only to the governed normalized deficit, retains the estimate-
+confidence discount, and leaves unavailable contextual and stimulus-dependent cost fields at zero
+weight. The cited research supports population-level trainability, not either numerical policy.
+Ratification creates no floor, athlete-specific context, strategy, block, exercise, dose, or
+session.
 
 Competency-floor preparation is a separate content-addressed boundary. `GET
 /v1/operator/competency-floor-candidates` exposes the exact threshold, estimate scope, unit,
@@ -952,13 +955,17 @@ successful submission opens the authoritative current-week projection; the hones
 normally an empty week. The form does not collect sensitive health or injury data, derive capability
 estimates, assign safety policy, conduct assessment, or generate training.
 
-A separate `/review` route is the authenticated initial-planning console. Its primary workflow
-loads eligible persisted inputs, requires the reviewer to enter every candidate component value,
-and saves an immutable `InitialPlanningContextDraft`. A distinct action records one approved,
-needs-revision, or rejected `InitialPlanningContextReview`; any changed value requires a new draft.
-Only the approving account with the exact still-active assignment can create the strategy from the
-approved artifact. The resulting decision evidence names both artifact IDs. The route retains the
-externally prepared JSON path as a transitional fallback and is not part of athlete self-service.
+A separate `/review` route is the authenticated initial-planning console. Its primary owner-alpha
+workflow loads a server-prepared, content-addressed candidate for the exact chair-stand estimate,
+current age-applicable floor, deficit-only policy, and muscular-endurance adaptation. The candidate
+states unavailable contextual values as explicit zeroes paired with zero policy weights and
+explains every used, unused, and hard-gate value. Acceptance persists one deterministic immutable
+`InitialPlanningContextDraft`; retries return the exact draft. A distinct action records one
+approved, needs-revision, or rejected `InitialPlanningContextReview`; any changed content requires a
+new candidate and draft. Only the approving account with the exact still-active assignment can
+create the strategy from the approved artifact. The resulting decision evidence names both
+artifact IDs. The route retains externally prepared JSON as a transitional fallback and is not
+athlete self-service.
 
 Before parsing a document, the console can call the role-protected initial-planning preparation
 projection. This read model composes each current estimate with its actual source observations,
@@ -967,8 +974,10 @@ returns exact-current approved priority-policy reviews and all evidence claims r
 offered authorities and adaptations. Stale estimates are visible but ineligible; withdrawn or
 future authorities fail closed; an existing root strategy blocks initial creation. The projection
 does not emit any candidate scoring field and creates no durable review snapshot or planning state.
-The strategy creation boundary independently rejects an estimate that is stale at the explicit
-generation time, so bypassing or delaying the console cannot make stale derived state eligible.
+The narrow prepared-context projection composes only exact known authority versions, previews the
+deterministic priority, and stores nothing until content-addressed acceptance. The strategy creation
+boundary independently rejects an estimate that is stale at the explicit generation time, so
+bypassing or delaying the console cannot make stale derived state eligible.
 
 Candidate-context tables normalize the eight bounded score/cost components, safety and sequencing
 flags, exact authority IDs, and ordered observation/evidence/prerequisite links. Drafts and reviews

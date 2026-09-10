@@ -314,19 +314,23 @@ and any failed insert rolls back the bundle. The command refuses production and 
 authentication configuration. It transports reviewed data but does not verify source authenticity
 or reviewer credentials.
 
-An active reviewer may load the read-only initial-planning preparation projection, author an
-immutable candidate-context draft, record one immutable review of that exact draft, and create the
-root strategy only from an approved review. Draft and review endpoints bind the authenticated
-account and exact active role assignment; actor identifiers are not accepted from the browser.
-Strategy creation reloads the artifact and revalidates current policy/floor approvals and estimate
+An active reviewer may load the read-only initial-planning preparation projection, inspect and
+accept the system-prepared owner-alpha context, record one immutable review of that exact draft,
+and create the root strategy only from an approved review. The prepared path works only for the
+exact current chair-stand estimate, age-applicable floor, deficit-only policy, and muscular-
+endurance adaptation. Inputs without a governed magnitude are explicit zeroes under zero policy
+weights rather than hidden guesses. Draft and review endpoints bind the authenticated account and
+exact active role assignment; actor identifiers are not accepted from the browser. Strategy
+creation reloads the artifact and revalidates current policy/floor approvals and estimate
 freshness. Rejected and needs-revision drafts remain history and require a new draft.
 
-Initial planning requires explicit candidate scores and the exact current approved policy and
-competency-floor reviews. The preparation projection returns current estimates, source
-observations, compatible approved floors and adaptations, approved policy options, and their
-referenced evidence while separating stale state and existing strategy blockers. No boundary
-infers scores, selects exercises, or generates workouts. The legacy direct initial-strategy POST
-and reviewed-file CLI remain available during transition. The environment queue is derived from
+The preparation projection returns current estimates, source observations, compatible approved
+floors and adaptations, approved policy options, and their referenced evidence while separating
+stale state and existing strategy blockers. The content-addressed prepared-context endpoint then
+previews the exact priority result and exposes every used, unused, and hard-gate field with its
+basis and limitation. It does not select exercises, prescribe dose, or generate workouts. The
+legacy direct initial-strategy POST and reviewed-file CLI remain available during transition. The
+environment queue is derived from
 weekly plans whose confirmed next-week environments do not match their effective prescription
 resolutions. The environment-review POST routes complete that narrow workflow by invoking the same
 deterministic re-resolution and prescription-revision services as the local CLIs. Their request
@@ -710,11 +714,14 @@ The provisional reviewer console is available at `http://localhost:3000/review`.
 `NEXT_PUBLIC_AGAS_REVIEWER_TOKEN=dev.local-reviewer` and grant that subject the local
 `planning_reviewer` role as shown above. The console retrieves eligible estimates, their source
 observations, exact current floor and policy reviews, compatible adaptations, and referenced
-evidence. It then accepts an externally prepared initial-planning document, rejects reviewer
-identity fields, displays exact authority versions, scores, provenance, rationale, and uncertainty
-for confirmation, and submits the same parsed document. It shows
-the resulting immutable strategy and decision audit. It does not author candidate values, choose
-training content, or turn the reviewer role into a claim of professional qualification.
+evidence. For the current owner-alpha path, the server prepares the exact context, explains why
+unavailable score fields are unused, previews the priority result, and accepts only its version,
+digest, and attestation. The console then records a separate immutable review and can create the
+strategy from that exact artifact. Externally prepared JSON remains a legacy fallback: it rejects
+reviewer identity fields and displays exact authorities, values, provenance, rationale, and
+uncertainty before submitting the same parsed document. Neither path asks the owner to author
+scientific values, choose training content, or treat application permission as professional
+qualification.
 
 The assessment-governance workbench is available at
 `http://localhost:3000/review/assessments`. Configure

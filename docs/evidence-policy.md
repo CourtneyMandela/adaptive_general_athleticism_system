@@ -191,6 +191,12 @@ physical-capacity outcomes. That evidence does not establish the candidate's num
 thresholds, or maximum simultaneous priorities. Those values are explicitly identified as a
 versioned engineering prior and require counterfactual and personal-response evaluation. Evidence
 provenance must never be presented as scientific validation of values the source did not study.
+The second deficit-only policy narrows the operational use: only an exact normalized competency
+deficit has nonzero weight, and confidence still discounts that signal. Contextual relevance and
+stimulus-dependent cost fields receive zero weight because their magnitudes are unavailable, not
+because evidence establishes zero relevance or cost. Its `0.01` threshold is an engineering guard
+against zero and numerical noise rather than a scientific meaningful-change threshold. The
+athlete-specific prepared context must expose that distinction for every field.
 
 Competency-floor applicability must be enforceable where a source population has a meaningful age
 boundary. `minimum_age_years` and `maximum_age_years` record inclusive reviewed bounds; missing

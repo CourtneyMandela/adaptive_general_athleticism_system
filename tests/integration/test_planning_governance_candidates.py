@@ -34,7 +34,26 @@ def _authority() -> AuthorizedRole:
 
 
 def _command(session: Session) -> tuple[UUID, RatifyPlanningGovernanceCandidateCommand]:
-    candidate = list_planning_governance_candidates(session, projected_at=NOW).items[0].candidate
+    candidate = next(
+        item.candidate
+        for item in list_planning_governance_candidates(session, projected_at=NOW).items
+        if item.candidate.slug == "owner_alpha_conservative_priority_policy"
+    )
+    return candidate.candidate_id, RatifyPlanningGovernanceCandidateCommand(
+        candidate_version=CANDIDATE_VERSION,
+        content_digest=candidate.content_digest,
+        approval_attestation=True,
+    )
+
+
+def _deficit_only_command(
+    session: Session,
+) -> tuple[UUID, RatifyPlanningGovernanceCandidateCommand]:
+    candidate = next(
+        item.candidate
+        for item in list_planning_governance_candidates(session, projected_at=NOW).items
+        if item.candidate.slug == "owner_alpha_deficit_only_initial_policy"
+    )
     return candidate.candidate_id, RatifyPlanningGovernanceCandidateCommand(
         candidate_version=CANDIDATE_VERSION,
         content_digest=candidate.content_digest,
@@ -46,8 +65,12 @@ def test_candidate_exposes_policy_scope_and_uncertainty(session: Session) -> Non
     projection = list_planning_governance_candidates(session, projected_at=NOW)
 
     assert projection.projection_version == "planning-governance-candidates@1.0.0"
-    assert len(projection.items) == 1
-    item = projection.items[0]
+    assert len(projection.items) == 2
+    item = next(
+        item
+        for item in projection.items
+        if item.candidate.slug == "owner_alpha_conservative_priority_policy"
+    )
     assert item.status == "available"
     assert item.candidate.slug == "owner_alpha_conservative_priority_policy"
     assert item.candidate.content_digest.startswith("sha256:")
@@ -55,6 +78,70 @@ def test_candidate_exposes_policy_scope_and_uncertainty(session: Session) -> Non
     assert any("two adaptations" in value for value in item.candidate.operational_choices)
     assert any("competency floor" in value for value in item.candidate.unresolved_limitations)
     assert item.candidate.evidence[0].source_url == ("https://pubmed.ncbi.nlm.nih.gov/41843416/")
+
+    deficit_only = next(
+        item
+        for item in projection.items
+        if item.candidate.slug == "owner_alpha_deficit_only_initial_policy"
+    )
+    assert deficit_only.status == "available"
+    assert any("zero weight" in value for value in deficit_only.candidate.operational_choices)
+    assert any(
+        "medical clearance" in value.casefold()
+        for value in deficit_only.candidate.does_not_establish
+    )
+
+
+def test_deficit_only_candidate_ratifies_as_distinct_immutable_policy(
+    session: Session,
+) -> None:
+    candidate_id, command = _deficit_only_command(session)
+
+    result = ratify_planning_governance_candidate(
+        session, candidate_id, command, _authority(), ratified_at=NOW
+    )
+    policy = result.policy
+
+    assert policy.policy_version == "owner-alpha-deficit-only-priority@1.0.0"
+    assert policy.deficit_weight == 1
+    assert policy.general_relevance_weight == 0
+    assert policy.goal_relevance_weight == 0
+    assert policy.prerequisite_value_weight == 0
+    assert policy.expected_trainability_weight == 0
+    assert policy.transfer_value_weight == 0
+    assert policy.fatigue_cost_weight == 0
+    assert policy.time_cost_weight == 0
+    assert policy.interference_cost_weight == 0
+    assert policy.cost_penalty == 0
+    assert policy.confidence_multipliers[Confidence.UNKNOWN] == 0
+    assert policy.confidence_multipliers[Confidence.LOW] == 0.5
+    assert policy.develop_score_threshold == 0.01
+    assert policy.max_develop_adaptations == 1
+    assert result.decision_record_created is True
+
+
+def test_deficit_only_candidate_reuses_prior_source_without_rewriting_prior_policy(
+    session: Session,
+) -> None:
+    first_id, first_command = _command(session)
+    second_id, second_command = _deficit_only_command(session)
+
+    first = ratify_planning_governance_candidate(
+        session, first_id, first_command, _authority(), ratified_at=NOW
+    )
+    second = ratify_planning_governance_candidate(
+        session,
+        second_id,
+        second_command,
+        _authority(),
+        ratified_at=NOW + timedelta(minutes=1),
+    )
+
+    assert first.policy.policy_version == "owner-alpha-conservative-priority@1.0.0"
+    assert second.policy.policy_version == "owner-alpha-deficit-only-priority@1.0.0"
+    assert second.created_source is False
+    assert second.created_claim is True
+    assert DomainRepository(session).get_priority_policy(first.policy.id) == first.policy
 
 
 def test_exact_candidate_ratification_is_atomic_and_idempotent(session: Session) -> None:

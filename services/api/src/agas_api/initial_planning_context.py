@@ -131,6 +131,8 @@ class PersistedInitialPlanningContextService:
         athlete_id: UUID,
         request: OperatorInitialPlanningContextDraftRequest,
         authority: AuthorizedRole,
+        *,
+        draft_id: UUID | None = None,
     ) -> InitialPlanningContextDraft:
         try:
             if request.authored_at < authority.assigned_at:
@@ -150,7 +152,9 @@ class PersistedInitialPlanningContextService:
                 uncertainty=request.uncertainty,
             )
             self.planning.preview(athlete_id, validation_command)
+            identity = {"id": draft_id} if draft_id is not None else {}
             draft = InitialPlanningContextDraft(
+                **identity,
                 athlete_id=athlete_id,
                 priority_policy_id=request.priority_policy_id,
                 priority_policy_review_id=request.priority_policy_review_id,

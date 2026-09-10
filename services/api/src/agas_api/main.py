@@ -253,6 +253,15 @@ from agas_api.post_block_preparation import (
     ReplanningPreparationProjection,
     ReplanningPreparationProjector,
 )
+from agas_api.prepared_initial_planning_context import (
+    PreparedInitialPlanningContextConflictError,
+    PreparedInitialPlanningContextNotFoundError,
+    PreparedInitialPlanningContextProjection,
+    PreparedInitialPlanningContextProjector,
+    PreparedInitialPlanningContextRatificationResult,
+    RatifyPreparedInitialPlanningContextCommand,
+    ratify_prepared_initial_planning_context,
+)
 from agas_api.progression_application import (
     AutomaticProgressionDecisionCommand,
     PersistedProgressionService,
@@ -584,6 +593,59 @@ def get_operator_initial_planning_preparation(
     except InitialPlanningPreparationProjectionError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.get(
+    "/v1/operator/athletes/{athlete_id}/prepared-initial-planning-context",
+    tags=["operator"],
+    response_model=PreparedInitialPlanningContextProjection,
+)
+def get_prepared_initial_planning_context(
+    athlete_id: UUID,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+    projected_at: Annotated[datetime | None, Query(alias="at")] = None,
+) -> PreparedInitialPlanningContextProjection:
+    try:
+        return PreparedInitialPlanningContextProjector(session).project(
+            athlete_id, authority, projected_at
+        )
+    except InitialPlanningPreparationNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except (InitialPlanningPreparationProjectionError, InitialPlanningConflictError) as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except (InitialPlanningValidationError, ValueError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.post(
+    "/v1/operator/athletes/{athlete_id}/prepared-initial-planning-context/"
+    "{candidate_id}/ratifications",
+    tags=["operator"],
+    response_model=PreparedInitialPlanningContextRatificationResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def ratify_operator_prepared_initial_planning_context(
+    athlete_id: UUID,
+    candidate_id: UUID,
+    command: RatifyPreparedInitialPlanningContextCommand,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+) -> PreparedInitialPlanningContextRatificationResult:
+    try:
+        return ratify_prepared_initial_planning_context(
+            session, athlete_id, candidate_id, command, authority
+        )
+    except PreparedInitialPlanningContextNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except PreparedInitialPlanningContextConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except (InitialPlanningContextValidationError, ValueError) as error:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
         ) from error

@@ -467,6 +467,158 @@ test("owner can ratify an exact prepared planning policy without authoring value
   expect(submittedFloorBody).not.toHaveProperty("threshold");
 });
 
+test("owner can accept a system-prepared planning context without inventing scores", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const contextId = "98500000-0000-4000-8000-000000000001";
+  const estimateId = "96000000-0000-4000-8000-000000000010";
+  const floorId = "99000000-0000-4000-8000-000000000001";
+  const floorReviewId = "99100000-0000-4000-8000-000000000001";
+  const adaptationId = "a0000000-0000-4000-8000-000000000004";
+  let submittedBody: Record<string, unknown> = {};
+  const candidateContext = {
+    adaptation_id: adaptationId,
+    competency_floor_id: floorId,
+    competency_floor_review_id: floorReviewId,
+    capability_estimate_id: estimateId,
+    general_relevance: 0,
+    goal_relevance: 0,
+    prerequisite_value: 0,
+    expected_trainability: 0,
+    transfer_value: 0,
+    fatigue_cost: 0,
+    time_cost: 0,
+    interference_cost: 0,
+    safe_to_train: true,
+    introductory_exposure_needed: false,
+    prerequisites_met: true,
+    prerequisite_adaptation_ids: [],
+    cultivate_comparative_advantage: false,
+    source_observation_ids: ["93000000-0000-4000-8000-000000000010"],
+    evidence_claim_ids: ["91000000-0000-4000-8000-000000000010"],
+  };
+  const draft = {
+    id: contextId,
+    schema_version: "1.0.0",
+    created_at: "2026-09-10T16:00:00Z",
+    athlete_id: athleteId,
+    priority_policy_id: "98000000-0000-4000-8000-000000000002",
+    priority_policy_review_id: "98300000-0000-4000-8000-000000000002",
+    candidate_contexts: [candidateContext],
+    horizon_months: 12,
+    review_after_days: 28,
+    authored_by_account_id: "10000000-0000-4000-8000-000000000001",
+    author_authority_assignment_id: "20000000-0000-4000-8000-000000000001",
+    authored_at: "2026-09-10T16:00:00Z",
+    applicability_rationale: "System prepared exact context.",
+    uncertainty: "No workout or medical clearance.",
+    draft_version: "initial-planning-context-draft@1.0.0",
+  };
+  const candidate = {
+    candidate_version: "prepared-initial-planning-context@1.0.0",
+    candidate_id: contextId,
+    content_digest: `sha256:${"d".repeat(64)}`,
+    prepared_at: "2026-09-10T16:00:00Z",
+    athlete_id: athleteId,
+    athlete_display_name: "Courtney",
+    status: "available",
+    summary: "AGAS prepared the exact first planning context from governed state.",
+    priority_policy_id: draft.priority_policy_id,
+    priority_policy_review_id: draft.priority_policy_review_id,
+    policy_version: "owner-alpha-deficit-only-priority@1.0.0",
+    floor_version: "chair-stand-age-30-39-lower-reference-floor@1.0.0",
+    estimate_scope: "assessment_specific:thirty_second_chair_stand_repetitions",
+    candidate_context: candidateContext,
+    horizon_months: 12,
+    review_after_days: 28,
+    applicability_rationale: "Zero means unused, not unimportant.",
+    uncertainty: "The estimate is low confidence.",
+    components: [{
+      field: "general_relevance",
+      value: 0,
+      treatment: "unused",
+      basis: "Explicit zero paired with zero policy weight.",
+      limitation: "No governed magnitude exists.",
+    }],
+    expected_priority_state: "develop",
+    expected_priority_score: 0.045,
+    safety_boundary: "This is not medical clearance; each session needs its safety gate.",
+    accepted_draft_id: null,
+    accepted_draft: null,
+    accepted_review: null,
+  };
+  await page.route(
+    `http://localhost:8000/v1/operator/athletes/${athleteId}/initial-planning-preparation**`,
+    (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        athlete_id: athleteId,
+        athlete_display_name: "Courtney",
+        projected_at: "2026-09-10T16:00:00Z",
+        athlete_age_years: 35,
+        status: "planning_context_review_required",
+        message: "Ready for exact context review.",
+        initial_strategy_id: null,
+        estimate_options: [],
+        stale_estimates: [],
+        priority_policy_options: [],
+        evidence_claims: [],
+        floor_applicability_issues: [],
+        projection_version: "initial-planning-preparation@1.1.0",
+      }),
+    }),
+  );
+  await page.route(
+    `http://localhost:8000/v1/operator/athletes/${athleteId}/prepared-initial-planning-context**`,
+    async (route) => {
+      if (route.request().method() === "POST") {
+        submittedBody = route.request().postDataJSON() as Record<string, unknown>;
+        return route.fulfill({
+          status: 201,
+          contentType: "application/json",
+          body: JSON.stringify({
+            candidate_id: contextId,
+            candidate_content_digest: candidate.content_digest,
+            created: true,
+            draft,
+            ratification_version: "prepared-initial-planning-context-ratification@1.0.0",
+          }),
+        });
+      }
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          athlete_id: athleteId,
+          projected_at: "2026-09-10T16:00:00Z",
+          status: "available",
+          message: "One exact context is ready.",
+          candidate,
+          blockers: [],
+          projection_version: "prepared-initial-planning-context-projection@1.0.0",
+        }),
+      });
+    },
+  );
+
+  await page.goto(`/review?athleteId=${athleteId}`);
+  await page.getByRole("button", { name: "Load eligible inputs" }).click();
+  await expect(page.getByRole("heading", { name: "Review what AGAS prepared" })).toBeVisible();
+  await expect(page.getByText("DEVELOP", { exact: true })).toBeVisible();
+  await expect(page.getByText("This is not medical clearance", { exact: false })).toBeVisible();
+  const accept = page.getByRole("button", { name: "Accept prepared context" });
+  await expect(accept).toBeDisabled();
+  await page.getByLabel(/I inspected the exact prepared context/).check();
+  await accept.click();
+  await expect(page.getByRole("heading", { name: "Review the exact stored draft" })).toBeVisible();
+  expect(submittedBody).toEqual({
+    candidate_version: candidate.candidate_version,
+    content_digest: candidate.content_digest,
+    approval_attestation: true,
+  });
+  expect(submittedBody).not.toHaveProperty("general_relevance");
+});
+
 test("the installable shell fails closed to an honest offline screen", async ({ context, page }) => {
   await page.goto("/");
 

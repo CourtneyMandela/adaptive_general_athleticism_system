@@ -399,19 +399,30 @@ def _existing_result(
 
 @lru_cache
 def _candidate_registry() -> dict[UUID, PreparedPlanningGovernanceCandidate]:
-    release = _conservative_priority_policy_release()
-    presentation_fields = _conservative_priority_policy_presentation_fields()
-    content_digest = _candidate_digest(release, presentation_fields)
-    presentation = PlanningGovernanceCandidate(
-        candidate_version=CANDIDATE_VERSION,
-        content_digest=content_digest,
-        **presentation_fields,
-    )
-    candidate = PreparedPlanningGovernanceCandidate(
-        presentation=presentation,
-        release=release,
-    )
-    return {presentation.candidate_id: candidate}
+    candidates = []
+    for release, presentation_fields in (
+        (
+            _conservative_priority_policy_release(),
+            _conservative_priority_policy_presentation_fields(),
+        ),
+        (
+            _deficit_only_priority_policy_release(),
+            _deficit_only_priority_policy_presentation_fields(),
+        ),
+    ):
+        content_digest = _candidate_digest(release, presentation_fields)
+        presentation = PlanningGovernanceCandidate(
+            candidate_version=CANDIDATE_VERSION,
+            content_digest=content_digest,
+            **presentation_fields,
+        )
+        candidates.append(
+            PreparedPlanningGovernanceCandidate(
+                presentation=presentation,
+                release=release,
+            )
+        )
+    return {candidate.presentation.candidate_id: candidate for candidate in candidates}
 
 
 def _candidate_digest(
@@ -600,6 +611,153 @@ def _conservative_priority_policy_presentation_fields() -> dict[str, object]:
                 limitations=(
                     "The source supports training effects, not the candidate's numeric ranking weights.",
                     "It does not identify Courtney's current priority or prescribe a first workout.",
+                ),
+                conflict_disclosure="No conflict was identified by the reviewing agent; full source-author disclosure review remains required before broader production use.",
+            ),
+        ),
+    }
+
+
+def _deficit_only_priority_policy_release() -> PreparedPlanningPolicyRelease:
+    """Prepare the narrow policy used while contextual planning signals remain unavailable."""
+
+    source = _conservative_priority_policy_release().source
+    claim_time = datetime(2026, 9, 9, 14, 10, tzinfo=UTC)
+    prepared_at = datetime(2026, 9, 9, 14, 30, tzinfo=UTC)
+    claim = EvidenceClaim(
+        id=UUID("91000000-0000-4000-8000-000000000004"),
+        created_at=claim_time,
+        claim=(
+            "The reviewed resistance-training overview reports improvement in muscular endurance "
+            "among the multiple muscle-function and physical-performance outcomes that improved "
+            "with progressive resistance training compared with no exercise."
+        ),
+        domain="muscular_endurance",
+        population="Healthy adults aged 18 years or older represented across 137 systematic reviews.",
+        intervention="Progressive resistance training lasting at least six weeks.",
+        comparator="No exercise or alternative resistance-training prescriptions, depending on the underlying review.",
+        outcome="Muscular endurance as one outcome within a broad overview of resistance-training effects.",
+        study_design="American College of Sports Medicine position stand using an overview of systematic reviews",
+        duration="Underlying randomized trials ranged from 6 to 52 weeks.",
+        effect_direction="Progressive resistance training improved muscular endurance in the reviewed evidence base.",
+        uncertainty=(
+            "The overview supports trainability at a population level. It does not establish that "
+            "one individual will respond, validate a chair-stand threshold, quantify a priority "
+            "score, or prescribe an exercise or dose."
+        ),
+        limitations=(
+            "The overview combines heterogeneous reviews, populations, endurance measures, and prescriptions.",
+            "The abstract does not provide a chair-stand-specific effect estimate.",
+            "The source does not determine AGAS policy thresholds or an athlete-specific decision.",
+        ),
+        evidence_strength=EvidenceStrength.HIGH,
+        athlete_applicability=Applicability.MODERATE,
+        applicability_notes=(
+            "Directionally applicable to a healthy-adult owner alpha only as support that muscular "
+            "endurance is trainable; current readiness and later exercise-dose governance remain required."
+        ),
+        source_identifiers=source.source_identifiers,
+        source_record_ids=(source.id,),
+        reviewer="Codex evidence synthesis candidate; authority pending",
+        claim_version="acsm-resistance-training-muscular-endurance@1.0.0",
+    )
+    policy = PriorityPolicy(
+        id=UUID("98000000-0000-4000-8000-000000000002"),
+        created_at=prepared_at,
+        deficit_weight=1.0,
+        general_relevance_weight=0.0,
+        goal_relevance_weight=0.0,
+        prerequisite_value_weight=0.0,
+        expected_trainability_weight=0.0,
+        transfer_value_weight=0.0,
+        fatigue_cost_weight=0.0,
+        time_cost_weight=0.0,
+        interference_cost_weight=0.0,
+        cost_penalty=0.0,
+        confidence_multipliers={
+            Confidence.UNKNOWN: 0.0,
+            Confidence.LOW: 0.5,
+            Confidence.MODERATE: 0.75,
+            Confidence.HIGH: 1.0,
+        },
+        develop_score_threshold=0.01,
+        comparative_advantage_threshold=1.0,
+        severe_deficit_threshold=0.5,
+        max_develop_adaptations=1,
+        policy_version="owner-alpha-deficit-only-priority@1.0.0",
+    )
+    return PreparedPlanningPolicyRelease(
+        release_id=UUID("98400000-0000-4000-8000-000000000002"),
+        release_label="Deficit-only owner-alpha initial policy",
+        prepared_at=prepared_at,
+        source=source,
+        claim=claim,
+        evidence_review_id=UUID("91100000-0000-4000-8000-000000000004"),
+        evidence_review_content={
+            "source_verification_rationale": "PubMed identifiers, overview scale, population, and the reported muscular-endurance outcome were checked against PMID 41843416.",
+            "extraction_rationale": "The narrower claim retains only the reported direction for muscular endurance and excludes athlete-specific response, threshold, and dose conclusions.",
+            "evidence_strength_rationale": "A current professional position stand synthesizing 137 systematic reviews provides strong broad evidence while heterogeneous underlying methods limit specificity.",
+            "applicability_rationale": "The healthy-adult evidence supports trainability directionally; it does not replace current readiness, individual response, or exercise feasibility checks.",
+            "uncertainty": "This review approves the extracted trainability claim, not the policy's 0.01 operational threshold or any workout.",
+            "conflict_disclosure": "No conflict was identified by the reviewing agent; source-author disclosures require full-text review before broader production use.",
+            "review_version": "evidence-review-acsm-muscular-endurance@1.0.0",
+        },
+        policy=policy,
+        policy_review_id=UUID("98300000-0000-4000-8000-000000000002"),
+        policy_review_content={
+            "applicability_rationale": "Use only for the owner-alpha initial strategy when a current estimate is exactly comparable with a reviewed competency floor and richer contextual signals have not yet been established.",
+            "uncertainty": "The nonzero threshold is a versioned numerical guard against floating-point noise, not a clinically or scientifically established minimum meaningful difference. Reassessment and later response data must challenge the decision.",
+            "review_version": "owner-alpha-deficit-only-priority-review@1.0.0",
+        },
+        release_rationale="Let the first strategy use the exact governed deficit and estimate confidence that AGAS can substantiate without forcing the owner to invent relevance, transfer, trainability, or recovery-cost scores.",
+        release_uncertainty="This policy is intentionally narrow. It creates no athlete context, safety clearance, strategy, block, exercise, dose, session, or workout.",
+    )
+
+
+def _deficit_only_priority_policy_presentation_fields() -> dict[str, object]:
+    return {
+        "candidate_id": UUID("98400000-0000-4000-8000-000000000002"),
+        "slug": "owner_alpha_deficit_only_initial_policy",
+        "release_label": "Deficit-only owner-alpha initial policy",
+        "prepared_at": datetime(2026, 9, 9, 14, 30, tzinfo=UTC),
+        "summary": (
+            "A deliberately narrow initial policy that ranks only an exact measured deficit, "
+            "discounted by estimate confidence. Inputs AGAS cannot yet substantiate receive zero "
+            "weight rather than becoming hidden guesses."
+        ),
+        "governs": (
+            "Whether an exact current estimate below its reviewed compatible floor may receive DEVELOP status.",
+            "How estimate confidence reduces the measured deficit's ranking influence.",
+            "A maximum of one development priority in the first owner-alpha strategy.",
+        ),
+        "does_not_establish": (
+            "Medical clearance or current readiness to perform a session.",
+            "Goal relevance, transfer value, prerequisites, fatigue cost, time cost, or interference cost.",
+            "An exercise, training dose, weekly schedule, or guaranteed response.",
+            "That a small deficit is clinically important or harmful.",
+        ),
+        "operational_choices": (
+            "Only normalized deficit has nonzero benefit weight; every unavailable contextual score has zero weight.",
+            "Unknown confidence contributes no adjusted benefit; low and moderate confidence remain discounted.",
+            "The 0.01 DEVELOP threshold distinguishes a real normalized deficit from zero or numerical noise; it is not a scientific cutoff.",
+            "Cost terms receive zero weight because cost depends on the later selected stimulus, exercise, dose, and schedule.",
+            "At most one adaptation may receive DEVELOP status in this initial narrow policy.",
+        ),
+        "unresolved_limitations": (
+            "The policy is suitable only while the owner alpha has one narrowly governed capability path.",
+            "It cannot compare rich multi-domain tradeoffs until structured goal, relationship, and resource evidence exists.",
+            "Any below-floor nonzero deficit with known confidence can qualify; personal response and repeat measurement must test whether that is useful.",
+            "A separately reviewed athlete-specific context and current session safety gate remain required.",
+        ),
+        "evidence": (
+            PlanningPolicyEvidenceSummary(
+                title="ACSM resistance-training position stand (2026)",
+                source_url="https://pubmed.ncbi.nlm.nih.gov/41843416/",
+                population="Healthy adults represented across 137 systematic reviews and more than 30,000 participants.",
+                finding="Progressive resistance training improved muscular endurance among multiple reported outcomes.",
+                limitations=(
+                    "The source supports population-level trainability, not the policy's numeric threshold.",
+                    "It does not establish an individual priority, chair-stand cutoff, exercise, or dose.",
                 ),
                 conflict_disclosure="No conflict was identified by the reviewing agent; full source-author disclosure review remains required before broader production use.",
             ),

@@ -43,6 +43,12 @@ new observation rather than erasing the earlier report. Age may block an age-bou
 planning authority, but it must not be treated as a capability score, diagnosis, clearance, or
 standalone safety decision. Exact date of birth must not appear in public or operator-wide queues.
 
+The initial-planning candidate's legacy `safe_to_train` flag is a strategic-inclusion hard gate,
+not a session-safety conclusion. In the prepared owner-alpha context, `true` means only that no
+planning-level deferral is asserted for the adaptation. It is not medical clearance and cannot
+authorize performance. A current `SessionSafetyDecision` under the athlete's exact assigned safety
+policy remains required before every session execution.
+
 Ordinary self-service reassessment is unavailable until the exact historical protocol review's
 recommended interval ends. This is a conservative cadence boundary, not a medical judgment or a
 claim that earlier testing is universally unsafe. Any early-retest path requires separate governed
