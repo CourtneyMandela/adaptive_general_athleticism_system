@@ -262,6 +262,15 @@ from agas_api.prepared_initial_planning_context import (
     RatifyPreparedInitialPlanningContextCommand,
     ratify_prepared_initial_planning_context,
 )
+from agas_api.prepared_resource_demand import (
+    PreparedResourceDemandConflictError,
+    PreparedResourceDemandProjection,
+    PreparedResourceDemandProjector,
+    PreparedResourceDemandRatificationResult,
+    PreparedResourceDemandValidationError,
+    RatifyPreparedResourceDemandCommand,
+    ratify_prepared_resource_demand,
+)
 from agas_api.progression_application import (
     AutomaticProgressionDecisionCommand,
     PersistedProgressionService,
@@ -816,6 +825,71 @@ def get_operator_resource_demand_preparation(
     except ResourceDemandPreparationProjectionError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.get(
+    "/v1/operator/strategies/{strategy_id}/prepared-resource-demands",
+    tags=["operator"],
+    response_model=PreparedResourceDemandProjection,
+)
+def get_operator_prepared_resource_demands(
+    strategy_id: UUID,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+    projected_at: Annotated[datetime | None, Query(alias="at")] = None,
+) -> PreparedResourceDemandProjection:
+    try:
+        return PreparedResourceDemandProjector(session).project(
+            strategy_id, authority, projected_at
+        )
+    except ResourceDemandPreparationNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except (
+        PreparedResourceDemandConflictError,
+        PreparedResourceDemandValidationError,
+        ResourceDemandPreparationProjectionError,
+    ) as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.post(
+    "/v1/operator/strategies/{strategy_id}/prepared-resource-demands/{candidate_id}/ratifications",
+    tags=["operator"],
+    response_model=PreparedResourceDemandRatificationResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def ratify_operator_prepared_resource_demand(
+    strategy_id: UUID,
+    candidate_id: UUID,
+    command: RatifyPreparedResourceDemandCommand,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+) -> PreparedResourceDemandRatificationResult:
+    try:
+        return ratify_prepared_resource_demand(
+            session, strategy_id, candidate_id, command, authority
+        )
+    except (
+        ResourceDemandPreparationNotFoundError,
+        ResourcePreparationNotFoundError,
+    ) as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except (
+        PreparedResourceDemandConflictError,
+        ResourcePreparationConflictError,
+    ) as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except (
+        PreparedResourceDemandValidationError,
+        ResourcePreparationValidationError,
+    ) as error:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
         ) from error

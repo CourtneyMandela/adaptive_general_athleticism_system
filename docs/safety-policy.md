@@ -49,6 +49,13 @@ planning-level deferral is asserted for the adaptation. It is not medical cleara
 authorize performance. A current `SessionSafetyDecision` under the athlete's exact assigned safety
 policy remains required before every session execution.
 
+The prepared resource-demand path establishes environmental feasibility only when the athlete has
+reported the exact stable chair as available and at least 2 m² of usable floor space is recorded.
+Those facts do not certify the chair's present stability, technique, pain tolerance, medical
+clearance, or same-day readiness. The prepared two-slot time reservation is not permission to train
+and contains no exercise dose. Every eventual session remains blocked by the separate current
+safety gate and reviewed dose/stop-rule authority.
+
 Ordinary self-service reassessment is unavailable until the exact historical protocol review's
 recommended interval ends. This is a conservative cadence boundary, not a medical judgment or a
 claim that earlier testing is universally unsafe. Any early-retest path requires separate governed

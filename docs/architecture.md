@@ -994,14 +994,23 @@ are append-only. Eligibility is checked at draft authoring, approved review, and
 creation. Same-account authoring and approval is provisionally allowed, but actor and assignment
 fields remain separate for future separation-of-duty policy.
 
-The `/review/resource-demands` route continues one created strategy into an explicit
-priority-by-priority demand workflow. It displays every persisted priority and its immutable demand
-history, then requires the reviewer to select the environment snapshot, resolver authority,
-stimulus constraints, exercise candidate set, observation and evidence lineage, and weekly resource
-amounts. No scientific field or exercise is preselected. Ontology relationships are descriptive
-context, not a recommendation. The receipt exposes full, partial, infeasible, or deferred resolution
-and the exact decision audit; block, week, session, and workout creation remain separate downstream
-boundaries.
+The `/review/resource-demands` route precedes its advanced editor with
+`GET /v1/operator/strategies/{strategy_id}/prepared-resource-demands`. The content-addressed
+owner-alpha candidate is derived from one exact DEVELOP priority, the ratified first
+resource-authority bundle, and one point-in-time environment snapshot. The snapshot must contain
+the exact stable-chair availability record and at least 2 m² of recorded usable floor space.
+Candidate identity includes the strategy, immutable priority, authority digest and reviewer
+assignment, normalized factual environment state, complete stimulus specification, exact exercise
+and resolver, and explicit resource values. The projection clock is excluded, so refreshing
+unchanged source state preserves identity.
+
+Acceptance supplies deterministic UUIDv5 identities to the existing transactional preparation
+service. The service remains available to the collapsed manual editor with ordinary generated
+identities, while the prepared path can recognize retries and return its exact requirement,
+resolution, demand, and decision lineage. Ten weekly minutes split into two five-minute
+reservations are a provisional small scheduling envelope. They are not repetitions, sets,
+intensity, rest, tempo, or permission to perform the exercise. A separate dose authority and
+session safety gate remain necessary before a workout can exist.
 
 The `/review/blocks` route continues complete demand history into explicit block-context review.
 It requires one selected demand for every priority, one allocation policy, a weekly budget, start

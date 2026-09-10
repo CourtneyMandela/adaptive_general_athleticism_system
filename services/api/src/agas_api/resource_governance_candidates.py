@@ -156,6 +156,12 @@ class PreparedResourceGovernanceCandidate(BaseModel):
     release: PreparedResourceGovernanceRelease
 
 
+def prepared_resource_governance_candidate() -> PreparedResourceGovernanceCandidate:
+    """Return the exact immutable release used by downstream prepared workflows."""
+
+    return _prepared_candidate()
+
+
 def list_resource_governance_candidates(
     session: Session, *, projected_at: datetime | None = None
 ) -> ResourceGovernanceCandidateProjection:

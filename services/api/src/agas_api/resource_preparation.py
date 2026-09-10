@@ -120,6 +120,17 @@ class ResourceDemandPreparationResult(BaseModel):
         return self
 
 
+class ResourcePreparationIdentities(BaseModel):
+    """Caller-owned immutable identities for content-addressed preparation."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    stimulus_requirement_id: UUID
+    exercise_resolution_id: UUID
+    resource_demand_id: UUID
+    decision_record_id: UUID
+
+
 class ResourcePreparationUseCaseError(RuntimeError):
     """Base error for persisted resource-demand preparation."""
 
@@ -148,9 +159,11 @@ class PersistedResourcePreparationService:
         strategy_id: UUID,
         priority_id: UUID,
         command: ResourceDemandPreparationCommand,
+        *,
+        identities: ResourcePreparationIdentities | None = None,
     ) -> ResourceDemandPreparationResult:
         try:
-            result = self._prepare(strategy_id, priority_id, command)
+            result = self._prepare(strategy_id, priority_id, command, identities)
             if result.stimulus_requirement is not None:
                 self.repository.add_stimulus_requirement(result.stimulus_requirement)
                 self.session.flush()
@@ -178,6 +191,7 @@ class PersistedResourcePreparationService:
         strategy_id: UUID,
         priority_id: UUID,
         command: ResourceDemandPreparationCommand,
+        identities: ResourcePreparationIdentities | None,
     ) -> ResourceDemandPreparationResult:
         self._validate_review_authority(command)
         strategy = self.repository.get_long_range_strategy(strategy_id)
@@ -198,6 +212,7 @@ class PersistedResourcePreparationService:
                     "only a DEFER priority can create a deferred resource demand"
                 )
             demand = AdaptationResourceDemand(
+                **({"id": identities.resource_demand_id} if identities is not None else {}),
                 long_range_strategy_id=strategy.id,
                 adaptation_priority_id=priority.id,
                 adaptation_id=priority.adaptation_id,
@@ -215,18 +230,22 @@ class PersistedResourcePreparationService:
                 priority=priority,
                 command=command,
                 resource_demand=demand,
+                decision_record_id=(
+                    identities.decision_record_id if identities is not None else None
+                ),
             )
         if priority.state is TrainingPriorityState.DEFER:
             raise ResourcePreparationValidationError(
                 "a DEFER priority cannot create an active stimulus or resource demand"
             )
-        return self._prepare_active(strategy, priority, command)
+        return self._prepare_active(strategy, priority, command, identities)
 
     def _prepare_active(
         self,
         strategy: LongRangeStrategy,
         priority: AdaptationPriority,
         command: ActiveResourceDemandCommand,
+        identities: ResourcePreparationIdentities | None,
     ) -> ResourceDemandPreparationResult:
         adaptation = self.repository.get_adaptation(priority.adaptation_id)
         if adaptation is None:
@@ -265,6 +284,7 @@ class PersistedResourcePreparationService:
             adaptation=adaptation,
             specification=command.stimulus_specification,
             generated_at=command.prepared_at,
+            requirement_id=(identities.stimulus_requirement_id if identities is not None else None),
         )
         resolution = ExerciseResolver().resolve(
             requirement=requirement,
@@ -272,8 +292,10 @@ class PersistedResourcePreparationService:
             exercises=exercises,
             policy=policy,
             resolved_at=command.prepared_at,
+            resolution_id=(identities.exercise_resolution_id if identities is not None else None),
         )
         demand = AdaptationResourceDemand(
+            **({"id": identities.resource_demand_id} if identities is not None else {}),
             long_range_strategy_id=strategy.id,
             adaptation_priority_id=priority.id,
             adaptation_id=priority.adaptation_id,
@@ -295,6 +317,7 @@ class PersistedResourcePreparationService:
             stimulus_requirement=requirement,
             exercise_resolution=resolution,
             resource_demand=demand,
+            decision_record_id=(identities.decision_record_id if identities is not None else None),
         )
 
     def _validate_review_authority(self, command: ResourceDemandPreparationCommand) -> None:
@@ -334,6 +357,7 @@ class PersistedResourcePreparationService:
         resource_demand: AdaptationResourceDemand,
         stimulus_requirement: StimulusRequirement | None = None,
         exercise_resolution: ExerciseResolution | None = None,
+        decision_record_id: UUID | None = None,
     ) -> ResourceDemandPreparationResult:
         values = [
             f"long_range_strategy:{strategy.id}",
@@ -368,7 +392,9 @@ class PersistedResourcePreparationService:
         values.append(f"adaptation_resource_demand:{resource_demand.id}")
         if command.review_authority_assignment_id is not None:
             values.append(f"account_role_assignment:{command.review_authority_assignment_id}")
+        identity = {"id": decision_record_id} if decision_record_id is not None else {}
         decision = DecisionRecord(
+            **identity,
             decision=(
                 f"Prepare {command.mode} resource demand {resource_demand.id} for strategy "
                 f"priority {priority.id}."

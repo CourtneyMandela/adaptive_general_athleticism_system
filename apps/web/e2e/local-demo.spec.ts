@@ -675,6 +675,177 @@ test("owner can accept a system-prepared planning context without inventing scor
   expect(submittedBody).not.toHaveProperty("general_relevance");
 });
 
+test("owner can accept a prepared resource envelope without authoring a dose", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const strategyId = "97000000-0000-4000-8000-000000000001";
+  const priorityId = "97100000-0000-4000-8000-000000000001";
+  const candidateId = "97200000-0000-4000-8000-000000000001";
+  const adaptationId = "a0000000-0000-4000-8000-000000000004";
+  const environmentId = "97300000-0000-4000-8000-000000000001";
+  const candidateDigest = `sha256:${"e".repeat(64)}`;
+  let accepted = false;
+  let submittedBody: Record<string, unknown> = {};
+  const result = {
+    stimulus_requirement: {
+      id: "97400000-0000-4000-8000-000000000001",
+      rationale: "Exact controlled chair stimulus.",
+    },
+    exercise_resolution: {
+      id: "97500000-0000-4000-8000-000000000001",
+      status: "full",
+      selected_exercise_id: "b1000000-0000-4000-8000-000000000001",
+      unresolved_issues: [],
+    },
+    resource_demand: {
+      id: "97600000-0000-4000-8000-000000000001",
+      minimum_weekly_minutes: 10,
+      target_weekly_minutes: 10,
+      sessions_per_week: 2,
+      demand_version: "owner-alpha-chair-stand-resource-envelope@1.0.0",
+    },
+    decision_record: {
+      id: "97700000-0000-4000-8000-000000000001",
+      decision: "Prepare active resource demand.",
+      reason: `Prepared candidate digest: ${candidateDigest}.`,
+      evidence: [`long_range_strategy:${strategyId}`],
+      uncertainty: "No workout dose or safety clearance.",
+      decision_version: "resource-demand-operator-review@1.0.0",
+    },
+  };
+  const candidate = {
+    candidate_version: "prepared-resource-demand@1.0.0",
+    candidate_id: candidateId,
+    content_digest: candidateDigest,
+    prepared_at: "2026-09-10T18:00:00Z",
+    status: accepted ? "accepted" : "available",
+    athlete_id: athleteId,
+    strategy_id: strategyId,
+    priority_id: priorityId,
+    adaptation_id: adaptationId,
+    adaptation_name: "Muscular endurance",
+    environment_id: environmentId,
+    environment_name: "Home",
+    environment_snapshot: {
+      captured_at: "2026-09-10T18:00:00Z",
+      available_equipment: [],
+      source_availability_ids: [],
+      floor_area_m2: 4,
+      max_noise_level: "high",
+      outdoor_access: false,
+    },
+    resource_authority_candidate_id: "98600000-0000-4000-8000-000000000001",
+    resource_authority_content_digest: `sha256:${"f".repeat(64)}`,
+    stimulus_specification: {},
+    exercise_candidate_id: "b1000000-0000-4000-8000-000000000001",
+    exercise_name: "Chair sit-to-stand",
+    exercise_resolver_policy_id: "98700000-0000-4000-8000-000000000001",
+    expected_resolution_status: "full",
+    expected_selected_exercise_id: "b1000000-0000-4000-8000-000000000001",
+    minimum_weekly_minutes: 10,
+    target_weekly_minutes: 10,
+    sessions_per_week: 2,
+    per_session_scheduling_minutes: 5,
+    scheduling_basis: "A small engineering scheduling envelope, not a dose.",
+    applicability_rationale: "Uses the exact ratified authority and factual Home state.",
+    uncertainty: "No repetitions, sets, effort, tempo, rest, or progression is established.",
+    safety_boundary: "Every session still requires its safety gate.",
+    dose_boundary: "Two slots are scheduling resources, not an exercise prescription.",
+    identities: {
+      stimulus_requirement_id: result.stimulus_requirement.id,
+      exercise_resolution_id: result.exercise_resolution.id,
+      resource_demand_id: result.resource_demand.id,
+      decision_record_id: result.decision_record.id,
+    },
+    accepted_result: accepted ? result : null,
+  };
+  await page.route(
+    `http://localhost:8000/v1/operator/strategies/${strategyId}/resource-demand-preparation**`,
+    (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        strategy: {
+          id: strategyId,
+          athlete_id: athleteId,
+          block_hypothesis: "Develop the measured muscular-endurance deficit.",
+          generated_at: "2026-09-10T17:00:00Z",
+          next_review_at: "2026-10-08T17:00:00Z",
+          rule_version: "long-range-strategy@1.0.0",
+        },
+        projected_at: "2026-09-10T18:00:00Z",
+        priorities: [{
+          priority: {
+            id: priorityId,
+            adaptation_id: adaptationId,
+            state: "develop",
+            score: 0.1,
+            rank: 1,
+            development_allocation: 1,
+            rationale: ["Measured deficit."],
+          },
+          adaptation: { id: adaptationId, name: "Muscular endurance", domain: "muscular_endurance" },
+          demand_history: [],
+        }],
+        source_observations: [],
+        evidence_claims: [],
+        environments: [],
+        exercise_resolver_policies: [],
+        exercise_catalog: [],
+        projection_version: "resource-demand-preparation@1.0.0",
+      }),
+    }),
+  );
+  await page.route(
+    `http://localhost:8000/v1/operator/strategies/${strategyId}/prepared-resource-demands**`,
+    async (route) => {
+      if (route.request().method() === "POST") {
+        submittedBody = route.request().postDataJSON() as Record<string, unknown>;
+        accepted = true;
+        return route.fulfill({
+          status: 201,
+          contentType: "application/json",
+          body: JSON.stringify({
+            candidate_id: candidateId,
+            candidate_content_digest: candidateDigest,
+            created: true,
+            result,
+            ratification_version: "prepared-resource-demand-ratification@1.0.0",
+          }),
+        });
+      }
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          strategy_id: strategyId,
+          athlete_id: athleteId,
+          projected_at: "2026-09-10T18:00:00Z",
+          status: accepted ? "accepted" : "available",
+          message: accepted ? "Already stored." : "One exact demand is ready.",
+          candidates: [{ ...candidate, status: accepted ? "accepted" : "available", accepted_result: accepted ? result : null }],
+          blockers: [],
+          projection_version: "prepared-resource-demand-projection@1.0.0",
+        }),
+      });
+    },
+  );
+
+  await page.goto(`/review/resource-demands?strategyId=${strategyId}`);
+  await page.getByRole("button", { name: "Load strategy preparation" }).click();
+  await expect(page.getByRole("heading", { name: "Reserve the first governed training resource." })).toBeVisible();
+  await expect(page.getByText("This is not the workout dose.")).toBeVisible();
+  const accept = page.getByRole("button", { name: "Accept prepared resource demand" });
+  await expect(accept).toBeDisabled();
+  await page.getByLabel(/I reviewed this exact environment/).check();
+  await accept.click();
+  await expect(page.getByRole("heading", { name: "full resolution recorded" })).toBeVisible();
+  expect(submittedBody).toEqual({
+    candidate_version: candidate.candidate_version,
+    content_digest: candidate.content_digest,
+    approval_attestation: true,
+  });
+  expect(submittedBody).not.toHaveProperty("minimum_weekly_minutes");
+  expect(submittedBody).not.toHaveProperty("stimulus_specification");
+});
+
 test("the installable shell fails closed to an honest offline screen", async ({ context, page }) => {
   await page.goto("/");
 

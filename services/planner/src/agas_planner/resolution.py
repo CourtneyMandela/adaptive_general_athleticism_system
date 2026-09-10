@@ -155,6 +155,7 @@ class StimulusRequirementBuilder:
         adaptation: Adaptation,
         specification: StimulusSpecification,
         generated_at: datetime,
+        requirement_id: UUID | None = None,
     ) -> StimulusRequirement:
         EnvironmentSnapshotBuilder._require_aware(generated_at)
         if generated_at < strategy.generated_at:
@@ -169,7 +170,9 @@ class StimulusRequirementBuilder:
         if priority.adaptation_id != adaptation.id:
             raise ResolutionError("priority and adaptation do not match")
 
+        identity = {"id": requirement_id} if requirement_id is not None else {}
         return StimulusRequirement(
+            **identity,
             athlete_id=strategy.athlete_id,
             long_range_strategy_id=strategy.id,
             adaptation_priority_id=priority.id,
@@ -227,6 +230,7 @@ class ExerciseResolver:
         exercises: Iterable[Exercise],
         policy: ExerciseResolverPolicy,
         resolved_at: datetime,
+        resolution_id: UUID | None = None,
     ) -> ExerciseResolution:
         EnvironmentSnapshotBuilder._require_aware(resolved_at)
         if environment.athlete_id != requirement.athlete_id:
@@ -275,7 +279,9 @@ class ExerciseResolver:
                         detail="no exercise candidate was supplied",
                     ),
                 )
+            identity = {"id": resolution_id} if resolution_id is not None else {}
             return ExerciseResolution(
+                **identity,
                 stimulus_requirement_id=requirement.id,
                 environment_id=environment.environment_id,
                 resolver_policy_id=policy.id,
@@ -289,7 +295,9 @@ class ExerciseResolver:
             )
 
         selected = ranked[0]
+        identity = {"id": resolution_id} if resolution_id is not None else {}
         return ExerciseResolution(
+            **identity,
             stimulus_requirement_id=requirement.id,
             environment_id=environment.environment_id,
             resolver_policy_id=policy.id,

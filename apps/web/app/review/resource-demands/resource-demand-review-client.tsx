@@ -26,6 +26,12 @@ import {
   type ResourceDemandPreparationResult,
   type VelocityCharacteristic,
 } from "@/lib/resource-demand-review";
+import {
+  fetchPreparedResourceDemands,
+  ratifyPreparedResourceDemand,
+  type PreparedResourceDemandCandidate,
+  type PreparedResourceDemandProjection,
+} from "@/lib/prepared-resource-demand";
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -491,9 +497,128 @@ function ResourceDemandEditor({
   );
 }
 
+function PreparedResourceDemandPanel({
+  projection,
+  strategyId,
+  onAccepted,
+}: {
+  projection: PreparedResourceDemandProjection;
+  strategyId: string;
+  onAccepted: () => Promise<void>;
+}) {
+  const firstCandidate = projection.candidates.find((item) => item.status === "accepted")
+    ?? projection.candidates.find((item) => item.status === "available");
+  const [candidateId, setCandidateId] = useState(firstCandidate?.candidate_id ?? "");
+  const [confirmed, setConfirmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const candidate = projection.candidates.find((item) => item.candidate_id === candidateId)
+    ?? projection.candidates[0];
+
+  async function accept(selected: PreparedResourceDemandCandidate) {
+    if (!confirmed) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      await ratifyPreparedResourceDemand(apiBaseUrl, strategyId, selected);
+      await onAccepted();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to accept prepared demand.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (projection.status === "blocked") {
+    return (
+      <section className="review-preparation prepared-resource-panel">
+        <p className="eyebrow">System-prepared next step · blocked</p>
+        <h2>A factual environment detail is still missing.</h2>
+        <p>{projection.message}</p>
+        <ul className="resource-issues">
+          {projection.blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}
+        </ul>
+        <p className="form-help">
+          Chair availability can be reported in the athlete PWA. Floor-space editing for an
+          already-saved environment is a remaining workflow gap; AGAS will not guess it.
+        </p>
+        <Link href="/" className="secondary-button">Review training environment</Link>
+      </section>
+    );
+  }
+
+  if (!candidate) return null;
+  const accepted = candidate.accepted_result;
+  if (accepted) return <ResourceDemandReceipt result={accepted} strategyId={strategyId} />;
+
+  return (
+    <section className="review-preparation prepared-resource-panel">
+      <header>
+        <div>
+          <p className="eyebrow">System-prepared next step</p>
+          <h2>Reserve the first governed training resource.</h2>
+          <p>{projection.message}</p>
+        </div>
+        <span className="status-badge">Exact full match</span>
+      </header>
+      {projection.candidates.length > 1 ? (
+        <label>
+          Factual training environment
+          <select value={candidate.candidate_id} onChange={(event) => setCandidateId(event.target.value)}>
+            {projection.candidates.map((item) => (
+              <option key={item.candidate_id} value={item.candidate_id}>{item.environment_name}</option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+      <div className="resource-candidate-summary">
+        <div><span>Adaptation</span><strong>{candidate.adaptation_name}</strong></div>
+        <div><span>Resolved exercise</span><strong>{candidate.exercise_name}</strong></div>
+        <div><span>Environment</span><strong>{candidate.environment_name}</strong></div>
+        <div><span>Weekly reservation</span><strong>{candidate.minimum_weekly_minutes} min</strong></div>
+        <div><span>Frequency</span><strong>{candidate.sessions_per_week} slots/week</strong></div>
+        <div><span>Per slot</span><strong>{candidate.per_session_scheduling_minutes} min reserved</strong></div>
+      </div>
+      <div className="review-boundary">
+        <strong>This is not the workout dose.</strong>
+        <span>{candidate.dose_boundary}</span>
+      </div>
+      <details>
+        <summary>Why AGAS prepared this exact candidate</summary>
+        <p>{candidate.scheduling_basis}</p>
+        <p>{candidate.applicability_rationale}</p>
+        <p>{candidate.uncertainty}</p>
+        <p>{candidate.safety_boundary}</p>
+        <code>{candidate.content_digest}</code>
+      </details>
+      <label className="review-confirmation">
+        <input
+          type="checkbox"
+          checked={confirmed}
+          onChange={(event) => setConfirmed(event.target.checked)}
+        />
+        <span>
+          I reviewed this exact environment, exercise resolution, scheduling allowance, provenance,
+          and the explicit safety and dose boundaries.
+        </span>
+      </label>
+      <button
+        type="button"
+        className="primary-button"
+        disabled={!confirmed || busy}
+        onClick={() => void accept(candidate)}
+      >
+        {busy ? "Recording immutable demand…" : "Accept prepared resource demand"}
+      </button>
+      {message ? <p className="form-error" role="alert">{message}</p> : null}
+    </section>
+  );
+}
+
 export function ResourceDemandReviewClient({ initialStrategyId }: { initialStrategyId: string }) {
   const [strategyId, setStrategyId] = useState(initialStrategyId);
   const [projection, setProjection] = useState<ResourceDemandPreparationProjection | null>(null);
+  const [preparedProjection, setPreparedProjection] = useState<PreparedResourceDemandProjection | null>(null);
   const [priorityId, setPriorityId] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -502,6 +627,7 @@ export function ResourceDemandReviewClient({ initialStrategyId }: { initialStrat
     const normalized = strategyId.trim();
     setMessage("");
     setProjection(null);
+    setPreparedProjection(null);
     setPriorityId("");
     if (!uuidPattern.test(normalized)) {
       setMessage("Enter a valid strategy UUID.");
@@ -509,7 +635,12 @@ export function ResourceDemandReviewClient({ initialStrategyId }: { initialStrat
     }
     setBusy(true);
     try {
-      setProjection(await fetchResourceDemandPreparation(apiBaseUrl, normalized));
+      const [exact, prepared] = await Promise.all([
+        fetchResourceDemandPreparation(apiBaseUrl, normalized),
+        fetchPreparedResourceDemands(apiBaseUrl, normalized),
+      ]);
+      setProjection(exact);
+      setPreparedProjection(prepared);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to load resource-demand preparation.");
     } finally {
@@ -518,7 +649,13 @@ export function ResourceDemandReviewClient({ initialStrategyId }: { initialStrat
   }
 
   async function refreshProjection() {
-    setProjection(await fetchResourceDemandPreparation(apiBaseUrl, strategyId.trim()));
+    const normalized = strategyId.trim();
+    const [exact, prepared] = await Promise.all([
+      fetchResourceDemandPreparation(apiBaseUrl, normalized),
+      fetchPreparedResourceDemands(apiBaseUrl, normalized),
+    ]);
+    setProjection(exact);
+    setPreparedProjection(prepared);
   }
 
   const selected = projection?.priorities.find(({ priority }) => priority.id === priorityId);
@@ -543,10 +680,10 @@ export function ResourceDemandReviewClient({ initialStrategyId }: { initialStrat
         </nav>
       </header>
       <aside className="review-boundary">
-        <strong>No training values are inferred here.</strong>
+        <strong>AGAS prepares the governed values it can justify.</strong>
         <span>
-          Every material field begins blank. The server owns reviewer identity, and the deterministic
-          resolver may return full, partial, or infeasible without silently changing the priority.
+          Factual environment state remains yours to report. Exercise dose and session safety remain
+          separate gates, and the deterministic resolver cannot silently change the priority.
         </span>
       </aside>
       <section className="review-input resource-strategy-loader">
@@ -557,8 +694,17 @@ export function ResourceDemandReviewClient({ initialStrategyId }: { initialStrat
         </button>
       </section>
       {message ? <p className="form-error review-message" role="alert">{message}</p> : null}
+      {preparedProjection ? (
+        <PreparedResourceDemandPanel
+          key={`${preparedProjection.projected_at}:${preparedProjection.status}`}
+          projection={preparedProjection}
+          strategyId={strategyId.trim()}
+          onAccepted={refreshProjection}
+        />
+      ) : null}
       {projection ? (
-        <>
+        <details className="review-preparation legacy-resource-authoring">
+          <summary>Advanced manual authoring and immutable history</summary>
           <section className="review-preparation resource-strategy-summary">
             <header>
               <div>
@@ -610,9 +756,9 @@ export function ResourceDemandReviewClient({ initialStrategyId }: { initialStrat
               onCreated={refreshProjection}
             />
           ) : (
-            <p className="form-help resource-selection-help">Choose a priority to author one explicit demand.</p>
+            <p className="form-help resource-selection-help">Choose a priority only when advanced manual authoring is required.</p>
           )}
-        </>
+        </details>
       ) : null}
     </main>
   );

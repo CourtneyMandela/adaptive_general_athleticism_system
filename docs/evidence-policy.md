@@ -204,6 +204,12 @@ and review. That claim does not establish chair sit-to-stand as an optimal exerc
 amount, sets, repetitions, effort target, rest interval, or the bundle's resolver/allocation
 constants. The candidate presentation and decision history must preserve those exclusions.
 
+The first prepared resource demand cites that reviewed claim only for the broad resistance-training
+direction and twice-weekly frequency. Its ten-minute weekly value is labeled and audited as a
+replaceable engineering scheduling envelope, not a physiological dose or minimum-effective-dose
+claim. Exercise sets, repetitions, effort, tempo, rest, and progression require a later, separately
+reviewed evidence-to-policy decision.
+
 Competency-floor applicability must be enforceable where a source population has a meaningful age
 boundary. `minimum_age_years` and `maximum_age_years` record inclusive reviewed bounds; missing
 athlete age or an age outside those bounds makes the floor unavailable for new planning. Age

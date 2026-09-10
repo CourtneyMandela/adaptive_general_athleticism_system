@@ -177,6 +177,8 @@ POST /v1/operator/initial-planning-context-drafts/{draft_id}/reviews
 POST /v1/operator/initial-planning-context-reviews/{review_id}/strategy
 POST /v1/operator/athletes/{athlete_id}/initial-strategies
 GET  /v1/operator/strategies/{strategy_id}/resource-demand-preparation
+GET  /v1/operator/strategies/{strategy_id}/prepared-resource-demands
+POST /v1/operator/strategies/{strategy_id}/prepared-resource-demands/{candidate_id}/ratifications
 POST /v1/operator/strategies/{strategy_id}/priorities/{priority_id}/resource-demands
 GET  /v1/operator/strategies/{strategy_id}/block-preparation
 POST /v1/operator/strategies/{strategy_id}/blocks
@@ -747,12 +749,16 @@ The assessment workbench reuses that evaluator at each protocol-review and estim
 timestamp, so the screen cannot present a later evidence approval as the original basis of an older
 authority.
 
-After a strategy exists, `http://localhost:3000/review/resource-demands` accepts its UUID and loads
-the exact priority, environment-snapshot, resolver-policy, exercise-ontology, observation, evidence,
-and prior-demand records available to the reviewer. All stimulus constraints, exercise candidates,
-provenance links, and resource amounts begin blank and require explicit selection. A submission may
-record an honest full, partial, infeasible, or deferred result; it never creates a block, week,
-session, or workout. A newly created strategy links directly to this second review step.
+After a strategy exists, `http://localhost:3000/review/resource-demands` first loads a
+server-prepared, content-addressed owner-alpha candidate. It combines the exact muscular-endurance
+DEVELOP priority, ratified resource authorities, current stable-chair availability, and at least
+2 m² of recorded usable floor space. It previews a FULL chair sit-to-stand resolution and reserves
+ten weekly minutes across two slots. That small amount is an engineering scheduling envelope, not
+a literature-derived dose: sets, repetitions, effort, tempo, rest, progression, and current-session
+safety remain separate. Acceptance deterministically appends the requirement, resolution, demand,
+and decision in one transaction; unchanged retries are idempotent and changed factual state fails
+closed. The original blank expert editor remains collapsed as an advanced recovery path. No block,
+week, session, or workout is created.
 
 When every priority has demand history, `http://localhost:3000/review/blocks` loads the exact
 block-preparation projection. No demand, policy, budget, date, duration, or constraint is
