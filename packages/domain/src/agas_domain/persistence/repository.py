@@ -73,6 +73,7 @@ from agas_domain.models import (
     ProgressionDecision,
     ProgressionPolicy,
     Provenance,
+    RepetitionDosePolicy,
     ResolutionIssue,
     ResourceAllocation,
     ResourceAllocationPolicy,
@@ -185,6 +186,8 @@ from agas_domain.persistence.models import (
     ProgressionDecisionSafetyRecord,
     ProgressionPolicyEvidenceRecord,
     ProgressionPolicyRecord,
+    RepetitionDosePolicyEvidenceRecord,
+    RepetitionDosePolicyRecord,
     ResourceAllocationPolicyRecord,
     ResourceDemandEvidenceClaimRecord,
     ResourceDemandObservationRecord,
@@ -3381,6 +3384,101 @@ class DomainRepository:
             policy
             for record_id in record_ids
             if (policy := self.get_progression_policy(record_id)) is not None
+        )
+
+    def add_repetition_dose_policy(self, policy: RepetitionDosePolicy) -> None:
+        if self.session.get(AdaptationRecord, policy.adaptation_id) is None:
+            raise DomainIntegrityError("repetition dose policy adaptation does not exist")
+        if self.session.get(ProgressionPolicyRecord, policy.progression_policy_id) is None:
+            raise DomainIntegrityError("repetition dose policy progression policy does not exist")
+        self._require_ids_exist(
+            EvidenceClaimRecord.id,
+            policy.evidence_claim_ids,
+            "repetition dose policy evidence claims",
+        )
+        record = RepetitionDosePolicyRecord(
+            id=policy.id,
+            schema_version=policy.schema_version,
+            created_at=policy.created_at,
+            adaptation_id=policy.adaptation_id,
+            estimate_scope=policy.estimate_scope,
+            unit_or_scale=policy.unit_or_scale,
+            minimum_eligible_estimate=policy.minimum_eligible_estimate,
+            target_fraction_of_estimate=policy.target_fraction_of_estimate,
+            rounding_mode=policy.rounding_mode,
+            sets=policy.sets,
+            minimum_repetitions_per_set=policy.minimum_repetitions_per_set,
+            maximum_repetitions_per_set=policy.maximum_repetitions_per_set,
+            rest_seconds=policy.rest_seconds,
+            effort_rpe_minimum=policy.effort_rpe_minimum,
+            effort_rpe_maximum=policy.effort_rpe_maximum,
+            technique_constraints=list(policy.technique_constraints),
+            planned_duration_minutes=policy.planned_duration_minutes,
+            progression_policy_id=policy.progression_policy_id,
+            rationale=policy.rationale,
+            uncertainty=policy.uncertainty,
+            policy_version=policy.policy_version,
+        )
+        record.evidence_links = [
+            RepetitionDosePolicyEvidenceRecord(
+                repetition_dose_policy_id=policy.id,
+                evidence_claim_id=evidence_claim_id,
+                position=position,
+            )
+            for position, evidence_claim_id in enumerate(policy.evidence_claim_ids)
+        ]
+        self.session.add(record)
+
+    def get_repetition_dose_policy(self, policy_id: UUID) -> RepetitionDosePolicy | None:
+        record = self.session.get(RepetitionDosePolicyRecord, policy_id)
+        if record is None:
+            return None
+        return RepetitionDosePolicy(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            adaptation_id=record.adaptation_id,
+            estimate_scope=record.estimate_scope,
+            unit_or_scale=record.unit_or_scale,
+            minimum_eligible_estimate=record.minimum_eligible_estimate,
+            target_fraction_of_estimate=record.target_fraction_of_estimate,
+            rounding_mode=record.rounding_mode,
+            sets=record.sets,
+            minimum_repetitions_per_set=record.minimum_repetitions_per_set,
+            maximum_repetitions_per_set=record.maximum_repetitions_per_set,
+            rest_seconds=record.rest_seconds,
+            effort_rpe_minimum=record.effort_rpe_minimum,
+            effort_rpe_maximum=record.effort_rpe_maximum,
+            technique_constraints=tuple(record.technique_constraints),
+            planned_duration_minutes=record.planned_duration_minutes,
+            progression_policy_id=record.progression_policy_id,
+            evidence_claim_ids=tuple(link.evidence_claim_id for link in record.evidence_links),
+            rationale=record.rationale,
+            uncertainty=record.uncertainty,
+            policy_version=record.policy_version,
+        )
+
+    def list_repetition_dose_policies(
+        self,
+        *,
+        adaptation_id: UUID | None = None,
+        estimate_scope: str | None = None,
+    ) -> tuple[RepetitionDosePolicy, ...]:
+        statement = select(RepetitionDosePolicyRecord.id)
+        if adaptation_id is not None:
+            statement = statement.where(RepetitionDosePolicyRecord.adaptation_id == adaptation_id)
+        if estimate_scope is not None:
+            statement = statement.where(RepetitionDosePolicyRecord.estimate_scope == estimate_scope)
+        record_ids = self.session.scalars(
+            statement.order_by(
+                RepetitionDosePolicyRecord.created_at,
+                RepetitionDosePolicyRecord.id,
+            )
+        ).all()
+        return tuple(
+            policy
+            for record_id in record_ids
+            if (policy := self.get_repetition_dose_policy(record_id)) is not None
         )
 
     def add_exposure_definition(self, definition: ExposureDefinition) -> None:

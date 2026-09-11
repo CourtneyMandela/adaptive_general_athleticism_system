@@ -2383,6 +2383,42 @@ class ProgressionPolicy(VersionedRecord):
         return self
 
 
+class RepetitionDosePolicy(VersionedRecord):
+    """Versioned rule for deriving a repetition prescription from a matching estimate."""
+
+    adaptation_id: UUID
+    estimate_scope: NonEmptyText
+    unit_or_scale: NonEmptyText
+    minimum_eligible_estimate: float = Field(ge=0)
+    target_fraction_of_estimate: float = Field(gt=0, le=1)
+    rounding_mode: Literal["floor"] = "floor"
+    sets: int = Field(ge=1)
+    minimum_repetitions_per_set: int = Field(ge=1)
+    maximum_repetitions_per_set: int = Field(ge=1)
+    rest_seconds: int = Field(ge=0)
+    effort_rpe_minimum: float = Field(ge=0, le=10)
+    effort_rpe_maximum: float = Field(ge=0, le=10)
+    technique_constraints: Annotated[tuple[NonEmptyText, ...], Field(min_length=1)]
+    planned_duration_minutes: int = Field(gt=0)
+    progression_policy_id: UUID
+    evidence_claim_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
+    rationale: NonEmptyText
+    uncertainty: NonEmptyText
+    policy_version: NonEmptyText
+
+    @model_validator(mode="after")
+    def validate_repetition_dose_policy(self) -> RepetitionDosePolicy:
+        if self.maximum_repetitions_per_set < self.minimum_repetitions_per_set:
+            raise ValueError("maximum repetitions cannot be below minimum repetitions")
+        if self.effort_rpe_maximum < self.effort_rpe_minimum:
+            raise ValueError("RPE maximum cannot be below RPE minimum")
+        if len(set(self.technique_constraints)) != len(self.technique_constraints):
+            raise ValueError("technique constraints must not contain duplicates")
+        if len(set(self.evidence_claim_ids)) != len(self.evidence_claim_ids):
+            raise ValueError("evidence_claim_ids must not contain duplicates")
+        return self
+
+
 class ExposureDefinition(VersionedRecord):
     exercise_id: UUID
     exposure_type: ExposureType

@@ -128,6 +128,13 @@ The weekly scheduler can enforce explicit daily session limits, high-fatigue dai
 and a configured recovery interval. Those policy values are provisional constraints supplied by a
 governed workflow, not medical or physiological thresholds inferred by the scheduler.
 
+The first construction batch permits only `reduce_volume`, `reduce_intensity`, and
+`shorten_session` for ordinary readiness inputs. These mappings are conservative engineering
+guardrails, not medical recommendations. They do not classify concerning symptoms, override the
+existing stop-and-escalate precedence, or authorize execution by themselves. The current gate
+records the exact required modification set and requires acknowledgement; automatic calculation
+of the reduction magnitude remains deliberately unavailable until a separate governed rule exists.
+
 A temporary environment may trigger a newer exercise resolution for the same block stimulus.
 Partial fidelity is allowed only by an explicit weekly policy and must retain every unresolved
 mismatch. Re-resolution cannot bypass contraindication, skill, impact, space, noise, fatigue, or

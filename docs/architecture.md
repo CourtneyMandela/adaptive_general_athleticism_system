@@ -948,6 +948,21 @@ source and controlled muscular-endurance adaptation exist. These artifacts are e
 a later athlete-specific preparation; they do not report environmental availability or create a
 training dose.
 
+Training-construction authority preparation follows at `GET
+/v1/operator/training-construction-candidates`. Its data-loaded, schema-validated document groups
+four independently versioned records behind one exact digest and attestation: a
+`RepetitionDosePolicy`, its linked `ProgressionPolicy`, a `WeeklySchedulingPolicy` with an approved
+actor-bound review, and a `SessionSafetyPolicy`. Ratification is atomic and idempotent, and remains
+blocked until the exact resource bundle, adaptation, and reviewed evidence claim exist. Grouping
+reduces reviewer round trips without collapsing artifact identities or provenance.
+
+`RepetitionDosePlanner` consumes the exact adaptation, a current compatible
+`CapabilityEstimate`, and the persisted dose policy. It rejects future, stale, nonnumeric,
+scope-mismatched, unit-mismatched, and domain-mismatched estimates. Its immutable derived result
+retains the estimate, adaptation, dose-policy, and progression-policy IDs together with the exact
+calculation method and rule version. It does not itself create a prescription or choose an
+athlete-specific plan.
+
 Competency-floor preparation is a separate content-addressed boundary. `GET
 /v1/operator/competency-floor-candidates` exposes the exact threshold, estimate scope, unit,
 comparison direction, inclusive age bounds, source summary, interpretation limits, and separate

@@ -744,6 +744,14 @@ DEVELOP-priority allocator, and the separately reviewed evidence claim behind it
 Approval creates those authorities atomically; it does not assert chair availability or create a
 resource demand, dose, block, week, session, or workout.
 
+The same workbench now exposes a digest-locked training-construction batch after that resource
+bundle is ratified. `GET /v1/operator/training-construction-candidates` shows one exact
+repetition-dose policy, progression policy, weekly scheduling policy plus review, and ordinary
+readiness-modification policy. The candidate explicitly separates the broad scientific support
+from the exact engineering constants. Its ratification route accepts one version, digest, and
+attestation and persists all four authorities atomically. It still creates no athlete-specific
+block, safety assignment, week, session, or permission to train.
+
 Competency-floor candidates on the same workbench are loaded from typed, digest-validated documents
 under `data/governance_candidates/competency_floors`. The screen separately identifies where each
 number came from and who decided how AGAS may use it. Reviewers may approve one artifact or attest
@@ -769,6 +777,15 @@ safety remain separate. Acceptance deterministically appends the requirement, re
 and decision in one transaction; unchanged retries are idempotent and changed factual state fails
 closed. The original blank expert editor remains collapsed as an advanced recovery path. No block,
 week, session, or workout is created.
+
+The first training-construction candidate is loaded from a typed, digest-validated document under
+`data/governance_candidates/training_construction`. Its `RepetitionDosePolicy` requires a current
+matching chair-stand estimate and deterministically derives two sets at half that count per set,
+rounded down and bounded to 1–8 repetitions. The exact fraction, bounds, RPE 5–7 range, 90-second
+rest, five-minute duration, 24-hour high-fatigue scheduling constraint, and one-repetition
+progression are provisional owner-alpha engineering priors—not values attributed to the cited
+position stand. The derived result retains the estimate, dose policy, adaptation, and progression
+policy identities so a later prescription can preserve the complete rule lineage.
 
 When every priority has demand history, `http://localhost:3000/review/blocks` loads the exact
 block-preparation projection. No demand, policy, budget, date, duration, or constraint is

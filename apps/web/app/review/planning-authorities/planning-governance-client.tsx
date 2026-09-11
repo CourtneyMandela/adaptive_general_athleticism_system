@@ -11,6 +11,7 @@ import {
 
 import { CompetencyFloorGovernanceClient } from "./competency-floor-governance-client";
 import { ResourceGovernanceClient } from "./resource-governance-client";
+import { TrainingConstructionGovernanceClient } from "./training-construction-governance-client";
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -227,6 +228,7 @@ export function PlanningGovernanceClient() {
       ) : null}
       <CompetencyFloorGovernanceClient />
       <ResourceGovernanceClient />
+      <TrainingConstructionGovernanceClient />
     </main>
   );
 }

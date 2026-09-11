@@ -1,0 +1,150 @@
+{
+  "document_schema_version": "training-construction-candidate-document@1.0.0",
+  "candidate_version": "training-construction-candidate@1.0.0",
+  "content_digest": "sha256:8129420addb153ac5b1f120235323c45cec5ab2ec66305bc473593cf75add5f6",
+  "presentation": {
+    "candidate_id": "98900000-0000-4000-8000-000000000001",
+    "slug": "owner_alpha_chair_stand_construction_authorities",
+    "release_label": "Owner-alpha chair-stand construction authorities",
+    "prepared_at": "2026-09-11T11:00:00Z",
+    "summary": "One atomic batch defining how a current chair-stand estimate may become a bounded first-session dose, how that session may be scheduled, when it may progress, and which non-diagnostic readiness modifications are permitted.",
+    "authority_basis": {
+      "scientific_support": "The reviewed ACSM claim supports resistance training, functional benefit, and at-least-twice-weekly exposure. It does not establish this batch's exact dose, recovery interval, progression trigger, or readiness modifications.",
+      "engineering_prior": "Every numeric constant and modification mapping in this batch is an explicit, conservative owner-alpha engineering prior. Ratification accepts those product choices provisionally; it does not relabel them as scientific findings."
+    },
+    "exact_artifacts": [
+      "One repetition-dose policy tied to the exact chair-stand estimate scope and muscular-endurance adaptation.",
+      "One progression policy that adds one repetition per set only after complete, technique-compliant, non-interrupted work at session RPE 7 or below.",
+      "One weekly scheduling policy and one approved review of that exact policy.",
+      "One non-diagnostic session-safety policy permitting only volume reduction, intensity reduction, or session shortening."
+    ],
+    "governs": [
+      "Derivation of a 2-set chair sit-to-stand prescription at 50% of the current governed assessment estimate, rounded down and bounded to 1-8 repetitions per set.",
+      "A 5-minute planned session with 90 seconds rest and target effort RPE 5-7.",
+      "First-session scheduling constraints, post-session repetition progression, and the allowed vocabulary of ordinary readiness modifications."
+    ],
+    "does_not_establish": [
+      "Medical clearance, diagnosis, injury prediction, or permission to ignore concerning symptoms.",
+      "That the exact dose, RPE range, rest period, recovery interval, or progression increment is an ACSM recommendation or a scientific optimum.",
+      "An athlete-specific strategy, block, week, safety-policy assignment, scheduled session, or permission to train.",
+      "Automatic execution of a volume, intensity, or duration reduction; the current safety gate records required modifications but does not rewrite a prescription."
+    ],
+    "unresolved_limitations": [
+      "The starting fraction has not yet been calibrated against this athlete's longitudinal response.",
+      "The chair sit-to-stand may produce assessment-specific learning and is not a complete general-athleticism program.",
+      "Only one capability-specific dose policy is included; later domains require separate reviewed artifacts.",
+      "The exact magnitude of readiness-driven reductions remains a later governed policy decision."
+    ],
+    "evidence": [
+      {
+        "claim_id": "91000000-0000-4000-8000-000000000005",
+        "title": "ACSM resistance-training position stand (2026)",
+        "source_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC12965823/",
+        "supported_use": "Resistance training can improve muscular endurance and chair-stand performance, and the primary recommendation includes at least twice-weekly resistance training.",
+        "unsupported_specifics": "The source does not validate this batch's exact chair exercise, 50% estimate fraction, 2 sets, 1-8-repetition bounds, 90-second rest, RPE 5-7 target, 24-hour recovery rule, or one-repetition progression increment."
+      }
+    ]
+  },
+  "release": {
+    "prepared_at": "2026-09-11T11:00:00Z",
+    "weekly_scheduling_policy": {
+      "id": "98910000-0000-4000-8000-000000000001",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-11T11:00:00Z",
+      "minimum_high_fatigue_recovery_hours": 24,
+      "maximum_sessions_per_day": 1,
+      "maximum_high_fatigue_sessions_per_day": 1,
+      "allow_partial_exercise_resolution": false,
+      "policy_version": "owner-alpha-conservative-weekly-scheduling@1.0.0"
+    },
+    "weekly_scheduling_policy_review_id": "98920000-0000-4000-8000-000000000001",
+    "weekly_scheduling_policy_review_content": {
+      "applicability_rationale": "Approve for the owner-alpha first-session pathway: one session per day, no unresolved exercise match, and a 24-hour minimum after high-fatigue work. The current chair session is low fatigue, so the high-fatigue interval is a forward-compatible guardrail rather than its frequency rationale.",
+      "uncertainty": "The one-session daily cap and 24-hour high-fatigue interval are conservative engineering constraints, not direct values extracted from the cited evidence. They should be replaced if observed recovery or later evidence supports a better rule.",
+      "review_version": "owner-alpha-conservative-weekly-scheduling-review@1.0.0"
+    },
+    "progression_policy": {
+      "id": "98930000-0000-4000-8000-000000000001",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-11T11:00:00Z",
+      "reference": "owner-alpha-chair-stand-repetition-progression@1.0.0",
+      "minimum_set_completion_ratio": 1.0,
+      "minimum_dose_completion_ratio": 1.0,
+      "maximum_session_rpe": 7.0,
+      "require_technique_constraint": true,
+      "adjustment": {
+        "dimension": "repetitions",
+        "amount": 1.0,
+        "unit": "repetitions_per_set",
+        "description": "Add one repetition to each set after full compliant completion."
+      },
+      "exposure_type": null,
+      "evidence_claim_ids": [
+        "91000000-0000-4000-8000-000000000005"
+      ],
+      "rationale": "Use the smallest supported discrete change only after both sets and their entire repetition dose were completed, the reviewed technique constraint was met, session RPE was no more than 7, and no post-session safety decision interrupted progression.",
+      "policy_version": "owner-alpha-chair-stand-repetition-progression@1.0.0"
+    },
+    "repetition_dose_policy": {
+      "id": "98940000-0000-4000-8000-000000000001",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-11T11:00:00Z",
+      "adaptation_id": "a0000000-0000-4000-8000-000000000004",
+      "estimate_scope": "assessment_specific:thirty_second_chair_stand_repetitions",
+      "unit_or_scale": "repetitions",
+      "minimum_eligible_estimate": 1.0,
+      "target_fraction_of_estimate": 0.5,
+      "rounding_mode": "floor",
+      "sets": 2,
+      "minimum_repetitions_per_set": 1,
+      "maximum_repetitions_per_set": 8,
+      "rest_seconds": 90,
+      "effort_rpe_minimum": 5.0,
+      "effort_rpe_maximum": 7.0,
+      "technique_constraints": [
+        "Use the same stable-chair setup and controlled technique as the reviewed chair-stand protocol.",
+        "Stop the set if the reviewed technique can no longer be maintained."
+      ],
+      "planned_duration_minutes": 5,
+      "progression_policy_id": "98930000-0000-4000-8000-000000000001",
+      "evidence_claim_ids": [
+        "91000000-0000-4000-8000-000000000005"
+      ],
+      "rationale": "Begin at half of the athlete's current 30-second chair-stand estimate per set, rounded down and bounded, to produce a short submaximal first exposure whose response can be observed before progression.",
+      "uncertainty": "The 50% fraction, two sets, bounds, rest period, RPE target, and duration are provisional engineering priors. The evidence claim supports resistance-training direction and frequency, not these exact constants.",
+      "policy_version": "owner-alpha-chair-stand-dose@1.0.0"
+    },
+    "session_safety_policy": {
+      "id": "98950000-0000-4000-8000-000000000001",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-11T11:00:00Z",
+      "allowed_modifications": [
+        "reduce_volume",
+        "reduce_intensity",
+        "shorten_session"
+      ],
+      "limited_readiness_modifications": [
+        "reduce_volume",
+        "reduce_intensity"
+      ],
+      "unusual_soreness_modifications": [
+        "reduce_volume",
+        "reduce_intensity"
+      ],
+      "sleep_disruption_modifications": [
+        "reduce_volume",
+        "reduce_intensity"
+      ],
+      "schedule_limitation_modifications": [
+        "shorten_session"
+      ],
+      "evidence_claim_ids": [
+        "91000000-0000-4000-8000-000000000005"
+      ],
+      "rationale": "Provide only conservative, non-diagnostic reductions for ordinary limited readiness, unusual soreness, major sleep disruption, or schedule limitation. Concerning symptom signals remain governed by the separate stop-and-escalate path and cannot be overridden by this policy.",
+      "policy_version": "owner-alpha-conservative-session-safety@1.0.0"
+    },
+    "release_rationale": "Install the minimum explicit construction authorities needed for deterministic first-session preparation without asking the owner to author technical policy values and without hiding defaults in runtime code.",
+    "release_uncertainty": "All exact operational constants are provisional engineering priors. Ratification creates reusable authorities only; athlete-specific planning and safety assignment remain separate reviewed steps."
+  }
+}

@@ -8,6 +8,7 @@ from agas_planner.assessment import (
     ConservativeCapabilityEstimator,
 )
 from agas_planner.block_planning import BlockPlanner, BlockPlanningError, WeeklyScheduler
+from agas_planner.dose import DerivedRepetitionDose, RepetitionDoseError, RepetitionDosePlanner
 from agas_planner.execution import (
     ExecutionRecordingError,
     SessionAdherenceCalculator,
@@ -45,6 +46,7 @@ __all__ = [
     "ClosedLoopReplanningError",
     "CompetencyFloorDetector",
     "ConservativeCapabilityEstimator",
+    "DerivedRepetitionDose",
     "EnvironmentSnapshotBuilder",
     "ExecutionRecordingError",
     "ExerciseResolver",
@@ -55,6 +57,8 @@ __all__ = [
     "PrescriptionProgressionApplicator",
     "ProgressionEngine",
     "ProgressionError",
+    "RepetitionDoseError",
+    "RepetitionDosePlanner",
     "ResolutionError",
     "SessionAdherenceCalculator",
     "SessionExecutionRecorder",

@@ -260,6 +260,20 @@ progression rules require reviewed evidence, scoped applicability, and explicit 
 current allocator and scheduler preserve these values and test feasibility; they do not establish
 that a fixture value is effective or optimal.
 
+The first owner-alpha construction batch makes this distinction operational. Its reviewed ACSM
+claim supports the broad resistance-training direction, functional outcomes, and at-least-twice-
+weekly recommendation. The exact estimate fraction, set count, repetition bounds, effort range,
+rest, duration, recovery interval, daily cap, readiness modifications, and progression increment
+are explicitly labeled as engineering priors in the candidate. Ratification authorizes those
+replaceable product rules provisionally; evidence provenance must never be displayed as if the
+source tested those exact constants.
+
+`RepetitionDosePolicy` keeps the estimate scope, unit, adaptation, calculation constants,
+technique constraints, linked progression policy, evidence claim IDs, rationale, uncertainty, and
+policy version together. The deterministic planner carries the exact source estimate and policy
+identities into its output. A newer policy is appended as a new record; neither the source estimate
+nor the earlier dose rule may be overwritten.
+
 Typed intensity targets make units and target semantics inspectable; they do not make a prescribed
 load, RPE range, heart-rate zone, pace, or technique constraint evidence-based. Session-template
 composition and frequency are likewise governed inputs until a reviewed generation policy exists.

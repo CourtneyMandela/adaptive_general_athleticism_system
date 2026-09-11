@@ -324,6 +324,15 @@ from agas_api.session_recording import (
     SessionSafetyCreationResult,
 )
 from agas_api.settings import get_settings
+from agas_api.training_construction_candidates import (
+    RatifyTrainingConstructionCandidateCommand,
+    TrainingConstructionCandidateConflictError,
+    TrainingConstructionCandidateProjection,
+    TrainingConstructionCandidateValidationError,
+    TrainingConstructionRatificationResult,
+    list_training_construction_candidates,
+    ratify_training_construction_candidate,
+)
 from agas_api.weekly_availability_confirmation import (
     ConfirmWeeklyAvailabilityCommand,
     PersistedWeeklyAvailabilityConfirmationService,
@@ -594,6 +603,42 @@ def ratify_prepared_resource_governance_candidate(
     except ResourceGovernanceCandidateConflictError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     except (ResourceGovernanceCandidateValidationError, ValueError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.get(
+    "/v1/operator/training-construction-candidates",
+    tags=["operator"],
+    response_model=TrainingConstructionCandidateProjection,
+)
+def get_training_construction_candidates(
+    session: Annotated[Session, Depends(database_session_dependency)],
+    _authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+) -> TrainingConstructionCandidateProjection:
+    return list_training_construction_candidates(session)
+
+
+@app.post(
+    "/v1/operator/training-construction-candidates/{candidate_id}/ratifications",
+    tags=["operator"],
+    response_model=TrainingConstructionRatificationResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def ratify_prepared_training_construction_candidate(
+    candidate_id: UUID,
+    command: RatifyTrainingConstructionCandidateCommand,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+) -> TrainingConstructionRatificationResult:
+    try:
+        return ratify_training_construction_candidate(session, candidate_id, command, authority)
+    except KeyError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except TrainingConstructionCandidateConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except (TrainingConstructionCandidateValidationError, ValueError) as error:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
         ) from error

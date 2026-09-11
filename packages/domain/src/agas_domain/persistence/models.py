@@ -2444,6 +2444,65 @@ class ProgressionPolicyRecord(VersionedRecordMixin, Base):
     )
 
 
+class RepetitionDosePolicyRecord(VersionedRecordMixin, Base):
+    __tablename__ = "repetition_dose_policies"
+    __table_args__ = (
+        CheckConstraint(
+            "minimum_eligible_estimate >= 0",
+            name="ck_repetition_dose_minimum_estimate_nonnegative",
+        ),
+        CheckConstraint(
+            "target_fraction_of_estimate > 0 AND target_fraction_of_estimate <= 1",
+            name="ck_repetition_dose_target_fraction",
+        ),
+        CheckConstraint("rounding_mode = 'floor'", name="ck_repetition_dose_rounding_mode"),
+        CheckConstraint("sets >= 1", name="ck_repetition_dose_sets_positive"),
+        CheckConstraint(
+            "minimum_repetitions_per_set >= 1 AND "
+            "maximum_repetitions_per_set >= minimum_repetitions_per_set",
+            name="ck_repetition_dose_rep_bounds",
+        ),
+        CheckConstraint("rest_seconds >= 0", name="ck_repetition_dose_rest_nonnegative"),
+        CheckConstraint(
+            "effort_rpe_minimum >= 0 AND effort_rpe_maximum <= 10 AND "
+            "effort_rpe_maximum >= effort_rpe_minimum",
+            name="ck_repetition_dose_rpe_bounds",
+        ),
+        CheckConstraint(
+            "planned_duration_minutes > 0",
+            name="ck_repetition_dose_duration_positive",
+        ),
+    )
+
+    adaptation_id: Mapped[UUID] = mapped_column(
+        ForeignKey("adaptations.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    estimate_scope: Mapped[str] = mapped_column(String(200), index=True, nullable=False)
+    unit_or_scale: Mapped[str] = mapped_column(String(80), nullable=False)
+    minimum_eligible_estimate: Mapped[float] = mapped_column(Float(), nullable=False)
+    target_fraction_of_estimate: Mapped[float] = mapped_column(Float(), nullable=False)
+    rounding_mode: Mapped[str] = mapped_column(String(20), nullable=False)
+    sets: Mapped[int] = mapped_column(Integer(), nullable=False)
+    minimum_repetitions_per_set: Mapped[int] = mapped_column(Integer(), nullable=False)
+    maximum_repetitions_per_set: Mapped[int] = mapped_column(Integer(), nullable=False)
+    rest_seconds: Mapped[int] = mapped_column(Integer(), nullable=False)
+    effort_rpe_minimum: Mapped[float] = mapped_column(Float(), nullable=False)
+    effort_rpe_maximum: Mapped[float] = mapped_column(Float(), nullable=False)
+    technique_constraints: Mapped[list[str]] = mapped_column(JsonType, nullable=False)
+    planned_duration_minutes: Mapped[int] = mapped_column(Integer(), nullable=False)
+    progression_policy_id: Mapped[UUID] = mapped_column(
+        ForeignKey("progression_policies.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    rationale: Mapped[str] = mapped_column(Text(), nullable=False)
+    uncertainty: Mapped[str] = mapped_column(Text(), nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(120), nullable=False)
+    evidence_links: Mapped[list[RepetitionDosePolicyEvidenceRecord]] = relationship(
+        cascade="save-update, merge",
+        lazy="selectin",
+        order_by="RepetitionDosePolicyEvidenceRecord.position",
+    )
+
+
 class ExposureDefinitionRecord(VersionedRecordMixin, Base):
     __tablename__ = "exposure_definitions"
     exercise_id: Mapped[UUID] = mapped_column(
@@ -2599,6 +2658,25 @@ class ProgressionPolicyEvidenceRecord(Base):
     __tablename__ = "progression_policy_evidence_claims"
     progression_policy_id: Mapped[UUID] = mapped_column(
         ForeignKey("progression_policies.id", ondelete="RESTRICT"), primary_key=True
+    )
+    evidence_claim_id: Mapped[UUID] = mapped_column(
+        ForeignKey("evidence_claims.id", ondelete="RESTRICT"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer(), nullable=False)
+
+
+class RepetitionDosePolicyEvidenceRecord(Base):
+    __tablename__ = "repetition_dose_policy_evidence_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "repetition_dose_policy_id",
+            "position",
+            name="uq_repetition_dose_policy_evidence_order",
+        ),
+    )
+
+    repetition_dose_policy_id: Mapped[UUID] = mapped_column(
+        ForeignKey("repetition_dose_policies.id", ondelete="RESTRICT"), primary_key=True
     )
     evidence_claim_id: Mapped[UUID] = mapped_column(
         ForeignKey("evidence_claims.id", ondelete="RESTRICT"), primary_key=True
@@ -3275,12 +3353,14 @@ for _record_type in (
     SessionAdherenceRecord,
     SessionAdherenceObservationRecord,
     ProgressionPolicyRecord,
+    RepetitionDosePolicyRecord,
     ExposureDefinitionRecord,
     ExposureEntryRecord,
     ExposureProgressionPolicyRecord,
     ExposureValidationDecisionRecord,
     ProgressionDecisionRecord,
     ProgressionPolicyEvidenceRecord,
+    RepetitionDosePolicyEvidenceRecord,
     ExposureDefinitionEvidenceRecord,
     ExposureEntryObservationRecord,
     ExposureProgressionPolicyEvidenceRecord,
