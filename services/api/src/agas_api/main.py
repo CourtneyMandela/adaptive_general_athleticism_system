@@ -120,11 +120,14 @@ from agas_api.current_week import (
 from agas_api.database import database_session, database_session_dependency
 from agas_api.environment_management import (
     AthleteEnvironmentProjection,
+    EnvironmentFloorAreaReportResult,
     EnvironmentManagementConflictError,
     EnvironmentManagementNotFoundError,
     EnvironmentManagementValidationError,
     EquipmentStateReportResult,
+    PersistedEnvironmentFloorAreaService,
     PersistedEquipmentStateService,
+    RecordEnvironmentFloorAreaCommand,
     RecordEquipmentStateCommand,
     get_athlete_environment_projection,
 )
@@ -1303,6 +1306,34 @@ def record_equipment_state(
     authorizer.require_athlete(athlete_id)
     try:
         return PersistedEquipmentStateService(session).execute(athlete_id, environment_id, command)
+    except EnvironmentManagementNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except EnvironmentManagementConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except EnvironmentManagementValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.post(
+    "/v1/athletes/{athlete_id}/environments/{environment_id}/floor-area-reports",
+    tags=["athlete"],
+    response_model=EnvironmentFloorAreaReportResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def record_environment_floor_area(
+    athlete_id: UUID,
+    environment_id: UUID,
+    command: RecordEnvironmentFloorAreaCommand,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authorizer: Annotated[OwnershipAuthorizer, Depends(ownership_authorizer_dependency)],
+) -> EnvironmentFloorAreaReportResult:
+    authorizer.require_athlete(athlete_id)
+    try:
+        return PersistedEnvironmentFloorAreaService(session).execute(
+            athlete_id, environment_id, command
+        )
     except EnvironmentManagementNotFoundError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
     except EnvironmentManagementConflictError as error:

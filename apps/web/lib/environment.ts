@@ -21,6 +21,8 @@ export interface EnvironmentStateProjection {
   environment_id: string;
   name: string;
   floor_area_m2: number | null;
+  floor_area_source_observation_id: string | null;
+  floor_area_effective_from: string | null;
   noise_constraints: string | null;
   max_noise_level: "low" | "moderate" | "high";
   outdoor_access: boolean;
@@ -52,6 +54,15 @@ export interface EquipmentStateReportCommand {
     load_limits: Record<string, never>;
     reason: string | null;
   }>;
+  reported_at: string;
+  reliability: Confidence;
+  provenance: ProvenanceInput;
+  report_reason: string;
+}
+
+export interface EnvironmentFloorAreaReportCommand {
+  floor_area_m2: number;
+  effective_from: string;
   reported_at: string;
   reliability: Confidence;
   provenance: ProvenanceInput;
@@ -178,4 +189,63 @@ export async function submitEquipmentStateReport(
     observation: { id: string };
     availability_events: Array<{ id: string }>;
   };
+}
+
+export function buildEnvironmentFloorAreaReportCommand({
+  floorAreaM2,
+  reliability,
+  reportReason,
+  effectiveFrom = new Date(),
+  reportedAt = new Date(),
+}: {
+  floorAreaM2: number;
+  reliability: Confidence;
+  reportReason: string;
+  effectiveFrom?: Date;
+  reportedAt?: Date;
+}): EnvironmentFloorAreaReportCommand {
+  if (!Number.isFinite(floorAreaM2) || floorAreaM2 <= 0) {
+    throw new Error("Usable floor area must be greater than zero.");
+  }
+  if (!Number.isFinite(effectiveFrom.getTime()) || !Number.isFinite(reportedAt.getTime())) {
+    throw new Error("Floor-area report times must be valid.");
+  }
+  const normalizedReason = reportReason.trim();
+  if (!normalizedReason) throw new Error("Explain how you verified the usable floor area.");
+  return {
+    floor_area_m2: floorAreaM2,
+    effective_from: effectiveFrom.toISOString(),
+    reported_at: reportedAt.toISOString(),
+    reliability,
+    provenance: {
+      ...equipmentReportProvenance,
+      ingestion_method: "environment-floor-area-form",
+    },
+    report_reason: normalizedReason,
+  };
+}
+
+export async function submitEnvironmentFloorAreaReport(
+  apiBaseUrl: string,
+  athleteId: string,
+  environmentId: string,
+  command: EnvironmentFloorAreaReportCommand,
+  fetcher: typeof fetch = fetch,
+): Promise<{ observation: { id: string } }> {
+  const response = await fetcher(
+    `${apiBaseUrl.replace(/\/$/, "")}/v1/athletes/${encodeURIComponent(athleteId)}`
+      + `/environments/${encodeURIComponent(environmentId)}/floor-area-reports`,
+    {
+      method: "POST",
+      headers: authorizedHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(command),
+    },
+  );
+  if (!response.ok) {
+    throw new EnvironmentRequestError(
+      await responseDetail(response, `Floor-area report failed with ${response.status}.`),
+      response.status,
+    );
+  }
+  return (await response.json()) as { observation: { id: string } };
 }

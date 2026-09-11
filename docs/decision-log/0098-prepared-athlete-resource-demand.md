@@ -64,8 +64,8 @@ therefore appear as explicit blockers rather than an infeasible plan or a hidden
 
 ## Unresolved questions
 
-- Existing environments cannot yet append a revised floor-space fact from the athlete PWA; this is
-  the next usability blocker for profiles that omitted space during onboarding.
+- How should future environment reports represent temporary space constraints and expiry, beyond
+  the current effective-from floor-area history?
 - What exact evidence and safety logic should govern the first sets, repetitions, effort, tempo,
   rest, technique cues, and stop rules?
 - Should resource demands gain a typed supersession relationship rather than relying on distinct
@@ -78,5 +78,4 @@ therefore appear as explicit blockers rather than an infeasible plan or a hidden
   identity.
 - The resource chain remains distinct from both scientific claims and eventual performed work.
 - No block, weekly plan, session prescription, or workout is created.
-- The next coherent work is append-only environment-constraint reporting, followed by a prepared
-  first block and separately governed first-session dose.
+- The next coherent work is a prepared first block and separately governed first-session dose.

@@ -4,8 +4,10 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 
 import type { Confidence } from "@/lib/current-week";
 import {
+  buildEnvironmentFloorAreaReportCommand,
   buildEquipmentStateReportCommand,
   fetchAthleteEnvironments,
+  submitEnvironmentFloorAreaReport,
   submitEquipmentStateReport,
   type AthleteEnvironmentProjection,
   type EquipmentState,
@@ -38,6 +40,8 @@ export function EnvironmentPanel({
   const [reliability, setReliability] = useState<Confidence>("moderate");
   const [state, setState] = useState<"loading" | "ready" | "saving" | "error">("loading");
   const [message, setMessage] = useState("");
+  const [floorArea, setFloorArea] = useState("");
+  const [floorReason, setFloorReason] = useState("");
 
   const reload = useCallback(async () => {
     setState("loading");
@@ -117,6 +121,33 @@ export function EnvironmentPanel({
     }
   }
 
+  async function submitFloorArea(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!environment) return;
+    setState("saving");
+    setMessage("");
+    try {
+      const command = buildEnvironmentFloorAreaReportCommand({
+        floorAreaM2: Number(floorArea),
+        reliability,
+        reportReason: floorReason,
+      });
+      await submitEnvironmentFloorAreaReport(
+        apiBaseUrl,
+        athleteId,
+        environment.environment_id,
+        command,
+      );
+      setFloorArea("");
+      setFloorReason("");
+      await reload();
+      setMessage("Usable floor-space history recorded. The original profile remains unchanged.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to record usable floor space.");
+      setState("error");
+    }
+  }
+
   const changeCount = Object.values(changes).filter((item) => item !== "no_change").length;
 
   return (
@@ -157,6 +188,39 @@ export function EnvironmentPanel({
                 <div><dt>Noise</dt><dd>{environment.max_noise_level}</dd></div>
                 <div><dt>Outdoor access</dt><dd>{environment.outdoor_access ? "Available" : "Not reported"}</dd></div>
               </dl>
+              <form className="equipment-change-form" onSubmit={submitFloorArea}>
+                <p className="eyebrow">Update usable space</p>
+                <p className="form-help">
+                  Measure or reasonably estimate clear floor space you can actually use for
+                  training. This appends a dated report; it does not erase onboarding history.
+                </p>
+                <div className="equipment-change-timing">
+                  <label>
+                    Usable floor area (m²)
+                    <input
+                      type="number"
+                      min="0.1"
+                      step="0.1"
+                      value={floorArea}
+                      onChange={(event) => setFloorArea(event.target.value)}
+                      placeholder={environment.floor_area_m2?.toString() ?? "e.g. 4"}
+                      required
+                    />
+                  </label>
+                  <label>
+                    How you verified it
+                    <input
+                      value={floorReason}
+                      onChange={(event) => setFloorReason(event.target.value)}
+                      placeholder="Measured clear area in living room"
+                      required
+                    />
+                  </label>
+                </div>
+                <button type="submit" disabled={state === "saving" || !floorArea || !floorReason.trim()}>
+                  {state === "saving" ? "Recording…" : "Record usable space"}
+                </button>
+              </form>
               <form className="equipment-change-form" onSubmit={submit}>
                 <div className="equipment-state-list">
                   {environment.equipment.map((item) => (

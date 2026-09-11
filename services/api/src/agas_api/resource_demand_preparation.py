@@ -61,6 +61,7 @@ class ResourceDemandEnvironmentOption(BaseModel):
 
     environment: Environment
     snapshot: EnvironmentSnapshot
+    constraint_observation_ids: tuple[UUID, ...] = ()
 
 
 class ResourceDemandPreparationProjection(BaseModel):
@@ -167,11 +168,35 @@ class ResourceDemandPreparationProjector:
     ) -> tuple[ResourceDemandEnvironmentOption, ...]:
         equipment = self.repository.list_equipment()
         options = []
+        from agas_api.environment_management import resolve_environment_floor_area
+
         for environment in self.repository.list_environments(strategy.athlete_id):
+            baseline = environment.space_constraints.get("floor_area_m2")
+            baseline_area = (
+                float(baseline)
+                if isinstance(baseline, int | float) and not isinstance(baseline, bool)
+                else None
+            )
+            floor_area, floor_source_id, _ = resolve_environment_floor_area(
+                self.repository,
+                environment.id,
+                strategy.athlete_id,
+                instant,
+                baseline_area,
+            )
+            effective_environment = environment.model_copy(
+                update={
+                    "space_constraints": (
+                        {**environment.space_constraints, "floor_area_m2": floor_area}
+                        if floor_area is not None
+                        else environment.space_constraints
+                    )
+                }
+            )
             availability = self.repository.list_equipment_availability(environment.id)
             try:
                 snapshot = EnvironmentSnapshotBuilder().build(
-                    environment,
+                    effective_environment,
                     equipment,
                     availability,
                     instant,
@@ -182,6 +207,9 @@ class ResourceDemandPreparationProjector:
                 ResourceDemandEnvironmentOption(
                     environment=environment,
                     snapshot=snapshot,
+                    constraint_observation_ids=(
+                        (floor_source_id,) if floor_source_id is not None else ()
+                    ),
                 )
             )
         return tuple(options)

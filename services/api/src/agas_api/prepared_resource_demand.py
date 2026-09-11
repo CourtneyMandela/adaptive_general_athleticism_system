@@ -310,7 +310,11 @@ class PreparedResourceDemandProjector:
             maximum_fatigue_cost=CostLevel.LOW,
             maximum_soreness_cost=CostLevel.LOW,
             minimum_floor_area_m2=exercise.minimum_floor_area_m2,
-            source_observation_ids=strategy.source_observation_ids,
+            source_observation_ids=tuple(
+                dict.fromkeys(
+                    (*strategy.source_observation_ids, *environment.constraint_observation_ids)
+                )
+            ),
             evidence_claim_ids=tuple(dict.fromkeys((*strategy.evidence_claim_ids, claim.id))),
             rationale=(
                 "Require one controlled, bilateral, bodyweight, knee-dominant, low-complexity, "
@@ -372,6 +376,9 @@ class PreparedResourceDemandProjector:
             "strategy_rule_version": strategy.rule_version,
             "priority": priority.model_dump(mode="json"),
             "environment_id": str(environment.environment.id),
+            "environment_constraint_observation_ids": [
+                str(item) for item in environment.constraint_observation_ids
+            ],
             "environment_snapshot": {
                 "environment_id": str(environment.snapshot.environment_id),
                 "available_equipment": [

@@ -4,6 +4,10 @@ from uuid import UUID
 
 import pytest
 from agas_api.database import database_session_dependency
+from agas_api.environment_management import (
+    PersistedEnvironmentFloorAreaService,
+    RecordEnvironmentFloorAreaCommand,
+)
 from agas_api.identity import AuthorizedRole, authenticated_principal_dependency
 from agas_api.identity_admin import set_account_role
 from agas_api.main import app
@@ -305,6 +309,40 @@ def test_candidate_is_exact_content_addressed_and_not_a_dose(session: Session) -
     assert candidate.per_session_scheduling_minutes == 5
     assert "not an exercise prescription" in candidate.dose_boundary
     assert "session still requires" in candidate.safety_boundary
+
+
+def test_floor_area_observation_unblocks_candidate_and_joins_provenance(
+    session: Session,
+) -> None:
+    strategy, authority = _persist_ready_strategy(session, floor_area_m2=None)
+    environment = DomainRepository(session).list_environments(strategy.athlete_id)[0]
+    assert (
+        PreparedResourceDemandProjector(session).project(strategy.id, authority, NOW).status
+        == "blocked"
+    )
+
+    report = PersistedEnvironmentFloorAreaService(session).execute(
+        strategy.athlete_id,
+        environment.id,
+        RecordEnvironmentFloorAreaCommand(
+            floor_area_m2=4,
+            effective_from=NOW,
+            reported_at=NOW,
+            reliability=Confidence.MODERATE,
+            provenance=Provenance(
+                recorded_by="automated-test",
+                source_system="pytest",
+                ingestion_method="environment-floor-area-form",
+            ),
+            report_reason="Measured synthetic clear area.",
+        ),
+    )
+    candidate = (
+        PreparedResourceDemandProjector(session).project(strategy.id, authority, NOW).candidates[0]
+    )
+
+    assert report.observation.id in candidate.stimulus_specification.source_observation_ids
+    assert candidate.environment_snapshot.floor_area_m2 == 4
 
 
 def test_ratification_is_idempotent_and_preserves_exact_lineage(session: Session) -> None:

@@ -180,6 +180,7 @@ GET  /v1/operator/strategies/{strategy_id}/resource-demand-preparation
 GET  /v1/operator/strategies/{strategy_id}/prepared-resource-demands
 POST /v1/operator/strategies/{strategy_id}/prepared-resource-demands/{candidate_id}/ratifications
 POST /v1/operator/strategies/{strategy_id}/priorities/{priority_id}/resource-demands
+POST /v1/athletes/{athlete_id}/environments/{environment_id}/floor-area-reports
 GET  /v1/operator/strategies/{strategy_id}/block-preparation
 POST /v1/operator/strategies/{strategy_id}/blocks
 GET  /v1/operator/blocks/{block_id}/first-week-preparation
@@ -810,8 +811,10 @@ authoritative current-week projection after each write.
 Once every scheduled occurrence, recovery report, and supported progression is closed, the screen
 offers a weekly review. It starts from availability shifted by seven days, requires the athlete to
 confirm or edit the actual environments and times, and submits only the windows and direct-report
-metadata. The environment panel separately records partial, temporal equipment changes with
-reliability and provenance. The
+metadata. The environment panel separately records partial, temporal equipment changes and
+effective-dated usable-floor-area corrections with reliability and provenance. Floor-area reports
+are observations: they leave the original onboarding environment unchanged and their controlling
+IDs join downstream stimulus provenance. The
 backend owns the consecutive date and lineage and prepares exactly one successor week. Block-end,
 hold, review-required, missing-policy, and unsupported-policy states remain visibly blocked.
 

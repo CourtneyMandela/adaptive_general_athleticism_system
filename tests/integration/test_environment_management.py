@@ -216,6 +216,60 @@ def test_equipment_report_rejects_duplicates_naive_times_and_cross_athlete_sourc
         )
 
 
+def test_floor_area_report_is_temporal_append_only_and_drives_current_projection(
+    session: Session,
+) -> None:
+    repository, athlete, environment, *_ = _fixture(session)
+    original_environment = repository.get_environment(environment.id)
+
+    def override_session() -> Iterator[Session]:
+        yield session
+
+    app.dependency_overrides[database_session_dependency] = override_session
+    try:
+        response = TestClient(app).post(
+            f"/v1/athletes/{athlete.id}/environments/{environment.id}/floor-area-reports",
+            json={
+                "floor_area_m2": 4.5,
+                "effective_from": (BASE + timedelta(days=2)).isoformat(),
+                "reported_at": (BASE + timedelta(hours=2)).isoformat(),
+                "reliability": "moderate",
+                "provenance": {
+                    **PROVENANCE,
+                    "ingestion_method": "environment-floor-area-form",
+                },
+                "report_reason": "Measured the clear training area.",
+            },
+        )
+        before = TestClient(app).get(
+            f"/v1/athletes/{athlete.id}/environments",
+            params={"at": (BASE + timedelta(days=1)).isoformat()},
+        )
+        after = TestClient(app).get(
+            f"/v1/athletes/{athlete.id}/environments",
+            params={"at": (BASE + timedelta(days=3)).isoformat()},
+        )
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert response.status_code == 201
+    observation = response.json()["observation"]
+    assert observation["observation_type"] == "environment_floor_area_report"
+    assert before.json()["environments"][0]["floor_area_m2"] == 10
+    current = after.json()["environments"][0]
+    assert current["floor_area_m2"] == 4.5
+    assert current["floor_area_source_observation_id"] == observation["id"]
+    assert repository.get_environment(environment.id) == original_environment
+    assert (
+        len(
+            repository.list_observations(
+                athlete.id, observation_type="environment_floor_area_report"
+            )
+        )
+        == 1
+    )
+
+
 def _fixture(
     session: Session,
 ) -> tuple[

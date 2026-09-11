@@ -92,6 +92,40 @@ class EquipmentStateReportResult(BaseModel):
     availability_events: Annotated[tuple[EquipmentAvailability, ...], Field(min_length=1)]
 
 
+class RecordEnvironmentFloorAreaCommand(BaseModel):
+    """Append one factual usable-floor-area report without rewriting onboarding history."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    floor_area_m2: float = Field(gt=0, le=100000)
+    effective_from: datetime
+    reported_at: datetime
+    reliability: Confidence
+    provenance: Provenance
+    report_reason: Annotated[str, Field(min_length=1, max_length=500)]
+
+    @field_validator("effective_from", "reported_at")
+    @classmethod
+    def require_aware_times(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("environment floor-area times must include a timezone")
+        return value
+
+    @field_validator("report_reason")
+    @classmethod
+    def normalize_report_reason(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("report_reason must not be blank")
+        return normalized
+
+
+class EnvironmentFloorAreaReportResult(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    observation: Observation
+
+
 class EnvironmentEquipmentProjection(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -114,6 +148,8 @@ class EnvironmentStateProjection(BaseModel):
     environment_id: UUID
     name: str
     floor_area_m2: float | None
+    floor_area_source_observation_id: UUID | None = None
+    floor_area_effective_from: datetime | None = None
     noise_constraints: str | None
     max_noise_level: CostLevel
     outdoor_access: bool
@@ -126,7 +162,7 @@ class AthleteEnvironmentProjection(BaseModel):
     athlete_id: UUID
     as_of: datetime
     environments: tuple[EnvironmentStateProjection, ...]
-    projection_version: str = "athlete-environment-state@1.0.0"
+    projection_version: str = "athlete-environment-state@1.1.0"
 
 
 class EnvironmentManagementError(RuntimeError):
@@ -234,6 +270,119 @@ class PersistedEquipmentStateService:
         return EquipmentStateReportResult(observation=observation, availability_events=events)
 
 
+class PersistedEnvironmentFloorAreaService:
+    rule_version = "environment-floor-area-report@1.0.0"
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+        self.repository = DomainRepository(session)
+
+    def execute(
+        self,
+        athlete_id: UUID,
+        environment_id: UUID,
+        command: RecordEnvironmentFloorAreaCommand,
+    ) -> EnvironmentFloorAreaReportResult:
+        athlete = self.repository.get_athlete(athlete_id)
+        environment = self.repository.get_environment(environment_id)
+        if athlete is None:
+            raise EnvironmentManagementNotFoundError("athlete does not exist")
+        if environment is None or environment.athlete_id != athlete_id:
+            raise EnvironmentManagementNotFoundError("environment does not exist")
+        if command.effective_from < environment.created_at:
+            raise EnvironmentManagementValidationError(
+                "floor-area state cannot predate its environment"
+            )
+        observation = Observation(
+            created_at=command.reported_at,
+            athlete_id=athlete_id,
+            observed_at=command.reported_at,
+            observation_type="environment_floor_area_report",
+            measurement={
+                "environment_id": str(environment.id),
+                "floor_area_m2": command.floor_area_m2,
+                "effective_from": command.effective_from.isoformat(),
+                "report_reason": command.report_reason,
+            },
+            source=ObservationSource.USER_REPORT,
+            reliability=command.reliability,
+            context={"environment_floor_area_rule_version": self.rule_version},
+            provenance=command.provenance,
+        )
+        try:
+            self.repository.add_observation(observation)
+            self.session.commit()
+        except DomainIntegrityError as error:
+            self.session.rollback()
+            raise EnvironmentManagementValidationError(str(error)) from error
+        except IntegrityError as error:
+            self.session.rollback()
+            raise EnvironmentManagementConflictError(
+                "floor-area report conflicts with persisted environment history"
+            ) from error
+        return EnvironmentFloorAreaReportResult(observation=observation)
+
+
+def resolve_environment_floor_area(
+    repository: DomainRepository,
+    environment_id: UUID,
+    athlete_id: UUID,
+    as_of: datetime,
+    baseline: float | None,
+) -> tuple[float | None, UUID | None, datetime | None]:
+    """Resolve the latest effective typed observation, falling back to onboarding state."""
+
+    current: tuple[datetime, datetime, str, float, UUID] | None = None
+    for observation in repository.list_observations(
+        athlete_id, observation_type="environment_floor_area_report"
+    ):
+        measurement = observation.measurement
+        if not isinstance(measurement, dict):
+            raise EnvironmentManagementValidationError(
+                f"floor-area observation {observation.id} has invalid measurement content"
+            )
+        reported_environment_id = measurement.get("environment_id")
+        if not isinstance(reported_environment_id, str):
+            raise EnvironmentManagementValidationError(
+                f"floor-area observation {observation.id} has no environment identity"
+            )
+        if reported_environment_id != str(environment_id):
+            continue
+        raw_area = measurement.get("floor_area_m2")
+        raw_effective = measurement.get("effective_from")
+        if (
+            isinstance(raw_area, bool)
+            or not isinstance(raw_area, int | float)
+            or raw_area <= 0
+            or not isinstance(raw_effective, str)
+        ):
+            raise EnvironmentManagementValidationError(
+                f"floor-area observation {observation.id} has invalid area or effective time"
+            )
+        try:
+            effective = datetime.fromisoformat(raw_effective.replace("Z", "+00:00"))
+        except ValueError:
+            raise EnvironmentManagementValidationError(
+                f"floor-area observation {observation.id} has an invalid effective time"
+            ) from None
+        if effective.tzinfo is None:
+            raise EnvironmentManagementValidationError(
+                f"floor-area observation {observation.id} has a timezone-naive effective time"
+            )
+        if effective > as_of:
+            continue
+        candidate = (
+            effective,
+            observation.observed_at,
+            str(observation.id),
+            float(raw_area),
+            observation.id,
+        )
+        if current is None or candidate[:3] > current[:3]:
+            current = candidate
+    return (baseline, None, None) if current is None else (current[3], current[4], current[0])
+
+
 def get_athlete_environment_projection(
     session: Session, athlete_id: UUID, as_of: datetime | None = None
 ) -> AthleteEnvironmentProjection:
@@ -282,15 +431,25 @@ def get_athlete_environment_projection(
                 )
             )
         floor_area = environment.space_constraints.get("floor_area_m2")
+        baseline_floor_area = (
+            float(floor_area)
+            if isinstance(floor_area, int | float) and not isinstance(floor_area, bool)
+            else None
+        )
+        current_floor_area, floor_source_id, floor_effective_from = resolve_environment_floor_area(
+            repository,
+            environment.id,
+            athlete_id,
+            instant,
+            baseline_floor_area,
+        )
         environment_projections.append(
             EnvironmentStateProjection(
                 environment_id=environment.id,
                 name=environment.name,
-                floor_area_m2=(
-                    float(floor_area)
-                    if isinstance(floor_area, int | float) and not isinstance(floor_area, bool)
-                    else None
-                ),
+                floor_area_m2=current_floor_area,
+                floor_area_source_observation_id=floor_source_id,
+                floor_area_effective_from=floor_effective_from,
                 noise_constraints=environment.noise_constraints,
                 max_noise_level=environment.max_noise_level,
                 outdoor_access=environment.outdoor_access,

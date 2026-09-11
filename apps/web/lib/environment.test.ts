@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  buildEnvironmentFloorAreaReportCommand,
   buildEquipmentStateReportCommand,
   fetchAthleteEnvironments,
+  submitEnvironmentFloorAreaReport,
   submitEquipmentStateReport,
   type AthleteEnvironmentProjection,
 } from "./environment";
@@ -126,5 +128,35 @@ describe("environment client", () => {
     });
     expect(fetcher.mock.calls[1][0]).toContain(`/environments/${environmentId}/equipment-reports`);
     expect(JSON.parse(fetcher.mock.calls[1][1]!.body as string)).toEqual(command);
+  });
+
+  it("builds and submits an append-only usable-floor-area report", async () => {
+    const command = buildEnvironmentFloorAreaReportCommand({
+      floorAreaM2: 4.5,
+      reliability: "moderate",
+      reportReason: " Measured clear living-room space ",
+      effectiveFrom: new Date("2026-09-10T18:00:00Z"),
+      reportedAt: new Date("2026-09-10T18:01:00Z"),
+    });
+    expect(command).toMatchObject({
+      floor_area_m2: 4.5,
+      effective_from: "2026-09-10T18:00:00.000Z",
+      report_reason: "Measured clear living-room space",
+      provenance: { ingestion_method: "environment-floor-area-form" },
+    });
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ observation: { id: equipmentId } }), { status: 201 }),
+    );
+
+    await submitEnvironmentFloorAreaReport(
+      "http://localhost:8000",
+      athleteId,
+      environmentId,
+      command,
+      fetcher,
+    );
+
+    expect(fetcher.mock.calls[0][0]).toContain("floor-area-reports");
+    expect(JSON.parse(fetcher.mock.calls[0][1]!.body as string)).toEqual(command);
   });
 });

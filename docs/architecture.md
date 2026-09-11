@@ -1064,8 +1064,11 @@ confidence and freshness, exposes method/version/source counts on demand, and li
 have not been estimated. It avoids false-precision bars because current protocol-specific units are
 not necessarily comparable. An environment panel shows effective equipment state and lets the
 athlete append partial current, future, or temporary changes with reliability and provenance. It
-states explicitly that reporting equipment does not rewrite existing sessions or establish
-substitution equivalence. The current-week screen
+also accepts a strongly typed, effective-dated usable-floor-area observation for an existing
+environment. The latest effective report drives the current projection while the immutable
+onboarding environment remains unchanged; resource preparation adds the controlling observation ID
+to its stimulus and demand provenance. Reporting equipment or space does not rewrite existing
+sessions or establish substitution equivalence. The current-week screen
 renders dated session containers, prescription dose and intensity, a compact rationale disclosure,
 environment, safety status, execution, and adherence. Setup, loading, empty, conflict/error, and
 mobile layouts are explicit. It also submits structured pre-session self-reports and actual
