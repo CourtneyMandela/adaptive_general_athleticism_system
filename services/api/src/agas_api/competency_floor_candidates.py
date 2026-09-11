@@ -1,17 +1,17 @@
-# ruff: noqa: E501 -- reviewed evidence and governance prose remains exact and readable.
 from __future__ import annotations
 
 import hashlib
 import json
+import sysconfig
 from collections.abc import Callable
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from functools import lru_cache
-from typing import Annotated, Literal
-from uuid import UUID
+from pathlib import Path
+from typing import Annotated, Any, Literal
+from uuid import UUID, uuid5
 
 from agas_domain import (
     AccountRole,
-    Applicability,
     AssessmentReviewDecision,
     CapabilityDomain,
     ComparisonDirection,
@@ -22,12 +22,10 @@ from agas_domain import (
     EvidenceClaimReview,
     EvidenceReviewDecision,
     EvidenceSource,
-    EvidenceSourceIdentifier,
-    EvidenceStrength,
 )
 from agas_domain.models import VersionedRecord
 from agas_domain.persistence.repository import DomainIntegrityError, DomainRepository
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -38,7 +36,9 @@ from agas_api.evidence_governance import (
 )
 from agas_api.identity import AuthorizedRole
 
-CANDIDATE_VERSION = "competency-floor-candidate@1.0.0"
+CANDIDATE_VERSION = "competency-floor-candidate@1.1.0"
+BATCH_VERSION = "competency-floor-candidate-batch@1.0.0"
+BATCH_NAMESPACE = UUID("98400000-0000-4000-8000-000000000100")
 NonEmptyText = Annotated[str, Field(min_length=1)]
 
 
@@ -53,18 +53,40 @@ class CompetencyFloorEvidenceSummary(BaseModel):
     conflict_disclosure: NonEmptyText
 
 
+class CompetencyFloorAuthorityBasis(BaseModel):
+    """Discloses where the number came from and who made it operational."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    numeric_value_origin: Literal[
+        "direct_study_result",
+        "derived_from_study",
+        "professional_judgment",
+        "personal_calibration",
+    ]
+    operational_use_origin: Literal[
+        "evidence_validated",
+        "evidence_informed_engineering_judgment",
+        "professional_judgment",
+        "personal_calibration",
+    ]
+    numeric_value_explanation: NonEmptyText
+    operational_use_explanation: NonEmptyText
+
+
 class CompetencyFloorCandidate(BaseModel):
     """Immutable owner-readable presentation of a prepared competency floor."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    candidate_version: Literal["competency-floor-candidate@1.0.0"]
+    candidate_version: Literal["competency-floor-candidate@1.1.0"]
     candidate_id: UUID
     slug: NonEmptyText
     release_label: NonEmptyText
     prepared_at: datetime
     content_digest: Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
     summary: NonEmptyText
+    authority_basis: CompetencyFloorAuthorityBasis
     domain: CapabilityDomain
     estimate_scope: NonEmptyText
     unit_or_scale: NonEmptyText
@@ -87,18 +109,36 @@ class CompetencyFloorCandidateItem(BaseModel):
     issues: tuple[str, ...] = ()
 
 
+class CompetencyFloorCandidateReference(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    candidate_id: UUID
+    candidate_version: Literal["competency-floor-candidate@1.1.0"]
+    content_digest: Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
+
+
+class CompetencyFloorCandidateBatch(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    batch_version: Literal["competency-floor-candidate-batch@1.0.0"]
+    batch_id: UUID
+    content_digest: Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
+    candidates: Annotated[tuple[CompetencyFloorCandidateReference, ...], Field(min_length=1)]
+
+
 class CompetencyFloorCandidateProjection(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     projected_at: datetime
     items: tuple[CompetencyFloorCandidateItem, ...]
-    projection_version: str = "competency-floor-candidates@1.0.0"
+    batch: CompetencyFloorCandidateBatch
+    projection_version: str = "competency-floor-candidates@1.1.0"
 
 
 class RatifyCompetencyFloorCandidateCommand(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    candidate_version: Literal["competency-floor-candidate@1.0.0"]
+    candidate_version: Literal["competency-floor-candidate@1.1.0"]
     content_digest: Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
     approval_attestation: Literal[True]
 
@@ -125,6 +165,59 @@ class PreparedCompetencyFloorCandidate(BaseModel):
 
     presentation: CompetencyFloorCandidate
     release: PreparedCompetencyFloorRelease
+    accepted_historical_content_digests: tuple[str, ...] = ()
+
+
+class RatifyCompetencyFloorCandidateBatchCommand(CompetencyFloorCandidateBatch):
+    approval_attestation: Literal[True]
+
+
+class CompetencyFloorCandidateDocument(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    document_schema_version: Literal["competency-floor-candidate-document@1.0.0"]
+    candidate_version: Literal["competency-floor-candidate@1.1.0"]
+    content_digest: Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
+    accepted_historical_content_digests: tuple[
+        Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")], ...
+    ] = ()
+    presentation: dict[str, Any]
+    release: PreparedCompetencyFloorRelease
+
+    @model_validator(mode="after")
+    def validate_release_alignment(self) -> CompetencyFloorCandidateDocument:
+        presentation = CompetencyFloorCandidate(
+            candidate_version=self.candidate_version,
+            content_digest=self.content_digest,
+            **self.presentation,
+        )
+        release = self.release
+        if presentation.candidate_id != release.release_id:
+            raise ValueError("candidate and release identities must match")
+        if presentation.release_label != release.release_label:
+            raise ValueError("candidate and release labels must match")
+        if presentation.prepared_at != release.prepared_at:
+            raise ValueError("candidate and release preparation times must match")
+        floor = release.floor
+        if (
+            presentation.domain != floor.domain
+            or presentation.estimate_scope != floor.estimate_scope
+            or presentation.unit_or_scale != floor.unit_or_scale
+            or presentation.threshold != floor.threshold
+            or presentation.comparison_direction != floor.comparison_direction
+            or presentation.minimum_age_years != floor.minimum_age_years
+            or presentation.maximum_age_years != floor.maximum_age_years
+        ):
+            raise ValueError("candidate presentation and competency floor must match exactly")
+        if release.claim.id not in floor.evidence_claim_ids:
+            raise ValueError("competency floor must cite the candidate evidence claim")
+        if release.source.id not in release.claim.source_record_ids:
+            raise ValueError("candidate claim must cite its exact source snapshot")
+        if len(set(self.accepted_historical_content_digests)) != len(
+            self.accepted_historical_content_digests
+        ):
+            raise ValueError("historical content digests must be unique")
+        return self
 
 
 class CompetencyFloorRatificationResult(BaseModel):
@@ -143,6 +236,17 @@ class CompetencyFloorRatificationResult(BaseModel):
     decision_record_created: bool
     floor: CompetencyFloor
     floor_review: CompetencyFloorReview
+
+
+class CompetencyFloorCandidateBatchRatificationResult(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    batch: CompetencyFloorCandidateBatch
+    authority_account_id: UUID
+    authority_assignment_id: UUID
+    candidate_results: Annotated[tuple[CompetencyFloorRatificationResult, ...], Field(min_length=1)]
+    batch_decision_record_created: bool
+    ratification_version: str = "competency-floor-batch-ratification@1.0.0"
 
 
 class CompetencyFloorCandidateConflictError(RuntimeError):
@@ -167,9 +271,7 @@ def list_competency_floor_candidates(
             status: Literal["available", "ratified", "conflict"] = "available"
             ratified_at = None
             issues: tuple[str, ...] = ()
-        elif (
-            f"candidate_content_digest:{prepared.presentation.content_digest}" in decision.evidence
-        ):
+        elif _decision_candidate_digest(decision) in _accepted_candidate_digests(prepared):
             status = "ratified"
             ratified_at = decision.created_at
             issues = ()
@@ -185,7 +287,41 @@ def list_competency_floor_candidates(
                 issues=issues,
             )
         )
-    return CompetencyFloorCandidateProjection(projected_at=instant, items=tuple(items))
+    return CompetencyFloorCandidateProjection(
+        projected_at=instant,
+        items=tuple(items),
+        batch=competency_floor_candidate_batch(),
+    )
+
+
+@lru_cache
+def competency_floor_candidate_batch() -> CompetencyFloorCandidateBatch:
+    references = tuple(
+        CompetencyFloorCandidateReference(
+            candidate_id=prepared.presentation.candidate_id,
+            candidate_version=prepared.presentation.candidate_version,
+            content_digest=prepared.presentation.content_digest,
+        )
+        for prepared in sorted(
+            _candidate_registry().values(), key=lambda item: str(item.presentation.candidate_id)
+        )
+    )
+    canonical = json.dumps(
+        {
+            "batch_version": BATCH_VERSION,
+            "candidates": [item.model_dump(mode="json") for item in references],
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    digest = f"sha256:{hashlib.sha256(canonical.encode()).hexdigest()}"
+    return CompetencyFloorCandidateBatch(
+        batch_version=BATCH_VERSION,
+        batch_id=uuid5(BATCH_NAMESPACE, digest),
+        content_digest=digest,
+        candidates=references,
+    )
 
 
 def ratify_competency_floor_candidate(
@@ -196,32 +332,147 @@ def ratify_competency_floor_candidate(
     *,
     ratified_at: datetime | None = None,
 ) -> CompetencyFloorRatificationResult:
+    prepared = _validated_candidate(candidate_id, command.candidate_version, command.content_digest)
+    instant = _validated_ratification_time(authority, prepared.release.prepared_at, ratified_at)
+    try:
+        result = _persist_candidate(session, prepared, authority, instant)
+        session.commit()
+    except CompetencyFloorCandidateConflictError:
+        session.rollback()
+        raise
+    except (
+        DomainIntegrityError,
+        EvidenceAuthorityEvaluationError,
+        EvidenceAuthorityNotReadyError,
+        IntegrityError,
+    ) as error:
+        session.rollback()
+        raise CompetencyFloorCandidateConflictError(str(error)) from error
+    except Exception:
+        session.rollback()
+        raise
+    return result
+
+
+def ratify_competency_floor_candidate_batch(
+    session: Session,
+    command: RatifyCompetencyFloorCandidateBatchCommand,
+    authority: AuthorizedRole,
+    *,
+    ratified_at: datetime | None = None,
+) -> CompetencyFloorCandidateBatchRatificationResult:
+    expected = competency_floor_candidate_batch()
+    supplied = CompetencyFloorCandidateBatch.model_validate(
+        command.model_dump(exclude={"approval_attestation"})
+    )
+    if supplied != expected:
+        raise CompetencyFloorCandidateConflictError(
+            "candidate batch changed; refresh and review the exact current manifest"
+        )
+    registry = _candidate_registry()
+    prepared_items = tuple(registry[item.candidate_id] for item in expected.candidates)
+    latest_prepared_at = max(item.release.prepared_at for item in prepared_items)
+    instant = _validated_ratification_time(authority, latest_prepared_at, ratified_at)
+    repository = DomainRepository(session)
+    existing_batch_decision = repository.get_decision_record(expected.batch_id)
+    if existing_batch_decision is not None:
+        return _existing_batch_result(repository, expected, prepared_items, existing_batch_decision)
+
+    try:
+        results = tuple(
+            _persist_candidate(session, prepared, authority, instant) for prepared in prepared_items
+        )
+        batch_decision = DecisionRecord(
+            id=expected.batch_id,
+            created_at=instant,
+            decision="Ratified exact competency-floor candidate batch",
+            reason=(
+                "Approve one content-addressed manifest while retaining each candidate's own "
+                "immutable digest, evidence chain, floor review, and decision record."
+            ),
+            alternatives_considered=(
+                "Require a separate network request and attestation for every floor.",
+                "Approve a batch without preserving per-artifact digests.",
+                "Allow a partially successful batch.",
+            ),
+            evidence=(
+                f"batch_content_digest:{expected.content_digest}",
+                f"authority_account_id:{authority.account_id}",
+                f"authority_assignment_id:{authority.assignment_id}",
+                *(
+                    f"candidate_content_digest:{item.candidate_id}={item.content_digest}"
+                    for item in expected.candidates
+                ),
+            ),
+            uncertainty=(
+                "One attestation reduces repetitive transport; it does not establish that every "
+                "floor has strong evidence or broad athlete applicability."
+            ),
+            decision_version="competency-floor-batch-ratification@1.0.0",
+            decided_on=instant.date(),
+        )
+        batch_created = _ensure_exact(
+            label="candidate batch decision",
+            expected=batch_decision,
+            existing=repository.get_decision_record(batch_decision.id),
+            add=repository.add_decision_record,
+        )
+        session.commit()
+    except CompetencyFloorCandidateConflictError:
+        session.rollback()
+        raise
+    except (
+        DomainIntegrityError,
+        EvidenceAuthorityEvaluationError,
+        EvidenceAuthorityNotReadyError,
+        IntegrityError,
+    ) as error:
+        session.rollback()
+        raise CompetencyFloorCandidateConflictError(str(error)) from error
+    except Exception:
+        session.rollback()
+        raise
+
+    return CompetencyFloorCandidateBatchRatificationResult(
+        batch=expected,
+        authority_account_id=authority.account_id,
+        authority_assignment_id=authority.assignment_id,
+        candidate_results=results,
+        batch_decision_record_created=batch_created,
+    )
+
+
+def _validated_candidate(
+    candidate_id: UUID, candidate_version: str, content_digest: str
+) -> PreparedCompetencyFloorCandidate:
     try:
         prepared = _candidate_registry()[candidate_id]
     except KeyError as error:
         raise KeyError("competency-floor candidate does not exist") from error
+    if candidate_version != prepared.presentation.candidate_version:
+        raise CompetencyFloorCandidateValidationError(
+            "candidate version does not match the prepared release"
+        )
+    if content_digest != prepared.presentation.content_digest:
+        raise CompetencyFloorCandidateConflictError(
+            "candidate content changed; refresh and review the exact current release"
+        )
+    return prepared
+
+
+def _validated_ratification_time(
+    authority: AuthorizedRole,
+    prepared_at: datetime,
+    ratified_at: datetime | None,
+) -> datetime:
     if authority.role is not AccountRole.PLANNING_REVIEWER:
         raise CompetencyFloorCandidateValidationError(
             "competency-floor ratification requires planning_reviewer authority"
         )
-    if command.candidate_version != prepared.presentation.candidate_version:
-        raise CompetencyFloorCandidateValidationError(
-            "candidate version does not match the prepared release"
-        )
-    if command.content_digest != prepared.presentation.content_digest:
-        raise CompetencyFloorCandidateConflictError(
-            "candidate content changed; refresh and review the exact current release"
-        )
-
-    repository = DomainRepository(session)
-    existing_decision = repository.get_decision_record(prepared.release.release_id)
-    if existing_decision is not None:
-        return _existing_result(repository, prepared, existing_decision)
-
     instant = ratified_at or datetime.now(UTC)
     if instant.tzinfo is None or instant.utcoffset() is None:
         raise ValueError("ratification time must include a timezone")
-    if instant < prepared.release.prepared_at:
+    if instant < prepared_at:
         raise CompetencyFloorCandidateValidationError(
             "ratification cannot predate prepared content"
         )
@@ -231,6 +482,19 @@ def ratify_competency_floor_candidate(
         )
     if instant > datetime.now(UTC) + timedelta(minutes=5):
         raise CompetencyFloorCandidateValidationError("ratification cannot be in the future")
+    return instant
+
+
+def _persist_candidate(
+    session: Session,
+    prepared: PreparedCompetencyFloorCandidate,
+    authority: AuthorizedRole,
+    instant: datetime,
+) -> CompetencyFloorRatificationResult:
+    repository = DomainRepository(session)
+    existing_decision = repository.get_decision_record(prepared.release.release_id)
+    if existing_decision is not None:
+        return _existing_result(repository, prepared, existing_decision)
 
     release = prepared.release
     reviewer = f"account:{authority.account_id}"
@@ -278,64 +542,48 @@ def ratify_competency_floor_candidate(
         decided_on=instant.date(),
     )
 
-    try:
-        created_source = _ensure_exact(
-            label="evidence source",
-            expected=release.source,
-            existing=repository.get_evidence_source(release.source.id),
-            add=repository.add_evidence_source,
-        )
-        session.flush()
-        created_claim = _ensure_exact(
-            label="evidence claim",
-            expected=release.claim,
-            existing=repository.get_evidence_claim(release.claim.id),
-            add=repository.add_evidence_claim,
-        )
-        session.flush()
-        created_evidence_review = _ensure_exact(
-            label="evidence review",
-            expected=evidence_review,
-            existing=repository.get_evidence_claim_review(evidence_review.id),
-            add=repository.add_evidence_claim_review,
-        )
-        session.flush()
-        EvidenceAuthorityEvaluator(session).require_ready((release.claim.id,), instant)
-        created_floor = _ensure_exact(
-            label="competency floor",
-            expected=release.floor,
-            existing=repository.get_competency_floor(release.floor.id),
-            add=repository.add_competency_floor,
-        )
-        session.flush()
-        created_floor_review = _ensure_exact(
-            label="competency floor review",
-            expected=floor_review,
-            existing=repository.get_competency_floor_review(floor_review.id),
-            add=repository.add_competency_floor_review,
-        )
-        session.flush()
-        decision_record_created = _ensure_exact(
-            label="decision record",
-            expected=decision,
-            existing=repository.get_decision_record(decision.id),
-            add=repository.add_decision_record,
-        )
-        session.commit()
-    except CompetencyFloorCandidateConflictError:
-        session.rollback()
-        raise
-    except (
-        DomainIntegrityError,
-        EvidenceAuthorityEvaluationError,
-        EvidenceAuthorityNotReadyError,
-        IntegrityError,
-    ) as error:
-        session.rollback()
-        raise CompetencyFloorCandidateConflictError(str(error)) from error
-    except Exception:
-        session.rollback()
-        raise
+    created_source = _ensure_exact(
+        label="evidence source",
+        expected=release.source,
+        existing=repository.get_evidence_source(release.source.id),
+        add=repository.add_evidence_source,
+    )
+    session.flush()
+    created_claim = _ensure_exact(
+        label="evidence claim",
+        expected=release.claim,
+        existing=repository.get_evidence_claim(release.claim.id),
+        add=repository.add_evidence_claim,
+    )
+    session.flush()
+    created_evidence_review = _ensure_exact(
+        label="evidence review",
+        expected=evidence_review,
+        existing=repository.get_evidence_claim_review(evidence_review.id),
+        add=repository.add_evidence_claim_review,
+    )
+    session.flush()
+    EvidenceAuthorityEvaluator(session).require_ready((release.claim.id,), instant)
+    created_floor = _ensure_exact(
+        label="competency floor",
+        expected=release.floor,
+        existing=repository.get_competency_floor(release.floor.id),
+        add=repository.add_competency_floor,
+    )
+    session.flush()
+    created_floor_review = _ensure_exact(
+        label="competency floor review",
+        expected=floor_review,
+        existing=repository.get_competency_floor_review(floor_review.id),
+        add=repository.add_competency_floor_review,
+    )
+    session.flush()
+    decision_record_created = _ensure_exact(
+        label="decision record",
+        expected=decision,
+        existing=repository.get_decision_record(decision.id),
+        add=repository.add_decision_record,
+    )
 
     return CompetencyFloorRatificationResult(
         release_id=release.release_id,
@@ -364,7 +612,8 @@ def _existing_result(
         if ":" in item
         for key, value in (item.split(":", 1),)
     }
-    if values.get("candidate_content_digest") != prepared.presentation.content_digest:
+    persisted_digest = values.get("candidate_content_digest")
+    if persisted_digest not in _accepted_candidate_digests(prepared):
         raise CompetencyFloorCandidateConflictError(
             "candidate release identity is occupied by different immutable content"
         )
@@ -383,7 +632,7 @@ def _existing_result(
         )
     return CompetencyFloorRatificationResult(
         release_id=prepared.release.release_id,
-        candidate_content_digest=prepared.presentation.content_digest,
+        candidate_content_digest=persisted_digest,
         authority_account_id=account_id,
         authority_assignment_id=assignment_id,
         created_source=False,
@@ -397,193 +646,157 @@ def _existing_result(
     )
 
 
-@lru_cache
-def _candidate_registry() -> dict[UUID, PreparedCompetencyFloorCandidate]:
-    release = _chair_stand_floor_release()
-    presentation_fields = _chair_stand_floor_presentation_fields()
-    canonical = json.dumps(
-        {
-            "candidate_version": CANDIDATE_VERSION,
-            "presentation": presentation_fields,
-            "release": release.model_dump(mode="json"),
-        },
-        sort_keys=True,
-        separators=(",", ":"),
-        default=str,
-    )
-    presentation = CompetencyFloorCandidate(
-        candidate_version=CANDIDATE_VERSION,
-        content_digest=f"sha256:{hashlib.sha256(canonical.encode()).hexdigest()}",
-        **presentation_fields,
-    )
-    prepared = PreparedCompetencyFloorCandidate(presentation=presentation, release=release)
-    return {presentation.candidate_id: prepared}
-
-
-def _chair_stand_floor_release() -> PreparedCompetencyFloorRelease:
-    source_time = datetime(2026, 9, 9, 0, 0, tzinfo=UTC)
-    claim_time = datetime(2026, 9, 9, 0, 5, tzinfo=UTC)
-    prepared_at = datetime(2026, 9, 9, 0, 10, tzinfo=UTC)
-    pmid = EvidenceSourceIdentifier(scheme="pmid", value="42183074")
-    doi = EvidenceSourceIdentifier(scheme="doi", value="10.25100/cm.v56i4.6874")
-    pmcid = EvidenceSourceIdentifier(scheme="other", value="pmcid:PMC13193711")
-    source = EvidenceSource(
-        id=UUID("90000000-0000-4000-8000-000000000004"),
-        created_at=source_time,
-        title="Reference values for sit-to-stand tests in Colombian adults: a multicenter cross-sectional study",
-        authors=(
-            "Jenifer Rodríguez-Castro",
-            "Vicente Benavides-Cordoba",
-            "Rodrigo Torres-Castro",
-            "Matías Otto-Yáñez",
-            "Jhonatan Betancourt-Peña",
-            "Juan Carlos Ávila-Valencia",
-        ),
-        journal="Colombia Médica",
-        publication_year=2025,
-        publication_date=date(2025, 12, 30),
-        publication_types=("Journal Article", "Multicenter Study"),
-        primary_identifier=pmid,
-        source_identifiers=(pmid, doi, pmcid),
-        metadata_provider="pubmed",
-        retrieval_uri="https://pmc.ncbi.nlm.nih.gov/articles/PMC13193711/",
-        retrieval_query="PMID 42183074; PMCID PMC13193711",
-        retrieved_at=source_time,
-        metadata_version="pubmed-pmc-record-snapshot@2026-09-09",
-        provenance_notes=(
-            "Bibliographic metadata, participant criteria, protocol, subgroup sizes, percentile method, Table 2 values, and conflict statement were checked against the PubMed and PMC records.",
-            "The source is retained as a snapshot reference; the article text is not copied into AGAS.",
-        ),
-    )
-    claim = EvidenceClaim(
-        id=UUID("91000000-0000-4000-8000-000000000004"),
-        created_at=claim_time,
-        claim=(
-            "In the study's Colombian 30-to-39-year age group, the empirical 2.5th percentile for completed 30-second sit-to-stand repetitions was 11 for women (n=29) and 11 for men (n=31)."
-        ),
-        domain="muscular_endurance",
-        population=(
-            "Community-dwelling Colombian adults aged 30 to 39 who self-reported good health and could perform sit-to-stand movements; BMI above 35 and recent conditions interfering with performance were excluded."
-        ),
-        intervention="One investigator-instructed 30-second sit-to-stand trial using a standard 43-to-46 cm chair.",
-        comparator="Empirical sex- and age-stratified reference distribution; no intervention comparator.",
-        outcome="Completed sit-to-stand repetitions in 30 seconds.",
-        study_design="Multicenter cross-sectional reference-value study",
-        duration="Single testing session; data collected March 2023 through June 2024.",
-        effect_direction="Higher repetition count represented higher test performance.",
-        uncertainty=(
-            "The 2.5th percentile is a descriptive lower reference boundary in this sample, not a validated causal threshold for health, safety, athletic performance, or training response."
-        ),
-        limitations=(
-            "Only 29 women and 31 men contributed to the 30-to-39-year subgroup.",
-            "Population-specific Colombian values may not transfer to an individual from another geography or background.",
-            "The investigator-administered source protocol is not identical to AGAS digital self-administration.",
-            "The cross-sectional design does not establish a minimum useful athletic competency or training dose.",
-        ),
-        evidence_strength=EvidenceStrength.MODERATE,
-        athlete_applicability=Applicability.LOW,
-        applicability_notes=(
-            "The exact age-stratified test value is usable only as a conservative, provisional owner-alpha reference when the athlete is 30 to 39 and completes the matching AGAS assessment; geography, administration, and individual differences limit transfer."
-        ),
-        source_identifiers=(pmid, doi, pmcid),
-        source_record_ids=(source.id,),
-        reviewer="Codex evidence synthesis candidate; authority pending",
-        claim_version="colombian-chair-stand-age-30-39-p025@1.0.0",
-    )
-    floor = CompetencyFloor(
-        id=UUID("98500000-0000-4000-8000-000000000001"),
-        created_at=prepared_at,
-        domain=CapabilityDomain.MUSCULAR_ENDURANCE,
-        estimate_scope="assessment_specific:thirty_second_chair_stand_repetitions",
-        unit_or_scale="repetitions",
-        threshold=11,
-        comparison_direction=ComparisonDirection.HIGHER_IS_BETTER,
-        population=(
-            "Provisional owner-alpha reference for adults aged 30 to 39, derived from the shared female and male 2.5th-percentile value in one Colombian community sample."
-        ),
-        minimum_age_years=30,
-        maximum_age_years=39,
-        applicability_notes=(
-            "Apply only to a current estimate produced from the matching governed AGAS 30-second chair-stand protocol. Use solely to prioritize further development or maintenance review; never to clear exercise or diagnose impairment."
-        ),
-        uncertainty=(
-            "This is an engineering interpretation of a population lower reference boundary as a deliberately low, replaceable screening floor. It is not a validated universal minimum useful competency, and it should be superseded when more applicable evidence or personal longitudinal calibration is available."
-        ),
-        evidence_claim_ids=(claim.id,),
-        floor_version="owner-alpha-chair-stand-age-30-39-lower-reference@1.0.0",
-    )
-    return PreparedCompetencyFloorRelease(
-        release_id=UUID("98400000-0000-4000-8000-000000000002"),
-        release_label="Age 30-39 chair-stand lower-reference floor",
-        prepared_at=prepared_at,
-        source=source,
-        claim=claim,
-        evidence_review_id=UUID("91100000-0000-4000-8000-000000000004"),
-        evidence_review_content={
-            "source_verification_rationale": "PubMed identifiers and the open full text were checked; Table 2 reports 11 repetitions at p2.5 for both 30-to-39-year sex strata.",
-            "extraction_rationale": "The claim preserves the subgroup sizes, empirical percentile, test duration, and observed value without converting it into a health or causal claim.",
-            "evidence_strength_rationale": "The multicenter sample and directly reported empirical percentiles support the descriptive claim, while the small age-sex subgroups and single-country design limit certainty.",
-            "applicability_rationale": "Applicability to an owner outside the sampled population is low; age matching and an assessment-specific estimate are mandatory but do not resolve geography or self-administration differences.",
-            "uncertainty": "Approval covers exact extraction of the reference value, not the product decision to treat it as a competency floor.",
-            "conflict_disclosure": "The authors reported no relevant financial affiliations or involvement; no independent conflict audit was performed by AGAS.",
-            "review_version": "colombian-chair-stand-reference-evidence-review@1.0.0",
-        },
-        floor=floor,
-        floor_review_id=UUID("98600000-0000-4000-8000-000000000001"),
-        floor_review_content={
-            "applicability_rationale": "Approve only as a provisional owner-alpha lower-reference screening floor for a 30-to-39-year-old athlete with a current matching estimate. Below-floor status prioritizes review; it does not make a medical or safety determination.",
-            "uncertainty": "The study labels p2.5 as a lower limit of normality in its population, but it does not validate AGAS's minimum-useful-competency construct. The floor is intentionally narrow, age-bounded, versioned, and replaceable.",
-            "review_version": "owner-alpha-chair-stand-floor-review@1.0.0",
-        },
-        release_rationale="Provide one inspectable, age-bounded floor so a matching first assessment can enter planning without requiring the owner or runtime to invent a hidden threshold.",
-        release_uncertainty="Ratification authorizes only this low, population-limited comparison. It creates no diagnosis, medical clearance, adaptation priority, strategy, block, exercise, session, or dose.",
-    )
-
-
-def _chair_stand_floor_presentation_fields() -> dict[str, object]:
-    return {
-        "candidate_id": UUID("98400000-0000-4000-8000-000000000002"),
-        "slug": "chair_stand_age_30_39_lower_reference_floor",
-        "release_label": "Age 30-39 chair-stand lower-reference floor",
-        "prepared_at": datetime(2026, 9, 9, 0, 10, tzinfo=UTC),
-        "summary": "A deliberately low, provisional comparison point: 11 completed repetitions in the governed 30-second chair-stand assessment for athletes aged 30-39.",
-        "domain": CapabilityDomain.MUSCULAR_ENDURANCE,
-        "estimate_scope": "assessment_specific:thirty_second_chair_stand_repetitions",
-        "unit_or_scale": "repetitions",
-        "threshold": 11,
-        "comparison_direction": ComparisonDirection.HIGHER_IS_BETTER,
-        "minimum_age_years": 30,
-        "maximum_age_years": 39,
-        "governs": (
-            "Whether a current, matching chair-stand estimate is below or at least meets this provisional lower-reference floor.",
-            "Whether that comparison may become one reviewed input to initial planning.",
-        ),
-        "does_not_establish": (
-            "Medical safety, diagnosis, injury risk, or clearance to train.",
-            "A universal normal value, ideal performance target, or definition of athleticism.",
-            "Any adaptation priority, workout, exercise, dose, or progression.",
-            "Applicability outside ages 30-39 or to a nonmatching assessment protocol.",
-        ),
-        "unresolved_limitations": (
-            "The source is Colombian and the 30-to-39 subgroup contained 29 women and 31 men.",
-            "The source test was investigator-administered; AGAS uses governed digital self-administration.",
-            "The study reports a population reference, not a validated minimum useful training competency.",
-            "Personal longitudinal response should eventually replace broad population assumptions where possible.",
-        ),
-        "evidence": (
-            CompetencyFloorEvidenceSummary(
-                title="Colombian adult sit-to-stand reference values (2025)",
-                source_url="https://pmc.ncbi.nlm.nih.gov/articles/PMC13193711/",
-                population="Community-dwelling Colombian adults; the relevant age subgroup included 29 women and 31 men aged 30-39.",
-                finding="The empirical 2.5th percentile for the 30-second test was 11 repetitions in both sex strata aged 30-39.",
-                limitations=(
-                    "A descriptive percentile does not prove a health, safety, or athletic threshold.",
-                    "Population and administration differences limit individual transfer.",
-                ),
-                conflict_disclosure="The authors reported no relevant financial affiliations or involvement; AGAS did not conduct an independent audit.",
-            ),
-        ),
+def _existing_batch_result(
+    repository: DomainRepository,
+    batch: CompetencyFloorCandidateBatch,
+    prepared_items: tuple[PreparedCompetencyFloorCandidate, ...],
+    decision: DecisionRecord,
+) -> CompetencyFloorCandidateBatchRatificationResult:
+    values = {
+        key: value
+        for item in decision.evidence
+        if ":" in item
+        for key, value in (item.split(":", 1),)
+        if key != "candidate_content_digest"
     }
+    if values.get("batch_content_digest") != batch.content_digest:
+        raise CompetencyFloorCandidateConflictError(
+            "candidate batch identity is occupied by different immutable content"
+        )
+    expected_candidates = {
+        f"{item.candidate_id}={item.content_digest}" for item in batch.candidates
+    }
+    actual_candidates = {
+        item.split(":", 1)[1]
+        for item in decision.evidence
+        if item.startswith("candidate_content_digest:")
+    }
+    if actual_candidates != expected_candidates:
+        raise CompetencyFloorCandidateConflictError(
+            "persisted batch decision has incomplete candidate-digest provenance"
+        )
+    try:
+        account_id = UUID(values["authority_account_id"])
+        assignment_id = UUID(values["authority_assignment_id"])
+    except (KeyError, ValueError) as error:
+        raise CompetencyFloorCandidateConflictError(
+            "persisted batch decision has incomplete authority provenance"
+        ) from error
+    results = []
+    for prepared in prepared_items:
+        candidate_decision = repository.get_decision_record(prepared.release.release_id)
+        if candidate_decision is None:
+            raise CompetencyFloorCandidateConflictError(
+                "persisted batch decision has incomplete candidate lineage"
+            )
+        results.append(_existing_result(repository, prepared, candidate_decision))
+    return CompetencyFloorCandidateBatchRatificationResult(
+        batch=batch,
+        authority_account_id=account_id,
+        authority_assignment_id=assignment_id,
+        candidate_results=tuple(results),
+        batch_decision_record_created=False,
+    )
+
+
+def _decision_candidate_digest(decision: DecisionRecord) -> str | None:
+    prefix = "candidate_content_digest:"
+    return next(
+        (item.removeprefix(prefix) for item in decision.evidence if item.startswith(prefix)),
+        None,
+    )
+
+
+def _accepted_candidate_digests(
+    prepared: PreparedCompetencyFloorCandidate,
+) -> set[str]:
+    return {
+        prepared.presentation.content_digest,
+        *prepared.accepted_historical_content_digests,
+    }
+
+
+@lru_cache
+def _candidate_registry(
+    data_root: Path | None = None,
+) -> dict[UUID, PreparedCompetencyFloorCandidate]:
+    root = data_root or _default_candidate_data_root()
+    paths = sorted(root.glob("*.json"))
+    if not paths:
+        raise CompetencyFloorCandidateValidationError(
+            f"no competency-floor candidate documents found in {root}"
+        )
+
+    registry: dict[UUID, PreparedCompetencyFloorCandidate] = {}
+    for path in paths:
+        raw = _read_candidate_json(path)
+        try:
+            document = CompetencyFloorCandidateDocument.model_validate(raw)
+        except ValueError as error:
+            raise CompetencyFloorCandidateValidationError(
+                f"invalid competency-floor candidate document {path.name}: {error}"
+            ) from error
+        canonical = json.dumps(
+            {
+                "candidate_version": raw["candidate_version"],
+                "presentation": raw["presentation"],
+                "release": raw["release"],
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
+        actual_digest = f"sha256:{hashlib.sha256(canonical.encode()).hexdigest()}"
+        if actual_digest != document.content_digest:
+            raise CompetencyFloorCandidateValidationError(
+                f"competency-floor candidate document {path.name} has a stale content digest"
+            )
+        presentation = CompetencyFloorCandidate(
+            candidate_version=document.candidate_version,
+            content_digest=document.content_digest,
+            **document.presentation,
+        )
+        if presentation.candidate_id in registry:
+            raise CompetencyFloorCandidateValidationError(
+                f"duplicate competency-floor candidate id {presentation.candidate_id}"
+            )
+        registry[presentation.candidate_id] = PreparedCompetencyFloorCandidate(
+            presentation=presentation,
+            release=document.release,
+            accepted_historical_content_digests=document.accepted_historical_content_digests,
+        )
+    return registry
+
+
+def _default_candidate_data_root() -> Path:
+    repository_data = (
+        Path(__file__).resolve().parents[4] / "data" / "governance_candidates" / "competency_floors"
+    )
+    if repository_data.is_dir():
+        return repository_data
+    return (
+        Path(sysconfig.get_path("data"))
+        / "share"
+        / "agas"
+        / "data"
+        / "governance_candidates"
+        / "competency_floors"
+    )
+
+
+def _read_candidate_json(path: Path) -> dict[str, Any]:
+    try:
+        with path.open(encoding="utf-8") as file:
+            raw = json.load(file)
+    except (OSError, json.JSONDecodeError) as error:
+        raise CompetencyFloorCandidateValidationError(
+            f"unable to read competency-floor candidate document {path.name}: {error}"
+        ) from error
+    if not isinstance(raw, dict):
+        raise CompetencyFloorCandidateValidationError(
+            f"competency-floor candidate document {path.name} must be an object"
+        )
+    return raw
 
 
 def _ensure_exact[Record: VersionedRecord](

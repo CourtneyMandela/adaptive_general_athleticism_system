@@ -950,14 +950,19 @@ training dose.
 
 Competency-floor preparation is a separate content-addressed boundary. `GET
 /v1/operator/competency-floor-candidates` exposes the exact threshold, estimate scope, unit,
-comparison direction, inclusive age bounds, source summary, and interpretation limits. `POST
+comparison direction, inclusive age bounds, source summary, interpretation limits, and separate
+numeric-value versus operational-use authority classifications. Prepared content is loaded from
+typed, digest-checked documents in `data/governance_candidates/competency_floors`; invalid,
+cross-field-inconsistent, duplicate, or stale-digest documents fail closed. `POST
 /v1/operator/competency-floor-candidates/{candidate_id}/ratifications` accepts only the exact
 version, digest, and attestation. The first candidate atomically creates the source snapshot,
 reviewed descriptive claim, age-bounded `CompetencyFloor`, exact current floor review, actor
 provenance, and decision record. The release treats an empirical population lower-reference value
 as a provisional owner-alpha screening floor while explicitly denying universal, medical, safety,
 or workout meaning. Age, scope, unit, evidence-readiness, and review checks remain enforced again
-at planning time.
+at planning time. The batch ratification route accepts the exact sorted manifest and persists every
+member plus a batch audit in one transaction. Each member keeps its own digest and decision; any
+stale or conflicting member rolls back the whole batch. The individual route remains available.
 
 ## Web
 

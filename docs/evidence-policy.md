@@ -84,6 +84,15 @@ uncertainty, metric scope, unit, and version. Priority policies are versioned he
 scientific facts. Tests may use clearly labeled software-only fixture claims, but those fixtures
 must never be shipped as training evidence or seed data.
 
+A floor candidate must distinguish the origin of its numeric value from the authority for using
+that value operationally. A paper can directly report a percentile without validating that
+percentile as a competency, health, safety, or training threshold. In that case the number is
+study-sourced while the floor interpretation is evidence-informed engineering judgment. A value
+supplied solely by professional judgment must be labeled as such and may not be laundered through a
+general citation. The current floor persistence model requires a reviewed scientific claim and
+therefore intentionally does not ratify pure professional-judgment floors; a separate governed
+authority model is required before that case becomes operational.
+
 Initial planning must retain the selected floor evidence and every estimate's direct source
 observations. General relevance, goal relevance, prerequisite value, expected trainability,
 transfer value, and recovery-cost inputs are explicit governed context—not conclusions that may be
@@ -184,6 +193,13 @@ submits only the exact candidate version, SHA-256 digest, and explicit attestati
 the actual content and ratification time, and changed content requires a fresh review. A candidate
 may include exact supporting equipment needed to make its environmental constraints enforceable;
 that equipment is committed within the same decision transaction.
+
+Competency-floor candidates are stored as typed reviewed data documents rather than executable
+Python literals. The loader canonicalizes the complete structured presentation and release before
+checking its digest and validates that user-facing values exactly match the persisted floor. A
+batch manifest contains every current per-artifact version and digest. Batch ratification is one
+review action and one transaction, but it does not replace individual evidence chains, floor
+reviews, or decision records. One stale or conflicting artifact fails the entire batch.
 
 The same distinction applies to planning-policy candidates. The first prepared priority policy
 cites PMID 41843416 for the broad finding that resistance training improves multiple adult

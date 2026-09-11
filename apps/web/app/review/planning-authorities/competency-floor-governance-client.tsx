@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import {
   fetchCompetencyFloorCandidates,
+  ratifyCompetencyFloorCandidateBatch,
   ratifyCompetencyFloorCandidate,
   type CompetencyFloorCandidateProjection,
 } from "@/lib/competency-floor-governance";
@@ -15,6 +16,7 @@ export function CompetencyFloorGovernanceClient() {
   const [loading, setLoading] = useState(true);
   const [ratifying, setRatifying] = useState<string | null>(null);
   const [attestations, setAttestations] = useState<Record<string, boolean>>({});
+  const [batchAttestation, setBatchAttestation] = useState(false);
   const [message, setMessage] = useState("");
   const [messageKind, setMessageKind] = useState<"error" | "success">("error");
 
@@ -72,6 +74,30 @@ export function CompetencyFloorGovernanceClient() {
     }
   }
 
+  async function ratifyBatch() {
+    if (!projection || !batchAttestation) return;
+    setRatifying("batch");
+    setMessage("");
+    try {
+      await ratifyCompetencyFloorCandidateBatch(apiBaseUrl, projection.batch);
+      setProjection(await fetchCompetencyFloorCandidates(apiBaseUrl));
+      setBatchAttestation(false);
+      setAttestations({});
+      setMessageKind("success");
+      setMessage(
+        "The exact batch and every artifact-specific evidence, floor, review, and decision record were saved in one transaction.",
+      );
+    } catch (error) {
+      setMessageKind("error");
+      setMessage(error instanceof Error ? error.message : "Unable to ratify the candidate batch.");
+    } finally {
+      setRatifying(null);
+    }
+  }
+
+  const availableCount = projection?.items.filter((item) => item.status === "available").length ?? 0;
+  const batchBlocked = projection?.items.some((item) => item.status === "conflict") ?? false;
+
   return (
     <>
       <section className="planning-queue-summary" aria-labelledby="floor-candidate-title">
@@ -88,6 +114,37 @@ export function CompetencyFloorGovernanceClient() {
           A floor is a narrow comparison point for a matching estimate. It is not a medical cutoff,
           ideal target, or permission to train.
         </p>
+        {projection && availableCount > 0 ? (
+          <div className="assessment-candidate-approval">
+            <label>
+              <input
+                type="checkbox"
+                checked={batchAttestation}
+                onChange={(event) => setBatchAttestation(event.target.checked)}
+              />
+              <span>
+                I reviewed all {projection.batch.candidates.length} exact candidates, including
+                each threshold, population, evidence boundary, and limitation. I approve this
+                content-addressed batch for the owner-only alpha.
+              </span>
+            </label>
+            <div className="assessment-candidate-integrity">
+              <code>{projection.batch.batch_version}</code>
+              <code>{projection.batch.content_digest}</code>
+            </div>
+            <button
+              type="button"
+              className="primary-button"
+              disabled={!batchAttestation || batchBlocked || ratifying !== null}
+              onClick={() => void ratifyBatch()}
+            >
+              {ratifying === "batch" ? "Ratifying exact batch…" : `Approve exact batch (${availableCount} new)`}
+            </button>
+            {batchBlocked ? (
+              <p className="form-error">Resolve the conflicting artifact before batch approval.</p>
+            ) : null}
+          </div>
+        ) : null}
       </section>
 
       {projection?.items.map((item) => {
@@ -109,6 +166,19 @@ export function CompetencyFloorGovernanceClient() {
               <span className={`status-badge status-badge--${item.status}`}>{item.status}</span>
             </header>
             <p>{candidate.summary}</p>
+
+            <div className="assessment-candidate-meaning">
+              <section>
+                <h3>Where the number came from</h3>
+                <p><strong>{candidate.authority_basis.numeric_value_origin.replaceAll("_", " ")}</strong></p>
+                <p>{candidate.authority_basis.numeric_value_explanation}</p>
+              </section>
+              <section>
+                <h3>Why AGAS may use it</h3>
+                <p><strong>{candidate.authority_basis.operational_use_origin.replaceAll("_", " ")}</strong></p>
+                <p>{candidate.authority_basis.operational_use_explanation}</p>
+              </section>
+            </div>
 
             <div className="assessment-candidate-meaning">
               <section>
@@ -182,7 +252,7 @@ export function CompetencyFloorGovernanceClient() {
                 <button
                   type="button"
                   className="primary-button"
-                  disabled={!attestations[candidate.candidate_id] || busy}
+                  disabled={!attestations[candidate.candidate_id] || ratifying !== null}
                   onClick={() => void ratify(candidate.candidate_id)}
                 >
                   {busy ? "Ratifying exact floor…" : "Approve exact floor"}

@@ -1,0 +1,194 @@
+{
+  "document_schema_version": "competency-floor-candidate-document@1.0.0",
+  "candidate_version": "competency-floor-candidate@1.1.0",
+  "content_digest": "sha256:9a95e6dc37e3cd9143b451557f2a4fcb61dd729bd2d4a70691f7e3f07e06866f",
+  "accepted_historical_content_digests": [
+    "sha256:d3236e46452bf9e8028de860f106d089968dccbb9ec2a6b97c6eeccbf3304311"
+  ],
+  "presentation": {
+    "candidate_id": "98400000-0000-4000-8000-000000000002",
+    "slug": "chair_stand_age_30_39_lower_reference_floor",
+    "release_label": "Age 30-39 chair-stand lower-reference floor",
+    "prepared_at": "2026-09-09T00:10:00Z",
+    "summary": "A deliberately low, provisional comparison point: 11 completed repetitions in the governed 30-second chair-stand assessment for athletes aged 30-39.",
+    "authority_basis": {
+      "numeric_value_origin": "direct_study_result",
+      "operational_use_origin": "evidence_informed_engineering_judgment",
+      "numeric_value_explanation": "The value 11 is the directly reported empirical 2.5th percentile for both age-30-to-39 sex strata in the cited study.",
+      "operational_use_explanation": "Using that descriptive percentile as an AGAS competency floor is a conservative, provisional engineering judgment; the study did not validate it as a training, safety, or health threshold."
+    },
+    "domain": "muscular_endurance",
+    "estimate_scope": "assessment_specific:thirty_second_chair_stand_repetitions",
+    "unit_or_scale": "repetitions",
+    "threshold": 11.0,
+    "comparison_direction": "higher_is_better",
+    "minimum_age_years": 30,
+    "maximum_age_years": 39,
+    "governs": [
+      "Whether a current, matching chair-stand estimate is below or at least meets this provisional lower-reference floor.",
+      "Whether that comparison may become one reviewed input to initial planning."
+    ],
+    "does_not_establish": [
+      "Medical safety, diagnosis, injury risk, or clearance to train.",
+      "A universal normal value, ideal performance target, or definition of athleticism.",
+      "Any adaptation priority, workout, exercise, dose, or progression.",
+      "Applicability outside ages 30-39 or to a nonmatching assessment protocol."
+    ],
+    "unresolved_limitations": [
+      "The source is Colombian and the 30-to-39 subgroup contained 29 women and 31 men.",
+      "The source test was investigator-administered; AGAS uses governed digital self-administration.",
+      "The study reports a population reference, not a validated minimum useful training competency.",
+      "Personal longitudinal response should eventually replace broad population assumptions where possible."
+    ],
+    "evidence": [
+      {
+        "title": "Colombian adult sit-to-stand reference values (2025)",
+        "source_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13193711/",
+        "population": "Community-dwelling Colombian adults; the relevant age subgroup included 29 women and 31 men aged 30-39.",
+        "finding": "The empirical 2.5th percentile for the 30-second test was 11 repetitions in both sex strata aged 30-39.",
+        "limitations": [
+          "A descriptive percentile does not prove a health, safety, or athletic threshold.",
+          "Population and administration differences limit individual transfer."
+        ],
+        "conflict_disclosure": "The authors reported no relevant financial affiliations or involvement; AGAS did not conduct an independent audit."
+      }
+    ]
+  },
+  "release": {
+    "release_id": "98400000-0000-4000-8000-000000000002",
+    "release_label": "Age 30-39 chair-stand lower-reference floor",
+    "prepared_at": "2026-09-09T00:10:00Z",
+    "source": {
+      "id": "90000000-0000-4000-8000-000000000004",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-09T00:00:00Z",
+      "title": "Reference values for sit-to-stand tests in Colombian adults: a multicenter cross-sectional study",
+      "authors": [
+        "Jenifer Rodríguez-Castro",
+        "Vicente Benavides-Cordoba",
+        "Rodrigo Torres-Castro",
+        "Matías Otto-Yáñez",
+        "Jhonatan Betancourt-Peña",
+        "Juan Carlos Ávila-Valencia"
+      ],
+      "journal": "Colombia Médica",
+      "publication_year": 2025,
+      "publication_date": "2025-12-30",
+      "abstract": null,
+      "publication_types": [
+        "Journal Article",
+        "Multicenter Study"
+      ],
+      "primary_identifier": {
+        "scheme": "pmid",
+        "value": "42183074"
+      },
+      "source_identifiers": [
+        {
+          "scheme": "pmid",
+          "value": "42183074"
+        },
+        {
+          "scheme": "doi",
+          "value": "10.25100/cm.v56i4.6874"
+        },
+        {
+          "scheme": "other",
+          "value": "pmcid:PMC13193711"
+        }
+      ],
+      "metadata_provider": "pubmed",
+      "retrieval_uri": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13193711/",
+      "retrieval_query": "PMID 42183074; PMCID PMC13193711",
+      "retrieved_at": "2026-09-09T00:00:00Z",
+      "metadata_version": "pubmed-pmc-record-snapshot@2026-09-09",
+      "provenance_notes": [
+        "Bibliographic metadata, participant criteria, protocol, subgroup sizes, percentile method, Table 2 values, and conflict statement were checked against the PubMed and PMC records.",
+        "The source is retained as a snapshot reference; the article text is not copied into AGAS."
+      ],
+      "sequence_number": 1,
+      "supersedes_source_id": null
+    },
+    "claim": {
+      "id": "91000000-0000-4000-8000-000000000004",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-09T00:05:00Z",
+      "claim": "In the study's Colombian 30-to-39-year age group, the empirical 2.5th percentile for completed 30-second sit-to-stand repetitions was 11 for women (n=29) and 11 for men (n=31).",
+      "domain": "muscular_endurance",
+      "population": "Community-dwelling Colombian adults aged 30 to 39 who self-reported good health and could perform sit-to-stand movements; BMI above 35 and recent conditions interfering with performance were excluded.",
+      "intervention": "One investigator-instructed 30-second sit-to-stand trial using a standard 43-to-46 cm chair.",
+      "comparator": "Empirical sex- and age-stratified reference distribution; no intervention comparator.",
+      "outcome": "Completed sit-to-stand repetitions in 30 seconds.",
+      "study_design": "Multicenter cross-sectional reference-value study",
+      "sample_size": null,
+      "duration": "Single testing session; data collected March 2023 through June 2024.",
+      "effect_direction": "Higher repetition count represented higher test performance.",
+      "uncertainty": "The 2.5th percentile is a descriptive lower reference boundary in this sample, not a validated causal threshold for health, safety, athletic performance, or training response.",
+      "limitations": [
+        "Only 29 women and 31 men contributed to the 30-to-39-year subgroup.",
+        "Population-specific Colombian values may not transfer to an individual from another geography or background.",
+        "The investigator-administered source protocol is not identical to AGAS digital self-administration.",
+        "The cross-sectional design does not establish a minimum useful athletic competency or training dose."
+      ],
+      "evidence_strength": "moderate",
+      "athlete_applicability": "low",
+      "applicability_notes": "The exact age-stratified test value is usable only as a conservative, provisional owner-alpha reference when the athlete is 30 to 39 and completes the matching AGAS assessment; geography, administration, and individual differences limit transfer.",
+      "source_identifiers": [
+        {
+          "scheme": "pmid",
+          "value": "42183074"
+        },
+        {
+          "scheme": "doi",
+          "value": "10.25100/cm.v56i4.6874"
+        },
+        {
+          "scheme": "other",
+          "value": "pmcid:PMC13193711"
+        }
+      ],
+      "source_record_ids": [
+        "90000000-0000-4000-8000-000000000004"
+      ],
+      "reviewer": "Codex evidence synthesis candidate; authority pending",
+      "claim_version": "colombian-chair-stand-age-30-39-p025@1.0.0"
+    },
+    "evidence_review_id": "91100000-0000-4000-8000-000000000004",
+    "evidence_review_content": {
+      "source_verification_rationale": "PubMed identifiers and the open full text were checked; Table 2 reports 11 repetitions at p2.5 for both 30-to-39-year sex strata.",
+      "extraction_rationale": "The claim preserves the subgroup sizes, empirical percentile, test duration, and observed value without converting it into a health or causal claim.",
+      "evidence_strength_rationale": "The multicenter sample and directly reported empirical percentiles support the descriptive claim, while the small age-sex subgroups and single-country design limit certainty.",
+      "applicability_rationale": "Applicability to an owner outside the sampled population is low; age matching and an assessment-specific estimate are mandatory but do not resolve geography or self-administration differences.",
+      "uncertainty": "Approval covers exact extraction of the reference value, not the product decision to treat it as a competency floor.",
+      "conflict_disclosure": "The authors reported no relevant financial affiliations or involvement; no independent conflict audit was performed by AGAS.",
+      "review_version": "colombian-chair-stand-reference-evidence-review@1.0.0"
+    },
+    "floor": {
+      "id": "98500000-0000-4000-8000-000000000001",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-09T00:10:00Z",
+      "domain": "muscular_endurance",
+      "estimate_scope": "assessment_specific:thirty_second_chair_stand_repetitions",
+      "unit_or_scale": "repetitions",
+      "threshold": 11.0,
+      "comparison_direction": "higher_is_better",
+      "population": "Provisional owner-alpha reference for adults aged 30 to 39, derived from the shared female and male 2.5th-percentile value in one Colombian community sample.",
+      "minimum_age_years": 30,
+      "maximum_age_years": 39,
+      "applicability_notes": "Apply only to a current estimate produced from the matching governed AGAS 30-second chair-stand protocol. Use solely to prioritize further development or maintenance review; never to clear exercise or diagnose impairment.",
+      "uncertainty": "This is an engineering interpretation of a population lower reference boundary as a deliberately low, replaceable screening floor. It is not a validated universal minimum useful competency, and it should be superseded when more applicable evidence or personal longitudinal calibration is available.",
+      "evidence_claim_ids": [
+        "91000000-0000-4000-8000-000000000004"
+      ],
+      "floor_version": "owner-alpha-chair-stand-age-30-39-lower-reference@1.0.0"
+    },
+    "floor_review_id": "98600000-0000-4000-8000-000000000001",
+    "floor_review_content": {
+      "applicability_rationale": "Approve only as a provisional owner-alpha lower-reference screening floor for a 30-to-39-year-old athlete with a current matching estimate. Below-floor status prioritizes review; it does not make a medical or safety determination.",
+      "uncertainty": "The study labels p2.5 as a lower limit of normality in its population, but it does not validate AGAS's minimum-useful-competency construct. The floor is intentionally narrow, age-bounded, versioned, and replaceable.",
+      "review_version": "owner-alpha-chair-stand-floor-review@1.0.0"
+    },
+    "release_rationale": "Provide one inspectable, age-bounded floor so a matching first assessment can enter planning without requiring the owner or runtime to invent a hidden threshold.",
+    "release_uncertainty": "Ratification authorizes only this low, population-limited comparison. It creates no diagnosis, medical clearance, adaptation priority, strategy, block, exercise, session, or dose."
+  }
+}

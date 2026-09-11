@@ -341,13 +341,13 @@ test("assessment workbench makes missing scientific governance explicit", async 
   await expect(page.getByText("No capability-estimation policy exists.")).toBeVisible();
 });
 
-test("owner can ratify an exact prepared planning policy without authoring values", async ({ page }) => {
+test("owner can ratify exact prepared authorities, including a floor batch", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   let ratified = false;
   let floorRatified = false;
   let resourceRatified = false;
   let submittedBody: Record<string, unknown> = {};
-  let submittedFloorBody: Record<string, unknown> = {};
+  let submittedFloorBatchBody: Record<string, unknown> = {};
   let submittedResourceBody: Record<string, unknown> = {};
   const candidate = {
     candidate_version: "planning-governance-candidate@1.0.0",
@@ -391,13 +391,19 @@ test("owner can ratify an exact prepared planning policy without authoring value
     });
   });
   const floorCandidate = {
-    candidate_version: "competency-floor-candidate@1.0.0",
+    candidate_version: "competency-floor-candidate@1.1.0",
     candidate_id: "98400000-0000-4000-8000-000000000002",
     slug: "chair_stand_age_30_39_lower_reference_floor",
     release_label: "Age 30-39 chair-stand lower-reference floor",
     prepared_at: "2026-09-09T00:10:00Z",
     content_digest: `sha256:${"c".repeat(64)}`,
     summary: "A deliberately low, provisional comparison point.",
+    authority_basis: {
+      numeric_value_origin: "direct_study_result",
+      operational_use_origin: "evidence_informed_engineering_judgment",
+      numeric_value_explanation: "The number is reported directly.",
+      operational_use_explanation: "Its use as a floor is provisional engineering judgment.",
+    },
     domain: "muscular_endurance",
     estimate_scope: "assessment_specific:thirty_second_chair_stand_repetitions",
     unit_or_scale: "repetitions",
@@ -418,25 +424,38 @@ test("owner can ratify an exact prepared planning policy without authoring value
     }],
   };
   await page.route("http://localhost:8000/v1/operator/competency-floor-candidates**", async (route) => {
-    if (route.request().method() === "POST") {
-      submittedFloorBody = route.request().postDataJSON() as Record<string, unknown>;
-      floorRatified = true;
-      return route.fulfill({ contentType: "application/json", body: JSON.stringify({ ok: true }) });
-    }
     return route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
         projected_at: "2026-09-10T15:00:00Z",
-        projection_version: "competency-floor-candidates@1.0.0",
+        projection_version: "competency-floor-candidates@1.1.0",
         items: [{
           candidate: floorCandidate,
           status: floorRatified ? "ratified" : "available",
           ratified_at: floorRatified ? "2026-09-10T15:00:00Z" : null,
           issues: [],
         }],
+        batch: {
+          batch_version: "competency-floor-candidate-batch@1.0.0",
+          batch_id: "98400000-0000-4000-8000-000000000100",
+          content_digest: `sha256:${"f".repeat(64)}`,
+          candidates: [{
+            candidate_id: floorCandidate.candidate_id,
+            candidate_version: floorCandidate.candidate_version,
+            content_digest: floorCandidate.content_digest,
+          }],
+        },
       }),
     });
   });
+  await page.route(
+    "http://localhost:8000/v1/operator/competency-floor-candidate-batches/ratifications",
+    async (route) => {
+      submittedFloorBatchBody = route.request().postDataJSON() as Record<string, unknown>;
+      floorRatified = true;
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify({ ok: true }) });
+    },
+  );
   const resourceCandidate = {
     candidate_version: "resource-governance-candidate@1.0.0",
     candidate_id: "98600000-0000-4000-8000-000000000001",
@@ -496,17 +515,24 @@ test("owner can ratify an exact prepared planning policy without authoring value
 
   await expect(page.getByRole("heading", { name: "Competency-floor candidates" })).toBeVisible();
   await expect(page.getByText("Medical safety, diagnosis, or clearance to train.")).toBeVisible();
-  const approveFloor = page.getByRole("button", { name: "Approve exact floor" });
-  await expect(approveFloor).toBeDisabled();
-  await page.getByLabel(/I reviewed the population, exact threshold/).check();
-  await approveFloor.click();
+  await expect(page.getByText("evidence informed engineering judgment")).toBeVisible();
+  const approveFloorBatch = page.getByRole("button", { name: "Approve exact batch (1 new)" });
+  await expect(approveFloorBatch).toBeDisabled();
+  await page.getByLabel(/I reviewed all 1 exact candidates/).check();
+  await approveFloorBatch.click();
   await expect(page.getByText(/The floor can now be applied only/)).toBeVisible();
-  expect(submittedFloorBody).toEqual({
-    candidate_version: floorCandidate.candidate_version,
-    content_digest: floorCandidate.content_digest,
+  expect(submittedFloorBatchBody).toEqual({
+    batch_version: "competency-floor-candidate-batch@1.0.0",
+    batch_id: "98400000-0000-4000-8000-000000000100",
+    content_digest: `sha256:${"f".repeat(64)}`,
+    candidates: [{
+      candidate_id: floorCandidate.candidate_id,
+      candidate_version: floorCandidate.candidate_version,
+      content_digest: floorCandidate.content_digest,
+    }],
     approval_attestation: true,
   });
-  expect(submittedFloorBody).not.toHaveProperty("threshold");
+  expect(submittedFloorBatchBody).not.toHaveProperty("threshold");
 
   await expect(page.getByRole("heading", { name: "First-block authority candidates" })).toBeVisible();
   await expect(page.getByText("Exercise: Chair sit-to-stand")).toBeVisible();

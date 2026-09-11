@@ -103,13 +103,16 @@ from agas_api.block_review_application import (
     BlockReviewValidationError,
 )
 from agas_api.competency_floor_candidates import (
+    CompetencyFloorCandidateBatchRatificationResult,
     CompetencyFloorCandidateConflictError,
     CompetencyFloorCandidateProjection,
     CompetencyFloorCandidateValidationError,
     CompetencyFloorRatificationResult,
+    RatifyCompetencyFloorCandidateBatchCommand,
     RatifyCompetencyFloorCandidateCommand,
     list_competency_floor_candidates,
     ratify_competency_floor_candidate,
+    ratify_competency_floor_candidate_batch,
 )
 from agas_api.current_week import (
     CurrentWeekConflictError,
@@ -624,6 +627,27 @@ def ratify_prepared_competency_floor_candidate(
         return ratify_competency_floor_candidate(session, candidate_id, command, authority)
     except KeyError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except CompetencyFloorCandidateConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except (CompetencyFloorCandidateValidationError, ValueError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.post(
+    "/v1/operator/competency-floor-candidate-batches/ratifications",
+    tags=["operator"],
+    response_model=CompetencyFloorCandidateBatchRatificationResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def ratify_prepared_competency_floor_candidate_batch(
+    command: RatifyCompetencyFloorCandidateBatchCommand,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+) -> CompetencyFloorCandidateBatchRatificationResult:
+    try:
+        return ratify_competency_floor_candidate_batch(session, command, authority)
     except CompetencyFloorCandidateConflictError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     except (CompetencyFloorCandidateValidationError, ValueError) as error:

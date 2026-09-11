@@ -168,6 +168,9 @@ GET  /v1/operator/assessment-governance/candidates
 POST /v1/operator/assessment-governance/candidates/{candidate_id}/ratifications
 GET  /v1/operator/planning-governance/candidates
 POST /v1/operator/planning-governance/candidates/{candidate_id}/ratifications
+GET  /v1/operator/competency-floor-candidates
+POST /v1/operator/competency-floor-candidates/{candidate_id}/ratifications
+POST /v1/operator/competency-floor-candidate-batches/ratifications
 POST /v1/operator/assessment-governance/releases
 GET  /v1/operator/planning-review-queue
 GET  /v1/operator/post-block-review-queue
@@ -740,6 +743,12 @@ chair equipment record, chair sit-to-stand exercise metadata, a full-match-only 
 DEVELOP-priority allocator, and the separately reviewed evidence claim behind its narrow scope.
 Approval creates those authorities atomically; it does not assert chair availability or create a
 resource demand, dose, block, week, session, or workout.
+
+Competency-floor candidates on the same workbench are loaded from typed, digest-validated documents
+under `data/governance_candidates/competency_floors`. The screen separately identifies where each
+number came from and who decided how AGAS may use it. Reviewers may approve one artifact or attest
+to the exact current batch. Batch approval is atomic and still preserves every artifact's own
+evidence chain, digest, review, and decision record; a stale or conflicting member changes nothing.
 
 The evidence-governance workbench is available at `http://localhost:3000/review/evidence` and
 uses the same read-only scientific-governance token. It traces each claim to exact source snapshots,
