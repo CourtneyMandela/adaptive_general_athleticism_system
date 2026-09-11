@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { fetchAssessmentWorkflow } from "@/lib/assessment";
@@ -87,10 +88,10 @@ export function FirstSessionPath({
         </ol>
       ) : null}
 
-      {projection?.steps.some((step) => step.state === "your_action") ? (
-        <a className="first-session-path__action" href="#assessment-title">
-          Go to your next assessment step ↓
-        </a>
+      {projection?.next_action ? (
+        <Link className="first-session-path__action" href={projection.next_action.href}>
+          {projection.next_action.label} →
+        </Link>
       ) : null}
     </section>
   );

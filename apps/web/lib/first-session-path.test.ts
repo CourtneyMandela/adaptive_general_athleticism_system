@@ -36,6 +36,10 @@ describe("first-session path", () => {
 
     expect(result.heading).toBe("Your profile is saved; AGAS still owes you the training path.");
     expect(result.message).toContain("There is no additional onboarding form");
+    expect(result.next_action).toEqual({
+      href: "/review/assessments",
+      label: "Review the prepared assessment authority",
+    });
     expect(result.steps).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: "profile", state: "complete" }),
@@ -61,6 +65,7 @@ describe("first-session path", () => {
 
     expect(result.heading).toBe("You have one clear next step.");
     expect(result.steps.find((step) => step.id === "assessment")?.state).toBe("your_action");
+    expect(result.next_action?.href).toBe("#assessment-title");
   });
 
   it("makes current readiness the athlete action once a protocol exists", () => {
@@ -115,6 +120,27 @@ describe("first-session path", () => {
 
     expect(result.steps.find((step) => step.id === "estimate")?.state).toBe("complete");
     expect(result.steps.find((step) => step.id === "plan")?.state).toBe("system_action");
+    expect(result.next_action?.href).toBe("/review/queue");
+  });
+
+  it("routes missing planning authority to the prepared authority review", () => {
+    const result = buildFirstSessionPath(
+      assessment({
+        status: "reassessment_not_due",
+        approved_self_administered_protocol_count: 1,
+        eligibility: { outcome: "selection_allowed" },
+      }),
+      planning({
+        status: "planning_authorities_required",
+        current_capability_estimate_count: 1,
+      }),
+      false,
+    );
+
+    expect(result.next_action).toEqual({
+      href: "/review/planning-authorities",
+      label: "Review the prepared planning authorities",
+    });
   });
 
   it("reports a scheduled first week as ready to train", () => {
@@ -135,5 +161,6 @@ describe("first-session path", () => {
     expect(result.heading).toBe("Your training week is ready.");
     expect(result.steps.find((step) => step.id === "plan")?.state).toBe("complete");
     expect(result.steps.find((step) => step.id === "session")?.state).toBe("complete");
+    expect(result.next_action).toBeNull();
   });
 });

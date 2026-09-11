@@ -159,6 +159,12 @@ function WeekReceipt({ result }: { result: WeeklyPlanCreationResult }) {
       </dl>
       {result.weekly_plan.issues.length ? <ul>{result.weekly_plan.issues.map((issue) => <li key={`${issue.code}:${issue.detail}`}><strong>{label(issue.code)}:</strong> {issue.detail}</li>)}</ul> : null}
       <details><summary>Authority and planning lineage</summary><ul>{result.decision_record.evidence.map((item) => <li key={item}>{item}</li>)}</ul></details>
+      <Link
+        className="primary-button"
+        href={`/?athleteId=${encodeURIComponent(result.weekly_plan.athlete_id)}&asOf=${encodeURIComponent(result.weekly_plan.week_start)}`}
+      >
+        Open Week 1 in the phone app
+      </Link>
     </section>
   );
 }

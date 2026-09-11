@@ -84,7 +84,14 @@ export interface WeeklyPlanCreationResult {
   prescriptions: Array<{ id: string; exercise_id: string; adaptation_id: string }>;
   session_templates: Array<{ id: string; name: string }>;
   availability: { id: string; week_start: string };
-  weekly_plan: { id: string; status: string; sessions: Array<{ id: string; starts_at: string; ends_at: string }>; issues: Array<{ code: string; detail: string }> };
+  weekly_plan: {
+    id: string;
+    athlete_id: string;
+    week_start: string;
+    status: string;
+    sessions: Array<{ id: string; starts_at: string; ends_at: string }>;
+    issues: Array<{ code: string; detail: string }>;
+  };
   decision_record: { id: string; decision: string; evidence: string[] };
 }
 

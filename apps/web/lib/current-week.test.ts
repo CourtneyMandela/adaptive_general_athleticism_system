@@ -8,6 +8,7 @@ import {
   CurrentWeekRequestError,
   fetchCurrentWeek,
   formatDose,
+  isIsoDate,
   isUuid,
   progressionOutcomeLabel,
   safetyOutcomeLabel,
@@ -77,6 +78,9 @@ describe("current-week presentation", () => {
 
   it("moves the requested date by a week and validates athlete identifiers", () => {
     expect(shiftIsoDate("2026-08-24", 7)).toBe("2026-08-31");
+    expect(isIsoDate("2026-08-24")).toBe(true);
+    expect(isIsoDate("2026-02-30")).toBe(false);
+    expect(isIsoDate("not-a-date")).toBe(false);
     expect(isUuid(prescription.prescription_id)).toBe(true);
     expect(isUuid("not-an-athlete-id")).toBe(false);
   });

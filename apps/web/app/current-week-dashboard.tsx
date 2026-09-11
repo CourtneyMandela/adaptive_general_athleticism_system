@@ -5,6 +5,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   fetchCurrentWeek,
   formatDose,
+  isIsoDate,
   isUuid,
   localIsoDate,
   progressionOutcomeLabel,
@@ -220,14 +221,22 @@ function SessionCard({
   );
 }
 
-export function CurrentWeekDashboard({ initialAthleteId }: { initialAthleteId?: string }) {
+export function CurrentWeekDashboard({
+  initialAthleteId,
+  initialAsOf,
+}: {
+  initialAthleteId?: string;
+  initialAsOf?: string;
+}) {
   const configuredInitialAthleteId = (initialAthleteId ?? configuredAthleteId).trim();
   const validInitialAthleteId = isUuid(configuredInitialAthleteId)
     ? configuredInitialAthleteId
     : "";
   const [athleteInput, setAthleteInput] = useState(configuredInitialAthleteId);
   const [athleteId, setAthleteId] = useState(validInitialAthleteId);
-  const [asOf, setAsOf] = useState(localIsoDate);
+  const [asOf, setAsOf] = useState(
+    initialAsOf && isIsoDate(initialAsOf.trim()) ? initialAsOf.trim() : localIsoDate,
+  );
   const [projection, setProjection] = useState<CurrentWeekProjection | null>(null);
   const [state, setState] = useState<"setup" | "loading" | "ready" | "error">("setup");
   const [message, setMessage] = useState("");

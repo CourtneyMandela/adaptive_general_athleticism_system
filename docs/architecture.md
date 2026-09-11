@@ -1157,6 +1157,14 @@ candidate expires after 30 minutes and a matching accepted retry is verified rat
 duplicated. Assignment only enables the separate per-session safety gate and is not readiness
 clearance. The general Week 1 editor remains an advanced recovery surface.
 
+The athlete-facing first-session path is also the navigation authority for this narrow vertical
+slice. It maps missing reviewed assessment content to the prepared assessment-governance screen,
+athlete-owned measurement actions to the in-page assessment section, missing planning authorities
+to their prepared batch review, and downstream planning work to the derived reviewer queue. Once a
+week is accepted, its receipt deep-links to the athlete and exact `week_start`; the PWA validates
+that date before using it for its current-week projection. These links only select a read/review
+surface and never perform a ratification or domain write.
+
 The prescription's exact versioned `progression_rule_reference` is now the action-assignment key.
 The current-week projection resolves it against persisted policies and exposes a policy identifier
 only when one unique policy can produce an automatically typed load or repetition revision without

@@ -813,7 +813,10 @@ nothing. Exact ratification appends the availability observation and the complet
 atomically under deterministic identities, including the exact ratified athlete safety-policy
 assignment when it is not already current, making mobile retries idempotent. That assignment
 enables—not answers—the separate phone readiness check required immediately before every session.
-The structured
+The receipt links directly to the persisted week and date in the athlete PWA. The home progress
+card likewise links to the exact prepared authority, athlete assessment, or planning queue that is
+currently actionable; these navigation handoffs do not bypass ratification or write any domain
+state. The structured
 general form still supports every current intensity-target type, explicit dose, rest, progression reference, session membership and
 order, dated environment availability, policy review, and per-record provenance. Every material
 field begins blank; the form does not infer prescription dose, session composition, availability,

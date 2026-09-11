@@ -36,6 +36,10 @@ export interface FirstSessionPath {
   heading: string;
   message: string;
   steps: FirstSessionStep[];
+  next_action: {
+    href: string;
+    label: string;
+  } | null;
 }
 
 function assessmentNeedsAthleteAction(assessment: FirstSessionAssessmentState): boolean {
@@ -168,6 +172,30 @@ export function buildFirstSessionPath(
       };
 
   const userAction = [assessmentStep, estimateStep].find((step) => step.state === "your_action");
+  let nextAction: FirstSessionPath["next_action"] = null;
+  if (!hasScheduledWeek) {
+    if (!assessmentContentReady) {
+      nextAction = {
+        href: "/review/assessments",
+        label: "Review the prepared assessment authority",
+      };
+    } else if (userAction) {
+      nextAction = {
+        href: "#assessment-title",
+        label: "Continue the assessment step",
+      };
+    } else if (planStep.state === "system_action") {
+      nextAction = planning.status === "planning_authorities_required"
+        ? {
+            href: "/review/planning-authorities",
+            label: "Review the prepared planning authorities",
+          }
+        : {
+            href: "/review/queue",
+            label: "Continue the governed planning review",
+          };
+    }
+  }
   const heading = hasScheduledWeek
     ? "Your training week is ready."
     : userAction
@@ -194,5 +222,6 @@ export function buildFirstSessionPath(
       planStep,
       sessionStep,
     ],
+    next_action: nextAction,
   };
 }
