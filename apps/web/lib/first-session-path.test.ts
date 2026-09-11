@@ -160,7 +160,10 @@ describe("first-session path", () => {
 
     expect(result.heading).toBe("Your training week is ready.");
     expect(result.steps.find((step) => step.id === "plan")?.state).toBe("complete");
-    expect(result.steps.find((step) => step.id === "session")?.state).toBe("complete");
-    expect(result.next_action).toBeNull();
+    expect(result.steps.find((step) => step.id === "session")?.state).toBe("your_action");
+    expect(result.next_action).toEqual({
+      href: "#week-title",
+      label: "Open your scheduled sessions",
+    });
   });
 });

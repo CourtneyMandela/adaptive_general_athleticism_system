@@ -16,7 +16,9 @@ block, or Week 1 work links to the derived planning queue.
 
 After a Week 1 ratification, show a receipt action that opens the exact athlete and persisted week
 date in the PWA. Accept an `asOf=YYYY-MM-DD` query on the home route only after strict calendar-date
-validation; malformed or impossible dates fall back to the device's local current date.
+validation; malformed or impossible dates fall back to the device's local current date. A scheduled
+first session is marked as the athlete's next action—not as completed—and links to the session
+cards where the separate safety check and performance log occur.
 
 ## Reason
 

@@ -161,8 +161,9 @@ export function buildFirstSessionPath(
     ? {
         id: "session",
         title: "First training session",
-        state: "complete",
-        detail: "A scheduled session is available in the current week.",
+        state: "your_action",
+        detail:
+          "A session is scheduled. When it is time to train, complete its pre-session safety check and record what you actually perform.",
       }
     : {
         id: "session",
@@ -173,7 +174,12 @@ export function buildFirstSessionPath(
 
   const userAction = [assessmentStep, estimateStep].find((step) => step.state === "your_action");
   let nextAction: FirstSessionPath["next_action"] = null;
-  if (!hasScheduledWeek) {
+  if (hasScheduledWeek) {
+    nextAction = {
+      href: "#week-title",
+      label: "Open your scheduled sessions",
+    };
+  } else {
     if (!assessmentContentReady) {
       nextAction = {
         href: "/review/assessments",
