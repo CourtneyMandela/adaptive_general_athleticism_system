@@ -9,6 +9,7 @@ from uuid import UUID, uuid5
 
 from agas_domain import (
     AssessmentReviewDecision,
+    AthleteSafetyPolicyAssignment,
     BlockPlan,
     BlockPlanStatus,
     BodyweightTarget,
@@ -59,7 +60,7 @@ from agas_api.weekly_planning import (
     WeeklyPlanUseCaseError,
 )
 
-CANDIDATE_VERSION = "prepared-first-week@1.0.0"
+CANDIDATE_VERSION = "prepared-first-week@1.1.0"
 CANDIDATE_NAMESPACE = UUID("37728da6-7ebf-499d-b821-7d72da044ac7")
 MAXIMUM_CANDIDATE_AGE = timedelta(minutes=30)
 NonEmptyText = Annotated[str, Field(min_length=1)]
@@ -84,6 +85,7 @@ class PreparedFirstWeekIdentities(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     availability_observation_id: UUID
+    safety_policy_assignment_id: UUID
     prescription_id: UUID
     session_template_id: UUID
     weekly_availability_id: UUID
@@ -107,7 +109,7 @@ class PreparedFirstWeekIdentities(BaseModel):
 class PreparedFirstWeekCandidate(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    candidate_version: Literal["prepared-first-week@1.0.0"]
+    candidate_version: Literal["prepared-first-week@1.1.0"]
     candidate_id: UUID
     content_digest: Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
     prepared_at: datetime
@@ -128,6 +130,8 @@ class PreparedFirstWeekCandidate(BaseModel):
     provenance_summary: NonEmptyText
     uncertainty: NonEmptyText
     safety_boundary: NonEmptyText
+    safety_policy_assignment: AthleteSafetyPolicyAssignment
+    safety_assignment_status: Literal["will_assign", "already_assigned"]
     identities: PreparedFirstWeekIdentities
     accepted_result: WeeklyPlanCreationResult | None = None
 
@@ -142,13 +146,13 @@ class PreparedFirstWeekProjection(BaseModel):
     message: NonEmptyText
     candidate: PreparedFirstWeekCandidate | None = None
     blockers: tuple[str, ...] = ()
-    projection_version: str = "prepared-first-week-projection@1.0.0"
+    projection_version: str = "prepared-first-week-projection@1.1.0"
 
 
 class RatifyPreparedFirstWeekCommand(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    candidate_version: Literal["prepared-first-week@1.0.0"]
+    candidate_version: Literal["prepared-first-week@1.1.0"]
     content_digest: Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
     prepared_at: datetime
     windows: Annotated[tuple[AvailabilityWindowDraft, ...], Field(min_length=1)]
@@ -169,8 +173,9 @@ class PreparedFirstWeekRatificationResult(BaseModel):
     candidate_content_digest: str
     created: bool
     availability_observation: Observation
+    safety_policy_assignment: AthleteSafetyPolicyAssignment
     result: WeeklyPlanCreationResult
-    ratification_version: str = "prepared-first-week-ratification@1.0.0"
+    ratification_version: str = "prepared-first-week-ratification@1.1.0"
 
 
 class PreparedFirstWeekConflictError(RuntimeError):
@@ -283,6 +288,42 @@ class PreparedFirstWeekProjector:
         if blockers or environment is None or estimate is None or dose is None:
             return self._blocked(block.id, block.athlete_id, instant, blockers)
 
+        release = prepared_training_construction_candidate().release
+        expected_assignment_id = uuid5(
+            CANDIDATE_NAMESPACE,
+            f"safety-assignment:{block.athlete_id}:{release.session_safety_policy.id}:"
+            f"{authority.assignment_id}",
+        )
+        current_assignment = self.repository.get_current_athlete_safety_policy_assignment(
+            block.athlete_id
+        )
+        if (
+            current_assignment is not None
+            and current_assignment.safety_policy_id != release.session_safety_policy.id
+        ):
+            return self._blocked(
+                block.id,
+                block.athlete_id,
+                instant,
+                [
+                    "A different athlete safety-policy assignment already exists; review it before preparing Week 1."
+                ],
+            )
+        safety_assignment = current_assignment or AthleteSafetyPolicyAssignment(
+            id=expected_assignment_id,
+            created_at=instant,
+            athlete_id=block.athlete_id,
+            safety_policy_id=release.session_safety_policy.id,
+            sequence_number=1,
+            assigned_at=instant,
+            assigned_by=f"account:{authority.account_id}",
+            applicability_rationale=(
+                "Assign the exact ratified owner-alpha non-diagnostic readiness policy to this "
+                "athlete before the first scheduled session."
+            ),
+            rule_version="prepared-first-week-safety-assignment@1.0.0",
+        )
+
         stable_content = {
             "candidate_version": CANDIDATE_VERSION,
             "block": block.model_dump(mode="json"),
@@ -292,6 +333,7 @@ class PreparedFirstWeekProjector:
             "derived_dose": dose.model_dump(mode="json", exclude={"derived_at"}),
             "weekly_scheduling_policy": exact_policy.model_dump(mode="json"),
             "weekly_scheduling_policy_review": exact_review.model_dump(mode="json"),
+            "safety_policy_assignment": safety_assignment.model_dump(mode="json"),
             "windows": [item.model_dump(mode="json") for item in command.windows],
             "prepared_at": instant.isoformat(),
             "review_authority_assignment_id": str(authority.assignment_id),
@@ -303,6 +345,7 @@ class PreparedFirstWeekProjector:
         candidate_id = uuid5(CANDIDATE_NAMESPACE, content_digest)
         identities = PreparedFirstWeekIdentities(
             availability_observation_id=uuid5(candidate_id, "availability-observation"),
+            safety_policy_assignment_id=safety_assignment.id,
             prescription_id=uuid5(candidate_id, "session-prescription"),
             session_template_id=uuid5(candidate_id, "session-template"),
             weekly_availability_id=uuid5(candidate_id, "weekly-availability"),
@@ -410,6 +453,10 @@ class PreparedFirstWeekProjector:
                 "This plan schedules sessions but does not clear you to perform them. The phone "
                 "must still record a current pre-session safety check before each session."
             ),
+            safety_policy_assignment=safety_assignment,
+            safety_assignment_status=(
+                "already_assigned" if current_assignment is not None else "will_assign"
+            ),
             identities=identities,
             accepted_result=existing_result,
         )
@@ -447,6 +494,8 @@ class PreparedFirstWeekProjector:
             == release.repetition_dose_policy
             and self.repository.get_progression_policy(release.progression_policy.id)
             == release.progression_policy
+            and self.repository.get_session_safety_policy(release.session_safety_policy.id)
+            == release.session_safety_policy
         )
         if not exact:
             blockers.append("The exact owner-alpha training-construction authority is unavailable.")
@@ -688,6 +737,7 @@ def ratify_prepared_first_week(
             candidate_content_digest=candidate.content_digest,
             created=False,
             availability_observation=observation,
+            safety_policy_assignment=candidate.safety_policy_assignment,
             result=candidate.accepted_result,
         )
     now = datetime.now(UTC)
@@ -706,8 +756,17 @@ def ratify_prepared_first_week(
         authority,
         candidate.identities,
     )
-    repository.add_observation(observation)
     try:
+        repository.add_observation(observation)
+        current_assignment = repository.get_current_athlete_safety_policy_assignment(
+            candidate.athlete_id
+        )
+        if current_assignment is None:
+            repository.add_athlete_safety_policy_assignment(candidate.safety_policy_assignment)
+        elif current_assignment != candidate.safety_policy_assignment:
+            raise PreparedFirstWeekConflictError(
+                "athlete safety-policy assignment changed after candidate preparation"
+            )
         preparation = FirstWeekPreparationProjector(session).project(block_id, command.prepared_at)
         active = next(
             item
@@ -761,5 +820,6 @@ def ratify_prepared_first_week(
         candidate_content_digest=candidate.content_digest,
         created=True,
         availability_observation=observation,
+        safety_policy_assignment=candidate.safety_policy_assignment,
         result=result,
     )

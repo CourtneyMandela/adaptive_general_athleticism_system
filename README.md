@@ -810,7 +810,10 @@ prepared owner-alpha flow. The owner reports two available time windows; the ser
 block lineage to the exact current capability estimate, derives the ratified bounded repetition
 dose, builds the session, and schedules two occurrences only inside those windows. Preview writes
 nothing. Exact ratification appends the availability observation and the complete Week 1 bundle
-atomically under deterministic identities, making mobile retries idempotent. The structured
+atomically under deterministic identities, including the exact ratified athlete safety-policy
+assignment when it is not already current, making mobile retries idempotent. That assignment
+enables—not answers—the separate phone readiness check required immediately before every session.
+The structured
 general form still supports every current intensity-target type, explicit dose, rest, progression reference, session membership and
 order, dated environment availability, policy review, and per-record provenance. Every material
 field begins blank; the form does not infer prescription dose, session composition, availability,

@@ -339,6 +339,12 @@ function PreparedFirstWeekPanel({ projection }: { projection: FirstWeekPreparati
           <aside className="review-boundary">
             <strong>Scheduling is not safety clearance.</strong>
             <span>{visibleCandidate.safety_boundary}</span>
+            <span>
+              The approved safety policy will be {visibleCandidate.safety_assignment_status === "will_assign"
+                ? "assigned with this week"
+                : "kept from its existing reviewed assignment"}. It enables the phone check; it
+              does not answer that check for you.
+            </span>
           </aside>
           <label className="context-confirmation">
             <input

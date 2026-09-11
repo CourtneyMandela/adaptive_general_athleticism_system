@@ -4,7 +4,7 @@ Date: 2026-09-11
 
 Status: accepted
 
-Decision version: `prepared-first-week@1.0.0`
+Decision version: `prepared-first-week@1.1.0`
 
 ## Decision
 
@@ -19,8 +19,10 @@ Preview persists nothing. It returns either explicit blockers or the exact exerc
 repetitions, effort range, rest, technique constraints, and scheduled times. Ratification requires
 the candidate version, digest, preparation time, unchanged availability, and attestation. It then
 atomically appends the availability as a direct user-report observation, prescription, template,
-weekly availability, weekly plan, and audit decision under deterministic identities. A matching
-retry returns the verified existing result.
+the exact ratified session-safety-policy assignment when one does not already exist, weekly
+availability, weekly plan, and audit decision under deterministic identities. A matching retry
+returns the verified existing result. An existing assignment of the same policy is reused; an
+assignment of a different current policy blocks preparation rather than being silently replaced.
 
 ## Reason
 
@@ -41,8 +43,9 @@ reported and what the planner derived.
   owner has not yet accepted the resulting week.
 - **Schedule arbitrary times to make the app look complete.** Rejected because calendar
   availability is factual athlete state, not a planning inference.
-- **Create safety clearance with the weekly plan.** Rejected. Readiness is time-sensitive and must
-  be reported immediately before each session.
+- **Create safety clearance with the weekly plan.** Rejected. Week acceptance assigns the exact
+  ratified safety policy, but readiness remains time-sensitive and must be reported immediately
+  before each session.
 - **Generalize to every adaptation and dose type now.** Deferred. Only the exact governed
   chair-stand path is supported; future adaptations require their own evidence and rule artifacts.
 
@@ -65,6 +68,8 @@ reported and what the planner derived.
   provenance IDs, or rule versions.
 - Every displayed session is tied to an offered window and the resolved training environment.
 - A double tap or network retry does not duplicate a plan.
+- The approved safety-policy assignment no longer requires a hidden command-line administration
+  step, while a different existing policy still cannot be replaced without explicit review.
 - The general editor remains collapsed as an advanced recovery path.
 - A scheduled session still cannot be performed until its athlete-facing pre-session safety gate
   returns an allowed outcome and any required modifications are acknowledged.

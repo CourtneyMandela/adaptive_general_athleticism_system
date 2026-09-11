@@ -81,6 +81,7 @@ from agas_domain import (
 )
 from agas_domain.persistence.models import (
     AdaptationResourceDemandRecord,
+    AthleteSafetyPolicyAssignmentRecord,
     BlockPlanRecord,
     ObservationRecord,
     WeeklyPlanRecord,
@@ -697,6 +698,11 @@ def test_prepared_first_week_derives_dose_and_schedules_only_reported_times(
     assert candidate.rest_seconds == 90
     assert candidate.effort_rpe_range == "5-7"
     assert len(candidate.sessions) == 2
+    assert candidate.safety_assignment_status == "will_assign"
+    assert (
+        candidate.safety_policy_assignment.safety_policy_id
+        == prepared_training_construction_candidate().release.session_safety_policy.id
+    )
     assert {item["starts_at"] for item in candidate.sessions} == {
         item.starts_at.isoformat() for item in windows
     }
@@ -738,12 +744,20 @@ def test_prepared_first_week_ratification_is_idempotent_and_observes_availabilit
     assert second.created is False
     assert first.result == second.result
     assert first.availability_observation == second.availability_observation
+    assert first.safety_policy_assignment == second.safety_policy_assignment
+    assert (
+        DomainRepository(session).get_current_athlete_safety_policy_assignment(block.athlete_id)
+        == first.safety_policy_assignment
+    )
     assert first.availability_observation.source is ObservationSource.USER_REPORT
     assert first.availability_observation.reliability is Confidence.UNKNOWN
     assert first.result.weekly_plan.status.value == "feasible"
     assert len(first.result.weekly_plan.sessions) == 2
     assert first.result.prescriptions[0].repetitions_per_set == 5
     assert session.scalar(select(func.count()).select_from(WeeklyPlanRecord)) == 1
+    assert (
+        session.scalar(select(func.count()).select_from(AthleteSafetyPolicyAssignmentRecord)) == 1
+    )
     availability_reports = session.scalar(
         select(func.count())
         .select_from(ObservationRecord)
@@ -828,3 +842,4 @@ def test_prepared_first_week_endpoints_accept_only_availability_and_digest(
     assert body["availability_observation"]["observation_type"] == (
         "weekly_training_availability_report"
     )
+    assert body["safety_policy_assignment"]["athlete_id"] == str(block.athlete_id)

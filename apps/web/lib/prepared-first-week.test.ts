@@ -14,7 +14,7 @@ const windows: PreparedAvailabilityWindow[] = [{
   ends_at: "2026-09-15T18:30:00.000Z",
 }];
 const candidate = {
-  candidate_version: "prepared-first-week@1.0.0",
+  candidate_version: "prepared-first-week@1.1.0",
   candidate_id: "33333333-3333-4333-8333-333333333333",
   content_digest: `sha256:${"a".repeat(64)}`,
   prepared_at: "2026-09-11T18:00:00Z",

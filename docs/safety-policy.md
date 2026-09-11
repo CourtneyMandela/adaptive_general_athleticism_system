@@ -141,9 +141,12 @@ readiness and session-safety evaluation before every session. It creates no avai
 prescription, session, safety decision, or executable workout; each remains a separate fail-closed
 boundary.
 
-The prepared Week 1 action may create dated sessions, but those dates are not safety decisions.
-Every scheduled occurrence remains blocked behind its own current pre-session report and the
-assigned athlete safety policy. Candidate text and the immutable audit explicitly preserve this
+The prepared Week 1 action may create dated sessions and assign its exact ratified session-safety
+policy to the athlete, but neither action is a safety decision. The assignment is included in the
+same transaction so the athlete-facing gate has an explicit current policy without hidden CLI
+administration. An existing assignment of that same policy is reused; a different current policy
+blocks and cannot be silently replaced. Every scheduled occurrence remains blocked behind its own
+current pre-session report. Candidate text and the immutable audit explicitly preserve this
 boundary; accepting the week cannot be used as evidence of readiness or medical clearance.
 
 A temporary environment may trigger a newer exercise resolution for the same block stimulus.

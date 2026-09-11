@@ -1149,10 +1149,13 @@ The corresponding prepared Week 1 boundary accepts only availability windows as 
 facts. It follows the immutable block allocation to the strategy's capability need and source
 estimate, applies the exact ratified repetition-dose policy, composes one session from the FULL
 exercise resolution, and previews the existing deterministic scheduler. Ratification stores the
-availability as an `Observation` with unknown reliability, then atomically appends all derived
-planning records with content-addressed identities. The candidate expires after 30 minutes and a
-matching accepted retry is verified rather than duplicated. The general Week 1 editor remains an
-advanced recovery surface.
+availability as an `Observation` with unknown reliability, assigns the exact ratified
+`SessionSafetyPolicy` to the athlete when that policy is not already current, then atomically
+appends all derived planning records with content-addressed identities. An existing assignment of
+the same policy is reused; a different current policy blocks rather than being overwritten. The
+candidate expires after 30 minutes and a matching accepted retry is verified rather than
+duplicated. Assignment only enables the separate per-session safety gate and is not readiness
+clearance. The general Week 1 editor remains an advanced recovery surface.
 
 The prescription's exact versioned `progression_rule_reference` is now the action-assignment key.
 The current-week projection resolves it against persisted policies and exposes a policy identifier

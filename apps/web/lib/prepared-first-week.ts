@@ -11,7 +11,7 @@ export interface PreparedAvailabilityWindow {
 }
 
 export interface PreparedFirstWeekCandidate {
-  candidate_version: "prepared-first-week@1.0.0";
+  candidate_version: "prepared-first-week@1.1.0";
   candidate_id: string;
   content_digest: string;
   prepared_at: string;
@@ -32,6 +32,12 @@ export interface PreparedFirstWeekCandidate {
   provenance_summary: string;
   uncertainty: string;
   safety_boundary: string;
+  safety_policy_assignment: {
+    id: string;
+    safety_policy_id: string;
+    rule_version: string;
+  };
+  safety_assignment_status: "will_assign" | "already_assigned";
   accepted_result: WeeklyPlanCreationResult | null;
 }
 
@@ -50,6 +56,7 @@ export interface PreparedFirstWeekRatificationResult {
   candidate_id: string;
   candidate_content_digest: string;
   created: boolean;
+  safety_policy_assignment: PreparedFirstWeekCandidate["safety_policy_assignment"];
   result: WeeklyPlanCreationResult;
 }
 
