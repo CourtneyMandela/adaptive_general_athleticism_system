@@ -280,6 +280,12 @@ The candidate requires the exact ratified resource and construction bundles and 
 evidence, but that lineage must not be represented as proof that four weeks or the resulting time
 budget is physiologically optimal.
 
+Prepared Week 1 dose is derived only from the exact capability estimate referenced by the block's
+strategy lineage and the exact ratified repetition-dose policy. The availability observation is
+not evidence for the dose, and the broad resistance-training claim is not presented as validation
+of the engineering constants. The resulting prescription retains observation, evidence, estimate,
+dose-policy, progression-policy, exercise-resolution, and scheduling-policy lineage.
+
 Typed intensity targets make units and target semantics inspectable; they do not make a prescribed
 load, RPE range, heart-rate zone, pace, or technique constraint evidence-based. Session-template
 composition and frequency are likewise governed inputs until a reviewed generation policy exists.

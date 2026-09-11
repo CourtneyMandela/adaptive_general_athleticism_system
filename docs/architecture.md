@@ -1145,6 +1145,15 @@ idempotent after structural verification. Four weeks and target-equals-budget ar
 replaceable engineering choices. The boundary creates no dated availability, session, dose, safety
 decision, or permission to train.
 
+The corresponding prepared Week 1 boundary accepts only availability windows as owner-authored
+facts. It follows the immutable block allocation to the strategy's capability need and source
+estimate, applies the exact ratified repetition-dose policy, composes one session from the FULL
+exercise resolution, and previews the existing deterministic scheduler. Ratification stores the
+availability as an `Observation` with unknown reliability, then atomically appends all derived
+planning records with content-addressed identities. The candidate expires after 30 minutes and a
+matching accepted retry is verified rather than duplicated. The general Week 1 editor remains an
+advanced recovery surface.
+
 The prescription's exact versioned `progression_rule_reference` is now the action-assignment key.
 The current-week projection resolves it against persisted policies and exposes a policy identifier
 only when one unique policy can produce an automatically typed load or repetition revision without

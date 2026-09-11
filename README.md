@@ -190,6 +190,8 @@ GET  /v1/operator/strategies/{strategy_id}/prepared-first-block?starts_on=YYYY-M
 POST /v1/operator/strategies/{strategy_id}/prepared-first-blocks/{candidate_id}/ratifications
 GET  /v1/operator/blocks/{block_id}/first-week-preparation
 POST /v1/operator/blocks/{block_id}/first-week-plans
+POST /v1/operator/blocks/{block_id}/prepared-first-week
+POST /v1/operator/blocks/{block_id}/prepared-first-weeks/{candidate_id}/ratifications
 GET  /v1/operator/blocks/{block_id}/review-preparation
 POST /v1/operator/blocks/{block_id}/reviews
 GET  /v1/operator/block-reviews/{block_review_id}/replanning-preparation
@@ -803,10 +805,13 @@ pre-block planning item per athlete from immutable history and links directly to
 resource-demand preparation, block creation, or Week 1 authoring. Ready and blocked work remain
 visible; no queue task record is persisted.
 
-After a block exists, `http://localhost:3000/review/weeks` accepts its UUID and exposes the exact
-allocation, stimulus, exercise-resolution, selected-exercise, environment, scheduling-policy
-review, observation, and evidence lineage needed for Week 1. The structured form supports every
-current intensity-target type, explicit dose, rest, progression reference, session membership and
+After a block exists, `http://localhost:3000/review/weeks` accepts its UUID and offers the primary
+prepared owner-alpha flow. The owner reports two available time windows; the server follows the
+block lineage to the exact current capability estimate, derives the ratified bounded repetition
+dose, builds the session, and schedules two occurrences only inside those windows. Preview writes
+nothing. Exact ratification appends the availability observation and the complete Week 1 bundle
+atomically under deterministic identities, making mobile retries idempotent. The structured
+general form still supports every current intensity-target type, explicit dose, rest, progression reference, session membership and
 order, dated environment availability, policy review, and per-record provenance. Every material
 field begins blank; the form does not infer prescription dose, session composition, availability,
 or policy selection. The backend records server-owned reviewer-role authority and remains the

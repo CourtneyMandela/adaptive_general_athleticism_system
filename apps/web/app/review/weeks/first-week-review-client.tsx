@@ -13,6 +13,12 @@ import {
   type SessionSection,
   type WeeklyPlanCreationResult,
 } from "@/lib/first-week-review";
+import {
+  prepareFirstWeek,
+  ratifyPreparedFirstWeek,
+  type PreparedAvailabilityWindow,
+  type PreparedFirstWeekProjection,
+} from "@/lib/prepared-first-week";
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -153,6 +159,209 @@ function WeekReceipt({ result }: { result: WeeklyPlanCreationResult }) {
       </dl>
       {result.weekly_plan.issues.length ? <ul>{result.weekly_plan.issues.map((issue) => <li key={`${issue.code}:${issue.detail}`}><strong>{label(issue.code)}:</strong> {issue.detail}</li>)}</ul> : null}
       <details><summary>Authority and planning lineage</summary><ul>{result.decision_record.evidence.map((item) => <li key={item}>{item}</li>)}</ul></details>
+    </section>
+  );
+}
+
+type SimpleWindow = { key: string; startsAt: string; endsAt: string };
+
+function PreparedFirstWeekPanel({ projection }: { projection: FirstWeekPreparationProjection }) {
+  const active = projection.allocation_inputs.filter(
+    (item) => item.allocation.allocated_weekly_minutes > 0,
+  );
+  const environmentId = active[0]?.exercise_resolution?.environment_id ?? "";
+  const environmentName = projection.environments.find((item) => item.id === environmentId)?.name;
+  const [windows, setWindows] = useState<SimpleWindow[]>([
+    { key: "prepared-window-1", startsAt: "", endsAt: "" },
+    { key: "prepared-window-2", startsAt: "", endsAt: "" },
+  ]);
+  const [candidateWindows, setCandidateWindows] = useState<PreparedAvailabilityWindow[]>([]);
+  const [prepared, setPrepared] = useState<PreparedFirstWeekProjection | null>(null);
+  const [confirmed, setConfirmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+
+  if (projection.existing_first_week_plans.length > 0) {
+    return (
+      <section className="resource-receipt">
+        <p className="eyebrow">Week 1 already recorded</p>
+        <h2>Your scheduled week is ready on the athlete PWA</h2>
+        <p>
+          Immutable Week 1 history already exists for this block. AGAS will not prepare a
+          replacement over it.
+        </p>
+        <Link href="/" className="primary-button">Open my current week</Link>
+      </section>
+    );
+  }
+
+  function exactWindows(): PreparedAvailabilityWindow[] {
+    if (!environmentId) throw new Error("The block has no fully resolved training environment.");
+    return windows.map((window, index) => {
+      if (!window.startsAt || !window.endsAt) {
+        throw new Error(`Training time ${index + 1} needs a start and end.`);
+      }
+      return {
+        environment_id: environmentId,
+        starts_at: new Date(window.startsAt).toISOString(),
+        ends_at: new Date(window.endsAt).toISOString(),
+      };
+    });
+  }
+
+  async function preview() {
+    setBusy(true);
+    setMessage("");
+    setPrepared(null);
+    setConfirmed(false);
+    try {
+      const exact = exactWindows();
+      setCandidateWindows(exact);
+      setPrepared(await prepareFirstWeek(apiBaseUrl, projection.block.id, exact));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to prepare Week 1.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function accept() {
+    const candidate = prepared?.candidate;
+    if (!candidate || !confirmed) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      const receipt = await ratifyPreparedFirstWeek(
+        apiBaseUrl,
+        projection.block.id,
+        candidate,
+        candidateWindows,
+      );
+      setPrepared({
+        ...prepared,
+        status: "accepted",
+        message: receipt.created
+          ? "Week 1 and its availability report were recorded."
+          : "This exact Week 1 was already recorded.",
+        candidate: {
+          ...candidate,
+          status: "accepted",
+          accepted_result: receipt.result,
+        },
+      });
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to record Week 1.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (prepared?.candidate?.accepted_result) {
+    return <WeekReceipt result={prepared.candidate.accepted_result} />;
+  }
+  const visibleCandidate = prepared?.candidate;
+
+  return (
+    <section className="governed-context first-week-preparation" aria-labelledby="prepared-week-title">
+      <header>
+        <div>
+          <p className="eyebrow">Prepared Week 1</p>
+          <h2 id="prepared-week-title">When can you train?</h2>
+          <p>
+            Offer two times during the week of {projection.block.starts_on}. AGAS derives the
+            exercise, dose, rest, progression rule, and safe scheduling policy.
+          </p>
+        </div>
+        <span className="status-badge">{environmentName ?? "resolved environment required"}</span>
+      </header>
+      <div className="availability-windows">
+        {windows.map((window, index) => (
+          <div key={window.key} className="availability-window">
+            <strong>Training time {index + 1}</strong>
+            <div className="first-week-field-grid">
+              <label>
+                Starts
+                <input
+                  type="datetime-local"
+                  value={window.startsAt}
+                  onChange={(event) => setWindows((current) => current.map((item) =>
+                    item.key === window.key ? { ...item, startsAt: event.target.value } : item
+                  ))}
+                />
+              </label>
+              <label>
+                Available until
+                <input
+                  type="datetime-local"
+                  value={window.endsAt}
+                  onChange={(event) => setWindows((current) => current.map((item) =>
+                    item.key === window.key ? { ...item, endsAt: event.target.value } : item
+                  ))}
+                />
+              </label>
+            </div>
+          </div>
+        ))}
+      </div>
+      <button type="button" className="primary-button" disabled={busy} onClick={() => void preview()}>
+        {busy ? "Deriving and scheduling…" : "Prepare my Week 1"}
+      </button>
+      {prepared ? <p>{prepared.message}</p> : null}
+      {prepared?.blockers.length ? (
+        <ul className="form-error">
+          {prepared.blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}
+        </ul>
+      ) : null}
+      {visibleCandidate ? (
+        <>
+          <dl className="review-metadata">
+            <div><dt>Exercise</dt><dd>{visibleCandidate.exercise_name}</dd></div>
+            <div><dt>Dose</dt><dd>{visibleCandidate.sets} sets × {visibleCandidate.repetitions_per_set} reps</dd></div>
+            <div><dt>Effort</dt><dd>RPE {visibleCandidate.effort_rpe_range}</dd></div>
+            <div><dt>Rest</dt><dd>{visibleCandidate.rest_seconds} seconds</dd></div>
+          </dl>
+          <div className="block-allocation-grid">
+            {visibleCandidate.sessions.map((session, index) => (
+              <article className="block-allocation" key={session.starts_at}>
+                <strong>Session {index + 1}</strong>
+                <p>{new Date(session.starts_at).toLocaleString()}</p>
+                <p>{visibleCandidate.planned_duration_minutes} planned minutes</p>
+              </article>
+            ))}
+          </div>
+          <details>
+            <summary>Technique and exact derivation</summary>
+            <ul>{visibleCandidate.technique_constraints.map((item) => <li key={item}>{item}</li>)}</ul>
+            <p>{visibleCandidate.dose_calculation}</p>
+            <p>{visibleCandidate.provenance_summary}</p>
+            <p><strong>Uncertainty:</strong> {visibleCandidate.uncertainty}</p>
+          </details>
+          <aside className="review-boundary">
+            <strong>Scheduling is not safety clearance.</strong>
+            <span>{visibleCandidate.safety_boundary}</span>
+          </aside>
+          <label className="context-confirmation">
+            <input
+              type="checkbox"
+              checked={confirmed}
+              onChange={(event) => setConfirmed(event.target.checked)}
+            />
+            <span>
+              These are times I am actually available. I reviewed the exact dose and understand
+              that each session still requires its phone safety check.
+            </span>
+          </label>
+          <button
+            type="button"
+            className="primary-button"
+            disabled={!confirmed || busy}
+            onClick={() => void accept()}
+          >
+            {busy ? "Recording exact week…" : "Accept and schedule Week 1"}
+          </button>
+        </>
+      ) : null}
+      {message ? <p className="form-error" role="alert">{message}</p> : null}
     </section>
   );
 }
@@ -407,7 +616,7 @@ export function FirstWeekReviewClient({ initialBlockId }: { initialBlockId: stri
         <div>
           <p className="eyebrow">AGAS · Block to Week 1</p>
           <h1>First-week preparation</h1>
-          <p>Inspect the exact exercise, evidence, environment, and policy lineage before dose.</p>
+          <p>Tell AGAS when you are available; it will derive and show the governed first dose.</p>
         </div>
         <nav className="review-route-links" aria-label="Reviewer routes">
           <Link href="/review/queue" className="text-link">Queue</Link>
@@ -418,8 +627,8 @@ export function FirstWeekReviewClient({ initialBlockId }: { initialBlockId: stri
         </nav>
       </header>
       <aside className="review-boundary">
-        <strong>No workout is generated from allocation minutes.</strong>
-        <span>Dose, composition, dated availability, and policy remain explicit reviewed inputs.</span>
+        <strong>Your availability is factual input; the training values come from ratified rules.</strong>
+        <span>If the exact dose or safe schedule cannot be derived, AGAS stops and explains why.</span>
       </aside>
       <section className="review-input resource-strategy-loader">
         <label htmlFor="first-week-block-id">Block ID</label>
@@ -429,7 +638,18 @@ export function FirstWeekReviewClient({ initialBlockId }: { initialBlockId: stri
         </button>
       </section>
       {message ? <p className="form-error review-message" role="alert">{message}</p> : null}
-      {projection ? <><Preparation projection={projection} /><FirstWeekAuthoringForm projection={projection} /></> : null}
+      {projection ? <>
+        <Preparation projection={projection} />
+        <PreparedFirstWeekPanel projection={projection} />
+        <details className="governed-context">
+          <summary>Advanced recovery: manually author Week 1</summary>
+          <p className="form-help">
+            This explicit editor remains available for exceptional governed states. Ordinary
+            owner-alpha use should use the prepared path above.
+          </p>
+          <FirstWeekAuthoringForm projection={projection} />
+        </details>
+      </> : null}
     </main>
   );
 }

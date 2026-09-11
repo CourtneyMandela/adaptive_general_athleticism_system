@@ -173,6 +173,20 @@ class WeeklyPlanCreationResult(BaseModel):
     decision_record: DecisionRecord
 
 
+class WeeklyPlanCreationIdentities(BaseModel):
+    """Caller-owned immutable identities for content-addressed Week 1 creation."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    prescription_ids: tuple[UUID, ...]
+    session_template_ids: tuple[UUID, ...]
+    weekly_availability_id: UUID
+    availability_window_ids: tuple[UUID, ...]
+    weekly_plan_id: UUID
+    planned_session_ids: tuple[UUID, ...]
+    decision_record_id: UUID
+
+
 class WeeklyPlanUseCaseError(RuntimeError):
     """Base error for the persisted weekly-plan use case."""
 
@@ -196,9 +210,15 @@ class PersistedWeeklyPlanService:
         self.session = session
         self.repository = DomainRepository(session)
 
-    def execute(self, block_id: UUID, command: CreateWeeklyPlanCommand) -> WeeklyPlanCreationResult:
+    def execute(
+        self,
+        block_id: UUID,
+        command: CreateWeeklyPlanCommand,
+        *,
+        identities: WeeklyPlanCreationIdentities | None = None,
+    ) -> WeeklyPlanCreationResult:
         try:
-            result = self._build(block_id, command)
+            result = self._build(block_id, command, identities)
             for prescription in result.prescriptions:
                 self.repository.add_session_prescription(prescription)
             self.session.flush()
@@ -222,7 +242,46 @@ class PersistedWeeklyPlanService:
                 "weekly-plan preparation conflicts with persisted planning state"
             ) from error
 
-    def _build(self, block_id: UUID, command: CreateWeeklyPlanCommand) -> WeeklyPlanCreationResult:
+    def preview(
+        self,
+        block_id: UUID,
+        command: CreateWeeklyPlanCommand,
+        *,
+        identities: WeeklyPlanCreationIdentities | None = None,
+    ) -> WeeklyPlanCreationResult:
+        """Build an exact candidate without adding or committing any records."""
+
+        return self._build(block_id, command, identities)
+
+    def _build(
+        self,
+        block_id: UUID,
+        command: CreateWeeklyPlanCommand,
+        identities: WeeklyPlanCreationIdentities | None,
+    ) -> WeeklyPlanCreationResult:
+        if identities is not None:
+            expected_counts = (
+                (
+                    len(identities.prescription_ids),
+                    len(command.prescriptions),
+                    "prescription",
+                ),
+                (
+                    len(identities.session_template_ids),
+                    len(command.session_templates),
+                    "session-template",
+                ),
+                (
+                    len(identities.availability_window_ids),
+                    len(command.availability.windows),
+                    "availability-window",
+                ),
+            )
+            for actual, expected, label in expected_counts:
+                if actual != expected:
+                    raise WeeklyPlanValidationError(
+                        f"{label} identity count must match the reviewed command"
+                    )
         self._validate_review_authority(command)
         block = self.repository.get_block_plan(block_id)
         if block is None:
@@ -257,7 +316,7 @@ class PersistedWeeklyPlanService:
         allocation_by_id = {item.id: item for item in block.allocations}
         prescriptions = []
         resolutions_by_id = {}
-        for prescription_draft in command.prescriptions:
+        for prescription_index, prescription_draft in enumerate(command.prescriptions):
             allocation = allocation_by_id.get(prescription_draft.resource_allocation_id)
             if allocation is None:
                 raise WeeklyPlanValidationError(
@@ -280,6 +339,14 @@ class PersistedWeeklyPlanService:
             resolutions_by_id[resolution.id] = resolution
             prescriptions.append(
                 SessionPrescription(
+                    **(
+                        {
+                            "id": identities.prescription_ids[prescription_index],
+                            "created_at": command.prepared_at,
+                        }
+                        if identities is not None
+                        else {}
+                    ),
                     athlete_id=block.athlete_id,
                     block_plan_id=block.id,
                     resource_allocation_id=allocation.id,
@@ -305,7 +372,7 @@ class PersistedWeeklyPlanService:
 
         prescription_by_allocation = {item.resource_allocation_id: item for item in prescriptions}
         templates = []
-        for template_draft in command.session_templates:
+        for template_index, template_draft in enumerate(command.session_templates):
             items = []
             for item_draft in template_draft.items:
                 prescription = prescription_by_allocation.get(item_draft.resource_allocation_id)
@@ -322,6 +389,14 @@ class PersistedWeeklyPlanService:
                 )
             templates.append(
                 SessionTemplate(
+                    **(
+                        {
+                            "id": identities.session_template_ids[template_index],
+                            "created_at": command.prepared_at,
+                        }
+                        if identities is not None
+                        else {}
+                    ),
                     athlete_id=block.athlete_id,
                     block_plan_id=block.id,
                     name=template_draft.name,
@@ -337,15 +412,31 @@ class PersistedWeeklyPlanService:
             )
 
         availability = WeeklyAvailability(
+            **(
+                {
+                    "id": identities.weekly_availability_id,
+                    "created_at": command.prepared_at,
+                }
+                if identities is not None
+                else {}
+            ),
             athlete_id=block.athlete_id,
             week_start=command.availability.week_start,
             windows=tuple(
                 AvailabilityWindow(
+                    **(
+                        {
+                            "id": identities.availability_window_ids[index],
+                            "created_at": command.prepared_at,
+                        }
+                        if identities is not None
+                        else {}
+                    ),
                     environment_id=item.environment_id,
                     starts_at=item.starts_at,
                     ends_at=item.ends_at,
                 )
-                for item in command.availability.windows
+                for index, item in enumerate(command.availability.windows)
             ),
             source_observation_ids=command.availability.source_observation_ids,
             recorded_at=command.prepared_at,
@@ -360,8 +451,44 @@ class PersistedWeeklyPlanService:
             policy=policy,
             generated_at=command.prepared_at,
         )
-        plan = scheduled.model_copy(update={"scheduling_policy_review_id": policy_review.id})
+        if identities is not None and len(identities.planned_session_ids) != len(
+            scheduled.sessions
+        ):
+            raise WeeklyPlanValidationError(
+                "planned-session identity count must match the scheduler result"
+            )
+        plan = scheduled.model_copy(
+            update={
+                "id": (identities.weekly_plan_id if identities is not None else scheduled.id),
+                "created_at": (
+                    command.prepared_at if identities is not None else scheduled.created_at
+                ),
+                "sessions": (
+                    tuple(
+                        planned.model_copy(
+                            update={"id": planned_id, "created_at": command.prepared_at}
+                        )
+                        for planned, planned_id in zip(
+                            scheduled.sessions,
+                            identities.planned_session_ids,
+                            strict=True,
+                        )
+                    )
+                    if identities is not None
+                    else scheduled.sessions
+                ),
+                "scheduling_policy_review_id": policy_review.id,
+            }
+        )
         decision_record = DecisionRecord(
+            **(
+                {
+                    "id": identities.decision_record_id,
+                    "created_at": command.prepared_at,
+                }
+                if identities is not None
+                else {}
+            ),
             decision=(
                 f"Create block week {plan.block_week} weekly plan {plan.id} for block {block.id}."
             ),

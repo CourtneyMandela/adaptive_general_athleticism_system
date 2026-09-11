@@ -93,6 +93,7 @@ from agas_api.weekly_availability_confirmation import (
 from agas_api.weekly_planning import (
     CreateWeeklyPlanCommand,
     PersistedWeeklyPlanService,
+    WeeklyPlanCreationIdentities,
     WeeklyPlanValidationError,
 )
 from agas_api.weekly_planning_admin import load_weekly_plan_command
@@ -2768,13 +2769,31 @@ def test_operator_weekly_plan_service_persists_explicit_session_chain_atomically
     )
 
     assert counts_after_failures == counts_before
-    result = PersistedWeeklyPlanService(session).execute(block.id, command)
+    identities = WeeklyPlanCreationIdentities(
+        prescription_ids=(uuid4(),),
+        session_template_ids=(uuid4(),),
+        weekly_availability_id=uuid4(),
+        availability_window_ids=tuple(uuid4() for _ in weekly_availability.windows),
+        weekly_plan_id=uuid4(),
+        planned_session_ids=tuple(uuid4() for _ in range(allocation.sessions_per_week)),
+        decision_record_id=uuid4(),
+    )
+    result = PersistedWeeklyPlanService(session).execute(block.id, command, identities=identities)
     assert result.weekly_plan.status is WeeklyPlanStatus.FEASIBLE
     assert len(result.weekly_plan.sessions) == allocation.sessions_per_week
     assert result.prescriptions[0].adaptation_id == allocation.adaptation_id
     assert result.prescriptions[0].exercise_resolution_id == resolution.id
     assert result.prescriptions[0].exercise_id == resolution.selected_exercise_id
     assert result.session_templates[0].items[0].prescription_id == result.prescriptions[0].id
+    assert tuple(item.id for item in result.prescriptions) == identities.prescription_ids
+    assert tuple(item.id for item in result.session_templates) == identities.session_template_ids
+    assert result.availability.id == identities.weekly_availability_id
+    assert tuple(item.id for item in result.availability.windows) == (
+        identities.availability_window_ids
+    )
+    assert result.weekly_plan.id == identities.weekly_plan_id
+    assert tuple(item.id for item in result.weekly_plan.sessions) == identities.planned_session_ids
+    assert result.decision_record.id == identities.decision_record_id
     assert {item.environment_id for item in result.weekly_plan.sessions} == {
         resolution.environment_id
     }

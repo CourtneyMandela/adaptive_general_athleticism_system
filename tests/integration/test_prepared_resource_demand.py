@@ -21,6 +21,15 @@ from agas_api.prepared_first_block import (
     RatifyPreparedFirstBlockCommand,
     ratify_prepared_first_block,
 )
+from agas_api.prepared_first_week import (
+    CANDIDATE_VERSION as FIRST_WEEK_CANDIDATE_VERSION,
+)
+from agas_api.prepared_first_week import (
+    PreparedFirstWeekProjector,
+    PrepareFirstWeekCommand,
+    RatifyPreparedFirstWeekCommand,
+    ratify_prepared_first_week,
+)
 from agas_api.prepared_resource_demand import (
     CANDIDATE_VERSION,
     PreparedResourceDemandConflictError,
@@ -42,6 +51,7 @@ from agas_api.training_construction_candidates import (
     prepared_training_construction_candidate,
     ratify_training_construction_candidate,
 )
+from agas_api.weekly_planning import AvailabilityWindowDraft
 from agas_domain import (
     AccountRole,
     AccountRoleStatus,
@@ -49,6 +59,7 @@ from agas_domain import (
     AdaptationPlanningCandidate,
     Applicability,
     Athlete,
+    BlockPlan,
     CapabilityDomain,
     CapabilityEstimate,
     ComparisonDirection,
@@ -68,7 +79,12 @@ from agas_domain import (
     PriorityPolicy,
     Provenance,
 )
-from agas_domain.persistence.models import AdaptationResourceDemandRecord, BlockPlanRecord
+from agas_domain.persistence.models import (
+    AdaptationResourceDemandRecord,
+    BlockPlanRecord,
+    ObservationRecord,
+    WeeklyPlanRecord,
+)
 from agas_domain.persistence.repository import DomainRepository
 from agas_planner import CompetencyFloorDetector, LongRangeStrategyPlanner
 from fastapi.testclient import TestClient
@@ -612,3 +628,203 @@ def test_prepared_first_block_endpoints_create_only_the_block(session: Session) 
     assert projected.json()["status"] == "available"
     assert ratified.status_code == 201, ratified.text
     assert ratified.json()["result"]["block_plan"]["duration_weeks"] == 4
+
+
+def _persist_ready_first_week(
+    session: Session,
+) -> tuple[BlockPlan, AuthorizedRole, tuple[AvailabilityWindowDraft, ...]]:
+    strategy, authority = _persist_ready_first_block(session)
+    starts_on = _next_monday(datetime.now(UTC).date())
+    block_candidate = (
+        PreparedFirstBlockProjector(session).project(strategy.id, starts_on, authority).candidate
+    )
+    assert block_candidate is not None
+    block = ratify_prepared_first_block(
+        session,
+        strategy.id,
+        block_candidate.candidate_id,
+        RatifyPreparedFirstBlockCommand(
+            candidate_version=FIRST_BLOCK_CANDIDATE_VERSION,
+            content_digest=block_candidate.content_digest,
+            starts_on=starts_on,
+            approval_attestation=True,
+        ),
+        authority,
+    ).result.block_plan
+    environment_id = DomainRepository(session).list_environments(strategy.athlete_id)[0].id
+    windows = (
+        AvailabilityWindowDraft(
+            environment_id=environment_id,
+            starts_at=datetime.combine(
+                starts_on + timedelta(days=1), datetime.min.time(), tzinfo=UTC
+            )
+            + timedelta(hours=18),
+            ends_at=datetime.combine(starts_on + timedelta(days=1), datetime.min.time(), tzinfo=UTC)
+            + timedelta(hours=18, minutes=30),
+        ),
+        AvailabilityWindowDraft(
+            environment_id=environment_id,
+            starts_at=datetime.combine(
+                starts_on + timedelta(days=3), datetime.min.time(), tzinfo=UTC
+            )
+            + timedelta(hours=18),
+            ends_at=datetime.combine(starts_on + timedelta(days=3), datetime.min.time(), tzinfo=UTC)
+            + timedelta(hours=18, minutes=30),
+        ),
+    )
+    return block, authority, windows
+
+
+def test_prepared_first_week_derives_dose_and_schedules_only_reported_times(
+    session: Session,
+) -> None:
+    block, authority, windows = _persist_ready_first_week(session)
+    prepared_at = datetime.now(UTC)
+
+    projection = PreparedFirstWeekProjector(session).project(
+        block.id,
+        PrepareFirstWeekCommand(windows=windows),
+        authority,
+        prepared_at,
+    )
+
+    assert projection.status == "available"
+    assert projection.candidate is not None
+    candidate = projection.candidate
+    assert candidate.exercise_name == "Chair sit-to-stand"
+    assert candidate.sets == 2
+    assert candidate.repetitions_per_set == 5
+    assert candidate.rest_seconds == 90
+    assert candidate.effort_rpe_range == "5-7"
+    assert len(candidate.sessions) == 2
+    assert {item["starts_at"] for item in candidate.sessions} == {
+        item.starts_at.isoformat() for item in windows
+    }
+    assert "does not clear" in candidate.safety_boundary
+
+
+def test_prepared_first_week_ratification_is_idempotent_and_observes_availability(
+    session: Session,
+) -> None:
+    block, authority, windows = _persist_ready_first_week(session)
+    prepared_at = datetime.now(UTC)
+    candidate = (
+        PreparedFirstWeekProjector(session)
+        .project(
+            block.id,
+            PrepareFirstWeekCommand(windows=windows),
+            authority,
+            prepared_at,
+        )
+        .candidate
+    )
+    assert candidate is not None
+    command = RatifyPreparedFirstWeekCommand(
+        candidate_version=FIRST_WEEK_CANDIDATE_VERSION,
+        content_digest=candidate.content_digest,
+        prepared_at=prepared_at,
+        windows=windows,
+        approval_attestation=True,
+    )
+
+    first = ratify_prepared_first_week(
+        session, block.id, candidate.candidate_id, command, authority
+    )
+    second = ratify_prepared_first_week(
+        session, block.id, candidate.candidate_id, command, authority
+    )
+
+    assert first.created is True
+    assert second.created is False
+    assert first.result == second.result
+    assert first.availability_observation == second.availability_observation
+    assert first.availability_observation.source is ObservationSource.USER_REPORT
+    assert first.availability_observation.reliability is Confidence.UNKNOWN
+    assert first.result.weekly_plan.status.value == "feasible"
+    assert len(first.result.weekly_plan.sessions) == 2
+    assert first.result.prescriptions[0].repetitions_per_set == 5
+    assert session.scalar(select(func.count()).select_from(WeeklyPlanRecord)) == 1
+    availability_reports = session.scalar(
+        select(func.count())
+        .select_from(ObservationRecord)
+        .where(ObservationRecord.observation_type == "weekly_training_availability_report")
+    )
+    assert availability_reports == 1
+
+
+def test_prepared_first_week_blocks_insufficient_or_wrong_environment_windows(
+    session: Session,
+) -> None:
+    block, authority, windows = _persist_ready_first_week(session)
+    prepared_at = datetime.now(UTC)
+    insufficient = PreparedFirstWeekProjector(session).project(
+        block.id,
+        PrepareFirstWeekCommand(windows=(windows[0],)),
+        authority,
+        prepared_at,
+    )
+    other_environment = Environment(
+        athlete_id=block.athlete_id,
+        name="Other room",
+    )
+    DomainRepository(session).add_environment(other_environment)
+    session.commit()
+    wrong_environment = PreparedFirstWeekProjector(session).project(
+        block.id,
+        PrepareFirstWeekCommand(
+            windows=(
+                windows[0].model_copy(update={"environment_id": other_environment.id}),
+                windows[1].model_copy(update={"environment_id": other_environment.id}),
+            )
+        ),
+        authority,
+        prepared_at,
+    )
+
+    assert insufficient.status == "blocked"
+    assert any("every required session" in item for item in insufficient.blockers)
+    assert wrong_environment.status == "blocked"
+    assert any("fully resolved environment" in item for item in wrong_environment.blockers)
+
+
+def test_prepared_first_week_endpoints_accept_only_availability_and_digest(
+    session: Session,
+) -> None:
+    block, _authority, windows = _persist_ready_first_week(session)
+
+    def override_session() -> Iterator[Session]:
+        yield session
+
+    app.dependency_overrides[database_session_dependency] = override_session
+    app.dependency_overrides.pop(authenticated_principal_dependency, None)
+    try:
+        client = TestClient(app)
+        projected = client.post(
+            f"/v1/operator/blocks/{block.id}/prepared-first-week",
+            headers={"Authorization": "Bearer dev.prepared-resource-reviewer"},
+            json={"windows": [item.model_dump(mode="json") for item in windows]},
+        )
+        candidate = projected.json()["candidate"]
+        ratified = client.post(
+            f"/v1/operator/blocks/{block.id}/prepared-first-weeks/"
+            f"{candidate['candidate_id']}/ratifications",
+            headers={"Authorization": "Bearer dev.prepared-resource-reviewer"},
+            json={
+                "candidate_version": candidate["candidate_version"],
+                "content_digest": candidate["content_digest"],
+                "prepared_at": candidate["prepared_at"],
+                "windows": [item.model_dump(mode="json") for item in windows],
+                "approval_attestation": True,
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert projected.status_code == 200, projected.text
+    assert projected.json()["status"] == "available"
+    assert ratified.status_code == 201, ratified.text
+    body = ratified.json()
+    assert body["result"]["weekly_plan"]["status"] == "feasible"
+    assert body["availability_observation"]["observation_type"] == (
+        "weekly_training_availability_report"
+    )

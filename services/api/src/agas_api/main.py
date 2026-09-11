@@ -268,6 +268,16 @@ from agas_api.prepared_first_block import (
     RatifyPreparedFirstBlockCommand,
     ratify_prepared_first_block,
 )
+from agas_api.prepared_first_week import (
+    PreparedFirstWeekConflictError,
+    PreparedFirstWeekProjection,
+    PreparedFirstWeekProjector,
+    PreparedFirstWeekRatificationResult,
+    PreparedFirstWeekValidationError,
+    PrepareFirstWeekCommand,
+    RatifyPreparedFirstWeekCommand,
+    ratify_prepared_first_week,
+)
 from agas_api.prepared_initial_planning_context import (
     PreparedInitialPlanningContextConflictError,
     PreparedInitialPlanningContextNotFoundError,
@@ -1147,6 +1157,57 @@ def create_operator_first_week_plan(
     except WeeklyPlanConflictError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     except WeeklyPlanValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.post(
+    "/v1/operator/blocks/{block_id}/prepared-first-week",
+    tags=["operator"],
+    response_model=PreparedFirstWeekProjection,
+)
+def prepare_operator_first_week(
+    block_id: UUID,
+    command: PrepareFirstWeekCommand,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+) -> PreparedFirstWeekProjection:
+    try:
+        return PreparedFirstWeekProjector(session).project(block_id, command, authority)
+    except FirstWeekPreparationNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except (
+        PreparedFirstWeekConflictError,
+        FirstWeekPreparationProjectionError,
+    ) as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except (PreparedFirstWeekValidationError, ValueError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.post(
+    "/v1/operator/blocks/{block_id}/prepared-first-weeks/{candidate_id}/ratifications",
+    tags=["operator"],
+    response_model=PreparedFirstWeekRatificationResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def ratify_operator_prepared_first_week(
+    block_id: UUID,
+    candidate_id: UUID,
+    command: RatifyPreparedFirstWeekCommand,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+) -> PreparedFirstWeekRatificationResult:
+    try:
+        return ratify_prepared_first_week(session, block_id, candidate_id, command, authority)
+    except (FirstWeekPreparationNotFoundError, WeeklyPlanNotFoundError) as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except (PreparedFirstWeekConflictError, WeeklyPlanConflictError) as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except (PreparedFirstWeekValidationError, WeeklyPlanValidationError) as error:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
         ) from error
