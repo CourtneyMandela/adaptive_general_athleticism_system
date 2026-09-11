@@ -53,7 +53,7 @@ are explicitly not production training rules.
 - `packages/adaptation_models`: adaptation ontology boundary
 - `packages/safety`: deterministic safety-policy boundary
 - `packages/seed_data`: validated loader for the small versioned repository seed catalog
-- `packages/evaluation`: counterfactual and anti-sludge evaluation boundary
+- `packages/evaluation`: semantic plan signatures, counterfactual similarity, and anti-sludge alerts
 - `tests`: domain and persistence tests
 - `docs`: product specification, policies, architecture, and decision records
 
@@ -871,7 +871,7 @@ pytest tests/integration/test_required_vertical_slice.py
 ```bash
 ruff check .
 ruff format --check .
-mypy packages/domain/src packages/safety/src packages/seed_data/src services/api/src services/evidence/src services/planner/src tests
+mypy packages/domain/src packages/evaluation/src packages/safety/src packages/seed_data/src services/api/src services/evidence/src services/planner/src tests
 pnpm --filter @agas/web lint
 pnpm --filter @agas/web typecheck
 ```

@@ -51,7 +51,11 @@ allocation, and weekly scheduling.
 It also records authorized execution, derives descriptive adherence and training response, and
 reviews explicit block hypotheses. `packages/safety` owns the
 deterministic safety-gate precedence and consumes only structured, preclassified input.
-packages/evaluation tests behavior across synthetic athletes.
+packages/evaluation tests behavior across synthetic athletes. Its anti-sludge analyzer projects
+planning artifacts into semantic, identity-free signatures and compares paired counterfactuals
+against versioned expectations for both required changes and stable invariants. Similarity is
+reported per planning dimension; alerts depend on the stated expectation rather than a universal
+similarity cutoff.
 ```
 
 ## Deployment boundary

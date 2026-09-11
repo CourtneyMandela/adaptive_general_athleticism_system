@@ -34,6 +34,7 @@ dev = [
 [tool.setuptools.packages.find]
 where = [
   "packages/domain/src",
+  "packages/evaluation/src",
   "packages/safety/src",
   "packages/seed_data/src",
   "services/api/src",
