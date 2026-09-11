@@ -12,6 +12,15 @@ from agas_api.identity import AuthorizedRole, authenticated_principal_dependency
 from agas_api.identity_admin import set_account_role
 from agas_api.main import app
 from agas_api.planning_governance_candidates import prepared_acsm_resistance_training_source
+from agas_api.prepared_first_block import (
+    CANDIDATE_VERSION as FIRST_BLOCK_CANDIDATE_VERSION,
+)
+from agas_api.prepared_first_block import (
+    PreparedFirstBlockConflictError,
+    PreparedFirstBlockProjector,
+    RatifyPreparedFirstBlockCommand,
+    ratify_prepared_first_block,
+)
 from agas_api.prepared_resource_demand import (
     CANDIDATE_VERSION,
     PreparedResourceDemandConflictError,
@@ -24,6 +33,14 @@ from agas_api.resource_governance_candidates import (
 )
 from agas_api.resource_governance_candidates import (
     prepared_resource_governance_candidate,
+)
+from agas_api.training_construction_candidates import (
+    CANDIDATE_ID as TRAINING_CONSTRUCTION_CANDIDATE_ID,
+)
+from agas_api.training_construction_candidates import (
+    RatifyTrainingConstructionCandidateCommand,
+    prepared_training_construction_candidate,
+    ratify_training_construction_candidate,
 )
 from agas_domain import (
     AccountRole,
@@ -51,7 +68,7 @@ from agas_domain import (
     PriorityPolicy,
     Provenance,
 )
-from agas_domain.persistence.models import AdaptationResourceDemandRecord
+from agas_domain.persistence.models import AdaptationResourceDemandRecord, BlockPlanRecord
 from agas_domain.persistence.repository import DomainRepository
 from agas_planner import CompetencyFloorDetector, LongRangeStrategyPlanner
 from fastapi.testclient import TestClient
@@ -430,5 +447,168 @@ def test_endpoints_require_reviewer_and_accept_digest_only(session: Session) -> 
 
     assert unauthenticated.status_code == 401
     assert projected.status_code == 200
-    assert ratified.status_code == 201
+    assert ratified.status_code == 201, ratified.text
     assert ratified.json()["result"]["resource_demand"]["sessions_per_week"] == 2
+
+
+def _persist_ready_first_block(session: Session) -> tuple[LongRangeStrategy, AuthorizedRole]:
+    strategy, authority = _persist_ready_strategy(session)
+    training = prepared_training_construction_candidate()
+    ratify_training_construction_candidate(
+        session,
+        TRAINING_CONSTRUCTION_CANDIDATE_ID,
+        RatifyTrainingConstructionCandidateCommand(
+            candidate_version=training.presentation.candidate_version,
+            content_digest=training.presentation.content_digest,
+            approval_attestation=True,
+        ),
+        authority,
+        ratified_at=NOW,
+    )
+    resource_candidate = (
+        PreparedResourceDemandProjector(session).project(strategy.id, authority, NOW).candidates[0]
+    )
+    ratify_prepared_resource_demand(
+        session,
+        strategy.id,
+        resource_candidate.candidate_id,
+        RatifyPreparedResourceDemandCommand(
+            candidate_version=CANDIDATE_VERSION,
+            content_digest=resource_candidate.content_digest,
+            approval_attestation=True,
+        ),
+        authority,
+    )
+    return strategy, authority
+
+
+def _next_monday(day: date) -> date:
+    return day + timedelta(days=(7 - day.weekday()) % 7)
+
+
+def test_prepared_first_block_is_athlete_specific_full_and_content_addressed(
+    session: Session,
+) -> None:
+    strategy, authority = _persist_ready_first_block(session)
+    starts_on = _next_monday(NOW.date())
+
+    first = PreparedFirstBlockProjector(session).project(strategy.id, starts_on, authority, NOW)
+    second = PreparedFirstBlockProjector(session).project(
+        strategy.id, starts_on, authority, NOW + timedelta(seconds=10)
+    )
+
+    assert first.status == "available"
+    assert first.candidate is not None
+    assert second.candidate is not None
+    assert second.candidate.candidate_id == first.candidate.candidate_id
+    assert second.candidate.content_digest == first.candidate.content_digest
+    assert first.candidate.athlete_id == strategy.athlete_id
+    assert first.candidate.expected_status.value == "full"
+    assert first.candidate.duration_weeks == 4
+    assert first.candidate.weekly_budget_minutes == 10
+    assert first.candidate.expected_allocations[0].allocated_weekly_minutes == 10
+    assert "does not authorize exercise" in first.candidate.safety_boundary
+
+
+def test_prepared_first_block_ratification_is_idempotent(session: Session) -> None:
+    strategy, authority = _persist_ready_first_block(session)
+    starts_on = _next_monday(NOW.date())
+    candidate = (
+        PreparedFirstBlockProjector(session)
+        .project(strategy.id, starts_on, authority, NOW)
+        .candidate
+    )
+    assert candidate is not None
+    command = RatifyPreparedFirstBlockCommand(
+        candidate_version=FIRST_BLOCK_CANDIDATE_VERSION,
+        content_digest=candidate.content_digest,
+        starts_on=starts_on,
+        approval_attestation=True,
+    )
+
+    first = ratify_prepared_first_block(
+        session, strategy.id, candidate.candidate_id, command, authority
+    )
+    second = ratify_prepared_first_block(
+        session, strategy.id, candidate.candidate_id, command, authority
+    )
+
+    assert first.created is True
+    assert second.created is False
+    assert first.result == second.result
+    assert first.result.block_plan.id == candidate.identities.block_plan_id
+    assert tuple(item.id for item in first.result.block_plan.allocations) == (
+        candidate.identities.resource_allocation_ids
+    )
+    assert candidate.content_digest in first.result.decision_record.reason
+    assert session.scalar(select(func.count()).select_from(BlockPlanRecord)) == 1
+
+
+def test_prepared_first_block_rejects_non_monday_and_stale_digest(session: Session) -> None:
+    strategy, authority = _persist_ready_first_block(session)
+    starts_on = _next_monday(NOW.date())
+    candidate = (
+        PreparedFirstBlockProjector(session)
+        .project(strategy.id, starts_on, authority, NOW)
+        .candidate
+    )
+    assert candidate is not None
+    assert (
+        PreparedFirstBlockProjector(session)
+        .project(strategy.id, starts_on + timedelta(days=1), authority, NOW)
+        .status
+        == "blocked"
+    )
+
+    with pytest.raises(PreparedFirstBlockConflictError, match="content changed"):
+        ratify_prepared_first_block(
+            session,
+            strategy.id,
+            candidate.candidate_id,
+            RatifyPreparedFirstBlockCommand(
+                candidate_version=FIRST_BLOCK_CANDIDATE_VERSION,
+                content_digest=f"sha256:{'0' * 64}",
+                starts_on=starts_on,
+                approval_attestation=True,
+            ),
+            authority,
+        )
+
+    assert session.scalar(select(func.count()).select_from(BlockPlanRecord)) == 0
+
+
+def test_prepared_first_block_endpoints_create_only_the_block(session: Session) -> None:
+    strategy, _authority = _persist_ready_first_block(session)
+    starts_on = _next_monday(NOW.date())
+
+    def override_session() -> Iterator[Session]:
+        yield session
+
+    app.dependency_overrides[database_session_dependency] = override_session
+    app.dependency_overrides.pop(authenticated_principal_dependency, None)
+    try:
+        client = TestClient(app)
+        projected = client.get(
+            f"/v1/operator/strategies/{strategy.id}/prepared-first-block",
+            params={"starts_on": starts_on.isoformat(), "at": NOW.isoformat()},
+            headers={"Authorization": "Bearer dev.prepared-resource-reviewer"},
+        )
+        candidate = projected.json()["candidate"]
+        ratified = client.post(
+            f"/v1/operator/strategies/{strategy.id}/prepared-first-blocks/"
+            f"{candidate['candidate_id']}/ratifications",
+            headers={"Authorization": "Bearer dev.prepared-resource-reviewer"},
+            json={
+                "candidate_version": candidate["candidate_version"],
+                "content_digest": candidate["content_digest"],
+                "starts_on": starts_on.isoformat(),
+                "approval_attestation": True,
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert projected.status_code == 200
+    assert projected.json()["status"] == "available"
+    assert ratified.status_code == 201, ratified.text
+    assert ratified.json()["result"]["block_plan"]["duration_weeks"] == 4

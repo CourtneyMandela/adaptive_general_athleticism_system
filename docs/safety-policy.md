@@ -135,6 +135,12 @@ existing stop-and-escalate precedence, or authorize execution by themselves. The
 records the exact required modification set and requires acknowledgement; automatic calculation
 of the reduction magnitude remains deliberately unavailable until a separate governed rule exists.
 
+The prepared first-block action reserves weekly time but does not authorize exercise. It succeeds
+only with FULL upstream exercise resolutions and carries an explicit constraint requiring current
+readiness and session-safety evaluation before every session. It creates no availability window,
+prescription, session, safety decision, or executable workout; each remains a separate fail-closed
+boundary.
+
 A temporary environment may trigger a newer exercise resolution for the same block stimulus.
 Partial fidelity is allowed only by an explicit weekly policy and must retain every unresolved
 mismatch. Re-resolution cannot bypass contraindication, skill, impact, space, noise, fatigue, or

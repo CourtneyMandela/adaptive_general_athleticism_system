@@ -76,6 +76,16 @@ class BlockPlanCreationResult(BaseModel):
     decision_record: DecisionRecord
 
 
+class BlockCreationIdentities(BaseModel):
+    """Caller-owned immutable identities for content-addressed block creation."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    block_plan_id: UUID
+    resource_allocation_ids: tuple[UUID, ...]
+    decision_record_id: UUID
+
+
 class BlockCreationUseCaseError(RuntimeError):
     """Base error for the persisted block-creation use case."""
 
@@ -100,12 +110,40 @@ class PersistedBlockCreationService:
         self.repository = DomainRepository(session)
 
     def execute(
-        self, strategy_id: UUID, command: CreateBlockPlanCommand
+        self,
+        strategy_id: UUID,
+        command: CreateBlockPlanCommand,
+        *,
+        identities: BlockCreationIdentities | None = None,
     ) -> BlockPlanCreationResult:
         try:
             block = self._build_block(strategy_id, command)
+            if identities is not None:
+                if len(identities.resource_allocation_ids) != len(block.allocations):
+                    raise BlockCreationValidationError(
+                        "resource-allocation identity count must match the planned allocations"
+                    )
+                block = block.model_copy(
+                    update={
+                        "id": identities.block_plan_id,
+                        "allocations": tuple(
+                            allocation.model_copy(update={"id": allocation_id})
+                            for allocation, allocation_id in zip(
+                                block.allocations,
+                                identities.resource_allocation_ids,
+                                strict=True,
+                            )
+                        ),
+                    }
+                )
             self.repository.add_block_plan(block)
-            decision_record = self._decision_record(block, command)
+            decision_record = self._decision_record(
+                block,
+                command,
+                decision_record_id=(
+                    identities.decision_record_id if identities is not None else None
+                ),
+            )
             self.repository.add_decision_record(decision_record)
             self.session.commit()
             return BlockPlanCreationResult(
@@ -200,7 +238,12 @@ class PersistedBlockCreationService:
             )
 
     @staticmethod
-    def _decision_record(block: BlockPlan, command: CreateBlockPlanCommand) -> DecisionRecord:
+    def _decision_record(
+        block: BlockPlan,
+        command: CreateBlockPlanCommand,
+        *,
+        decision_record_id: UUID | None = None,
+    ) -> DecisionRecord:
         values = [
             f"long_range_strategy:{block.long_range_strategy_id}",
             *(f"adaptation_resource_demand:{item}" for item in command.resource_demand_ids),
@@ -218,6 +261,7 @@ class PersistedBlockCreationService:
         if command.review_authority_assignment_id is not None:
             values.append(f"account_role_assignment:{command.review_authority_assignment_id}")
         return DecisionRecord(
+            **({"id": decision_record_id} if decision_record_id is not None else {}),
             decision=f"Create block plan {block.id} for strategy {block.long_range_strategy_id}.",
             reason=f"Reviewed by {command.reviewed_by}. {command.applicability_rationale}",
             alternatives_considered=(

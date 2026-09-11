@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 
 import {
   fetchBlockPreparation,
@@ -10,6 +10,11 @@ import {
   type BlockPreparationProjection,
   type OperatorBlockPlanRequest,
 } from "@/lib/block-review";
+import {
+  fetchPreparedFirstBlock,
+  ratifyPreparedFirstBlock,
+  type PreparedFirstBlockProjection,
+} from "@/lib/prepared-first-block";
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -72,6 +77,178 @@ function BlockReceipt({ result }: { result: BlockPlanCreationResult }) {
       <Link href={`/review/weeks?blockId=${result.block_plan.id}`} className="primary-button">
         Prepare Week 1 inputs
       </Link>
+    </section>
+  );
+}
+
+function nextMondayIso(): string {
+  const day = new Date();
+  day.setHours(12, 0, 0, 0);
+  day.setDate(day.getDate() + ((8 - day.getDay()) % 7));
+  const year = day.getFullYear();
+  const month = String(day.getMonth() + 1).padStart(2, "0");
+  const date = String(day.getDate()).padStart(2, "0");
+  return `${year}-${month}-${date}`;
+}
+
+function PreparedFirstBlockPanel({ strategyId }: { strategyId: string }) {
+  const [startsOn, setStartsOn] = useState(nextMondayIso);
+  const [projection, setProjection] = useState<PreparedFirstBlockProjection | null>(null);
+  const [confirmed, setConfirmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+
+  async function load(date = startsOn) {
+    setBusy(true);
+    setMessage("");
+    setConfirmed(false);
+    try {
+      setProjection(await fetchPreparedFirstBlock(apiBaseUrl, strategyId, date));
+    } catch (error) {
+      setProjection(null);
+      setMessage(error instanceof Error ? error.message : "Unable to prepare the first block.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    let active = true;
+    fetchPreparedFirstBlock(apiBaseUrl, strategyId, startsOn)
+      .then((result) => {
+        if (active) setProjection(result);
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          setProjection(null);
+          setMessage(error instanceof Error ? error.message : "Unable to prepare the first block.");
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [startsOn, strategyId]);
+
+  async function accept() {
+    if (!projection?.candidate || !confirmed) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      const result = await ratifyPreparedFirstBlock(
+        apiBaseUrl,
+        strategyId,
+        projection.candidate,
+      );
+      setProjection({
+        ...projection,
+        status: "accepted",
+        message: result.created
+          ? "The first block was recorded with immutable provenance."
+          : "This exact first block was already recorded.",
+        candidate: {
+          ...projection.candidate,
+          status: "accepted",
+          accepted_result: result.result,
+        },
+      });
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to accept the prepared block.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (projection?.candidate?.accepted_result) {
+    return <BlockReceipt result={projection.candidate.accepted_result} />;
+  }
+
+  return (
+    <section className="governed-context" aria-labelledby="prepared-first-block-title">
+      <header>
+        <div>
+          <p className="eyebrow">Prepared first block</p>
+          <h2 id="prepared-first-block-title">Let AGAS assemble the governed envelope</h2>
+          <p>
+            Choose when Week 1 begins. The server selects the exact ratified demands, policy,
+            budget, and four-week boundary from this athlete&apos;s records.
+          </p>
+        </div>
+        {projection ? (
+          <span className={`status-badge status-badge--${projection.status}`}>
+            {label(projection.status)}
+          </span>
+        ) : null}
+      </header>
+      <div className="review-input">
+        <label htmlFor="prepared-block-start">Week 1 starts Monday</label>
+        <input
+          id="prepared-block-start"
+          type="date"
+          value={startsOn}
+          onChange={(event) => setStartsOn(event.target.value)}
+        />
+        <button type="button" className="secondary-button" disabled={busy} onClick={() => void load()}>
+          {busy ? "Checking exact state…" : "Prepare this start date"}
+        </button>
+      </div>
+      {projection ? <p>{projection.message}</p> : null}
+      {projection?.blockers.length ? (
+        <ul className="form-error">
+          {projection.blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}
+        </ul>
+      ) : null}
+      {projection?.candidate ? (
+        <>
+          <dl className="review-metadata">
+            <div><dt>Dates</dt><dd>{projection.candidate.starts_on} – {projection.candidate.ends_on}</dd></div>
+            <div><dt>Duration</dt><dd>{projection.candidate.duration_weeks} weeks</dd></div>
+            <div><dt>Weekly envelope</dt><dd>{projection.candidate.weekly_budget_minutes} minutes</dd></div>
+            <div><dt>Expected result</dt><dd>{label(projection.candidate.expected_status)}</dd></div>
+          </dl>
+          <div className="block-allocation-grid">
+            {projection.candidate.expected_allocations.map((allocation) => (
+              <article className="block-allocation" key={allocation.adaptation_id}>
+                <strong>{label(allocation.priority_state)}</strong>
+                <p>
+                  {allocation.allocated_weekly_minutes} minutes/week across{" "}
+                  {allocation.sessions_per_week} sessions
+                </p>
+              </article>
+            ))}
+          </div>
+          <aside className="review-boundary">
+            <strong>This is not yet a workout.</strong>
+            <span>{projection.candidate.safety_boundary}</span>
+          </aside>
+          <details>
+            <summary>Why AGAS prepared these exact values</summary>
+            <p>{projection.candidate.construction_basis}</p>
+            <p>{projection.candidate.applicability_rationale}</p>
+            <p><strong>Remaining uncertainty:</strong> {projection.candidate.uncertainty}</p>
+            <code>{projection.candidate.content_digest}</code>
+          </details>
+          <label className="review-confirmation">
+            <input
+              type="checkbox"
+              checked={confirmed}
+              onChange={(event) => setConfirmed(event.target.checked)}
+            />
+            <span>
+              I reviewed this exact athlete-specific block and understand that Week 1 and its
+              safety gate are still separate steps.
+            </span>
+          </label>
+          <button
+            type="button"
+            className="primary-button"
+            disabled={!confirmed || busy}
+            onClick={() => void accept()}
+          >
+            {busy ? "Recording exact block…" : "Accept and record first block"}
+          </button>
+        </>
+      ) : null}
+      {message ? <p className="form-error" role="alert">{message}</p> : null}
     </section>
   );
 }
@@ -344,10 +521,10 @@ export function BlockReviewClient({ initialStrategyId }: { initialStrategyId: st
       <header className="review-topbar">
         <div>
           <p className="eyebrow">AGAS · Strategy to block</p>
-          <h1>Block-context review</h1>
+          <h1>Prepare the first training block</h1>
           <p>
-            Select exact immutable demand history and explicit context for one deterministic
-            four-to-six-week allocation decision.
+            Pick a Monday. AGAS will assemble the exact athlete-specific resource envelope from
+            the governed work already completed.
           </p>
         </div>
         <nav className="review-route-links" aria-label="Reviewer routes">
@@ -360,10 +537,10 @@ export function BlockReviewClient({ initialStrategyId }: { initialStrategyId: st
         </nav>
       </header>
       <aside className="review-boundary">
-        <strong>No demand, policy, budget, date, or duration is inferred.</strong>
+        <strong>The start date is your choice; the technical values are governed.</strong>
         <span>
-          The server owns reviewer identity. The allocator preserves minimum shortfalls and
-          exercise-resolution limits instead of producing a generic feasible-looking block.
+          The server derives demand, policy, budget, and duration from exact ratified state. If
+          anything is missing or ambiguous, it explains the blocker instead of making up a plan.
         </span>
       </aside>
       <section className="review-input resource-strategy-loader">
@@ -401,7 +578,15 @@ export function BlockReviewClient({ initialStrategyId }: { initialStrategyId: st
               </details>
             ) : null}
           </section>
-          <BlockContextForm projection={projection} />
+          <PreparedFirstBlockPanel strategyId={projection.strategy.id} />
+          <details className="governed-context">
+            <summary>Advanced recovery: manually assemble a block</summary>
+            <p className="form-help">
+              Use this only when the prepared path is blocked and an authorized reviewer needs to
+              inspect or recover exceptional historical state.
+            </p>
+            <BlockContextForm projection={projection} />
+          </details>
         </>
       ) : null}
     </main>

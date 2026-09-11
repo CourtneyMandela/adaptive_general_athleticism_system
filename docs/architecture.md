@@ -1135,6 +1135,16 @@ blocks, feasible or infeasible first weeks, and ambiguous block/week history rem
 Compatibility does not establish athlete applicability. The panel exposes no planning-score, dose,
 exercise-selection, session-generation, or plan-generation action.
 
+The first-block reviewer path now has a prepared owner-alpha boundary in front of the general block
+editor. Given a user-selected Monday, the backend requires exactly one immutable demand for every
+strategy priority, FULL exercise resolutions, the exact ratified allocation policy, both upstream
+authority bundles, and current governing evidence. It binds those records and the reviewer grant
+into a stable digest, previews the existing allocator, and exposes a candidate only for a FULL
+result. Ratification assigns deterministic block, allocation, and decision identities and is
+idempotent after structural verification. Four weeks and target-equals-budget are explicitly
+replaceable engineering choices. The boundary creates no dated availability, session, dose, safety
+decision, or permission to train.
+
 The prescription's exact versioned `progression_rule_reference` is now the action-assignment key.
 The current-week projection resolves it against persisted policies and exposes a policy identifier
 only when one unique policy can produce an automatically typed load or repetition revision without

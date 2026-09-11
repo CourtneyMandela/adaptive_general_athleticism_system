@@ -186,6 +186,8 @@ POST /v1/operator/strategies/{strategy_id}/priorities/{priority_id}/resource-dem
 POST /v1/athletes/{athlete_id}/environments/{environment_id}/floor-area-reports
 GET  /v1/operator/strategies/{strategy_id}/block-preparation
 POST /v1/operator/strategies/{strategy_id}/blocks
+GET  /v1/operator/strategies/{strategy_id}/prepared-first-block?starts_on=YYYY-MM-DD
+POST /v1/operator/strategies/{strategy_id}/prepared-first-blocks/{candidate_id}/ratifications
 GET  /v1/operator/blocks/{block_id}/first-week-preparation
 POST /v1/operator/blocks/{block_id}/first-week-plans
 GET  /v1/operator/blocks/{block_id}/review-preparation
@@ -787,12 +789,14 @@ progression are provisional owner-alpha engineering priors—not values attribut
 position stand. The derived result retains the estimate, dose policy, adaptation, and progression
 policy identities so a later prescription can preserve the complete rule lineage.
 
-When every priority has demand history, `http://localhost:3000/review/blocks` loads the exact
-block-preparation projection. No demand, policy, budget, date, duration, or constraint is
-preselected. The reviewer chooses one demand for every priority and confirms the complete context;
-the deterministic allocator may truthfully create a full, partial, or infeasible block. The receipt
-shows every allocation and immutable audit. Week 1, sessions, prescriptions, and workouts remain a
-separate downstream milestone.
+When every priority has its one governed demand, `http://localhost:3000/review/blocks` prepares the
+owner-alpha first block from exact persisted state. The owner chooses only a Monday start date; the
+server binds the current strategy, sole demand per priority, full exercise resolutions, exact
+ratified allocation policy, target-minute budget, four-week engineering horizon, reviewer grant,
+and both upstream authority digests into one candidate. A matching version, digest, date, and
+attestation atomically record deterministic block/allocation/decision identities, and a retry
+returns the existing verified result. This still creates no Week 1 or permission to train. The
+original explicit-input form remains collapsed as an advanced recovery path.
 
 `http://localhost:3000/review/queue` is the primary reviewer entry point. It derives one current
 pre-block planning item per athlete from immutable history and links directly to initial planning,

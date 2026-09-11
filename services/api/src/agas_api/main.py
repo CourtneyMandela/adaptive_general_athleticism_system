@@ -259,6 +259,15 @@ from agas_api.post_block_preparation import (
     ReplanningPreparationProjection,
     ReplanningPreparationProjector,
 )
+from agas_api.prepared_first_block import (
+    PreparedFirstBlockConflictError,
+    PreparedFirstBlockProjection,
+    PreparedFirstBlockProjector,
+    PreparedFirstBlockRatificationResult,
+    PreparedFirstBlockValidationError,
+    RatifyPreparedFirstBlockCommand,
+    ratify_prepared_first_block,
+)
 from agas_api.prepared_initial_planning_context import (
     PreparedInitialPlanningContextConflictError,
     PreparedInitialPlanningContextNotFoundError,
@@ -1040,6 +1049,57 @@ def create_operator_block_plan(
     except BlockCreationConflictError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     except BlockCreationValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.get(
+    "/v1/operator/strategies/{strategy_id}/prepared-first-block",
+    tags=["operator"],
+    response_model=PreparedFirstBlockProjection,
+)
+def get_operator_prepared_first_block(
+    strategy_id: UUID,
+    starts_on: date,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+    projected_at: Annotated[datetime | None, Query(alias="at")] = None,
+) -> PreparedFirstBlockProjection:
+    try:
+        return PreparedFirstBlockProjector(session).project(
+            strategy_id, starts_on, authority, projected_at
+        )
+    except BlockPreparationNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except (PreparedFirstBlockConflictError, BlockPreparationProjectionError) as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except (PreparedFirstBlockValidationError, ValueError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.post(
+    "/v1/operator/strategies/{strategy_id}/prepared-first-blocks/{candidate_id}/ratifications",
+    tags=["operator"],
+    response_model=PreparedFirstBlockRatificationResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def ratify_operator_prepared_first_block(
+    strategy_id: UUID,
+    candidate_id: UUID,
+    command: RatifyPreparedFirstBlockCommand,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+) -> PreparedFirstBlockRatificationResult:
+    try:
+        return ratify_prepared_first_block(session, strategy_id, candidate_id, command, authority)
+    except (BlockPreparationNotFoundError, BlockCreationNotFoundError) as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except (PreparedFirstBlockConflictError, BlockCreationConflictError) as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except (PreparedFirstBlockValidationError, BlockCreationValidationError) as error:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
         ) from error

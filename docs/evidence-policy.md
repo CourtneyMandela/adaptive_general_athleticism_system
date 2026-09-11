@@ -274,6 +274,12 @@ policy version together. The deterministic planner carries the exact source esti
 identities into its output. A newer policy is appended as a new record; neither the source estimate
 nor the earlier dose rule may be overwritten.
 
+The prepared first block introduces no new scientific claim. Its four-week horizon and
+target-minutes-equal-budget rule are disclosed engineering choices bound into the candidate digest.
+The candidate requires the exact ratified resource and construction bundles and current governing
+evidence, but that lineage must not be represented as proof that four weeks or the resulting time
+budget is physiologically optimal.
+
 Typed intensity targets make units and target semantics inspectable; they do not make a prescribed
 load, RPE range, heart-rate zone, pace, or technique constraint evidence-based. Session-template
 composition and frequency are likewise governed inputs until a reviewed generation policy exists.
