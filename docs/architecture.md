@@ -1239,6 +1239,14 @@ panel still renders server-authoritative state. A persisted assessment-selection
 `missing_equipment` reason routes the next action to the environment report; the browser does not
 decide that equipment is suitable.
 
+The planning-authority workbench also offers a dependency-aware combined review action. One owner
+attestation can submit every currently available exact policy, floor batch, resource bundle, and
+construction bundle through their existing digest-bound ratifiers. Requests remain sequential and
+separately transactional; resource governance is ratified before construction is re-read. Known
+conflicts prevent the sequence from starting, later failures report the number already committed,
+and an idempotent retry resumes from current persisted status. The full candidate cards and
+individual controls remain visible, so review throughput does not collapse provenance or scope.
+
 The prescription's exact versioned `progression_rule_reference` is now the action-assignment key.
 The current-week projection resolves it against persisted policies and exposes a policy identifier
 only when one unique policy can produce an automatically typed load or repetition revision without

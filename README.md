@@ -910,6 +910,10 @@ priority policy and one immutable, age-bounded chair-stand floor; explicit owner
 persists each exact authority chain without asking the owner to author scientific JSON. Other
 domains still require externally prepared, reviewed authorities even though candidate-context,
 post-block review, and replanning inputs can be authored through role-protected structured forms.
+The same screen provides an optional combined review for every available prepared planning-
+authority group. It preserves each existing digest-bound ratification and decision record, runs
+dependency-sensitive groups sequentially, and reports partial completion honestly rather than
+claiming cross-group atomicity.
 No real assessment protocol is automatically approved. The protected assessment workbench now
 presents one immutable 30-second chair-stand candidate authored from exact PubMed source snapshots,
 including its narrow meaning, procedure, conflicts, and limitations. Explicit owner-alpha

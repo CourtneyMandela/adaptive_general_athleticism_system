@@ -805,10 +805,25 @@ test("owner can ratify exact prepared authorities, including a floor batch", asy
       }),
     });
   });
+  await page.route(
+    "http://localhost:8000/v1/operator/training-construction-candidates**",
+    async (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        projected_at: "2026-09-10T18:00:00Z",
+        projection_version: "training-construction-candidates@1.0.0",
+        items: [],
+      }),
+    }),
+  );
 
   await page.goto(`/review/planning-authorities?athleteId=${athleteId}`);
 
   await expect(page.getByRole("heading", { name: "Prepared planning authorities" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Approve the prepared authority set once" }))
+    .toBeVisible();
+  await expect(page.getByRole("button", { name: "Approve prepared authority set" }))
+    .toBeDisabled();
   await expect(page.getByText("Which adaptation Courtney should develop.")).toBeVisible();
   const approve = page.getByRole("button", { name: "Approve exact policy" });
   await expect(approve).toBeDisabled();
@@ -831,9 +846,17 @@ test("owner can ratify exact prepared authorities, including a floor batch", asy
   await expect(page.getByText("evidence informed engineering judgment")).toBeVisible();
   const approveFloorBatch = page.getByRole("button", { name: "Approve exact batch (1 new)" });
   await expect(approveFloorBatch).toBeDisabled();
-  await page.getByLabel(/I reviewed all 1 exact candidates/).check();
-  await approveFloorBatch.click();
+
+  await expect(page.getByRole("heading", { name: "First-block authority candidates" })).toBeVisible();
+  await expect(page.getByText("Exercise: Chair sit-to-stand")).toBeVisible();
+  const approveResource = page.getByRole("button", { name: "Approve resource authorities" });
+  await expect(approveResource).toBeDisabled();
+
+  await page.getByLabel(/I reviewed all currently available exact authority cards below/).check();
+  await page.getByRole("button", { name: "Approve prepared authority set" }).click();
+  await expect(page.getByText(/Approved 2 exact authority group/)).toBeVisible();
   await expect(page.getByText(/The floor can now be applied only/)).toBeVisible();
+  await expect(page.getByText(/support a prepared resource demand/)).toBeVisible();
   expect(submittedFloorBatchBody).toEqual({
     batch_version: "competency-floor-candidate-batch@1.0.0",
     batch_id: "98400000-0000-4000-8000-000000000100",
@@ -846,14 +869,6 @@ test("owner can ratify exact prepared authorities, including a floor batch", asy
     approval_attestation: true,
   });
   expect(submittedFloorBatchBody).not.toHaveProperty("threshold");
-
-  await expect(page.getByRole("heading", { name: "First-block authority candidates" })).toBeVisible();
-  await expect(page.getByText("Exercise: Chair sit-to-stand")).toBeVisible();
-  const approveResource = page.getByRole("button", { name: "Approve resource authorities" });
-  await expect(approveResource).toBeDisabled();
-  await page.getByLabel(/I reviewed the exact artifacts/).check();
-  await approveResource.click();
-  await expect(page.getByText(/support a prepared resource demand/)).toBeVisible();
   expect(submittedResourceBody).toEqual({
     candidate_version: resourceCandidate.candidate_version,
     content_digest: resourceCandidate.content_digest,

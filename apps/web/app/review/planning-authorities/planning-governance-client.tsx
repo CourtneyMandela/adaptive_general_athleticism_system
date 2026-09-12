@@ -9,6 +9,12 @@ import {
   type PlanningGovernanceCandidateProjection,
 } from "@/lib/planning-governance";
 import { athleteHomeHref, athleteReviewHref } from "@/lib/athlete-navigation";
+import {
+  fetchPlanningAuthorityBatchState,
+  PlanningAuthorityBatchError,
+  ratifyAvailablePlanningAuthorityBatch,
+  type PlanningAuthorityBatchState,
+} from "@/lib/planning-authority-batch";
 
 import { CompetencyFloorGovernanceClient } from "./competency-floor-governance-client";
 import { ResourceGovernanceClient } from "./resource-governance-client";
@@ -23,6 +29,12 @@ export function PlanningGovernanceClient({ athleteId }: { athleteId?: string }) 
   const [attestations, setAttestations] = useState<Record<string, boolean>>({});
   const [message, setMessage] = useState("");
   const [messageKind, setMessageKind] = useState<"error" | "success">("error");
+  const [authorityBatch, setAuthorityBatch] = useState<PlanningAuthorityBatchState | null>(null);
+  const [batchAttestation, setBatchAttestation] = useState(false);
+  const [batchBusy, setBatchBusy] = useState(false);
+  const [batchMessage, setBatchMessage] = useState("");
+  const [batchMessageKind, setBatchMessageKind] = useState<"error" | "success">("error");
+  const [authorityRevision, setAuthorityRevision] = useState(0);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -56,6 +68,73 @@ export function PlanningGovernanceClient({ athleteId }: { athleteId?: string }) 
       active = false;
     };
   }, []);
+
+  const refreshAuthorityBatch = useCallback(async () => {
+    try {
+      const result = await fetchPlanningAuthorityBatchState(apiBaseUrl);
+      setAuthorityBatch(result);
+      setBatchMessage("");
+    } catch (error) {
+      setBatchMessageKind("error");
+      setBatchMessage(
+        error instanceof Error ? error.message : "Unable to load the authority-set status.",
+      );
+    }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    void fetchPlanningAuthorityBatchState(apiBaseUrl)
+      .then((result) => {
+        if (active) setAuthorityBatch(result);
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          setBatchMessageKind("error");
+          setBatchMessage(
+            error instanceof Error ? error.message : "Unable to load the authority-set status.",
+          );
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  async function ratifyAuthorityBatch() {
+    if (
+      !batchAttestation
+      || !authorityBatch
+      || authorityBatch.available_group_count === 0
+      || authorityBatch.conflict_group_count > 0
+    ) return;
+    setBatchBusy(true);
+    setBatchMessage("");
+    try {
+      const result = await ratifyAvailablePlanningAuthorityBatch(apiBaseUrl);
+      setProjection(await fetchPlanningGovernanceCandidates(apiBaseUrl));
+      setAuthorityBatch(result.remaining);
+      setBatchAttestation(false);
+      setAuthorityRevision((value) => value + 1);
+      setBatchMessageKind("success");
+      setBatchMessage(
+        `Approved ${result.approved_group_count} exact authority group(s). Every group kept its own digest, review, and decision history.`,
+      );
+    } catch (error) {
+      const completed = error instanceof PlanningAuthorityBatchError
+        ? error.approvedGroupCount
+        : 0;
+      await refreshAuthorityBatch();
+      setAuthorityRevision((value) => value + 1);
+      setBatchMessageKind("error");
+      setBatchMessage(
+        `${completed > 0 ? `${completed} exact group(s) were saved before the stop. ` : ""}`
+        + (error instanceof Error ? error.message : "Unable to approve the authority set."),
+      );
+    } finally {
+      setBatchBusy(false);
+    }
+  }
 
   async function ratify(candidateId: string) {
     const item = projection?.items.find((entry) => entry.candidate.candidate_id === candidateId);
@@ -120,6 +199,83 @@ export function PlanningGovernanceClient({ athleteId }: { athleteId?: string }) 
           are scientifically optimal.
         </span>
       </aside>
+
+      <section className="planning-queue-summary" aria-labelledby="authority-set-title">
+        <header>
+          <div>
+            <p className="eyebrow">Optional combined review</p>
+            <h2 id="authority-set-title">Approve the prepared authority set once</h2>
+          </div>
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={batchBusy}
+            onClick={() => void refreshAuthorityBatch()}
+          >
+            {batchBusy ? "Working…" : "Refresh set"}
+          </button>
+        </header>
+        <p>
+          The full cards below remain the review material. One confirmation can approve every
+          currently available exact group in dependency order. Each group is still validated and
+          saved separately; if a later step stops, completed groups remain visible and retry is safe.
+        </p>
+        {authorityBatch ? (
+          <>
+            <dl className="assessment-summary">
+              <div><dt>Ready groups</dt><dd>{authorityBatch.available_group_count}</dd></div>
+              <div><dt>Waiting on a prerequisite</dt><dd>{authorityBatch.blocked_group_count}</dd></div>
+              <div><dt>Conflicts</dt><dd>{authorityBatch.conflict_group_count}</dd></div>
+              <div><dt>Already approved</dt><dd>{authorityBatch.ratified_group_count}</dd></div>
+            </dl>
+            {authorityBatch.available_group_count > 0 ? (
+              <div className="assessment-candidate-approval">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={batchAttestation}
+                    onChange={(event) => setBatchAttestation(event.target.checked)}
+                  />
+                  <span>
+                    I reviewed all currently available exact authority cards below, including
+                    their engineering choices, evidence boundaries, and unresolved limitations. I
+                    approve those exact releases for the owner-only alpha.
+                  </span>
+                </label>
+                <button
+                  type="button"
+                  className="primary-button"
+                  disabled={
+                    !batchAttestation
+                    || batchBusy
+                    || authorityBatch.conflict_group_count > 0
+                  }
+                  onClick={() => void ratifyAuthorityBatch()}
+                >
+                  {batchBusy ? "Approving exact groups…" : "Approve prepared authority set"}
+                </button>
+              </div>
+            ) : (
+              <p className="form-help">No new authority group is currently ready for approval.</p>
+            )}
+            {authorityBatch.conflict_group_count > 0 ? (
+              <p className="form-error" role="alert">
+                Batch approval is disabled until the conflicting immutable record is resolved.
+              </p>
+            ) : null}
+          </>
+        ) : (
+          <p className="planning-queue-empty">Loading the prepared authority set…</p>
+        )}
+        {batchMessage ? (
+          <p
+            className={batchMessageKind === "success" ? "form-success" : "form-error"}
+            role="status"
+          >
+            {batchMessage}
+          </p>
+        ) : null}
+      </section>
 
       <section className="planning-queue-summary" aria-labelledby="candidate-title">
         <header>
@@ -249,9 +405,9 @@ export function PlanningGovernanceClient({ athleteId }: { athleteId?: string }) 
           ) : null}
         </div>
       ) : null}
-      <CompetencyFloorGovernanceClient />
-      <ResourceGovernanceClient />
-      <TrainingConstructionGovernanceClient />
+      <CompetencyFloorGovernanceClient key={`floor-authorities-${authorityRevision}`} />
+      <ResourceGovernanceClient key={`resource-authorities-${authorityRevision}`} />
+      <TrainingConstructionGovernanceClient key={`construction-authorities-${authorityRevision}`} />
     </main>
   );
 }
