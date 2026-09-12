@@ -238,12 +238,16 @@ function SessionCard({
 export function CurrentWeekDashboard({
   initialAthleteId,
   initialAsOf,
+  authenticated = true,
+  signInHref = "/auth/login",
 }: {
   initialAthleteId?: string;
   initialAsOf?: string;
+  authenticated?: boolean;
+  signInHref?: string;
 }) {
   const configuredInitialAthleteId = (initialAthleteId ?? configuredAthleteId).trim();
-  const validInitialAthleteId = isUuid(configuredInitialAthleteId)
+  const validInitialAthleteId = authenticated && isUuid(configuredInitialAthleteId)
     ? configuredInitialAthleteId
     : "";
   const [athleteInput, setAthleteInput] = useState(configuredInitialAthleteId);
@@ -255,8 +259,8 @@ export function CurrentWeekDashboard({
   const [state, setState] = useState<"setup" | "loading" | "ready" | "error">("setup");
   const [message, setMessage] = useState("");
   const [ownedAthletes, setOwnedAthletes] = useState<OwnedAthleteSummary[]>([]);
-  const [directoryState, setDirectoryState] = useState<"loading" | "ready" | "error">(
-    validInitialAthleteId ? "ready" : "loading",
+  const [directoryState, setDirectoryState] = useState<"signed_out" | "loading" | "ready" | "error">(
+    authenticated ? (validInitialAthleteId ? "ready" : "loading") : "signed_out",
   );
   const [directoryMessage, setDirectoryMessage] = useState("");
   const [planningInputRevision, setPlanningInputRevision] = useState(0);
@@ -301,18 +305,18 @@ export function CurrentWeekDashboard({
   }, [asOf, load]);
 
   useEffect(() => {
-    if (validInitialAthleteId && !initialLoadStarted.current) {
+    if (authenticated && validInitialAthleteId && !initialLoadStarted.current) {
       initialLoadStarted.current = true;
       void load(validInitialAthleteId, asOf);
     }
-  }, [asOf, load, validInitialAthleteId]);
+  }, [asOf, authenticated, load, validInitialAthleteId]);
 
   useEffect(() => {
-    if (!directoryLoadStarted.current) {
+    if (authenticated && !directoryLoadStarted.current) {
       directoryLoadStarted.current = true;
       void recoverOwnedAthletes();
     }
-  }, [recoverOwnedAthletes]);
+  }, [authenticated, recoverOwnedAthletes]);
 
   function connectAthlete(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -349,12 +353,26 @@ export function CurrentWeekDashboard({
       <main className="setup-shell">
         <section className="setup-card" aria-labelledby="setup-title">
           <p className="eyebrow">Adaptive General Athleticism System</p>
-          <h1 id="setup-title">Your training week, with the why intact.</h1>
-          <p className="lede">
-            AGAS reconnects this signed-in account to its persisted athlete profile. A new account
-            can create a non-sensitive profile without producing an unsupported fitness score or
-            invented workout.
-          </p>
+          <h1 id="setup-title">
+            {directoryState === "signed_out"
+              ? "Sign in to open your training."
+              : "Your training week, with the why intact."}
+          </h1>
+          {directoryState === "signed_out" ? (
+            <section className="profile-directory-state">
+              <p>
+                Your athlete profile and training history stay attached to your secure account,
+                so they can follow you from computer to phone.
+              </p>
+              <a className="primary-button" href={signInHref}>Sign in securely</a>
+            </section>
+          ) : (
+            <p className="lede">
+              AGAS reconnects this signed-in account to its persisted athlete profile. A new
+              account can create a non-sensitive profile without producing an unsupported fitness
+              score or invented workout.
+            </p>
+          )}
           {directoryState === "loading" ? (
             <section className="profile-directory-state" aria-live="polite">
               <span className="loader" aria-hidden="true" />

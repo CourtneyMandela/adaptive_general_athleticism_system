@@ -910,6 +910,12 @@ allow-lists headers, rejects ambiguous or cross-origin state-changing requests, 
 FastAPI ownership or role authorization. Provider selection and provisioning, refresh, provider-
 wide logout, account recovery, and deployment remain separate from resource-server verification.
 
+The server-rendered home route resolves whether that encrypted session is currently active before
+the client dashboard starts. An unauthenticated hosted request renders one explicit sign-in state
+and does not attempt athlete-directory or current-week API calls. Valid athlete/date view context
+is preserved through the OIDC return path; malformed values are discarded. Expiry is therefore a
+normal authentication boundary, not misreported as missing athlete data or a recovery failure.
+
 Assessment protocol governance uses a distinct append-only `assessment_reviewer` assignment. The
 role-protected `GET /v1/operator/assessment-governance` projection evaluates definitions at an
 explicit instant and returns all protocol-review and capability-estimation-policy history visible
