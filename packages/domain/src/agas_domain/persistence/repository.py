@@ -1080,9 +1080,7 @@ class DomainRepository:
         ]
         self.session.add(record)
 
-    def add_competency_floor_authority_review(
-        self, review: CompetencyFloorAuthorityReview
-    ) -> None:
+    def add_competency_floor_authority_review(self, review: CompetencyFloorAuthorityReview) -> None:
         if self.get_competency_floor_authority(review.authority_id) is None:
             raise DomainIntegrityError("competency floor authority does not exist")
         current = self.get_current_competency_floor_authority_review(review.authority_id)
@@ -4291,9 +4289,7 @@ class DomainRepository:
         )
         return self.get_block_review(review_id) if review_id is not None else None
 
-    def get_competency_floor_authority(
-        self, authority_id: UUID
-    ) -> CompetencyFloorAuthority | None:
+    def get_competency_floor_authority(self, authority_id: UUID) -> CompetencyFloorAuthority | None:
         record = self.session.get(CompetencyFloorAuthorityRecord, authority_id)
         if record is None:
             return None

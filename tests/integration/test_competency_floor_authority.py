@@ -1,6 +1,7 @@
 import hashlib
 import json
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import UUID
 
 import pytest
@@ -31,7 +32,7 @@ FLOOR_REVIEW_ID = UUID("98700000-0000-4000-8000-000000000004")
 
 
 def _authority(*, content_digest: str | None = None) -> CompetencyFloorAuthority:
-    values = {
+    values: dict[str, Any] = {
         "id": AUTHORITY_ID,
         "schema_version": "1.0.0",
         "created_at": NOW,
@@ -50,9 +51,7 @@ def _authority(*, content_digest: str | None = None) -> CompetencyFloorAuthority
         "supporting_evidence_claim_ids": (),
         "authority_version": "owner-alpha-loaded-carry-distance@1.0.0",
     }
-    draft = CompetencyFloorAuthority.model_construct(
-        **values, content_digest=f"sha256:{'0' * 64}"
-    )
+    draft = CompetencyFloorAuthority.model_construct(**values, content_digest=f"sha256:{'0' * 64}")
     canonical = json.dumps(
         draft.model_dump(mode="json", exclude={"content_digest"}),
         sort_keys=True,
@@ -148,8 +147,7 @@ def test_professional_judgment_floor_round_trip_preserves_distinct_authority(
 
     assert repository.get_competency_floor_authority(AUTHORITY_ID) == authority
     assert (
-        repository.get_current_competency_floor_authority_review(AUTHORITY_ID)
-        == authority_review
+        repository.get_current_competency_floor_authority_review(AUTHORITY_ID) == authority_review
     )
     assert repository.get_competency_floor(FLOOR_ID) == floor
     assert repository.get_competency_floor_review(FLOOR_REVIEW_ID) == floor_review
@@ -181,6 +179,4 @@ def test_authority_history_is_append_only(session: Session) -> None:
 
 def test_floor_without_any_governing_basis_is_invalid() -> None:
     with pytest.raises(ValidationError, match="requires evidence or a judgment authority"):
-        CompetencyFloor.model_validate(
-            _floor().model_dump() | {"judgment_authority_ids": ()}
-        )
+        CompetencyFloor.model_validate(_floor().model_dump() | {"judgment_authority_ids": ()})

@@ -863,9 +863,7 @@ class CompetencyFloorAuthorityReviewRecord(VersionedRecordMixin, Base):
         UniqueConstraint(
             "authority_id", "sequence_number", name="uq_floor_authority_review_sequence"
         ),
-        UniqueConstraint(
-            "supersedes_review_id", name="uq_floor_authority_review_superseded_once"
-        ),
+        UniqueConstraint("supersedes_review_id", name="uq_floor_authority_review_superseded_once"),
     )
 
     authority_id: Mapped[UUID] = mapped_column(
@@ -998,9 +996,7 @@ class CompetencyFloorReviewRecord(VersionedRecordMixin, Base):
         lazy="selectin",
         order_by="CompetencyFloorReviewEvidenceClaimRecord.position",
     )
-    judgment_authority_links: Mapped[
-        list[CompetencyFloorReviewAuthorityLinkRecord]
-    ] = relationship(
+    judgment_authority_links: Mapped[list[CompetencyFloorReviewAuthorityLinkRecord]] = relationship(
         cascade="save-update, merge",
         lazy="selectin",
         order_by="CompetencyFloorReviewAuthorityLinkRecord.position",

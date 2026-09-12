@@ -897,9 +897,7 @@ class CompetencyFloorAuthority(VersionedRecord):
 
     @model_validator(mode="after")
     def validate_authority(self) -> CompetencyFloorAuthority:
-        if len(set(self.supporting_evidence_claim_ids)) != len(
-            self.supporting_evidence_claim_ids
-        ):
+        if len(set(self.supporting_evidence_claim_ids)) != len(self.supporting_evidence_claim_ids):
             raise ValueError("supporting_evidence_claim_ids must not contain duplicates")
         canonical = json.dumps(
             self.model_dump(mode="json", exclude={"content_digest"}),

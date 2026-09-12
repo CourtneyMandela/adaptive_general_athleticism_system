@@ -58,9 +58,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(
             ["authority_id"], ["competency_floor_authorities.id"], ondelete="RESTRICT"
         ),
-        sa.ForeignKeyConstraint(
-            ["evidence_claim_id"], ["evidence_claims.id"], ondelete="RESTRICT"
-        ),
+        sa.ForeignKeyConstraint(["evidence_claim_id"], ["evidence_claims.id"], ondelete="RESTRICT"),
         sa.PrimaryKeyConstraint("authority_id", "evidence_claim_id"),
         sa.UniqueConstraint("authority_id", "position", name="uq_floor_authority_evidence_order"),
     )
@@ -118,9 +116,7 @@ def upgrade() -> None:
             ["authority_id"], ["competency_floor_authorities.id"], ondelete="RESTRICT"
         ),
         sa.PrimaryKeyConstraint("competency_floor_id", "authority_id"),
-        sa.UniqueConstraint(
-            "competency_floor_id", "position", name="uq_floor_authority_order"
-        ),
+        sa.UniqueConstraint("competency_floor_id", "position", name="uq_floor_authority_order"),
     )
     op.create_table(
         "competency_floor_review_authority_links",
