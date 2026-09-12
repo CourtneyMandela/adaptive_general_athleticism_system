@@ -11,6 +11,10 @@ import {
   type FirstSessionStepState,
 } from "@/lib/first-session-path";
 import { fetchPlanningStatus } from "@/lib/planning-status";
+import { fetchPlanningGovernanceCandidates } from "@/lib/planning-governance";
+import { fetchCompetencyFloorCandidates } from "@/lib/competency-floor-governance";
+import { fetchResourceGovernanceCandidates } from "@/lib/resource-governance";
+import { fetchTrainingConstructionCandidates } from "@/lib/training-construction-governance";
 
 const stateLabels: Record<FirstSessionStepState, string> = {
   complete: "Done",
@@ -33,32 +37,61 @@ export function FirstSessionPath({
 
   useEffect(() => {
     let active = true;
-    void Promise.allSettled([
-      fetchAssessmentWorkflow(apiBaseUrl, athleteId),
-      fetchPlanningStatus(apiBaseUrl, athleteId),
-      fetchAssessmentGovernanceCandidates(apiBaseUrl),
-    ])
-      .then(([assessmentResult, planningResult, candidateResult]) => {
-        if (assessmentResult.status === "rejected") throw assessmentResult.reason;
-        if (planningResult.status === "rejected") throw planningResult.reason;
-        const assessmentReview = candidateResult.status === "fulfilled"
-          ? {
-              available_candidate_count: candidateResult.value.items.filter(
-                (item) => item.status === "available",
-              ).length,
-              conflict_candidate_count: candidateResult.value.items.filter(
-                (item) => item.status === "conflict",
-              ).length,
-            }
-          : undefined;
+    async function loadPath() {
+      const [assessment, planning] = await Promise.all([
+        fetchAssessmentWorkflow(apiBaseUrl, athleteId),
+        fetchPlanningStatus(apiBaseUrl, athleteId),
+      ]);
+      const assessmentCandidateResult = assessment.approved_self_administered_protocol_count === 0
+        ? await Promise.allSettled([fetchAssessmentGovernanceCandidates(apiBaseUrl)])
+        : [];
+      const assessmentCandidates = assessmentCandidateResult[0];
+      const assessmentReview = assessmentCandidates?.status === "fulfilled"
+        ? {
+            available_candidate_count: assessmentCandidates.value.items.filter(
+              (item) => item.status === "available",
+            ).length,
+            conflict_candidate_count: assessmentCandidates.value.items.filter(
+              (item) => item.status === "conflict",
+            ).length,
+          }
+        : undefined;
+
+      let planningReview;
+      if (
+        planning.current_capability_estimate_count > 0
+        && planning.status === "planning_authorities_required"
+      ) {
+        const candidateResults = await Promise.allSettled([
+          fetchPlanningGovernanceCandidates(apiBaseUrl),
+          fetchCompetencyFloorCandidates(apiBaseUrl),
+          fetchResourceGovernanceCandidates(apiBaseUrl),
+          fetchTrainingConstructionCandidates(apiBaseUrl),
+        ]);
+        const statuses = candidateResults.flatMap((result) =>
+          result.status === "fulfilled" ? result.value.items.map((item) => item.status) : []
+        );
+        planningReview = {
+          available_candidate_count: statuses.filter((status) => status === "available").length,
+          blocked_candidate_count: statuses.filter((status) => status === "blocked").length,
+          conflict_candidate_count: statuses.filter((status) => status === "conflict").length,
+        };
+      }
+
+      return buildFirstSessionPath(
+        assessment,
+        planning,
+        hasScheduledWeek,
+        athleteId,
+        assessmentReview,
+        planningReview,
+      );
+    }
+
+    void loadPath()
+      .then((result) => {
         if (active) {
-          setProjection(buildFirstSessionPath(
-            assessmentResult.value,
-            planningResult.value,
-            hasScheduledWeek,
-            athleteId,
-            assessmentReview,
-          ));
+          setProjection(result);
           setMessage("");
         }
       })

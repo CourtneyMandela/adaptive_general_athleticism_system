@@ -32,6 +32,12 @@ export interface FirstSessionAssessmentReviewState {
   conflict_candidate_count: number;
 }
 
+export interface FirstSessionPlanningReviewState {
+  available_candidate_count: number;
+  blocked_candidate_count: number;
+  conflict_candidate_count: number;
+}
+
 export interface FirstSessionStep {
   id: "profile" | "assessment" | "estimate" | "plan" | "session";
   title: string;
@@ -80,12 +86,15 @@ export function buildFirstSessionPath(
   hasScheduledWeek: boolean,
   athleteId?: string,
   assessmentReview?: FirstSessionAssessmentReviewState,
+  planningReview?: FirstSessionPlanningReviewState,
 ): FirstSessionPath {
   const assessmentContentReady = assessment.approved_self_administered_protocol_count > 0;
   const preparedAssessmentAvailable = (assessmentReview?.available_candidate_count ?? 0) > 0;
   const preparedAssessmentConflict = (assessmentReview?.conflict_candidate_count ?? 0) > 0;
   const eligibilityReady = assessment.eligibility?.outcome === "selection_allowed";
   const hasEstimate = planning.current_capability_estimate_count > 0;
+  const preparedPlanningAvailable = (planningReview?.available_candidate_count ?? 0) > 0;
+  const preparedPlanningConflict = (planningReview?.conflict_candidate_count ?? 0) > 0;
   const hasFirstPlan = planning.first_week_readiness?.first_week_plan !== null
     && planning.first_week_readiness?.first_week_plan !== undefined;
 
@@ -165,9 +174,15 @@ export function buildFirstSessionPath(
     : {
         id: "plan",
         title: "Governed first plan",
-        state: hasEstimate ? "system_action" : "waiting",
+        state: hasEstimate && preparedPlanningAvailable ? "your_action" : hasEstimate
+          ? "system_action"
+          : "waiting",
         detail: hasEstimate
-          ? "Planning authorities must turn the measured state into priorities, a block, and a feasible week."
+          ? preparedPlanningAvailable
+            ? "AGAS has prepared one or more exact planning-authority groups. Review their scope and limitations before athlete-specific planning begins."
+            : preparedPlanningConflict
+              ? "Prepared planning authority conflicts must be resolved before athlete-specific planning can begin."
+              : "Planning authorities must turn the measured state into priorities, a block, and a feasible week."
           : "Planning starts only after a current capability estimate exists.",
       };
 
@@ -186,7 +201,8 @@ export function buildFirstSessionPath(
         detail: "This appears automatically after a reviewed, feasible week is created.",
       };
 
-  const userAction = [assessmentStep, estimateStep].find((step) => step.state === "your_action");
+  const userAction = [assessmentStep, estimateStep, planStep]
+    .find((step) => step.state === "your_action");
   let nextAction: FirstSessionPath["next_action"] = null;
   if (hasScheduledWeek) {
     nextAction = {
@@ -203,16 +219,20 @@ export function buildFirstSessionPath(
             ? "Inspect the assessment conflict"
             : "Inspect assessment governance",
       };
-    } else if (userAction) {
+    } else if (userAction?.id === "assessment" || userAction?.id === "estimate") {
       nextAction = {
         href: "#assessment-title",
         label: "Continue the assessment step",
       };
-    } else if (planStep.state === "system_action") {
+    } else if (planStep.state === "your_action" || planStep.state === "system_action") {
       nextAction = planning.status === "planning_authorities_required"
         ? {
             href: athleteReviewHref("/review/planning-authorities", athleteId),
-            label: "Review the prepared planning authorities",
+            label: preparedPlanningAvailable
+              ? "Review the prepared planning authorities"
+              : preparedPlanningConflict
+                ? "Inspect the planning-authority conflict"
+                : "Inspect planning governance",
           }
         : {
             href: "/review/queue",

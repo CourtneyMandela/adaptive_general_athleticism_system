@@ -1223,6 +1223,14 @@ not block ordinary athlete status; it falls back to the conservative governance-
 component uses only candidate status counts, does not render candidate content, and never performs
 the ratification.
 
+The same presentation boundary applies after a current capability estimate exists. When planning
+readiness reports missing authorities, the path optionally reads the planning-strategy,
+competency-floor, resource-allocation, and training-construction candidate projections. Available
+candidates become an explicit owner review action; conflicts and absent candidates remain system
+work with accurate wording. The projections settle independently so one unavailable authority
+family cannot suppress a valid action from another. They are not queried before an estimate is
+current, and their status never substitutes for digest-bound ratification or creates athlete state.
+
 The prescription's exact versioned `progression_rule_reference` is now the action-assignment key.
 The current-week projection resolves it against persisted policies and exposes a policy identifier
 only when one unique policy can produce an automatically typed load or repetition revision without

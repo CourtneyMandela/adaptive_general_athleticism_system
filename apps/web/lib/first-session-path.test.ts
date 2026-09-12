@@ -176,8 +176,67 @@ describe("first-session path", () => {
 
     expect(result.next_action).toEqual({
       href: "/review/planning-authorities",
+      label: "Inspect planning governance",
+    });
+  });
+
+  it("makes prepared planning authorities the owner's next action", () => {
+    const athleteId = "0fe4fa6f-d3de-49f8-8d95-239854fb0ecb";
+    const result = buildFirstSessionPath(
+      assessment({
+        status: "reassessment_not_due",
+        approved_self_administered_protocol_count: 1,
+        eligibility: { outcome: "selection_allowed" },
+      }),
+      planning({
+        status: "planning_authorities_required",
+        current_capability_estimate_count: 1,
+      }),
+      false,
+      athleteId,
+      undefined,
+      {
+        available_candidate_count: 4,
+        blocked_candidate_count: 0,
+        conflict_candidate_count: 0,
+      },
+    );
+
+    expect(result.heading).toBe("You have one clear next step.");
+    expect(result.steps.find((step) => step.id === "plan")).toMatchObject({
+      state: "your_action",
+    });
+    expect(result.next_action).toEqual({
+      href: `/review/planning-authorities?athleteId=${athleteId}`,
       label: "Review the prepared planning authorities",
     });
+  });
+
+  it("keeps conflicting planning authorities as system work", () => {
+    const result = buildFirstSessionPath(
+      assessment({
+        status: "reassessment_not_due",
+        approved_self_administered_protocol_count: 1,
+        eligibility: { outcome: "selection_allowed" },
+      }),
+      planning({
+        status: "planning_authorities_required",
+        current_capability_estimate_count: 1,
+      }),
+      false,
+      undefined,
+      undefined,
+      {
+        available_candidate_count: 0,
+        blocked_candidate_count: 0,
+        conflict_candidate_count: 1,
+      },
+    );
+
+    expect(result.steps.find((step) => step.id === "plan")).toMatchObject({
+      state: "system_action",
+    });
+    expect(result.next_action?.label).toBe("Inspect the planning-authority conflict");
   });
 
   it("preserves athlete context through governed review handoffs", () => {
