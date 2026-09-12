@@ -376,6 +376,29 @@ class DomainRepository:
             rule_version=record.rule_version,
         )
 
+    def list_athlete_ownerships_for_account(self, account_id: UUID) -> tuple[AthleteOwnership, ...]:
+        records = self.session.scalars(
+            select(AthleteOwnershipRecord)
+            .where(AthleteOwnershipRecord.account_id == account_id)
+            .order_by(
+                AthleteOwnershipRecord.granted_at.desc(),
+                AthleteOwnershipRecord.athlete_id,
+            )
+        ).all()
+        return tuple(
+            AthleteOwnership(
+                id=record.id,
+                schema_version=record.schema_version,
+                created_at=record.created_at,
+                account_id=record.account_id,
+                athlete_id=record.athlete_id,
+                granted_at=record.granted_at,
+                grant_method=record.grant_method,
+                rule_version=record.rule_version,
+            )
+            for record in records
+        )
+
     @staticmethod
     def _account_from_record(record: AccountRecord) -> Account:
         return Account(

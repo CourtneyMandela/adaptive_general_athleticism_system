@@ -1018,6 +1018,13 @@ successful submission opens the authoritative current-week projection; the hones
 normally an empty week. The form does not collect sensitive health or injury data, derive capability
 estimates, assign safety policy, conduct assessment, or generate training.
 
+Before presenting onboarding, the PWA loads the authenticated account's read-only athlete
+directory. One owned profile is recovered automatically across devices; multiple profiles require
+an explicit choice using persisted creation time, goals, and environments. The app does not infer a
+preferred duplicate, merge history, or expose another account's records. A failed directory load
+does not fall through to profile creation, and raw UUID connection remains a development-only
+recovery surface.
+
 A separate `/review` route is the authenticated initial-planning console. Its primary owner-alpha
 workflow loads a server-prepared, content-addressed candidate for the exact chair-stand estimate,
 current age-applicable floor, deficit-only policy, and muscular-endurance adaptation. The candidate

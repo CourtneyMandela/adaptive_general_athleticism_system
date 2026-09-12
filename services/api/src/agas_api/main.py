@@ -83,6 +83,10 @@ from agas_api.athlete_demographics import (
     PersistedDateOfBirthReportService,
     project_athlete_demographics,
 )
+from agas_api.athlete_directory import (
+    OwnedAthleteDirectoryProjection,
+    project_owned_athlete_directory,
+)
 from agas_api.athletic_dashboard import (
     AthleticDashboardNotFoundError,
     AthleticDashboardProjection,
@@ -1739,6 +1743,18 @@ def create_athlete_onboarding(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
         ) from error
+
+
+@app.get(
+    "/v1/athletes",
+    tags=["identity"],
+    response_model=OwnedAthleteDirectoryProjection,
+)
+def get_owned_athlete_directory(
+    session: Annotated[Session, Depends(database_session_dependency)],
+    principal: Annotated[AuthenticatedPrincipal, Depends(authenticated_principal_dependency)],
+) -> OwnedAthleteDirectoryProjection:
+    return project_owned_athlete_directory(session, principal)
 
 
 @app.get(

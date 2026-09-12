@@ -3,6 +3,10 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import {
+  fetchOwnedAthleteDirectory,
+  type OwnedAthleteSummary,
+} from "@/lib/athlete-directory";
+import {
   fetchCurrentWeek,
   formatDose,
   isIsoDate,
@@ -15,6 +19,7 @@ import {
   type CurrentWeekProjection,
   type PlannedSessionProjection,
 } from "@/lib/current-week";
+import { browserAuthMode } from "@/lib/identity";
 import { OnboardingForm } from "./onboarding-form";
 import { AssessmentPanel } from "./assessment-panel";
 import { AthleteDataExportButton } from "./athlete-data-export-button";
@@ -47,6 +52,14 @@ function formatSessionTime(startsAt: string): string {
     hour: "numeric",
     minute: "2-digit",
   }).format(new Date(startsAt));
+}
+
+function formatProfileCreatedAt(createdAt: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  }).format(new Date(createdAt));
 }
 
 function SessionCard({
@@ -241,8 +254,14 @@ export function CurrentWeekDashboard({
   const [projection, setProjection] = useState<CurrentWeekProjection | null>(null);
   const [state, setState] = useState<"setup" | "loading" | "ready" | "error">("setup");
   const [message, setMessage] = useState("");
+  const [ownedAthletes, setOwnedAthletes] = useState<OwnedAthleteSummary[]>([]);
+  const [directoryState, setDirectoryState] = useState<"loading" | "ready" | "error">(
+    validInitialAthleteId ? "ready" : "loading",
+  );
+  const [directoryMessage, setDirectoryMessage] = useState("");
   const [planningInputRevision, setPlanningInputRevision] = useState(0);
   const initialLoadStarted = useRef(false);
+  const directoryLoadStarted = useRef(false);
 
   const load = useCallback(async (nextAthleteId: string, nextAsOf: string) => {
     setState("loading");
@@ -258,12 +277,42 @@ export function CurrentWeekDashboard({
     }
   }, []);
 
+  const recoverOwnedAthletes = useCallback(async () => {
+    setDirectoryState("loading");
+    setDirectoryMessage("");
+    try {
+      const directory = await fetchOwnedAthleteDirectory(apiBaseUrl);
+      setOwnedAthletes(directory.athletes);
+      setDirectoryState("ready");
+      if (directory.athletes.length === 1 && !initialLoadStarted.current) {
+        initialLoadStarted.current = true;
+        const recoveredAthleteId = directory.athletes[0].athlete_id;
+        setAthleteInput(recoveredAthleteId);
+        setAthleteId(recoveredAthleteId);
+        void load(recoveredAthleteId, asOf);
+      }
+    } catch (error) {
+      setOwnedAthletes([]);
+      setDirectoryState("error");
+      setDirectoryMessage(
+        error instanceof Error ? error.message : "Unable to recover your profiles.",
+      );
+    }
+  }, [asOf, load]);
+
   useEffect(() => {
     if (validInitialAthleteId && !initialLoadStarted.current) {
       initialLoadStarted.current = true;
       void load(validInitialAthleteId, asOf);
     }
   }, [asOf, load, validInitialAthleteId]);
+
+  useEffect(() => {
+    if (!directoryLoadStarted.current) {
+      directoryLoadStarted.current = true;
+      void recoverOwnedAthletes();
+    }
+  }, [recoverOwnedAthletes]);
 
   function connectAthlete(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -283,6 +332,13 @@ export function CurrentWeekDashboard({
     void load(createdAthleteId, asOf);
   }
 
+  function openOwnedAthlete(ownedAthlete: OwnedAthleteSummary) {
+    initialLoadStarted.current = true;
+    setAthleteInput(ownedAthlete.athlete_id);
+    setAthleteId(ownedAthlete.athlete_id);
+    void load(ownedAthlete.athlete_id, asOf);
+  }
+
   function selectDate(nextDate: string) {
     setAsOf(nextDate);
     void load(athleteId, nextDate);
@@ -295,30 +351,85 @@ export function CurrentWeekDashboard({
           <p className="eyebrow">Adaptive General Athleticism System</p>
           <h1 id="setup-title">Your training week, with the why intact.</h1>
           <p className="lede">
-            Create a non-sensitive athlete profile and record the places and equipment available to
-            you. AGAS keeps your report as provenance-bearing input; it will not turn it into an
-            unsupported fitness score or invented workout.
+            AGAS reconnects this signed-in account to its persisted athlete profile. A new account
+            can create a non-sensitive profile without producing an unsupported fitness score or
+            invented workout.
           </p>
-          <OnboardingForm apiBaseUrl={apiBaseUrl} onCreated={openCreatedAthlete} />
-          <details className="existing-profile">
-            <summary>Connect an existing development profile</summary>
-            <form onSubmit={connectAthlete} className="athlete-form">
-              <label htmlFor="athlete-id">Athlete ID</label>
-              <input
-                id="athlete-id"
-                name="athlete-id"
-                value={athleteInput}
-                onChange={(event) => setAthleteInput(event.target.value)}
-                placeholder="00000000-0000-4000-8000-000000000000"
-                autoComplete="off"
-              />
-              <p className="form-help">
-                This developer path requires an owned athlete ID. Any reviewed safety-policy
-                assignment is resolved from the backend rather than entered here.
-              </p>
-              <button type="submit">Open current week</button>
-            </form>
-          </details>
+          {directoryState === "loading" ? (
+            <section className="profile-directory-state" aria-live="polite">
+              <span className="loader" aria-hidden="true" />
+              <p>Finding your persisted profile…</p>
+            </section>
+          ) : null}
+          {directoryState === "error" ? (
+            <section className="profile-directory-state state-card--error" role="alert">
+              <h2>We couldn’t recover your profiles.</h2>
+              <p>{directoryMessage}</p>
+              <button type="button" onClick={() => void recoverOwnedAthletes()}>
+                Try again
+              </button>
+            </section>
+          ) : null}
+          {directoryState === "ready" && ownedAthletes.length > 0 ? (
+            <section className="profile-directory" aria-labelledby="profile-directory-title">
+              <div>
+                <p className="eyebrow">Persisted profiles</p>
+                <h2 id="profile-directory-title">
+                  {ownedAthletes.length === 1
+                    ? "We found your profile."
+                    : "Choose the profile to continue."}
+                </h2>
+                {ownedAthletes.length > 1 ? (
+                  <p className="form-help">
+                    More than one profile belongs to this account. Nothing has been merged or
+                    deleted; choose using the recorded date, goals, and environments.
+                  </p>
+                ) : null}
+              </div>
+              <div className="profile-options">
+                {ownedAthletes.map((athlete) => (
+                  <button
+                    type="button"
+                    className="profile-option"
+                    key={athlete.athlete_id}
+                    onClick={() => openOwnedAthlete(athlete)}
+                  >
+                    <strong>{athlete.display_name}</strong>
+                    <span>Created {formatProfileCreatedAt(athlete.profile_created_at)}</span>
+                    <span>{athlete.goals.join(" · ")}</span>
+                    <span>
+                      {athlete.environments.length > 0
+                        ? athlete.environments.map((environment) => environment.name).join(" · ")
+                        : "No environments recorded"}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          ) : null}
+          {directoryState === "ready" && ownedAthletes.length === 0 ? (
+            <OnboardingForm apiBaseUrl={apiBaseUrl} onCreated={openCreatedAthlete} />
+          ) : null}
+          {browserAuthMode === "development" ? (
+            <details className="existing-profile">
+              <summary>Connect an existing development profile</summary>
+              <form onSubmit={connectAthlete} className="athlete-form">
+                <label htmlFor="athlete-id">Athlete ID</label>
+                <input
+                  id="athlete-id"
+                  name="athlete-id"
+                  value={athleteInput}
+                  onChange={(event) => setAthleteInput(event.target.value)}
+                  placeholder="00000000-0000-4000-8000-000000000000"
+                  autoComplete="off"
+                />
+                <p className="form-help">
+                  This development-only recovery path requires an owned athlete ID.
+                </p>
+                <button type="submit">Open current week</button>
+              </form>
+            </details>
+          ) : null}
           <a className="reviewer-link" href="/review">
             Open the planning reviewer console →
           </a>
@@ -344,6 +455,7 @@ export function CurrentWeekDashboard({
               setAthleteId("");
               setProjection(null);
               setState("setup");
+              setMessage("");
             }}
           >
             Change athlete

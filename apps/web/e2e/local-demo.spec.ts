@@ -113,6 +113,127 @@ test("the bootstrap athlete deep link opens the PWA without UUID copy and paste"
   await expect(page.getByText("There is no persisted plan covering")).toBeVisible();
 });
 
+test("a signed-in account recovers one owned profile without device-local state", async ({
+  page,
+}) => {
+  await page.route("http://localhost:8000/v1/**", (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/v1/athletes") {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          projection_version: "account-athlete-directory@1.0.0",
+          athletes: [
+            {
+              athlete_id: athleteId,
+              display_name: "Recovered athlete",
+              profile_created_at: "2026-08-22T18:00:00Z",
+              goals: ["Build broad athletic capacity"],
+              environments: [
+                {
+                  environment_id: "d0000000-0000-4000-8000-000000000002",
+                  name: "Home",
+                },
+              ],
+              ownership_granted_at: "2026-08-22T18:00:00Z",
+              ownership_rule_version: "profile-environment-onboarding@1.0.0",
+            },
+          ],
+        }),
+      });
+    }
+    if (url.pathname.includes(`/athletes/${athleteId}/current-week`)) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          athlete_id: athleteId,
+          athlete_display_name: "Recovered athlete",
+          as_of: "2026-08-30",
+          safety_policy_assignment: null,
+          week: null,
+        }),
+      });
+    }
+    return route.fulfill({
+      status: 404,
+      contentType: "application/json",
+      body: JSON.stringify({ detail: "not needed by profile recovery smoke test" }),
+    });
+  });
+
+  await page.goto("/");
+
+  await expect(page.getByRole("heading", { name: "Recovered athlete" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Change athlete" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Create profile" })).toHaveCount(0);
+});
+
+test("multiple owned profiles require an explicit non-destructive choice", async ({ page }) => {
+  const newerId = "d0000000-0000-4000-8000-000000000003";
+  await page.route("http://localhost:8000/v1/**", (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/v1/athletes") {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          projection_version: "account-athlete-directory@1.0.0",
+          athletes: [
+            {
+              athlete_id: newerId,
+              display_name: "Courtney Szabo",
+              profile_created_at: "2026-09-12T10:00:00Z",
+              goals: ["Train consistently"],
+              environments: [],
+              ownership_granted_at: "2026-09-12T10:00:00Z",
+              ownership_rule_version: "profile-environment-onboarding@1.0.0",
+            },
+            {
+              athlete_id: athleteId,
+              display_name: "Courtney Szabo",
+              profile_created_at: "2026-08-22T18:00:00Z",
+              goals: ["Build broad athletic capacity"],
+              environments: [
+                {
+                  environment_id: "d0000000-0000-4000-8000-000000000002",
+                  name: "Home",
+                },
+              ],
+              ownership_granted_at: "2026-08-22T18:00:00Z",
+              ownership_rule_version: "profile-environment-onboarding@1.0.0",
+            },
+          ],
+        }),
+      });
+    }
+    if (url.pathname.includes(`/athletes/${newerId}/current-week`)) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          athlete_id: newerId,
+          athlete_display_name: "Courtney Szabo",
+          as_of: "2026-08-30",
+          safety_policy_assignment: null,
+          week: null,
+        }),
+      });
+    }
+    return route.fulfill({
+      status: 404,
+      contentType: "application/json",
+      body: JSON.stringify({ detail: "not needed by profile choice smoke test" }),
+    });
+  });
+
+  await page.goto("/");
+
+  await expect(page.getByRole("heading", { name: "Choose the profile to continue." }))
+    .toBeVisible();
+  await expect(page.getByText("Nothing has been merged or deleted")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Create profile" })).toHaveCount(0);
+  await page.getByRole("button", { name: /Train consistently/ }).click();
+  await expect(page.getByRole("heading", { name: "Courtney Szabo" })).toBeVisible();
+});
+
 test("the phone workflow turns a factual readiness report into a narrow decision", async ({
   page,
 }) => {
