@@ -38,7 +38,7 @@ describe("first-session path", () => {
     expect(result.message).toContain("There is no additional onboarding form");
     expect(result.next_action).toEqual({
       href: "/review/assessments",
-      label: "Review the prepared assessment authority",
+      label: "Inspect assessment governance",
     });
     expect(result.steps).toEqual(
       expect.arrayContaining([
@@ -49,6 +49,43 @@ describe("first-session path", () => {
         expect.objectContaining({ id: "session", state: "waiting" }),
       ]),
     );
+  });
+
+  it("makes a prepared assessment release the owner's explicit next action", () => {
+    const athleteId = "0fe4fa6f-d3de-49f8-8d95-239854fb0ecb";
+    const result = buildFirstSessionPath(
+      assessment(),
+      planning(),
+      false,
+      athleteId,
+      { available_candidate_count: 1, conflict_candidate_count: 0 },
+    );
+
+    expect(result.heading).toBe("You have one clear next step.");
+    expect(result.message).toContain("prepared a complete assessment release");
+    expect(result.steps.find((step) => step.id === "assessment")).toMatchObject({
+      state: "your_action",
+    });
+    expect(result.next_action).toEqual({
+      href: `/review/assessments?athleteId=${athleteId}`,
+      label: "Review the prepared assessment",
+    });
+  });
+
+  it("does not present a conflicting prepared release as approvable", () => {
+    const result = buildFirstSessionPath(
+      assessment(),
+      planning(),
+      false,
+      undefined,
+      { available_candidate_count: 0, conflict_candidate_count: 1 },
+    );
+
+    expect(result.steps.find((step) => step.id === "assessment")).toMatchObject({
+      state: "system_action",
+    });
+    expect(result.heading).toContain("AGAS still owes");
+    expect(result.next_action?.label).toBe("Inspect the assessment conflict");
   });
 
   it("identifies starting a governed assessment as the athlete's next action", () => {

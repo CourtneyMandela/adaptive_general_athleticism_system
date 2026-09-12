@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { fetchAssessmentWorkflow } from "@/lib/assessment";
+import { fetchAssessmentGovernanceCandidates } from "@/lib/assessment-governance";
 import {
   buildFirstSessionPath,
   type FirstSessionPath as FirstSessionPathProjection,
@@ -32,13 +33,32 @@ export function FirstSessionPath({
 
   useEffect(() => {
     let active = true;
-    void Promise.all([
+    void Promise.allSettled([
       fetchAssessmentWorkflow(apiBaseUrl, athleteId),
       fetchPlanningStatus(apiBaseUrl, athleteId),
+      fetchAssessmentGovernanceCandidates(apiBaseUrl),
     ])
-      .then(([assessment, planning]) => {
+      .then(([assessmentResult, planningResult, candidateResult]) => {
+        if (assessmentResult.status === "rejected") throw assessmentResult.reason;
+        if (planningResult.status === "rejected") throw planningResult.reason;
+        const assessmentReview = candidateResult.status === "fulfilled"
+          ? {
+              available_candidate_count: candidateResult.value.items.filter(
+                (item) => item.status === "available",
+              ).length,
+              conflict_candidate_count: candidateResult.value.items.filter(
+                (item) => item.status === "conflict",
+              ).length,
+            }
+          : undefined;
         if (active) {
-          setProjection(buildFirstSessionPath(assessment, planning, hasScheduledWeek, athleteId));
+          setProjection(buildFirstSessionPath(
+            assessmentResult.value,
+            planningResult.value,
+            hasScheduledWeek,
+            athleteId,
+            assessmentReview,
+          ));
           setMessage("");
         }
       })
@@ -71,6 +91,12 @@ export function FirstSessionPath({
       {!projection && !message ? <p className="form-help">Loading your onboarding progress…</p> : null}
       {message ? <p className="form-error" role="alert">{message}</p> : null}
 
+      {projection?.next_action ? (
+        <Link className="first-session-path__action" href={projection.next_action.href}>
+          {projection.next_action.label} →
+        </Link>
+      ) : null}
+
       {projection ? (
         <ol className="first-session-steps">
           {projection.steps.map((step, index) => (
@@ -86,12 +112,6 @@ export function FirstSessionPath({
             </li>
           ))}
         </ol>
-      ) : null}
-
-      {projection?.next_action ? (
-        <Link className="first-session-path__action" href={projection.next_action.href}>
-          {projection.next_action.label} →
-        </Link>
       ) : null}
     </section>
   );

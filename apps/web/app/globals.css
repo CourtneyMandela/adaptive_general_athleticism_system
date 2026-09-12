@@ -715,7 +715,15 @@ button { cursor: pointer; }
 .first-session-step--system_action { border-color: #d6aaa5; background: #fff8f6; }
 .first-session-step--system_action .first-session-step__marker,
 .first-session-step--system_action .first-session-step__state { background: var(--danger-soft); color: var(--danger); }
-.first-session-path__action { justify-self: start; color: var(--accent); font-weight: 850; }
+.first-session-path__action {
+  justify-self: start;
+  padding: .85rem 1.05rem;
+  border-radius: .7rem;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 850;
+  text-decoration: none;
+}
 
 .weekly-review {
   display: grid;

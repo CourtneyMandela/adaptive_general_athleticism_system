@@ -113,6 +113,119 @@ test("the bootstrap athlete deep link opens the PWA without UUID copy and paste"
   await expect(page.getByText("There is no persisted plan covering")).toBeVisible();
 });
 
+test("the first-session path surfaces a prepared assessment as the next owner action", async ({
+  page,
+}) => {
+  await page.route("http://localhost:8000/v1/**", (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/v1/operator/assessment-governance/candidates") {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          projected_at: "2026-09-12T16:00:00Z",
+          projection_version: "assessment-governance-candidates@1.0.0",
+          items: [{
+            status: "available",
+            ratified_at: null,
+            issues: [],
+            candidate: {
+              candidate_version: "assessment-governance-candidate@1.0.0",
+              candidate_id: "94000000-0000-4000-8000-000000000001",
+              slug: "thirty_second_chair_stand",
+              release_label: "30-second chair stand owner-alpha release",
+              prepared_at: "2026-09-08T10:45:00Z",
+              content_digest: `sha256:${"a".repeat(64)}`,
+              summary: "A narrow, repeatable first measurement.",
+              measures: "Assessment-specific sit-to-stand performance.",
+              does_not_measure: ["A universal athleticism score."],
+              capability_domain: "muscular_endurance",
+              estimate_scope: "assessment_specific:thirty_second_chair_stand_repetitions",
+              setup_requirements: ["A stable armless chair."],
+              protocol_steps: ["Complete controlled stands for 30 seconds."],
+              stop_conditions: ["Stop for pain or dizziness."],
+              operational_choices: ["A single result remains low confidence."],
+              unresolved_limitations: ["Population transfer is uncertain."],
+              evidence: [],
+            },
+          }],
+        }),
+      });
+    }
+    if (url.pathname === `/v1/athletes/${athleteId}/assessment-workflow`) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          athlete_id: athleteId,
+          athlete_display_name: "Synthetic four-day traveler",
+          as_of: "2026-09-12T16:00:00Z",
+          status: "protocol_catalog_empty",
+          message: "No approved protocol is available.",
+          can_start_run: false,
+          can_record_results: false,
+          approved_self_administered_protocol_count: 0,
+          due_protocol_count: 0,
+          next_reassessment_at: null,
+          reassessment_rule_version: "assessment-reassessment-schedule@1.0.0",
+          eligibility: null,
+          environments: [],
+          latest_run: null,
+        }),
+      });
+    }
+    if (url.pathname === `/v1/athletes/${athleteId}/planning-status`) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          athlete_id: athleteId,
+          athlete_display_name: "Synthetic four-day traveler",
+          as_of: "2026-09-12T16:00:00Z",
+          status: "capability_estimate_required",
+          message: "A current capability estimate is required.",
+          capability_estimate_count: 0,
+          current_capability_estimate_count: 0,
+          stale_capability_estimate_count: 0,
+          athlete_age_years: null,
+          age_limited_floor_issue_count: 0,
+          approved_priority_policy_count: 0,
+          approved_compatible_competency_floor_count: 0,
+          covered_current_capability_estimate_count: 0,
+          uncovered_current_capability_estimate_count: 0,
+          requirements: [],
+          initial_strategy: null,
+          first_block_readiness: null,
+          first_week_readiness: null,
+          projection_version: "planning-status@1.0.0",
+        }),
+      });
+    }
+    if (url.pathname === `/v1/athletes/${athleteId}/current-week`) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          athlete_id: athleteId,
+          athlete_display_name: "Synthetic four-day traveler",
+          as_of: "2026-09-12",
+          safety_policy_assignment: null,
+          week: null,
+        }),
+      });
+    }
+    return route.fulfill({
+      status: 404,
+      contentType: "application/json",
+      body: JSON.stringify({ detail: "not needed by prepared-assessment browser test" }),
+    });
+  });
+
+  await page.goto(`/?athleteId=${athleteId}`);
+
+  await expect(page.getByRole("heading", { name: "You have one clear next step." })).toBeVisible();
+  await expect(page.getByText("AGAS has prepared a complete assessment release.").first())
+    .toBeVisible();
+  await expect(page.getByRole("link", { name: "Review the prepared assessment →" }))
+    .toHaveAttribute("href", `/review/assessments?athleteId=${athleteId}`);
+});
+
 test("a signed-in account recovers one owned profile without device-local state", async ({
   page,
 }) => {

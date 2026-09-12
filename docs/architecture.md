@@ -1215,6 +1215,14 @@ an explicit approval. This query value is neither authorization nor domain state
 still enforces account ownership and reviewer-role authority, and malformed identifiers are
 dropped instead of becoming redirect targets.
 
+For an owner who also holds active assessment-review permission, the first-session path optionally
+reads the role-protected prepared-candidate projection. An available immutable candidate changes
+the athlete-page wording from unspecified system work to one explicit approval action and places
+that action before the progress list. Failure or denial of the optional operator projection does
+not block ordinary athlete status; it falls back to the conservative governance-needed state. The
+component uses only candidate status counts, does not render candidate content, and never performs
+the ratification.
+
 The prescription's exact versioned `progression_rule_reference` is now the action-assignment key.
 The current-week projection resolves it against persisted policies and exposes a policy identifier
 only when one unique policy can produce an automatically typed load or repetition revision without

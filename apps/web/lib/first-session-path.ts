@@ -27,6 +27,11 @@ export interface FirstSessionPlanningState {
   } | null;
 }
 
+export interface FirstSessionAssessmentReviewState {
+  available_candidate_count: number;
+  conflict_candidate_count: number;
+}
+
 export interface FirstSessionStep {
   id: "profile" | "assessment" | "estimate" | "plan" | "session";
   title: string;
@@ -74,8 +79,11 @@ export function buildFirstSessionPath(
   planning: FirstSessionPlanningState,
   hasScheduledWeek: boolean,
   athleteId?: string,
+  assessmentReview?: FirstSessionAssessmentReviewState,
 ): FirstSessionPath {
   const assessmentContentReady = assessment.approved_self_administered_protocol_count > 0;
+  const preparedAssessmentAvailable = (assessmentReview?.available_candidate_count ?? 0) > 0;
+  const preparedAssessmentConflict = (assessmentReview?.conflict_candidate_count ?? 0) > 0;
   const eligibilityReady = assessment.eligibility?.outcome === "selection_allowed";
   const hasEstimate = planning.current_capability_estimate_count > 0;
   const hasFirstPlan = planning.first_week_readiness?.first_week_plan !== null
@@ -86,9 +94,12 @@ export function buildFirstSessionPath(
     assessmentStep = {
       id: "assessment",
       title: "Reviewed assessment",
-      state: "system_action",
-      detail:
-        "AGAS still needs a scientifically reviewed self-administered assessment protocol. This is not another form you missed.",
+      state: preparedAssessmentAvailable ? "your_action" : "system_action",
+      detail: preparedAssessmentAvailable
+        ? "AGAS has prepared a complete assessment release. Review its exact scope, evidence, and limitations, then decide whether to approve it for the owner-only alpha."
+        : preparedAssessmentConflict
+          ? "A prepared assessment conflicts with existing immutable governance history. AGAS must resolve that conflict before asking you to assess."
+          : "AGAS still needs a scientifically reviewed self-administered assessment protocol. This is not another form you missed.",
     };
   } else if (!eligibilityReady) {
     assessmentStep = {
@@ -186,7 +197,11 @@ export function buildFirstSessionPath(
     if (!assessmentContentReady) {
       nextAction = {
         href: athleteReviewHref("/review/assessments", athleteId),
-        label: "Review the prepared assessment authority",
+        label: preparedAssessmentAvailable
+          ? "Review the prepared assessment"
+          : preparedAssessmentConflict
+            ? "Inspect the assessment conflict"
+            : "Inspect assessment governance",
       };
     } else if (userAction) {
       nextAction = {
