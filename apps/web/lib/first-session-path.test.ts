@@ -105,6 +105,38 @@ describe("first-session path", () => {
     expect(result.next_action?.href).toBe("#assessment-title");
   });
 
+  it("routes a missing assessment-equipment deferral to the environment report", () => {
+    const result = buildFirstSessionPath(
+      assessment({
+        status: "selection_deferred",
+        can_start_run: true,
+        approved_self_administered_protocol_count: 1,
+        eligibility: { outcome: "selection_allowed" },
+        latest_run: {
+          decisions: [
+            {
+              decision: "deferred",
+              reason_codes: ["missing_equipment"],
+              result_status: "not_selected",
+              result: null,
+            },
+          ],
+        },
+      }),
+      planning(),
+      false,
+    );
+
+    expect(result.steps.find((step) => step.id === "assessment")).toMatchObject({
+      state: "your_action",
+      detail: expect.stringContaining("equipment that is not currently reported available"),
+    });
+    expect(result.next_action).toEqual({
+      href: "#environment-title",
+      label: "Update the assessment environment",
+    });
+  });
+
   it("makes current readiness the athlete action once a protocol exists", () => {
     const result = buildFirstSessionPath(
       assessment({ approved_self_administered_protocol_count: 1 }),

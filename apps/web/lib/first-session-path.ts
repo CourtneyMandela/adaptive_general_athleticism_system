@@ -10,6 +10,7 @@ export interface FirstSessionAssessmentState {
   latest_run: {
     decisions: Array<{
       decision: string;
+      reason_codes?: string[];
       result_status: string;
       result: {
         capability_estimate_status: string;
@@ -80,6 +81,15 @@ function estimateNeedsAthleteAction(assessment: FirstSessionAssessmentState): bo
   );
 }
 
+function assessmentNeedsEnvironmentAction(assessment: FirstSessionAssessmentState): boolean {
+  return assessment.status === "environment_required"
+    || Boolean(
+      assessment.latest_run?.decisions.some(
+        (decision) => decision.reason_codes?.includes("missing_equipment"),
+      ),
+    );
+}
+
 export function buildFirstSessionPath(
   assessment: FirstSessionAssessmentState,
   planning: FirstSessionPlanningState,
@@ -92,6 +102,7 @@ export function buildFirstSessionPath(
   const preparedAssessmentAvailable = (assessmentReview?.available_candidate_count ?? 0) > 0;
   const preparedAssessmentConflict = (assessmentReview?.conflict_candidate_count ?? 0) > 0;
   const eligibilityReady = assessment.eligibility?.outcome === "selection_allowed";
+  const needsEnvironmentAction = assessmentNeedsEnvironmentAction(assessment);
   const hasEstimate = planning.current_capability_estimate_count > 0;
   const preparedPlanningAvailable = (planningReview?.available_candidate_count ?? 0) > 0;
   const preparedPlanningConflict = (planningReview?.conflict_candidate_count ?? 0) > 0;
@@ -117,6 +128,16 @@ export function buildFirstSessionPath(
       state: "your_action",
       detail:
         "Complete the factual current-readiness check below. AGAS—not the form—derives the narrow, time-bounded decision.",
+    };
+  } else if (needsEnvironmentAction) {
+    assessmentStep = {
+      id: "assessment",
+      title: "Reviewed assessment",
+      state: "your_action",
+      detail:
+        assessment.status === "environment_required"
+          ? "The assessment needs a persisted training environment. Complete the environment information below before selection."
+          : "The selected assessment needs equipment that is not currently reported available. Update the environment below, then rerun selection.",
     };
   } else if (assessmentNeedsAthleteAction(assessment)) {
     assessmentStep = {
@@ -218,6 +239,11 @@ export function buildFirstSessionPath(
           : preparedAssessmentConflict
             ? "Inspect the assessment conflict"
             : "Inspect assessment governance",
+      };
+    } else if (userAction?.id === "assessment" && needsEnvironmentAction) {
+      nextAction = {
+        href: "#environment-title",
+        label: "Update the assessment environment",
       };
     } else if (userAction?.id === "assessment" || userAction?.id === "estimate") {
       nextAction = {

@@ -379,9 +379,9 @@ test("the phone workflow turns a factual readiness report into a narrow decision
           athlete_id: athleteId,
           athlete_display_name: "Synthetic four-day traveler",
           as_of: "2026-09-08T16:00:00Z",
-          status: readinessAllowed ? "environment_required" : "eligibility_required",
+          status: readinessAllowed ? "ready_to_start" : "eligibility_required",
           message: readinessAllowed
-            ? "At least one persisted environment is required for assessment selection."
+            ? "Governed assessment selection is ready to start."
             : "A current readiness decision is required before assessment selection.",
           can_start_run: false,
           can_record_results: false,
@@ -399,8 +399,36 @@ test("the phone workflow turns a factual readiness report into a narrow decision
                 rule_version: "assessment-readiness-screen@1.0.0",
               }
             : null,
-          environments: [],
+          environments: readinessAllowed
+            ? [{ environment_id: "d1000000-0000-4000-8000-000000000003", name: "Home" }]
+            : [],
           latest_run: null,
+        }),
+      });
+    }
+    if (request.url().includes(`/athletes/${athleteId}/planning-status`)) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          athlete_id: athleteId,
+          athlete_display_name: "Synthetic four-day traveler",
+          as_of: "2026-09-08T16:00:00Z",
+          status: "capability_estimate_required",
+          message: "A current capability estimate is required.",
+          capability_estimate_count: 0,
+          current_capability_estimate_count: 0,
+          stale_capability_estimate_count: 0,
+          athlete_age_years: null,
+          age_limited_floor_issue_count: 0,
+          approved_priority_policy_count: 0,
+          approved_compatible_competency_floor_count: 0,
+          covered_current_capability_estimate_count: 0,
+          uncovered_current_capability_estimate_count: 0,
+          requirements: [],
+          initial_strategy: null,
+          first_block_readiness: null,
+          first_week_readiness: null,
+          projection_version: "planning-status@1.0.0",
         }),
       });
     }
@@ -437,6 +465,8 @@ test("the phone workflow turns a factual readiness report into a narrow decision
   await submit.click();
 
   await expect(page.getByText("Continue to governed low/moderate assessment selection.")).toBeVisible();
+  await expect(page.getByText("Open the Assessment section below and select the governed assessment set.").first())
+    .toBeVisible();
   expect(submittedBody).toMatchObject({
     adult_confirmed: true,
     concerning_signs_or_symptoms: "no",

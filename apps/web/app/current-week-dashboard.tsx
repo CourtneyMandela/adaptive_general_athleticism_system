@@ -263,7 +263,7 @@ export function CurrentWeekDashboard({
     authenticated ? (validInitialAthleteId ? "ready" : "loading") : "signed_out",
   );
   const [directoryMessage, setDirectoryMessage] = useState("");
-  const [planningInputRevision, setPlanningInputRevision] = useState(0);
+  const [domainRevision, setDomainRevision] = useState(0);
   const initialLoadStarted = useRef(false);
   const directoryLoadStarted = useRef(false);
 
@@ -303,6 +303,11 @@ export function CurrentWeekDashboard({
       );
     }
   }, [asOf, load]);
+
+  const refreshDomainViews = useCallback(async () => {
+    setDomainRevision((value) => value + 1);
+    await load(athleteId, asOf);
+  }, [asOf, athleteId, load]);
 
   useEffect(() => {
     if (authenticated && validInitialAthleteId && !initialLoadStarted.current) {
@@ -483,7 +488,7 @@ export function CurrentWeekDashboard({
 
       {state === "ready" && projection ? (
         <FirstSessionPath
-          key={`first-session-path-${planningInputRevision}`}
+          key={`first-session-path-${domainRevision}`}
           apiBaseUrl={apiBaseUrl}
           athleteId={athleteId}
           hasScheduledWeek={projection.week !== null}
@@ -493,13 +498,25 @@ export function CurrentWeekDashboard({
       <AthleteDemographicsPanel
         apiBaseUrl={apiBaseUrl}
         athleteId={athleteId}
-        onSaved={() => setPlanningInputRevision((value) => value + 1)}
+        onSaved={refreshDomainViews}
       />
-      <AssessmentPanel apiBaseUrl={apiBaseUrl} athleteId={athleteId} />
-      <AthleticDashboardPanel apiBaseUrl={apiBaseUrl} athleteId={athleteId} />
-      <EnvironmentPanel apiBaseUrl={apiBaseUrl} athleteId={athleteId} />
+      <AssessmentPanel
+        apiBaseUrl={apiBaseUrl}
+        athleteId={athleteId}
+        onChanged={refreshDomainViews}
+      />
+      <AthleticDashboardPanel
+        key={`athletic-dashboard-${domainRevision}`}
+        apiBaseUrl={apiBaseUrl}
+        athleteId={athleteId}
+      />
+      <EnvironmentPanel
+        apiBaseUrl={apiBaseUrl}
+        athleteId={athleteId}
+        onChanged={refreshDomainViews}
+      />
       <PlanningStatusPanel
-        key={`planning-status-${planningInputRevision}`}
+        key={`planning-status-${domainRevision}`}
         apiBaseUrl={apiBaseUrl}
         athleteId={athleteId}
       />

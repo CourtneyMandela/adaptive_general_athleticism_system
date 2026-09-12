@@ -1231,6 +1231,14 @@ work with accurate wording. The projections settle independently so one unavaila
 family cannot suppress a valid action from another. They are not queried before an estimate is
 current, and their status never substitutes for digest-bound ratification or creates athlete state.
 
+Athlete-authored readiness, assessment, demographic, and environment writes increment one local
+workflow revision after the writing panel has re-read its own projection. The dashboard then
+re-reads the current week and remounts the dependent first-session, capability, and planning
+projections. This is event-driven cache invalidation, not optimistic derivation or polling: each
+panel still renders server-authoritative state. A persisted assessment-selection
+`missing_equipment` reason routes the next action to the environment report; the browser does not
+decide that equipment is suitable.
+
 The prescription's exact versioned `progression_rule_reference` is now the action-assignment key.
 The current-week projection resolves it against persisted policies and exposes a policy identifier
 only when one unique policy can produce an automatically typed load or repetition revision without

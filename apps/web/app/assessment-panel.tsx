@@ -168,9 +168,11 @@ function AssessmentResultForm({
 export function AssessmentPanel({
   apiBaseUrl,
   athleteId,
+  onChanged,
 }: {
   apiBaseUrl: string;
   athleteId: string;
+  onChanged: () => Promise<void>;
 }) {
   const [workflow, setWorkflow] = useState<AssessmentWorkflowProjection | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "saving" | "error">("loading");
@@ -247,6 +249,7 @@ export function AssessmentPanel({
       });
       await submitAssessmentRun(apiBaseUrl, athleteId, command);
       await load();
+      await onChanged();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to start assessment selection.");
       setState("error");
@@ -275,6 +278,7 @@ export function AssessmentPanel({
       );
       setReadinessAction(result.next_action);
       await load();
+      await onChanged();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to save readiness.");
       setState("error");
@@ -287,6 +291,7 @@ export function AssessmentPanel({
     try {
       await submitAssessmentCapabilityEstimate(apiBaseUrl, athleteId, performanceId);
       await load();
+      await onChanged();
     } catch (error) {
       setMessage(
         error instanceof Error ? error.message : "Unable to create the capability estimate.",
@@ -508,7 +513,10 @@ export function AssessmentPanel({
                   athleteId={athleteId}
                   runId={workflow.latest_run!.run_id}
                   decision={item}
-                  onSaved={load}
+                  onSaved={async () => {
+                    await load();
+                    await onChanged();
+                  }}
                 />
               ) : null}
               <details>

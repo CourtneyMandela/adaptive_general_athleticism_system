@@ -27,9 +27,11 @@ function stateLabel(state: EquipmentState): string {
 export function EnvironmentPanel({
   apiBaseUrl,
   athleteId,
+  onChanged,
 }: {
   apiBaseUrl: string;
   athleteId: string;
+  onChanged: () => Promise<void>;
 }) {
   const [projection, setProjection] = useState<AthleteEnvironmentProjection | null>(null);
   const [environmentId, setEnvironmentId] = useState("");
@@ -114,6 +116,7 @@ export function EnvironmentPanel({
       setChanges({});
       setEffectiveUntil("");
       await reload();
+      await onChanged();
       setMessage("Equipment history recorded. Existing sessions were not silently rewritten.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to record equipment state.");
@@ -141,6 +144,7 @@ export function EnvironmentPanel({
       setFloorArea("");
       setFloorReason("");
       await reload();
+      await onChanged();
       setMessage("Usable floor-space history recorded. The original profile remains unchanged.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to record usable floor space.");
