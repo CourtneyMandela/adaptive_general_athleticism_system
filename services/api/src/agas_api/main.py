@@ -69,6 +69,10 @@ from agas_api.assessment_workflow import (
     AssessmentWorkflowProjection,
     get_assessment_workflow_projection,
 )
+from agas_api.athlete_data_export import (
+    AthleteDataExport,
+    AthleteDataExporter,
+)
 from agas_api.athlete_demographics import (
     AthleteDemographicsConflictError,
     AthleteDemographicsNotFoundError,
@@ -1408,6 +1412,20 @@ def get_athletic_dashboard(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
         ) from error
+
+
+@app.get(
+    "/v1/athletes/{athlete_id}/data-export",
+    tags=["athlete"],
+    response_model=AthleteDataExport,
+)
+def get_athlete_data_export(
+    athlete_id: UUID,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authorizer: Annotated[OwnershipAuthorizer, Depends(ownership_authorizer_dependency)],
+) -> AthleteDataExport:
+    authorizer.require_athlete(athlete_id)
+    return AthleteDataExporter(session).export(athlete_id)
 
 
 @app.get(

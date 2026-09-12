@@ -123,8 +123,11 @@ connection string, not the pooled hostname, and retain `sslmode=require`. The di
 single low-concurrency alpha secret used by both Alembic and SQLAlchemy. Store it only as Render's
 `AGAS_DATABASE_URL` secret.
 
-Neon's free storage and restore window are limited. Before irreplaceable training history
-accumulates, implement and test an owner export plus restore procedure.
+Neon's free storage and restore window are limited. The PWA now downloads a versioned, digest-bound
+owner archive without exposing the database credential or another athlete's records. Keep those
+files private. This is not yet disaster recovery: before irreplaceable training history
+accumulates, implement the validated import path and pass a clean-database restore drill, including
+shared-authority reference checks.
 
 ### 2. Create Auth0 Free identity
 
@@ -216,7 +219,7 @@ Expect the first authenticated data request after 15 idle minutes to take longer
 retry while Render and Neon wake.
 
 Confirm all four dashboards show their free/personal plan and no payment method. Use synthetic or
-low-sensitivity data until owner export/restore, deletion, retention, monitoring, and governed
+low-sensitivity data until validated restore, deletion, retention, monitoring, and governed
 scientific authorities are reviewed. The paid private topology in `deploy/render-paid.yaml` is a
 future upgrade option, not authorization to create paid resources.
 
@@ -228,7 +231,7 @@ production athlete data. Before production use, the project still needs:
 - a provisioned identity provider and a tested hosted login/logout flow;
 - a reviewed refresh/revocation and provider-wide logout policy, or acceptance of hourly re-login;
 - HTTPS domains and reviewed ingress configuration;
-- account recovery, consent, export, and deletion workflows;
+- account recovery, consent, validated restore, and deletion workflows;
 - secret rotation and least-privilege production administration;
 - database backup, restore, migration rollback, and retention procedures;
 - structured logs, metrics, alerting, and availability/error objectives;

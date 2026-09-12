@@ -17,6 +17,7 @@ import {
 } from "@/lib/current-week";
 import { OnboardingForm } from "./onboarding-form";
 import { AssessmentPanel } from "./assessment-panel";
+import { AthleteDataExportButton } from "./athlete-data-export-button";
 import { AthleticDashboardPanel } from "./athletic-dashboard-panel";
 import { AthleteDemographicsPanel } from "./athlete-demographics-panel";
 import { EnvironmentPanel } from "./environment-panel";
@@ -334,17 +335,20 @@ export function CurrentWeekDashboard({
           <p className="eyebrow">AGAS · Current week</p>
           <h1>{projection?.athlete_display_name ?? "Training week"}</h1>
         </div>
-        <button
-          type="button"
-          className="text-button"
-          onClick={() => {
-            setAthleteId("");
-            setProjection(null);
-            setState("setup");
-          }}
-        >
-          Change athlete
-        </button>
+        <div className="topbar-actions">
+          <AthleteDataExportButton apiBaseUrl={apiBaseUrl} athleteId={athleteId} />
+          <button
+            type="button"
+            className="text-button"
+            onClick={() => {
+              setAthleteId("");
+              setProjection(null);
+              setState("setup");
+            }}
+          >
+            Change athlete
+          </button>
+        </div>
       </header>
 
       {state === "ready" && projection ? (

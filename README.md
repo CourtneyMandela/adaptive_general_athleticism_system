@@ -156,6 +156,7 @@ POST /v1/athletes/{athlete_id}/assessment-runs
 POST /v1/athletes/{athlete_id}/assessment-runs/{run_id}/selections/{selection_id}/result
 POST /v1/athletes/{athlete_id}/assessment-performances/{performance_id}/capability-estimate
 GET  /v1/athletes/{athlete_id}/dashboard
+GET  /v1/athletes/{athlete_id}/data-export
 GET  /v1/athletes/{athlete_id}/demographics
 POST /v1/athletes/{athlete_id}/date-of-birth-reports
 GET  /v1/athletes/{athlete_id}/environments
@@ -232,6 +233,13 @@ python -m agas_api.identity_admin grant --athlete-id YOUR_ATHLETE_UUID
 ```
 
 There is deliberately no public endpoint for claiming an arbitrary athlete ID.
+
+The authenticated data-export endpoint and the PWA's **Download my data** action produce a
+versioned JSON archive of one athlete's records and dependent history. The manifest includes table
+counts, shared-record references, and a canonical SHA-256 content digest; unchanged data therefore
+has the same digest across downloads. Treat the file as private. This is a portable, inspectable
+archive—not yet a backup—because validated import and a clean-database restore drill remain future
+work.
 
 Planning-reviewer access is separate from athlete ownership. For local development, bootstrap and
 later revoke the only current administrative role with append-only assignment history:
@@ -861,7 +869,7 @@ hold, review-required, missing-policy, and unsupported-policy states remain visi
 
 This setup is provisional: the provider-neutral browser-login code exists, but no production
 identity provider or hosted client is selected or provisioned. Account recovery,
-consent/export/deletion workflow, sensitive health intake, assessment
+consent/deletion and validated-restore workflows, sensitive health intake, assessment
 correction/attempt workflow,
 qualified independent protocol-review workflow, complete scientific-governance UI, protocol-specific
 structured/duration assessment-result controls, estimation-policy authoring UI, or early-retest

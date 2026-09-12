@@ -417,6 +417,9 @@ button { cursor: pointer; }
 
 .topbar { padding: .75rem 0 1.5rem; }
 .topbar h1 { margin: .25rem 0 0; font-size: clamp(2rem, 5vw, 3.6rem); }
+.topbar-actions { display: flex; align-items: flex-start; gap: .65rem; }
+.athlete-export { display: grid; justify-items: end; gap: .35rem; }
+.athlete-export p { max-width: 28rem; margin: 0; text-align: right; }
 
 .text-button, .week-nav button {
   border: 1px solid var(--line);
@@ -1124,6 +1127,9 @@ button { cursor: pointer; }
 
 @media (max-width: 38rem) {
   .topbar, .week-summary { align-items: stretch; flex-direction: column; }
+  .topbar-actions { align-items: stretch; flex-direction: column; }
+  .athlete-export { justify-items: stretch; }
+  .athlete-export p { max-width: none; text-align: left; }
   .first-session-step { grid-template-columns: auto minmax(0, 1fr); }
   .first-session-step__state { grid-column: 2; justify-self: start; }
   .week-nav { grid-template-columns: 1fr 1fr; }

@@ -805,6 +805,15 @@ or unsupported execution chains cannot be inserted through normal application co
 Strategy revision links are likewise append-only and must form the concrete chain prior strategy
 to completed block to block review to replacement strategy.
 
+An authenticated owner export projects one athlete's rows plus their transitive dependent child
+rows into a versioned JSON archive. Traversal follows ownership outward into history but never
+follows foreign keys upward into shared global authorities or catalogs; excluded parents are
+listed as external references instead. Deterministic ordering and a canonical SHA-256 digest make
+unchanged snapshots comparable. Generation time is metadata and does not alter that content
+digest. The archive cannot be imported through the API: a future restore boundary must first
+validate its version and digest, reconcile shared references and account ownership, preserve
+append-only identities, and prove the procedure in a disposable database.
+
 ## API
 
 FastAPI owns transport concerns and database lifecycle. In addition to health/readiness, narrow

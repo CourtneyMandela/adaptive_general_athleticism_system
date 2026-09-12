@@ -87,6 +87,7 @@ def test_every_athlete_scoped_route_requires_authentication() -> None:
         f"/v1/athletes/{identity}/current-week", params={"on": "2026-08-22"}
     )
     dashboard = TestClient(app).get(f"/v1/athletes/{identity}/dashboard")
+    data_export = TestClient(app).get(f"/v1/athletes/{identity}/data-export")
     environments = TestClient(app).get(f"/v1/athletes/{identity}/environments")
     assessment_workflow = TestClient(app).get(f"/v1/athletes/{identity}/assessment-workflow")
     initial_planning_preparation = TestClient(app).get(
@@ -109,6 +110,7 @@ def test_every_athlete_scoped_route_requires_authentication() -> None:
 
     assert current_week.status_code == 401
     assert dashboard.status_code == 401
+    assert data_export.status_code == 401
     assert environments.status_code == 401
     assert assessment_workflow.status_code == 401
     assert initial_planning_preparation.status_code == 401
