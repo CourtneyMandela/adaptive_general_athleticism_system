@@ -60,6 +60,7 @@ def development_header(subject: str) -> dict[str, str]:
 def test_every_athlete_scoped_route_requires_authentication() -> None:
     identity = uuid4()
     protected_posts = (
+        "/v1/owner-alpha/operator-access/activation",
         "/v1/onboarding/athletes",
         f"/v1/athletes/{identity}/assessment-runs",
         f"/v1/athletes/{identity}/assessment-runs/{identity}/selections/{identity}/result",
@@ -83,6 +84,7 @@ def test_every_athlete_scoped_route_requires_authentication() -> None:
     )
     app.dependency_overrides.pop(authenticated_principal_dependency, None)
 
+    owner_alpha_access = TestClient(app).get("/v1/owner-alpha/operator-access")
     current_week = TestClient(app).get(
         f"/v1/athletes/{identity}/current-week", params={"on": "2026-08-22"}
     )
@@ -108,6 +110,7 @@ def test_every_athlete_scoped_route_requires_authentication() -> None:
     )
     post_responses = [TestClient(app).post(path, json={}) for path in protected_posts]
 
+    assert owner_alpha_access.status_code == 401
     assert current_week.status_code == 401
     assert dashboard.status_code == 401
     assert data_export.status_code == 401

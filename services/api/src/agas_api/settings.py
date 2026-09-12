@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     external_auth_leeway_seconds: int = Field(default=30, ge=0, le=300)
     external_auth_jwks_timeout_seconds: float = Field(default=5.0, gt=0, le=30)
     external_auth_jwks_cache_seconds: int = Field(default=300, ge=30, le=3600)
+    owner_alpha_operator_subject: str | None = Field(default=None, max_length=255)
     cors_origins: list[AnyHttpUrl] = Field(
         default_factory=lambda: [AnyHttpUrl("http://localhost:3000")]
     )
@@ -43,6 +44,12 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_authentication_configuration(self) -> Settings:
+        if self.owner_alpha_operator_subject is not None:
+            self.owner_alpha_operator_subject = self.owner_alpha_operator_subject.strip()
+            if not self.owner_alpha_operator_subject:
+                self.owner_alpha_operator_subject = None
+            elif self.owner_alpha_operator_subject == "*":
+                raise ValueError("owner-alpha operator subject cannot be a wildcard")
         if self.external_auth_audience is not None:
             self.external_auth_audience = self.external_auth_audience.strip()
             if not self.external_auth_audience:

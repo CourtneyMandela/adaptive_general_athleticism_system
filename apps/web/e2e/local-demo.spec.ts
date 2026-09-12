@@ -8,6 +8,42 @@ const athleteId = "d0000000-0000-4000-8000-000000000001";
 test("reviewer workbench exposes the synthetic athlete's honest next boundary", async ({
   page,
 }) => {
+  await page.route("http://localhost:8000/v1/owner-alpha/operator-access**", (route) => {
+    const active = route.request().method() === "POST";
+    return route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(
+        active
+          ? {
+              activated: true,
+              access: {
+                access_version: "owner-alpha-operator-access@1.0.0",
+                status: "active",
+                message: "Owner-alpha assessment and planning review access is active.",
+                authenticated_issuer: "urn:agas:development",
+                authenticated_subject: "local-browser",
+                can_activate: false,
+                roles: [
+                  { role: "assessment_reviewer", status: "active", assignment_id: athleteId },
+                  { role: "planning_reviewer", status: "active", assignment_id: athleteId },
+                ],
+              },
+            }
+          : {
+              access_version: "owner-alpha-operator-access@1.0.0",
+              status: "eligible",
+              message: "This exact allowlisted owner account may activate reviewer access.",
+              authenticated_issuer: "urn:agas:development",
+              authenticated_subject: "local-browser",
+              can_activate: true,
+              roles: [
+                { role: "assessment_reviewer", status: null, assignment_id: null },
+                { role: "planning_reviewer", status: null, assignment_id: null },
+              ],
+            },
+      ),
+    });
+  });
   await page.route("http://localhost:8000/v1/operator/planning-review-queue**", (route) =>
     route.fulfill({
       contentType: "application/json",
@@ -33,6 +69,11 @@ test("reviewer workbench exposes the synthetic athlete's honest next boundary", 
 
   await page.goto("/review/queue");
 
+  await expect(page.getByRole("heading", { name: "Reviewer access is not active yet." }))
+    .toBeVisible();
+  await page.getByLabel(/I understand these are application permissions/).check();
+  await page.getByRole("button", { name: "Activate owner review access" }).click();
+  await expect(page.getByText("Owner-alpha review access active")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Reviewer workbench" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Synthetic four-day traveler" })).toBeVisible();
   await expect(page.getByText("capability estimate required")).toBeVisible();

@@ -159,6 +159,10 @@ Supply these prompted secrets:
 | `AGAS_EXTERNAL_AUTH_ISSUER` | `https://YOUR_AUTH0_DOMAIN/` including trailing slash |
 | `AGAS_EXTERNAL_AUTH_JWKS_URL` | `https://YOUR_AUTH0_DOMAIN/.well-known/jwks.json` |
 
+Do not guess `AGAS_OWNER_ALPHA_OPERATOR_SUBJECT` during initial deployment. After the owner signs
+in and creates the athlete, the reviewer screen reports the exact authenticated subject needed for
+the one-time access step below.
+
 The free tier cannot run a pre-deploy command. `AGAS_MIGRATE_ON_STARTUP=true` therefore runs Alembic
 before Uvicorn in this single-instance alpha. Do not reuse that setting in a scaled deployment;
 `deploy/render-paid.yaml` retains the separate pre-deploy migration pattern.
@@ -212,9 +216,30 @@ Deploy once to obtain the stable production origin. Put that exact origin into
 Redeploy after all variables and Auth0 URLs are exact. Preview URLs are intentionally not login
 origins in the first alpha.
 
-### 5. Acceptance and cost checks
+### 5. Activate the exact owner-alpha reviewer identity
 
-Create one Auth0 user and verify login, onboarding, API reads/writes, logout, and a second login.
+Open any `/review` screen while signed in. The one-time setup panel reports the authenticated
+subject from the verified API token. Copy that entire value, including any provider prefix such as
+`auth0|`, into the Render environment variable `AGAS_OWNER_ALPHA_OPERATOR_SUBJECT`, then redeploy
+the API. Never use a wildcard, email address, display name, client ID, or Vercel user ID.
+
+Return to `/review`, check the explicit application-permission acknowledgement, and choose
+**Activate owner review access**. The API will add the `assessment_reviewer` and
+`planning_reviewer` grants only when all of these remain true:
+
+- the verified token issuer and subject exactly match the deployment allowlist;
+- that account already exists in AGAS and owns an athlete;
+- neither required role has previously been revoked.
+
+This is a narrow single-owner alpha bootstrap, not a claim of scientific or professional
+qualification. The role records are append-only and an administrator revocation cannot be undone
+from the browser. After activation, refresh the reviewer queue and continue the prepared assessment
+and first-plan sequence.
+
+### 6. Acceptance and cost checks
+
+Create one Auth0 user and verify login, onboarding, exact-subject reviewer activation, API
+reads/writes, logout, and a second login.
 Then install and exercise the PWA on a real phone using cellular data, not the workstation's Wi-Fi.
 Expect the first authenticated data request after 15 idle minutes to take longer or require one
 retry while Render and Neon wake.

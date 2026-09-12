@@ -763,13 +763,22 @@ uncertainty before submitting the same parsed document. Neither path asks the ow
 scientific values, choose training content, or treat application permission as professional
 qualification.
 
+For the hosted single-owner alpha, the same signed-in browser session can activate the two reviewer
+permissions without handling an API token or opening a database console. The deployment must first
+set server-only `AGAS_OWNER_ALPHA_OPERATOR_SUBJECT` to the exact verified subject displayed on a
+`/review` screen. The owner must already have an athlete and must explicitly acknowledge that these
+are application permissions, not credentials. Exact issuer/subject matching, wildcard rejection,
+append-only grants, and a no-self-reactivation rule for revoked roles keep this exception narrow.
+See [docs/deployment.md](docs/deployment.md) for the one-time hosted procedure.
+
 The assessment-governance workbench is available at
 `http://localhost:3000/review/assessments`. Configure
 `NEXT_PUBLIC_AGAS_ASSESSMENT_REVIEWER_TOKEN=dev.local-assessment-reviewer` or use the demo
-bootstrap. It is currently a read-only explanation of the governed protocol-to-estimate chain.
-The production release API now provides an authenticated, atomic ratification boundary for a
-complete externally prepared chain; the understandable web review and confirmation flow is the
-next milestone and must exist before a real release is submitted.
+bootstrap. It explains the governed protocol-to-estimate chain and presents immutable prepared
+owner-alpha candidates with exact sources, limitations, digest, and explicit ratification. The
+production release API also retains the authenticated atomic boundary for a complete externally
+prepared chain. Neither path silently approves a protocol or lets the browser supply reviewer
+identity.
 
 The planning-authority workbench also exposes a content-addressed first-block resource bundle after
 the exact deficit-only policy and controlled adaptation catalog exist. The bundle prepares a stable-

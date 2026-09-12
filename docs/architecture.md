@@ -889,6 +889,17 @@ insufficient. Operator writes bind the authenticated account and exact role assi
 and reject client-supplied reviewer identity. The role is an
 application permission, not evidence of a scientific or professional credential. Production
 configuration rejects the development verifier and incomplete or non-HTTPS external settings.
+
+The owner-only hosted alpha has one explicit role-bootstrap exception. An authenticated projection
+reports the verified issuer and subject but grants nothing. Activation requires an exact
+server-configured subject, the issuer selected by the authentication mode, an existing account with
+at least one owned athlete, and a literal acknowledgement. It can append only the initial
+`assessment_reviewer` and `planning_reviewer` grants. Wildcards are invalid configuration, repeated
+activation is idempotent, and any revoked required role blocks self-reactivation. Thus ownership
+does not generally imply review authority and new signups receive no automatic elevation; the
+exception is constrained to one deployment-allowlisted identity and remains an application
+permission rather than a reviewer credential.
+
 The production PWA uses a same-origin route-handler gateway. Its compact-JWE session envelope is
 encrypted with a server-only 256-bit key, retains the access-token expiry supplied by the login
 adapter, and is refused after that instant. The OIDC adapter binds a ten-minute encrypted

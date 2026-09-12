@@ -241,6 +241,13 @@ from agas_api.operator_weekly_planning import (
     OperatorWeeklyPlanRequest,
     execute_operator_weekly_plan_creation,
 )
+from agas_api.owner_alpha_access import (
+    ActivateOwnerAlphaAccessCommand,
+    OwnerAlphaAccessActivationResult,
+    OwnerAlphaAccessError,
+    OwnerAlphaAccessProjection,
+    OwnerAlphaAccessService,
+)
 from agas_api.planning_governance_candidates import (
     PlanningGovernanceCandidateConflictError,
     PlanningGovernanceCandidateProjection,
@@ -346,7 +353,7 @@ from agas_api.session_recording import (
     SessionRecordingValidationError,
     SessionSafetyCreationResult,
 )
-from agas_api.settings import get_settings
+from agas_api.settings import Settings, get_settings
 from agas_api.training_construction_candidates import (
     RatifyTrainingConstructionCandidateCommand,
     TrainingConstructionCandidateConflictError,
@@ -407,6 +414,36 @@ def _session_scope() -> Iterator[Session]:
 @app.get("/health", tags=["system"])
 def health() -> dict[str, str]:
     return {"status": "ok", "service": "agas-api", "version": __version__}
+
+
+@app.get(
+    "/v1/owner-alpha/operator-access",
+    tags=["identity"],
+    response_model=OwnerAlphaAccessProjection,
+)
+def get_owner_alpha_operator_access(
+    session: Annotated[Session, Depends(database_session_dependency)],
+    principal: Annotated[AuthenticatedPrincipal, Depends(authenticated_principal_dependency)],
+    current_settings: Annotated[Settings, Depends(get_settings)],
+) -> OwnerAlphaAccessProjection:
+    return OwnerAlphaAccessService(session, current_settings).project(principal)
+
+
+@app.post(
+    "/v1/owner-alpha/operator-access/activation",
+    tags=["identity"],
+    response_model=OwnerAlphaAccessActivationResult,
+)
+def activate_owner_alpha_operator_access(
+    _command: ActivateOwnerAlphaAccessCommand,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    principal: Annotated[AuthenticatedPrincipal, Depends(authenticated_principal_dependency)],
+    current_settings: Annotated[Settings, Depends(get_settings)],
+) -> OwnerAlphaAccessActivationResult:
+    try:
+        return OwnerAlphaAccessService(session, current_settings).activate(principal)
+    except OwnerAlphaAccessError as error:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(error)) from error
 
 
 @app.get(
