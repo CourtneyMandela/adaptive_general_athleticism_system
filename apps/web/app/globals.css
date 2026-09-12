@@ -617,6 +617,24 @@ button { cursor: pointer; }
   box-shadow: var(--shadow);
 }
 
+.review-return {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  border: 1px solid #b7cfc4;
+  border-radius: .85rem;
+  background: #f2faf6;
+  color: var(--ink);
+}
+
+.review-return > div { display: grid; gap: .25rem; }
+.review-return span { color: var(--muted); line-height: 1.45; }
+.review-return .secondary-button { flex: none; text-decoration: none; }
+.review-message { display: grid; gap: .75rem; justify-items: start; }
+
 .review-access-shell {
   width: min(100%, 78rem);
   margin: 0 auto;
@@ -1195,6 +1213,7 @@ button { cursor: pointer; }
   .section-heading { align-items: flex-start; flex-direction: column; }
   .review-topbar, .review-preview > header, .review-candidate > header { flex-direction: column; }
   .review-boundary, .review-metadata, .review-lineage, .review-scores, .review-rationale { grid-template-columns: 1fr; }
+  .review-return { align-items: stretch; flex-direction: column; }
   .review-preparation > header, .estimate-option > header { flex-direction: column; }
   .resource-candidate-summary { grid-template-columns: 1fr 1fr; }
   .preparation-options, .policy-values { grid-template-columns: 1fr; }

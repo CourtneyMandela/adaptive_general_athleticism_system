@@ -8,6 +8,7 @@ import {
   ratifyPlanningGovernanceCandidate,
   type PlanningGovernanceCandidateProjection,
 } from "@/lib/planning-governance";
+import { athleteHomeHref, athleteReviewHref } from "@/lib/athlete-navigation";
 
 import { CompetencyFloorGovernanceClient } from "./competency-floor-governance-client";
 import { ResourceGovernanceClient } from "./resource-governance-client";
@@ -15,7 +16,7 @@ import { TrainingConstructionGovernanceClient } from "./training-construction-go
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-export function PlanningGovernanceClient() {
+export function PlanningGovernanceClient({ athleteId }: { athleteId?: string }) {
   const [projection, setProjection] = useState<PlanningGovernanceCandidateProjection | null>(null);
   const [loading, setLoading] = useState(true);
   const [ratifying, setRatifying] = useState<string | null>(null);
@@ -89,12 +90,27 @@ export function PlanningGovernanceClient() {
           </p>
         </div>
         <nav className="review-route-links" aria-label="Reviewer routes">
-          <Link href="/review/assessments" className="text-link">Assessment governance</Link>
-          <Link href="/review" className="text-link">Initial planning</Link>
-          <Link href="/review/queue" className="text-link">Planning queue</Link>
-          <Link href="/" className="text-link">Athlete PWA</Link>
+          <Link href={athleteReviewHref("/review/assessments", athleteId)} className="text-link">Assessment governance</Link>
+          <Link href={athleteReviewHref("/review", athleteId)} className="text-link">Initial planning</Link>
+          <Link href={athleteReviewHref("/review/queue", athleteId)} className="text-link">Planning queue</Link>
+          <Link href={athleteHomeHref(athleteId)} className="text-link">Athlete PWA</Link>
         </nav>
       </header>
+
+      {athleteId ? (
+        <aside className="review-return" aria-label="Return to athlete setup">
+          <div>
+            <strong>This review is part of one athlete’s first-plan path.</strong>
+            <span>
+              Approve only the exact authorities you accept. Then return to the same athlete so
+              AGAS can re-check which planning step is actionable.
+            </span>
+          </div>
+          <Link className="secondary-button" href={athleteHomeHref(athleteId, "first-session-path-title")}>
+            Return to athlete setup
+          </Link>
+        </aside>
+      ) : null}
 
       <aside className="review-boundary" aria-label="Planning-review authority boundary">
         <strong>Approval is narrow and reversible through versioning.</strong>
@@ -222,9 +238,16 @@ export function PlanningGovernanceClient() {
 
       {!projection && loading ? <p className="planning-queue-empty">Loading prepared policy…</p> : null}
       {message ? (
-        <p className={messageKind === "success" ? "form-success" : "form-error"} role="status">
-          {message}
-        </p>
+        <div className="review-message">
+          <p className={messageKind === "success" ? "form-success" : "form-error"} role="status">
+            {message}
+          </p>
+          {messageKind === "success" && athleteId ? (
+            <Link className="primary-button" href={athleteHomeHref(athleteId, "first-session-path-title")}>
+              Re-check this athlete’s setup
+            </Link>
+          ) : null}
+        </div>
       ) : null}
       <CompetencyFloorGovernanceClient />
       <ResourceGovernanceClient />

@@ -1,3 +1,5 @@
+import { athleteReviewHref } from "./athlete-navigation";
+
 export type FirstSessionStepState = "complete" | "your_action" | "system_action" | "waiting";
 
 export interface FirstSessionAssessmentState {
@@ -71,6 +73,7 @@ export function buildFirstSessionPath(
   assessment: FirstSessionAssessmentState,
   planning: FirstSessionPlanningState,
   hasScheduledWeek: boolean,
+  athleteId?: string,
 ): FirstSessionPath {
   const assessmentContentReady = assessment.approved_self_administered_protocol_count > 0;
   const eligibilityReady = assessment.eligibility?.outcome === "selection_allowed";
@@ -182,7 +185,7 @@ export function buildFirstSessionPath(
   } else {
     if (!assessmentContentReady) {
       nextAction = {
-        href: "/review/assessments",
+        href: athleteReviewHref("/review/assessments", athleteId),
         label: "Review the prepared assessment authority",
       };
     } else if (userAction) {
@@ -193,7 +196,7 @@ export function buildFirstSessionPath(
     } else if (planStep.state === "system_action") {
       nextAction = planning.status === "planning_authorities_required"
         ? {
-            href: "/review/planning-authorities",
+            href: athleteReviewHref("/review/planning-authorities", athleteId),
             label: "Review the prepared planning authorities",
           }
         : {

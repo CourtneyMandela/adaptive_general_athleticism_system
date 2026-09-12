@@ -143,6 +143,31 @@ describe("first-session path", () => {
     });
   });
 
+  it("preserves athlete context through governed review handoffs", () => {
+    const athleteId = "0fe4fa6f-d3de-49f8-8d95-239854fb0ecb";
+    const assessmentReview = buildFirstSessionPath(assessment(), planning(), false, athleteId);
+    expect(assessmentReview.next_action?.href).toBe(
+      `/review/assessments?athleteId=${athleteId}`,
+    );
+
+    const planningReview = buildFirstSessionPath(
+      assessment({
+        status: "reassessment_not_due",
+        approved_self_administered_protocol_count: 1,
+        eligibility: { outcome: "selection_allowed" },
+      }),
+      planning({
+        status: "planning_authorities_required",
+        current_capability_estimate_count: 1,
+      }),
+      false,
+      athleteId,
+    );
+    expect(planningReview.next_action?.href).toBe(
+      `/review/planning-authorities?athleteId=${athleteId}`,
+    );
+  });
+
   it("reports a scheduled first week as ready to train", () => {
     const result = buildFirstSessionPath(
       assessment({

@@ -11,6 +11,7 @@ import {
   type AssessmentGovernanceProjection,
 } from "@/lib/assessment-governance";
 import type { EvidenceAuthorityEvaluation } from "@/lib/evidence-governance";
+import { athleteHomeHref, athleteReviewHref } from "@/lib/athlete-navigation";
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -42,7 +43,7 @@ function EvidenceAuthorityStatus({
   );
 }
 
-export function AssessmentGovernanceClient() {
+export function AssessmentGovernanceClient({ athleteId }: { athleteId?: string }) {
   const [projection, setProjection] = useState<AssessmentGovernanceProjection | null>(null);
   const [candidates, setCandidates] = useState<AssessmentGovernanceCandidateProjection | null>(null);
   const [loading, setLoading] = useState(true);
@@ -140,11 +141,26 @@ export function AssessmentGovernanceClient() {
         </div>
         <nav className="review-route-links" aria-label="Reviewer routes">
           <Link href="/review/evidence" className="text-link">Evidence governance</Link>
-          <Link href="/review/planning-authorities" className="text-link">Planning authorities</Link>
-          <Link href="/review/queue" className="text-link">Planning queue</Link>
-          <Link href="/" className="text-link">Athlete PWA</Link>
+          <Link href={athleteReviewHref("/review/planning-authorities", athleteId)} className="text-link">Planning authorities</Link>
+          <Link href={athleteReviewHref("/review/queue", athleteId)} className="text-link">Planning queue</Link>
+          <Link href={athleteHomeHref(athleteId)} className="text-link">Athlete PWA</Link>
         </nav>
       </header>
+
+      {athleteId ? (
+        <aside className="review-return" aria-label="Return to athlete setup">
+          <div>
+            <strong>This review is part of one athlete’s first-session path.</strong>
+            <span>
+              Review and approve only the exact release you accept. Then return to the assessment
+              panel; the app will reopen the same athlete automatically.
+            </span>
+          </div>
+          <Link className="secondary-button" href={athleteHomeHref(athleteId, "assessment-title")}>
+            Return to assessment
+          </Link>
+        </aside>
+      ) : null}
 
       <aside className="review-boundary" aria-label="Assessment-review authority boundary">
         <strong>Access is not scientific qualification.</strong>
@@ -305,12 +321,19 @@ export function AssessmentGovernanceClient() {
       </section>
 
       {message ? (
-        <p
-          className={`${messageKind === "success" ? "form-success" : "form-error"} review-message`}
-          role={messageKind === "error" ? "alert" : "status"}
-        >
-          {message}
-        </p>
+        <div className="review-message">
+          <p
+            className={messageKind === "success" ? "form-success" : "form-error"}
+            role={messageKind === "error" ? "alert" : "status"}
+          >
+            {message}
+          </p>
+          {messageKind === "success" && athleteId ? (
+            <Link className="primary-button" href={athleteHomeHref(athleteId, "assessment-title")}>
+              Continue this athlete’s assessment
+            </Link>
+          ) : null}
+        </div>
       ) : null}
       {!projection && loading ? <p className="planning-queue-empty">Loading assessment governance…</p> : null}
       {projection && !projection.items.length ? (

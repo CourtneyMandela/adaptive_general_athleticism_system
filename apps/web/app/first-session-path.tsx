@@ -38,7 +38,7 @@ export function FirstSessionPath({
     ])
       .then(([assessment, planning]) => {
         if (active) {
-          setProjection(buildFirstSessionPath(assessment, planning, hasScheduledWeek));
+          setProjection(buildFirstSessionPath(assessment, planning, hasScheduledWeek, athleteId));
           setMessage("");
         }
       })

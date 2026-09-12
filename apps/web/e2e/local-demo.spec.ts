@@ -491,7 +491,7 @@ test("assessment workbench makes missing scientific governance explicit", async 
     });
   });
 
-  await page.goto("/review/assessments");
+  await page.goto(`/review/assessments?athleteId=${athleteId}`);
 
   await expect(page.getByRole("heading", { name: "Assessment governance" })).toBeVisible();
   await expect(page.getByText("Access is not scientific qualification.")).toBeVisible();
@@ -501,6 +501,10 @@ test("assessment workbench makes missing scientific governance explicit", async 
   await expect(page.getByRole("heading", { name: "Fixture cycle" })).toBeVisible();
   await expect(page.getByText("assessment definition has no protocol review history")).toBeVisible();
   await expect(page.getByText("No capability-estimation policy exists.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Return to assessment" })).toHaveAttribute(
+    "href",
+    `/?athleteId=${athleteId}#assessment-title`,
+  );
 });
 
 test("owner can ratify exact prepared authorities, including a floor batch", async ({ page }) => {
@@ -659,7 +663,7 @@ test("owner can ratify exact prepared authorities, including a floor batch", asy
     });
   });
 
-  await page.goto("/review/planning-authorities");
+  await page.goto(`/review/planning-authorities?athleteId=${athleteId}`);
 
   await expect(page.getByRole("heading", { name: "Prepared planning authorities" })).toBeVisible();
   await expect(page.getByText("Which adaptation Courtney should develop.")).toBeVisible();
@@ -668,6 +672,10 @@ test("owner can ratify exact prepared authorities, including a floor batch", asy
   await page.getByLabel(/I reviewed the policy scope/).check();
   await approve.click();
   await expect(page.getByText(/This policy can now appear in initial-planning preparation/)).toBeVisible();
+  await expect(page.getByRole("link", { name: "Re-check this athlete’s setup" })).toHaveAttribute(
+    "href",
+    `/?athleteId=${athleteId}#first-session-path-title`,
+  );
   expect(submittedBody).toEqual({
     candidate_version: candidate.candidate_version,
     content_digest: candidate.content_digest,

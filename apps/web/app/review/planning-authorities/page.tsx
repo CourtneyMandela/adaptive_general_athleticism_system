@@ -1,5 +1,10 @@
 import { PlanningGovernanceClient } from "./planning-governance-client";
 
-export default function PlanningGovernancePage() {
-  return <PlanningGovernanceClient />;
+export default async function PlanningGovernancePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ athleteId?: string }>;
+}) {
+  const { athleteId } = await searchParams;
+  return <PlanningGovernanceClient athleteId={athleteId} />;
 }

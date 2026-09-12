@@ -1202,6 +1202,13 @@ week is accepted, its receipt deep-links to the athlete and exact `week_start`; 
 that date before using it for its current-week projection. These links only select a read/review
 surface and never perform a ratification or domain write.
 
+Assessment- and planning-authority handoffs carry the selected athlete UUID as optional browser
+context. The reviewer pages validate that shape before propagating it, preserve it across adjacent
+review routes, and return directly to the same athlete's assessment or first-session status after
+an explicit approval. This query value is neither authorization nor domain state: every API call
+still enforces account ownership and reviewer-role authority, and malformed identifiers are
+dropped instead of becoming redirect targets.
+
 The prescription's exact versioned `progression_rule_reference` is now the action-assignment key.
 The current-week projection resolves it against persisted policies and exposes a policy identifier
 only when one unique policy can produce an automatically typed load or repetition revision without
