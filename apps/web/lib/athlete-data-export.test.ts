@@ -10,7 +10,7 @@ import {
 const athleteId = "00000000-0000-4000-8000-000000000001";
 const digest = `sha256:${"a".repeat(64)}`;
 const payload: AthleteDataExport = {
-  export_version: "athlete-data-export@1.0.0",
+  export_version: "athlete-data-export@1.1.0",
   generated_at: "2026-09-11T18:00:00Z",
   athlete_id: athleteId,
   tables: [
@@ -26,7 +26,7 @@ const payload: AthleteDataExport = {
     table_counts: { athletes: 1 },
     content_digest: digest,
     scope: "athlete-owned rows and their non-athlete dependent rows",
-    restore_status: "restore requires a separately validated procedure",
+    restore_status: "validated clean-store restore available through operator CLI",
   },
 };
 

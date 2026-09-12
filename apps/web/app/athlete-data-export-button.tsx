@@ -35,7 +35,7 @@ export function AthleteDataExportButton({
       window.setTimeout(() => URL.revokeObjectURL(url), 0);
       setState("success");
       setMessage(
-        `Downloaded ${payload.manifest.record_count} records. Keep this private; restore validation is not available yet.`,
+        `Downloaded ${payload.manifest.record_count} records. Keep this private; recovery remains an operator-controlled procedure.`,
       );
     } catch (error) {
       setState("error");

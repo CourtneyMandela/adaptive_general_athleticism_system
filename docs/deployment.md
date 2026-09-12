@@ -123,11 +123,12 @@ connection string, not the pooled hostname, and retain `sslmode=require`. The di
 single low-concurrency alpha secret used by both Alembic and SQLAlchemy. Store it only as Render's
 `AGAS_DATABASE_URL` secret.
 
-Neon's free storage and restore window are limited. The PWA now downloads a versioned, digest-bound
+Neon's free storage and restore window are limited. The PWA downloads a versioned, digest-bound
 owner archive without exposing the database credential or another athlete's records. Keep those
-files private. This is not yet disaster recovery: before irreplaceable training history
-accumulates, implement the validated import path and pass a clean-database restore drill, including
-shared-authority reference checks.
+files private. The operator CLI now validates and atomically restores an archive into an
+athlete-empty store, but only after every exact shared reference exists. Before irreplaceable
+training history accumulates, repeat that drill against disposable PostgreSQL with the deployed
+catalog and ratified authority set; SQLite CI coverage alone is not an operational recovery test.
 
 ### 2. Create Auth0 Free identity
 
@@ -219,9 +220,9 @@ Expect the first authenticated data request after 15 idle minutes to take longer
 retry while Render and Neon wake.
 
 Confirm all four dashboards show their free/personal plan and no payment method. Use synthetic or
-low-sensitivity data until validated restore, deletion, retention, monitoring, and governed
-scientific authorities are reviewed. The paid private topology in `deploy/render-paid.yaml` is a
-future upgrade option, not authorization to create paid resources.
+low-sensitivity data until the PostgreSQL restore drill, deletion, retention, monitoring, and
+governed scientific authorities are reviewed. The paid private topology in
+`deploy/render-paid.yaml` is a future upgrade option, not authorization to create paid resources.
 
 ## Not production-ready yet
 
@@ -231,7 +232,7 @@ production athlete data. Before production use, the project still needs:
 - a provisioned identity provider and a tested hosted login/logout flow;
 - a reviewed refresh/revocation and provider-wide logout policy, or acceptance of hourly re-login;
 - HTTPS domains and reviewed ingress configuration;
-- account recovery, consent, validated restore, and deletion workflows;
+- account recovery, consent, deletion, and PostgreSQL-rehearsed restore workflows;
 - secret rotation and least-privilege production administration;
 - database backup, restore, migration rollback, and retention procedures;
 - structured logs, metrics, alerting, and availability/error objectives;

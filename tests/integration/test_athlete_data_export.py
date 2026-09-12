@@ -91,7 +91,10 @@ def test_owner_export_includes_dependent_history_and_excludes_other_athletes(
         reference.target_table == "equipment" and reference.target_value == str(equipment.id)
         for reference in export.external_references
     )
-    assert export.manifest.restore_status == "restore requires a separately validated procedure"
+    assert (
+        export.manifest.restore_status
+        == "validated clean-store restore available through operator CLI"
+    )
 
 
 def test_export_digest_changes_when_athlete_history_changes(session: Session) -> None:

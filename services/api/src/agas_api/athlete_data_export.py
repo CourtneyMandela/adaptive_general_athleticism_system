@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 from sqlalchemy import ColumnElement, Table, select
 from sqlalchemy.orm import Session
 
-EXPORT_VERSION = "athlete-data-export@1.0.0"
+EXPORT_VERSION = "athlete-data-export@1.1.0"
 
 
 class AthleteExportTable(BaseModel):
@@ -44,7 +44,7 @@ class AthleteExportManifest(BaseModel):
     table_counts: dict[str, int]
     content_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
     scope: str = "athlete-owned rows and their non-athlete dependent rows"
-    restore_status: str = "restore requires a separately validated procedure"
+    restore_status: str = "validated clean-store restore available through operator CLI"
 
 
 class AthleteDataExport(BaseModel):
@@ -67,6 +67,25 @@ class AthleteDataExport(BaseModel):
 
 class AthleteDataExportNotFoundError(LookupError):
     pass
+
+
+def calculate_export_content_digest(
+    athlete_id: UUID,
+    tables: tuple[AthleteExportTable, ...],
+    external_references: tuple[AthleteExportExternalReference, ...],
+    *,
+    export_version: str = EXPORT_VERSION,
+) -> str:
+    """Hash canonical archive content independently from generation metadata."""
+
+    digest_payload = {
+        "export_version": export_version,
+        "athlete_id": str(athlete_id),
+        "tables": [item.model_dump(mode="json") for item in tables],
+        "external_references": [item.model_dump(mode="json") for item in external_references],
+    }
+    canonical = json.dumps(digest_payload, sort_keys=True, separators=(",", ":"))
+    return f"sha256:{hashlib.sha256(canonical.encode('utf-8')).hexdigest()}"
 
 
 def _json_value(value: object) -> JsonValue:
@@ -147,14 +166,7 @@ class AthleteDataExporter:
             if rows_by_table.get(table.name)
         )
         external_references = self._external_references(tables, rows_by_table)
-        digest_payload = {
-            "export_version": EXPORT_VERSION,
-            "athlete_id": str(athlete_id),
-            "tables": [item.model_dump(mode="json") for item in exported_tables],
-            "external_references": [item.model_dump(mode="json") for item in external_references],
-        }
-        canonical = json.dumps(digest_payload, sort_keys=True, separators=(",", ":"))
-        digest = f"sha256:{hashlib.sha256(canonical.encode('utf-8')).hexdigest()}"
+        digest = calculate_export_content_digest(athlete_id, exported_tables, external_references)
         table_counts = {item.table_name: len(item.rows) for item in exported_tables}
         return AthleteDataExport(
             generated_at=instant,

@@ -814,6 +814,16 @@ digest. The archive cannot be imported through the API: a future restore boundar
 validate its version and digest, reconcile shared references and account ownership, preserve
 append-only identities, and prove the procedure in a disposable database.
 
+The clean-store recovery boundary performs those validations without exposing an HTTP import. It
+accepts export versions 1.0 and 1.1, recomputes their version-specific digests, proves every row is
+reachable from the declared athlete, rejects externalized athlete dependencies, and requires all
+shared global parents to exist. Application is permitted only when the target contains no athletes
+and the operator repeats the preflighted digest explicitly. The owner account retains its archived
+ID but receives the exact provider issuer and subject supplied by the recovery operator. The
+transaction re-exports the recovered athlete and rolls back unless the content digest matches.
+This is an owner-history recovery boundary, not an active-database merge or a replacement for a
+shared-authority backup.
+
 ## API
 
 FastAPI owns transport concerns and database lifecycle. In addition to health/readiness, narrow

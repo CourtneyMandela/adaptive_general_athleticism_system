@@ -237,9 +237,31 @@ There is deliberately no public endpoint for claiming an arbitrary athlete ID.
 The authenticated data-export endpoint and the PWA's **Download my data** action produce a
 versioned JSON archive of one athlete's records and dependent history. The manifest includes table
 counts, shared-record references, and a canonical SHA-256 content digest; unchanged data therefore
-has the same digest across downloads. Treat the file as private. This is a portable, inspectable
-archive—not yet a backup—because validated import and a clean-database restore drill remain future
-work.
+has the same digest across downloads. Treat the file as private.
+
+Recovery remains an operator procedure. First provision an empty migrated database and import the
+exact shared catalog/authority records named by the archive. Run a read-only preflight:
+
+```bash
+python -m agas_api.athlete_data_restore athlete-export.json \
+  --owner-issuer YOUR_EXACT_IDENTITY_ISSUER \
+  --owner-subject YOUR_EXACT_IDENTITY_SUBJECT
+```
+
+Only when `can_restore` is true, repeat with both `--apply` and the exact
+`manifest.content_digest` printed by preflight:
+
+```bash
+python -m agas_api.athlete_data_restore athlete-export.json \
+  --owner-issuer YOUR_EXACT_IDENTITY_ISSUER \
+  --owner-subject YOUR_EXACT_IDENTITY_SUBJECT \
+  --apply \
+  --expected-digest sha256:YOUR_PREFLIGHTED_DIGEST
+```
+
+The tool refuses any database that already contains an athlete, never fabricates missing shared
+records, applies atomically, and verifies the restored state by re-exporting it. This is still not
+a substitute for provider backups or a PostgreSQL recovery rehearsal.
 
 Planning-reviewer access is separate from athlete ownership. For local development, bootstrap and
 later revoke the only current administrative role with append-only assignment history:
@@ -869,7 +891,7 @@ hold, review-required, missing-policy, and unsupported-policy states remain visi
 
 This setup is provisional: the provider-neutral browser-login code exists, but no production
 identity provider or hosted client is selected or provisioned. Account recovery,
-consent/deletion and validated-restore workflows, sensitive health intake, assessment
+consent/deletion and routine multi-record backup workflows, sensitive health intake, assessment
 correction/attempt workflow,
 qualified independent protocol-review workflow, complete scientific-governance UI, protocol-specific
 structured/duration assessment-result controls, estimation-policy authoring UI, or early-retest
