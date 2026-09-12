@@ -1015,6 +1015,22 @@ at planning time. The batch ratification route accepts the exact sorted manifest
 member plus a batch audit in one transaction. Each member keeps its own digest and decision; any
 stale or conflicting member rolls back the whole batch. The individual route remains available.
 
+Professional judgment is not stored as an `EvidenceClaim`. A `CompetencyFloorAuthority` is an
+immutable, self-digested record containing the exact operational statement, scope, population,
+rationale, applicability, uncertainty, limitations, author, qualification context, optional
+supporting evidence, and semantic version. Its separate append-only review carries the actor-bound
+attestation and replacement lineage. Floors and floor reviews may cite evidence claims, judgment
+authorities, or both, but the repository rejects an ungoverned floor and requires every cited
+judgment authority to have a current approved review before the floor review can be recorded.
+
+`GET /v1/operator/competency-floor-proposals` is an earlier, read-only research boundary. It loads a
+15-item content-addressed batch from `data/governance_proposals/competency_floors`, including exact
+textbook edition ISBNs, table/page locators, source populations, proposed thresholds, athlete-match
+ratings, evidence gaps, and pre-release prerequisites. Every item is `proposal_only`; there is no
+ratification route and the records do not enter persistence or planning. Accepted proposals must be
+converted into ordinary governed releases only after their assessment, demographic applicability,
+and evidence-or-judgment authority are complete.
+
 ## Web
 
 The Next.js App Router PWA begins with a bounded profile/environment onboarding form. It submits

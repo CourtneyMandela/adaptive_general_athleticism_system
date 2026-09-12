@@ -816,6 +816,63 @@ test("owner can ratify exact prepared authorities, including a floor batch", asy
       }),
     }),
   );
+  await page.route(
+    "http://localhost:8000/v1/operator/competency-floor-proposals",
+    async (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        batch_version: "competency-floor-proposal-batch@1.0.0",
+        batch_id: "c3b1083d-5d15-520e-b449-4f3539434be5",
+        label: "Owner-alpha adult competency-floor research batch 1",
+        prepared_at: "2026-09-12T17:00:00Z",
+        content_digest: `sha256:${"a".repeat(64)}`,
+        source_catalog: [{
+          source_id: "acsm-12-table-3-8",
+          title: "ACSM's Guidelines for Exercise Testing and Prescription",
+          authors: ["Cemal Ozemek"],
+          edition: "12th edition",
+          publisher: "Wolters Kluwer",
+          publication_year: 2026,
+          isbn13: "9781975219246",
+          table_locator: "Table 3.8, Treadmill-Based Cardiorespiratory Fitness",
+          page_locator: "PDF pages 226-228",
+          source_population: "FRIEND Registry adults aged 30-39.",
+          reported_value: "The 55th-percentile male value was 41.6 mL/kg/min.",
+          source_role: "direct_reference",
+          limitations: ["Requires directly measured maximal treadmill testing."],
+        }],
+        proposals: [{
+          proposal_version: "competency-floor-proposal@1.0.0",
+          proposal_id: "98800000-0000-4000-8000-000000000001",
+          slug: "treadmill_vo2max_male_30_39_p55",
+          label: "Treadmill VO2max · male reference · age 30-39",
+          prepared_at: "2026-09-12T17:00:00Z",
+          content_digest: `sha256:${"d".repeat(64)}`,
+          stage: "proposal_only",
+          domain: "aerobic_capacity",
+          estimate_scope: "assessment_specific:direct_treadmill_vo2max",
+          measurement: "Directly measured maximal treadmill VO2max",
+          unit_or_scale: "mL/kg/min",
+          threshold: 41.6,
+          comparison_direction: "higher_is_better",
+          minimum_age_years: 30,
+          maximum_age_years: 39,
+          sex_scope: "male_reference",
+          numeric_value_origin: "direct_textbook_reference",
+          operational_use_origin: "evidence_informed_engineering_proposal",
+          threshold_rationale: "Uses the table's 55th percentile as a reviewable proposal.",
+          population_match: "moderate",
+          population_match_notes: "Age matches; occupation and training history do not.",
+          source_ids: ["acsm-12-table-3-8"],
+          evidence_gap: "The source does not validate an AGAS floor.",
+          prerequisites_before_release: ["Govern the exact assessment."],
+          does_not_establish: ["Medical safety."],
+          review_questions: ["Is the 55th percentile the right boundary?"],
+        }],
+        release_boundary: "Proposal only; no active floor is created.",
+      }),
+    }),
+  );
 
   await page.goto(`/review/planning-authorities?athleteId=${athleteId}`);
 
@@ -842,6 +899,10 @@ test("owner can ratify exact prepared authorities, including a floor batch", asy
   expect(submittedBody).not.toHaveProperty("deficit_weight");
 
   await expect(page.getByRole("heading", { name: "Competency-floor candidates" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Adult competency-floor proposals" })).toBeVisible();
+  await expect(page.getByText("Table 3.8, Treadmill-Based Cardiorespiratory Fitness")).toBeVisible();
+  await expect(page.getByText("FRIEND Registry adults aged 30-39.")).toBeVisible();
+  await expect(page.getByText("41.6 mL/kg/min", { exact: true })).toBeVisible();
   await expect(page.getByText("Medical safety, diagnosis, or clearance to train.")).toBeVisible();
   await expect(page.getByText("evidence informed engineering judgment")).toBeVisible();
   const approveFloorBatch = page.getByRole("button", { name: "Approve exact batch (1 new)" });

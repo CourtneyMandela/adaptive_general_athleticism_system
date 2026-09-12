@@ -17,12 +17,21 @@ Withdrawal or supersession preserves historical decisions but cannot silently au
 
 Consumer fitness media, social posts, influencers, and commercial content may not establish scientific training rules.
 
+Authoritative professional textbooks and standards manuals may be used as citable sources for the
+normative tables, test procedures, and professional recommendations they actually contain. Store an
+ISBN for the exact edition plus the table/figure and page locator. A textbook's inclusion of a
+percentile or category does not prove that the value is a health threshold, safety threshold, or
+AGAS competency floor, and a secondary table must retain any population, apparatus, and protocol
+limits disclosed by the text.
+
 ## Stored provenance
 
 An `EvidenceClaim` records the claim, population, intervention, comparator, outcome, study design,
 uncertainty, limitations, strength, applicability, source identifiers, extraction/reviewer label,
 creation time, and version. Source identifiers may include PMID, DOI, or another stable scholarly
-identifier. Claim storage alone is not scientific approval.
+identifier, including an ISBN for a specific book edition. Claim storage alone is not scientific
+approval. For a book, the source snapshot must also identify the exact table or figure used; an ISBN
+alone is not a sufficiently precise extraction locator.
 
 New governed claims must also link to the exact immutable `EvidenceSource` metadata snapshots that
 were reviewed. A source snapshot stores publication metadata, all identifiers, retrieval provider,
@@ -79,8 +88,9 @@ retrieved metadata and any operational `EvidenceClaim`.
 ## Planning thresholds
 
 Competency floors and scientifically informed planning signals are material claims. An operational
-floor must link to at least one reviewed `EvidenceClaim` and declare its population, applicability,
-uncertainty, metric scope, unit, and version. Priority policies are versioned heuristics rather than
+floor must declare its population, applicability, uncertainty, metric scope, unit, version, and at
+least one governing basis. That basis may be a reviewed `EvidenceClaim`, an approved
+`CompetencyFloorAuthority`, or both. Priority policies are versioned heuristics rather than
 scientific facts. Tests may use clearly labeled software-only fixture claims, but those fixtures
 must never be shipped as training evidence or seed data.
 
@@ -89,9 +99,20 @@ that value operationally. A paper can directly report a percentile without valid
 percentile as a competency, health, safety, or training threshold. In that case the number is
 study-sourced while the floor interpretation is evidence-informed engineering judgment. A value
 supplied solely by professional judgment must be labeled as such and may not be laundered through a
-general citation. The current floor persistence model requires a reviewed scientific claim and
-therefore intentionally does not ratify pure professional-judgment floors; a separate governed
-authority model is required before that case becomes operational.
+general citation. A `CompetencyFloorAuthority` is the distinct non-scientific path for that case. It
+records the exact statement, scope, population, rationale, applicability, uncertainty, limitations,
+named author and qualification context, optional supporting-but-nonauthorizing evidence, version,
+and a canonical SHA-256 digest. A separate append-only authority review records the reviewer,
+decision, time, explicit attestation, uncertainty, and replacement lineage. An approved floor review
+must cite the current approved authority review. A role assignment is application permission, not
+verification of a professional credential.
+
+Research proposals remain outside both authority paths. The owner-alpha floor proposal batch may
+show a textbook value, a derived reference, or an unsupported engineering number for criticism,
+but its `proposal_only` state has no ratification endpoint and cannot satisfy a planning prerequisite.
+After review, accepted content must be rebuilt as an exact governed release with a matching
+assessment/estimate scope. This prevents a preliminary batch review from silently becoming a
+training rule.
 
 Initial planning must retain the selected floor evidence and every estimate's direct source
 observations. General relevance, goal relevance, prerequisite value, expected trainability,

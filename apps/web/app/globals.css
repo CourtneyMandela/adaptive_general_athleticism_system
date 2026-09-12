@@ -902,6 +902,10 @@ button { cursor: pointer; }
 .status-badge--ratified { background: var(--accent-soft); color: var(--accent); }
 .status-badge--available { background: #f2e8c9; color: #765c13; }
 .status-badge--conflict { background: var(--danger-soft); color: var(--danger); }
+.status-badge--proposal_only,
+.status-badge--match-moderate { background: #f2e8c9; color: #765c13; }
+.status-badge--match-high { background: var(--accent-soft); color: var(--accent); }
+.status-badge--match-low { background: var(--danger-soft); color: var(--danger); }
 
 .planning-queue-summary {
   display: grid;

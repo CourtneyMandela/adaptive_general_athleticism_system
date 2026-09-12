@@ -51,6 +51,7 @@ namespaces = false
 "share/agas/data/exercises" = ["data/exercises/*.json"]
 "share/agas/data/governance_candidates/competency_floors" = ["data/governance_candidates/competency_floors/*.json"]
 "share/agas/data/governance_candidates/training_construction" = ["data/governance_candidates/training_construction/*.json"]
+"share/agas/data/governance_proposals/competency_floors" = ["data/governance_proposals/competency_floors/*.json"]
 "share/agas/data/synthetic_athletes" = ["data/synthetic_athletes/*.json"]
 
 [tool.pytest.ini_options]

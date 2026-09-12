@@ -1,0 +1,794 @@
+{
+  "batch_version": "competency-floor-proposal-batch@1.0.0",
+  "batch_id": "218efbaa-bf40-5c6e-ae82-f0018ccb117a",
+  "label": "Owner-alpha adult competency-floor research batch 1",
+  "prepared_at": "2026-09-12T17:00:00Z",
+  "content_digest": "sha256:59572dffb23b2450dfdebc279233eb7f9a05b8559e0122071e5129e149a31150",
+  "source_catalog": [
+    {
+      "source_id": "acsm-12-table-3-8",
+      "title": "ACSM's Guidelines for Exercise Testing and Prescription",
+      "authors": [
+        "Cemal Ozemek",
+        "Amanda Bonikowske",
+        "Jeffrey Christle",
+        "Paul D. Thompson"
+      ],
+      "edition": "12th edition",
+      "publisher": "Wolters Kluwer",
+      "publication_year": 2026,
+      "isbn13": "9781975219246",
+      "table_locator": "Table 3.8, Treadmill-Based Cardiorespiratory Fitness Classifications by Age and Sex",
+      "page_locator": "PDF pages 226-228",
+      "source_population": "FRIEND Registry adults considered free from known cardiovascular disease; ages 30-39 included 1,473 males and 1,043 females.",
+      "reported_value": "At the 55th percentile, directly measured treadmill VO2max was 41.6 mL/kg/min for males and 29.7 mL/kg/min for females aged 30-39.",
+      "source_role": "direct_reference",
+      "limitations": [
+        "The values require directly measured maximal treadmill testing.",
+        "Cardiorespiratory reference status is not a complete general-athleticism standard."
+      ]
+    },
+    {
+      "source_id": "acsm-12-table-3-10",
+      "title": "ACSM's Guidelines for Exercise Testing and Prescription",
+      "authors": [
+        "Cemal Ozemek",
+        "Amanda Bonikowske",
+        "Jeffrey Christle",
+        "Paul D. Thompson"
+      ],
+      "edition": "12th edition",
+      "publisher": "Wolters Kluwer",
+      "publication_year": 2026,
+      "isbn13": "9781975219246",
+      "table_locator": "Table 3.10, Fitness Categories for Grip Strength by Sex and Age",
+      "page_locator": "PDF pages 237-238",
+      "source_population": "Adults in age- and sex-stratified grip-strength reference data; the textbook table does not reproduce recruitment details or subgroup sample sizes.",
+      "reported_value": "The 50th-percentile best-hand values for ages 35-39 are 48 kg for males and 28 kg for females.",
+      "source_role": "direct_reference",
+      "limitations": [
+        "Best score from either hand can hide side-to-side differences.",
+        "Dynamometer setup and device affect comparability."
+      ]
+    },
+    {
+      "source_id": "acsm-12-table-3-11",
+      "title": "ACSM's Guidelines for Exercise Testing and Prescription",
+      "authors": [
+        "Cemal Ozemek",
+        "Amanda Bonikowske",
+        "Jeffrey Christle",
+        "Paul D. Thompson"
+      ],
+      "edition": "12th edition",
+      "publisher": "Wolters Kluwer",
+      "publication_year": 2026,
+      "isbn13": "9781975219246",
+      "table_locator": "Table 3.11 and Box 3.10, Push-up Test by Age and Sex",
+      "page_locator": "PDF pages 244-245",
+      "source_population": "Canadian Society for Exercise Physiology age- and sex-category reference data; subgroup sampling details are not reproduced in the table.",
+      "reported_value": "For ages 30-39, the Good category begins at 17 standard push-ups for males and 13 modified knee push-ups for females.",
+      "source_role": "direct_reference",
+      "limitations": [
+        "The male and female rows use different movement protocols and are not directly comparable.",
+        "The source notes that broader female standard-push-up norms are still needed."
+      ]
+    },
+    {
+      "source_id": "acsm-12-table-3-12",
+      "title": "ACSM's Guidelines for Exercise Testing and Prescription",
+      "authors": [
+        "Cemal Ozemek",
+        "Amanda Bonikowske",
+        "Jeffrey Christle",
+        "Paul D. Thompson"
+      ],
+      "edition": "12th edition",
+      "publisher": "Wolters Kluwer",
+      "publication_year": 2026,
+      "isbn13": "9781975219246",
+      "table_locator": "Table 3.12 and Box 3.11, Countermovement Vertical Jump by Age and Sex",
+      "page_locator": "PDF pages 247-248",
+      "source_population": "Age- and sex-stratified countermovement-jump reference categories; sample sizes and recruitment are not reproduced in the table.",
+      "reported_value": "For ages 30-39, the Good category begins at 40 cm for males and 28 cm for females.",
+      "source_role": "direct_reference",
+      "limitations": [
+        "The measure uses arm swing and best of three trials.",
+        "Wall/chalk and commercial apparatus measurements may not be interchangeable."
+      ]
+    },
+    {
+      "source_id": "nsca-5-table-14-34",
+      "title": "Essentials of Strength Training and Conditioning",
+      "authors": [
+        "G. Gregory Haff",
+        "N. Travis Triplett"
+      ],
+      "edition": "5th edition",
+      "publisher": "Human Kinetics",
+      "publication_year": 2026,
+      "isbn13": "9781718216273",
+      "table_locator": "Table 14.34, Normative Data for the Balance Error Scoring System Test",
+      "page_locator": "PDF page 851",
+      "source_population": "Adults in age- and sex-stratified BESS reference data summarized from Iverson and Koehle (2013); sample details are not reproduced in the table.",
+      "reported_value": "For ages 30-39, errors were 11.4 ± 5.6 for women and 11.5 ± 5.5 for men.",
+      "source_role": "derived_reference",
+      "limitations": [
+        "Seventeen errors is a rounded mean-plus-one-SD derivation, not a published cutoff.",
+        "BESS performance is protocol- and surface-specific."
+      ]
+    },
+    {
+      "source_id": "nsca-5-table-14-14",
+      "title": "Essentials of Strength Training and Conditioning",
+      "authors": [
+        "G. Gregory Haff",
+        "N. Travis Triplett"
+      ],
+      "edition": "5th edition",
+      "publisher": "Human Kinetics",
+      "publication_year": 2026,
+      "isbn13": "9781718216273",
+      "table_locator": "Table 14.14, Descriptive Data for the 300-Yard Shuttle Test",
+      "page_locator": "PDF page 837",
+      "source_population": "Eighty-one recreational male and female athletes in the cited descriptive dataset.",
+      "reported_value": "Recreational athletes completed the 300-yard shuttle in 72.8 ± 9.1 seconds.",
+      "source_role": "derived_reference",
+      "limitations": [
+        "The book explicitly labels these values descriptive, not normative.",
+        "The source does not provide an age-specific owner match in the table."
+      ]
+    },
+    {
+      "source_id": "acsm-12-figure-3-3",
+      "title": "ACSM's Guidelines for Exercise Testing and Prescription",
+      "authors": [
+        "Cemal Ozemek",
+        "Amanda Bonikowske",
+        "Jeffrey Christle",
+        "Paul D. Thompson"
+      ],
+      "edition": "12th edition",
+      "publisher": "Wolters Kluwer",
+      "publication_year": 2026,
+      "isbn13": "9781975219246",
+      "table_locator": "Figure 3.3, Bench Press Weight Ratio by Age and Sex",
+      "page_locator": "PDF page 241",
+      "source_population": "Adults in age- and sex-stratified Universal DVR machine bench-press data.",
+      "reported_value": "The figure presents percentile curves for machine 1RM bench-press load divided by body weight.",
+      "source_role": "context_only",
+      "limitations": [
+        "The proposed 1.0 ratio is not extracted from the figure.",
+        "Universal DVR machine values must not be represented as free-weight norms."
+      ]
+    },
+    {
+      "source_id": "acsm-12-figure-3-4",
+      "title": "ACSM's Guidelines for Exercise Testing and Prescription",
+      "authors": [
+        "Cemal Ozemek",
+        "Amanda Bonikowske",
+        "Jeffrey Christle",
+        "Paul D. Thompson"
+      ],
+      "edition": "12th edition",
+      "publisher": "Wolters Kluwer",
+      "publication_year": 2026,
+      "isbn13": "9781975219246",
+      "table_locator": "Figure 3.4, Leg Press Weight Ratio by Age and Sex",
+      "page_locator": "PDF page 242",
+      "source_population": "Predominantly white, college-educated adults in Universal DVR machine leg-press data.",
+      "reported_value": "The figure presents percentile curves for machine 1RM leg-press load divided by body weight.",
+      "source_role": "context_only",
+      "limitations": [
+        "The proposed 1.5 free-weight squat ratio is not extracted from the figure.",
+        "Machine leg press and free-weight squat are not interchangeable tests."
+      ]
+    },
+    {
+      "source_id": "nsca-5-table-14-30",
+      "title": "Essentials of Strength Training and Conditioning",
+      "authors": [
+        "G. Gregory Haff",
+        "N. Travis Triplett"
+      ],
+      "edition": "5th edition",
+      "publisher": "Human Kinetics",
+      "publication_year": 2026,
+      "isbn13": "9781718216273",
+      "table_locator": "Table 14.30, Percentile Ranks for the 5-10-5 Test",
+      "page_locator": "PDF pages 848-849",
+      "source_population": "NCAA Division I volleyball, basketball, softball, baseball, and American football athletes.",
+      "reported_value": "The slowest 10th-percentile sport/sex cell reported is 5.55 seconds for women's softball.",
+      "source_role": "direct_reference",
+      "limitations": [
+        "Elite collegiate athletes are a poor match for a recreationally trained working adult.",
+        "Sport, sex, surface, footwear, and electronic timing materially affect the comparison."
+      ]
+    }
+  ],
+  "proposals": [
+    {
+      "proposal_version": "competency-floor-proposal@1.0.0",
+      "proposal_id": "98800000-0000-4000-8000-000000000001",
+      "slug": "treadmill_vo2max_male_30_39_p55",
+      "label": "Treadmill VO2max · male reference · age 30-39",
+      "prepared_at": "2026-09-12T17:00:00Z",
+      "content_digest": "sha256:0c4fd2fdede2c94c0fb4e64c597f9f2a059ebe40ba1fb0db86abd950930c7ced",
+      "stage": "proposal_only",
+      "domain": "aerobic_capacity",
+      "estimate_scope": "assessment_specific:direct_treadmill_vo2max",
+      "measurement": "Directly measured maximal treadmill VO2max",
+      "unit_or_scale": "mL/kg/min",
+      "threshold": 41.6,
+      "comparison_direction": "higher_is_better",
+      "minimum_age_years": 30,
+      "maximum_age_years": 39,
+      "sex_scope": "male_reference",
+      "numeric_value_origin": "direct_textbook_reference",
+      "operational_use_origin": "evidence_informed_engineering_proposal",
+      "threshold_rationale": "Uses the table's 55th percentile, labeled Fair, as a reviewable no-major-weak-link proposal rather than an athletic ideal.",
+      "population_match": "moderate",
+      "population_match_notes": "Age matches and the cohort was free from known cardiovascular disease, but it was not selected for physical work or recreational training.",
+      "source_ids": [
+        "acsm-12-table-3-8"
+      ],
+      "evidence_gap": "No source validates the 55th percentile as AGAS's minimum useful competency.",
+      "prerequisites_before_release": [
+        "Record an applicable sex-classification observation without inferring it from name or appearance.",
+        "Govern a maximal treadmill protocol and clinical-risk screening; do not self-administer maximal testing by default."
+      ],
+      "does_not_establish": [
+        "Medical safety, exercise clearance, or a workout dose.",
+        "Equivalence with an estimated field-test VO2max."
+      ],
+      "review_questions": [
+        "Is Fair/55th percentile too low for this owner's competency floor?",
+        "Should AGAS prefer a governed submaximal field estimate instead of direct maximal testing?"
+      ]
+    },
+    {
+      "proposal_version": "competency-floor-proposal@1.0.0",
+      "proposal_id": "98800000-0000-4000-8000-000000000002",
+      "slug": "treadmill_vo2max_female_30_39_p55",
+      "label": "Treadmill VO2max · female reference · age 30-39",
+      "prepared_at": "2026-09-12T17:00:00Z",
+      "content_digest": "sha256:f815ab7109e4ddaa3c678541f51e38477562d6066160411a5fabc3c935c1d325",
+      "stage": "proposal_only",
+      "domain": "aerobic_capacity",
+      "estimate_scope": "assessment_specific:direct_treadmill_vo2max",
+      "measurement": "Directly measured maximal treadmill VO2max",
+      "unit_or_scale": "mL/kg/min",
+      "threshold": 29.7,
+      "comparison_direction": "higher_is_better",
+      "minimum_age_years": 30,
+      "maximum_age_years": 39,
+      "sex_scope": "female_reference",
+      "numeric_value_origin": "direct_textbook_reference",
+      "operational_use_origin": "evidence_informed_engineering_proposal",
+      "threshold_rationale": "Uses the table's 55th percentile, labeled Fair, as a reviewable no-major-weak-link proposal rather than an athletic ideal.",
+      "population_match": "moderate",
+      "population_match_notes": "Age matches and the cohort was free from known cardiovascular disease, but it was not selected for physical work or recreational training.",
+      "source_ids": [
+        "acsm-12-table-3-8"
+      ],
+      "evidence_gap": "No source validates the 55th percentile as AGAS's minimum useful competency.",
+      "prerequisites_before_release": [
+        "Record an applicable sex-classification observation without inferring it from name or appearance.",
+        "Govern a maximal treadmill protocol and clinical-risk screening; do not self-administer maximal testing by default."
+      ],
+      "does_not_establish": [
+        "Medical safety, exercise clearance, or a workout dose.",
+        "Equivalence with an estimated field-test VO2max."
+      ],
+      "review_questions": [
+        "Is Fair/55th percentile too low for this owner's competency floor?",
+        "Should AGAS prefer a governed submaximal field estimate instead of direct maximal testing?"
+      ]
+    },
+    {
+      "proposal_version": "competency-floor-proposal@1.0.0",
+      "proposal_id": "98800000-0000-4000-8000-000000000003",
+      "slug": "grip_strength_male_35_39_p50",
+      "label": "Best-hand grip strength · male reference · age 35-39",
+      "prepared_at": "2026-09-12T17:00:00Z",
+      "content_digest": "sha256:c2b48780487f216e607f16bb14025177309a725a2f53ca6d096b0088a09c94bc",
+      "stage": "proposal_only",
+      "domain": "maximum_strength",
+      "estimate_scope": "assessment_specific:best_hand_grip_strength",
+      "measurement": "Best of two trials per hand with a calibrated handgrip dynamometer",
+      "unit_or_scale": "kg",
+      "threshold": 48,
+      "comparison_direction": "higher_is_better",
+      "minimum_age_years": 35,
+      "maximum_age_years": 39,
+      "sex_scope": "male_reference",
+      "numeric_value_origin": "direct_textbook_reference",
+      "operational_use_origin": "evidence_informed_engineering_proposal",
+      "threshold_rationale": "Uses the directly tabulated median as a general reference, not as total-body strength proof.",
+      "population_match": "moderate",
+      "population_match_notes": "Age matches, but training and occupational exposure of the underlying sample are not reported in the textbook table.",
+      "source_ids": [
+        "acsm-12-table-3-10"
+      ],
+      "evidence_gap": "Grip is only one task-specific strength measure and the median is not a validated athletic floor.",
+      "prerequisites_before_release": [
+        "Record an applicable sex-classification observation.",
+        "Govern the exact dynamometer setup and calibration protocol."
+      ],
+      "does_not_establish": [
+        "Lower-body strength or total-body maximum strength.",
+        "Medical prognosis for this athlete."
+      ],
+      "review_questions": [
+        "Should grip be retained as an inexpensive uncertainty-reduction test?",
+        "Is median reference performance an appropriate floor for this owner?"
+      ]
+    },
+    {
+      "proposal_version": "competency-floor-proposal@1.0.0",
+      "proposal_id": "98800000-0000-4000-8000-000000000004",
+      "slug": "grip_strength_female_35_39_p50",
+      "label": "Best-hand grip strength · female reference · age 35-39",
+      "prepared_at": "2026-09-12T17:00:00Z",
+      "content_digest": "sha256:038fa3a165297f2820d01936fcaf73068fc268315238c53256fe10e300c4438f",
+      "stage": "proposal_only",
+      "domain": "maximum_strength",
+      "estimate_scope": "assessment_specific:best_hand_grip_strength",
+      "measurement": "Best of two trials per hand with a calibrated handgrip dynamometer",
+      "unit_or_scale": "kg",
+      "threshold": 28,
+      "comparison_direction": "higher_is_better",
+      "minimum_age_years": 35,
+      "maximum_age_years": 39,
+      "sex_scope": "female_reference",
+      "numeric_value_origin": "direct_textbook_reference",
+      "operational_use_origin": "evidence_informed_engineering_proposal",
+      "threshold_rationale": "Uses the directly tabulated median as a general reference, not as total-body strength proof.",
+      "population_match": "moderate",
+      "population_match_notes": "Age matches, but training and occupational exposure of the underlying sample are not reported in the textbook table.",
+      "source_ids": [
+        "acsm-12-table-3-10"
+      ],
+      "evidence_gap": "Grip is only one task-specific strength measure and the median is not a validated athletic floor.",
+      "prerequisites_before_release": [
+        "Record an applicable sex-classification observation.",
+        "Govern the exact dynamometer setup and calibration protocol."
+      ],
+      "does_not_establish": [
+        "Lower-body strength or total-body maximum strength.",
+        "Medical prognosis for this athlete."
+      ],
+      "review_questions": [
+        "Should grip be retained as an inexpensive uncertainty-reduction test?",
+        "Is median reference performance an appropriate floor for this owner?"
+      ]
+    },
+    {
+      "proposal_version": "competency-floor-proposal@1.0.0",
+      "proposal_id": "98800000-0000-4000-8000-000000000005",
+      "slug": "standard_pushup_male_30_39_good",
+      "label": "Consecutive standard push-ups · male reference · age 30-39",
+      "prepared_at": "2026-09-12T17:00:00Z",
+      "content_digest": "sha256:ceff6b267fc2e74450dc05f18b89d8c92703db04df7bb0bc6119942ff19be08c",
+      "stage": "proposal_only",
+      "domain": "muscular_endurance",
+      "estimate_scope": "assessment_specific:consecutive_standard_pushups",
+      "measurement": "Consecutive standard push-ups without rest under Box 3.10 technique",
+      "unit_or_scale": "repetitions",
+      "threshold": 17,
+      "comparison_direction": "higher_is_better",
+      "minimum_age_years": 30,
+      "maximum_age_years": 39,
+      "sex_scope": "male_reference",
+      "numeric_value_origin": "direct_textbook_reference",
+      "operational_use_origin": "evidence_informed_engineering_proposal",
+      "threshold_rationale": "Uses the lower bound of the source's Good category rather than the boundary between Poor and Fair.",
+      "population_match": "moderate",
+      "population_match_notes": "Age matches; occupational and recreational-training characteristics are unknown.",
+      "source_ids": [
+        "acsm-12-table-3-11"
+      ],
+      "evidence_gap": "The category is a reference classification, not a validated AGAS minimum or dose rule.",
+      "prerequisites_before_release": [
+        "Record an applicable sex-classification observation.",
+        "Govern self-administration, repetition validity, and stopping criteria."
+      ],
+      "does_not_establish": [
+        "Pressing strength, medical safety, or readiness for loaded pressing.",
+        "A push-up exercise prescription."
+      ],
+      "review_questions": [
+        "Is the Good-category lower bound useful for this owner?",
+        "Should the assessment use video/manual validation or an easier repeatable form standard?"
+      ]
+    },
+    {
+      "proposal_version": "competency-floor-proposal@1.0.0",
+      "proposal_id": "98800000-0000-4000-8000-000000000006",
+      "slug": "modified_pushup_female_30_39_good",
+      "label": "Consecutive modified push-ups · female reference · age 30-39",
+      "prepared_at": "2026-09-12T17:00:00Z",
+      "content_digest": "sha256:04854ac12ec88931fb0bb8f024b83f0085e3d00abba4b6b3658a797bbb9291fb",
+      "stage": "proposal_only",
+      "domain": "muscular_endurance",
+      "estimate_scope": "assessment_specific:consecutive_modified_knee_pushups",
+      "measurement": "Consecutive modified knee push-ups without rest under Box 3.10 technique",
+      "unit_or_scale": "repetitions",
+      "threshold": 13,
+      "comparison_direction": "higher_is_better",
+      "minimum_age_years": 30,
+      "maximum_age_years": 39,
+      "sex_scope": "female_reference",
+      "numeric_value_origin": "direct_textbook_reference",
+      "operational_use_origin": "evidence_informed_engineering_proposal",
+      "threshold_rationale": "Uses the lower bound of the source's Good category while preserving the source's distinct modified protocol.",
+      "population_match": "low",
+      "population_match_notes": "Age matches, but a modified protocol may have poor construct relevance for a recreationally trained physical worker.",
+      "source_ids": [
+        "acsm-12-table-3-11"
+      ],
+      "evidence_gap": "The source says broader female standard-push-up norms are needed; this modified test may be the wrong owner-alpha measure.",
+      "prerequisites_before_release": [
+        "Record an applicable sex-classification observation.",
+        "Decide whether to reject the sex-differentiated protocol and research standard-push-up norms instead."
+      ],
+      "does_not_establish": [
+        "Equivalence to standard push-ups.",
+        "A push-up exercise prescription."
+      ],
+      "review_questions": [
+        "Should this candidate be rejected in favor of one standard protocol for everyone?",
+        "If retained, is the modified protocol relevant to the owner's actual abilities?"
+      ]
+    },
+    {
+      "proposal_version": "competency-floor-proposal@1.0.0",
+      "proposal_id": "98800000-0000-4000-8000-000000000007",
+      "slug": "countermovement_jump_male_30_39_good",
+      "label": "Countermovement vertical jump · male reference · age 30-39",
+      "prepared_at": "2026-09-12T17:00:00Z",
+      "content_digest": "sha256:bc34d56d479e10794f6d81b12e25b116a3cb5a88c9c8e7592b3320db6c10a124",
+      "stage": "proposal_only",
+      "domain": "explosive_power",
+      "estimate_scope": "assessment_specific:countermovement_vertical_jump_with_arm_swing",
+      "measurement": "Best of three countermovement vertical jumps with arm swing",
+      "unit_or_scale": "cm",
+      "threshold": 40,
+      "comparison_direction": "higher_is_better",
+      "minimum_age_years": 30,
+      "maximum_age_years": 39,
+      "sex_scope": "male_reference",
+      "numeric_value_origin": "direct_textbook_reference",
+      "operational_use_origin": "evidence_informed_engineering_proposal",
+      "threshold_rationale": "Uses the lower bound of the source's Good category for the exact age and sex row.",
+      "population_match": "moderate",
+      "population_match_notes": "Age matches and the task is athletic, but source recruitment and training history are not reproduced.",
+      "source_ids": [
+        "acsm-12-table-3-12"
+      ],
+      "evidence_gap": "No source validates the Good-category boundary as a minimum transferable-power floor.",
+      "prerequisites_before_release": [
+        "Record an applicable sex-classification observation.",
+        "Govern impact eligibility, warm-up, measurement method, and landing safety."
+      ],
+      "does_not_establish": [
+        "Safe readiness for maximal jumping.",
+        "Lower-body strength or sprint capability."
+      ],
+      "review_questions": [
+        "Is 40 cm an appropriate minimum for this owner's profile?",
+        "Can the phone measurement method reproduce the source protocol closely enough?"
+      ]
+    },
+    {
+      "proposal_version": "competency-floor-proposal@1.0.0",
+      "proposal_id": "98800000-0000-4000-8000-000000000008",
+      "slug": "countermovement_jump_female_30_39_good",
+      "label": "Countermovement vertical jump · female reference · age 30-39",
+      "prepared_at": "2026-09-12T17:00:00Z",
+      "content_digest": "sha256:e0437f30b958bbf749d0db087e5bbe894ef144eb32cb1f580c2449132fa8302b",
+      "stage": "proposal_only",
+      "domain": "explosive_power",
+      "estimate_scope": "assessment_specific:countermovement_vertical_jump_with_arm_swing",
+      "measurement": "Best of three countermovement vertical jumps with arm swing",
+      "unit_or_scale": "cm",
+      "threshold": 28,
+      "comparison_direction": "higher_is_better",
+      "minimum_age_years": 30,
+      "maximum_age_years": 39,
+      "sex_scope": "female_reference",
+      "numeric_value_origin": "direct_textbook_reference",
+      "operational_use_origin": "evidence_informed_engineering_proposal",
+      "threshold_rationale": "Uses the lower bound of the source's Good category for the exact age and sex row.",
+      "population_match": "moderate",
+      "population_match_notes": "Age matches and the task is athletic, but source recruitment and training history are not reproduced.",
+      "source_ids": [
+        "acsm-12-table-3-12"
+      ],
+      "evidence_gap": "No source validates the Good-category boundary as a minimum transferable-power floor.",
+      "prerequisites_before_release": [
+        "Record an applicable sex-classification observation.",
+        "Govern impact eligibility, warm-up, measurement method, and landing safety."
+      ],
+      "does_not_establish": [
+        "Safe readiness for maximal jumping.",
+        "Lower-body strength or sprint capability."
+      ],
+      "review_questions": [
+        "Is 28 cm an appropriate minimum for this owner's profile?",
+        "Can the phone measurement method reproduce the source protocol closely enough?"
+      ]
+    },
+    {
+      "proposal_version": "competency-floor-proposal@1.0.0",
+      "proposal_id": "98800000-0000-4000-8000-000000000009",
+      "slug": "bess_30_39_mean_plus_sd",
+      "label": "BESS errors · sex-neutral derived reference · age 30-39",
+      "prepared_at": "2026-09-12T17:00:00Z",
+      "content_digest": "sha256:95e4e72f0e8f761a1a9cf47a98b29bf94d2a1fbb5c41c687f7fe58952098b6f8",
+      "stage": "proposal_only",
+      "domain": "balance_coordination",
+      "estimate_scope": "assessment_specific:bess_total_errors",
+      "measurement": "Balance Error Scoring System total errors under the source protocol",
+      "unit_or_scale": "errors",
+      "threshold": 17,
+      "comparison_direction": "lower_is_better",
+      "minimum_age_years": 30,
+      "maximum_age_years": 39,
+      "sex_scope": "sex_neutral",
+      "numeric_value_origin": "derived_from_textbook_reference",
+      "operational_use_origin": "evidence_informed_engineering_proposal",
+      "threshold_rationale": "Rounds mean plus one standard deviation to 17; both sex rows converge on the same result, but the source does not define it as a cutoff.",
+      "population_match": "moderate",
+      "population_match_notes": "Age matches; the source table does not establish similarity in training history, occupation, or prior balance exposure.",
+      "source_ids": [
+        "nsca-5-table-14-34"
+      ],
+      "evidence_gap": "The derivation is an engineering choice and needs protocol/applicability review.",
+      "prerequisites_before_release": [
+        "Govern exact BESS positions, surfaces, error rules, and self-scoring reliability.",
+        "Establish symptom and fall-risk exclusions."
+      ],
+      "does_not_establish": [
+        "Neurologic diagnosis, concussion status, or fall clearance.",
+        "General coordination across moving tasks."
+      ],
+      "review_questions": [
+        "Is mean plus one SD too permissive for a no-major-weak-link floor?",
+        "Is self-scored BESS reliable enough for this product?"
+      ]
+    },
+    {
+      "proposal_version": "competency-floor-proposal@1.0.0",
+      "proposal_id": "98800000-0000-4000-8000-000000000010",
+      "slug": "recreational_300yd_shuttle_mean_plus_sd",
+      "label": "300-yard shuttle · recreational-athlete derived reference",
+      "prepared_at": "2026-09-12T17:00:00Z",
+      "content_digest": "sha256:6b4286469533176b70bb11f23f3b9a013ac905550cdeb5d32b1e41f4b58d5643",
+      "stage": "proposal_only",
+      "domain": "repeated_effort_capacity",
+      "estimate_scope": "assessment_specific:three_hundred_yard_shuttle_time",
+      "measurement": "300-yard shuttle completion time under the cited protocol",
+      "unit_or_scale": "seconds",
+      "threshold": 81.9,
+      "comparison_direction": "lower_is_better",
+      "minimum_age_years": 30,
+      "maximum_age_years": 39,
+      "sex_scope": "sex_neutral",
+      "numeric_value_origin": "derived_from_textbook_reference",
+      "operational_use_origin": "evidence_informed_engineering_proposal",
+      "threshold_rationale": "Uses the recreational-athlete mean plus one SD (72.8 + 9.1 seconds) as a deliberately provisional lower-performance boundary.",
+      "population_match": "moderate",
+      "population_match_notes": "Recreational-athlete status is relevant, but age, occupation, surface, and conditioning history are unspecified.",
+      "source_ids": [
+        "nsca-5-table-14-14"
+      ],
+      "evidence_gap": "The book explicitly says the data are descriptive rather than normative; the derived boundary is not validated.",
+      "prerequisites_before_release": [
+        "Govern high-intensity eligibility, surface, course length, turns, timing, and termination criteria.",
+        "Earn acceleration/deceleration exposure before selecting this test."
+      ],
+      "does_not_establish": [
+        "Aerobic capacity or sprint speed in isolation.",
+        "Readiness for repeated maximal shuttles."
+      ],
+      "review_questions": [
+        "Is this unnecessarily fatiguing for initial assessment?",
+        "Should a lower-risk repeated-effort protocol be researched instead?"
+      ]
+    },
+    {
+      "proposal_version": "competency-floor-proposal@1.0.0",
+      "proposal_id": "98800000-0000-4000-8000-000000000011",
+      "slug": "free_weight_back_squat_1rm_1_5xbw",
+      "label": "Free-weight back squat 1RM · professional-judgment proposal",
+      "prepared_at": "2026-09-12T17:00:00Z",
+      "content_digest": "sha256:238690f3ac31f3524f07c645c26b82a6e7ad715bd8e0645120876a7ca509e526",
+      "stage": "proposal_only",
+      "domain": "relative_strength",
+      "estimate_scope": "assessment_specific:free_weight_back_squat_1rm_body_mass_ratio",
+      "measurement": "Free-weight back squat 1RM divided by contemporaneous body mass",
+      "unit_or_scale": "body_mass_ratio",
+      "threshold": 1.5,
+      "comparison_direction": "higher_is_better",
+      "minimum_age_years": 30,
+      "maximum_age_years": 39,
+      "sex_scope": "sex_neutral",
+      "numeric_value_origin": "engineering_proposal_without_numeric_evidence",
+      "operational_use_origin": "professional_judgment_required",
+      "threshold_rationale": "A concrete review target for a broadly useful high-force reserve; it is not attributed to either textbook and is intentionally awaiting accountable adoption or revision.",
+      "population_match": "low",
+      "population_match_notes": "No reviewed population source in this batch supports a sex-neutral 1.5 ratio for this owner.",
+      "source_ids": [
+        "acsm-12-figure-3-4"
+      ],
+      "evidence_gap": "The ACSM figure is machine leg press data and does not support this free-weight squat number.",
+      "prerequisites_before_release": [
+        "An accountable reviewer must author and attest the professional-judgment authority.",
+        "Govern technique, depth, familiarization, spotting, and eligibility; consider a submaximal estimate."
+      ],
+      "does_not_establish": [
+        "A scientific norm, safety cutoff, or universal athletic standard.",
+        "Equivalence to machine leg press."
+      ],
+      "review_questions": [
+        "Keep, change, or reject 1.5 times body mass?",
+        "Should this use a technically valid 3-5RM estimate rather than direct 1RM?"
+      ]
+    },
+    {
+      "proposal_version": "competency-floor-proposal@1.0.0",
+      "proposal_id": "98800000-0000-4000-8000-000000000012",
+      "slug": "free_weight_bench_press_1rm_1_0xbw",
+      "label": "Free-weight bench press 1RM · professional-judgment proposal",
+      "prepared_at": "2026-09-12T17:00:00Z",
+      "content_digest": "sha256:1198d850d6eade3803b25f5b7beb461a18de93c238c02d5ecfc8ac2bc70147e2",
+      "stage": "proposal_only",
+      "domain": "relative_strength",
+      "estimate_scope": "assessment_specific:free_weight_bench_press_1rm_body_mass_ratio",
+      "measurement": "Free-weight bench press 1RM divided by contemporaneous body mass",
+      "unit_or_scale": "body_mass_ratio",
+      "threshold": 1.0,
+      "comparison_direction": "higher_is_better",
+      "minimum_age_years": 30,
+      "maximum_age_years": 39,
+      "sex_scope": "sex_neutral",
+      "numeric_value_origin": "engineering_proposal_without_numeric_evidence",
+      "operational_use_origin": "professional_judgment_required",
+      "threshold_rationale": "A concrete review target for upper-body force relative to mass; it is not attributed to the machine-based ACSM curves.",
+      "population_match": "low",
+      "population_match_notes": "No reviewed population source in this batch supports a sex-neutral 1.0 ratio for this owner.",
+      "source_ids": [
+        "acsm-12-figure-3-3"
+      ],
+      "evidence_gap": "The ACSM figure is Universal DVR machine data and does not support this free-weight number.",
+      "prerequisites_before_release": [
+        "An accountable reviewer must author and attest the professional-judgment authority.",
+        "Govern technique, familiarization, spotting, and eligibility; consider a submaximal estimate."
+      ],
+      "does_not_establish": [
+        "A scientific norm, safety cutoff, or universal athletic standard.",
+        "Equivalence to machine bench press."
+      ],
+      "review_questions": [
+        "Keep, change, or reject 1.0 times body mass?",
+        "Should this use a technically valid 3-5RM estimate rather than direct 1RM?"
+      ]
+    },
+    {
+      "proposal_version": "competency-floor-proposal@1.0.0",
+      "proposal_id": "98800000-0000-4000-8000-000000000013",
+      "slug": "loaded_carry_0_5xbw_100m",
+      "label": "Loaded carry at 0.5× body mass for 100 m · professional-judgment proposal",
+      "prepared_at": "2026-09-12T17:00:00Z",
+      "content_digest": "sha256:c8ba7e506ddbaec418af7ad7d1db8d108a84924930c28125c8267c6d498e30cd",
+      "stage": "proposal_only",
+      "domain": "loaded_locomotion",
+      "estimate_scope": "assessment_specific:carry_distance_at_0_5x_body_mass_total_load",
+      "measurement": "Continuous carry distance with total external load equal to 50% of body mass",
+      "unit_or_scale": "metres",
+      "threshold": 100,
+      "comparison_direction": "higher_is_better",
+      "minimum_age_years": 30,
+      "maximum_age_years": 39,
+      "sex_scope": "sex_neutral",
+      "numeric_value_origin": "engineering_proposal_without_numeric_evidence",
+      "operational_use_origin": "professional_judgment_required",
+      "threshold_rationale": "A measurable owner-review target combining meaningful relative load and locomotion; neither number is presented as a published norm.",
+      "population_match": "low",
+      "population_match_notes": "It is task-relevant to physical work, but no reviewed population reference supports the exact load-distance pair.",
+      "source_ids": [],
+      "evidence_gap": "A suitable adult loaded-carry norm was not found in the supplied textbook tables.",
+      "prerequisites_before_release": [
+        "An accountable reviewer must author and attest the professional-judgment authority.",
+        "Define implement, grip allowance, turns, posture, set-down rules, and symptom stops."
+      ],
+      "does_not_establish": [
+        "Occupational fitness certification or manual-handling safety.",
+        "A carry training dose."
+      ],
+      "review_questions": [
+        "Is 50% body mass for 100 m useful and practical?",
+        "Should grip failure, gait quality, or completion time be separate observations?"
+      ]
+    },
+    {
+      "proposal_version": "competency-floor-proposal@1.0.0",
+      "proposal_id": "98800000-0000-4000-8000-000000000014",
+      "slug": "movement_versatility_6_families_90d",
+      "label": "Six movement-exposure families in 90 days · professional-judgment proposal",
+      "prepared_at": "2026-09-12T17:00:00Z",
+      "content_digest": "sha256:bdd6acd25b3bb3faba4d7d027445fab42ebac236576c63bfca449a1371649832",
+      "stage": "proposal_only",
+      "domain": "movement_versatility",
+      "estimate_scope": "history_specific:distinct_movement_exposure_families_over_90_days",
+      "measurement": "Distinct governed movement-exposure families completed in a rolling 90-day window",
+      "unit_or_scale": "exposure_families",
+      "threshold": 6,
+      "comparison_direction": "higher_is_better",
+      "minimum_age_years": 30,
+      "maximum_age_years": 39,
+      "sex_scope": "sex_neutral",
+      "numeric_value_origin": "engineering_proposal_without_numeric_evidence",
+      "operational_use_origin": "professional_judgment_required",
+      "threshold_rationale": "A concrete breadth proposal that does not confuse gym performance with exposure to varied movement problems.",
+      "population_match": "low",
+      "population_match_notes": "The construct matches the blueprint mission, but the count and time window have no reviewed population basis.",
+      "source_ids": [],
+      "evidence_gap": "No validated norm defines a useful number of movement families over 90 days.",
+      "prerequisites_before_release": [
+        "An accountable reviewer must define the exposure-family ontology and attest the threshold.",
+        "Specify the minimum meaningful exposure required for a family to count."
+      ],
+      "does_not_establish": [
+        "Competence, proficiency, or safety in any exposure family.",
+        "That all movement families are equally valuable."
+      ],
+      "review_questions": [
+        "Are six families and 90 days the right breadth and window?",
+        "Which exposure families should count for the owner-alpha?"
+      ]
+    },
+    {
+      "proposal_version": "competency-floor-proposal@1.0.0",
+      "proposal_id": "98800000-0000-4000-8000-000000000015",
+      "slug": "five_ten_five_5_55s_collegiate_lower_reference",
+      "label": "5-10-5 change-of-direction time · low-applicability reference",
+      "prepared_at": "2026-09-12T17:00:00Z",
+      "content_digest": "sha256:1aa6fceee3a031705cf7997c87e9eac46be00cb6dd2333e763ead151b0d6d89b",
+      "stage": "proposal_only",
+      "domain": "change_of_direction",
+      "estimate_scope": "assessment_specific:five_ten_five_electronic_time",
+      "measurement": "5-10-5 test time using electronic timing",
+      "unit_or_scale": "seconds",
+      "threshold": 5.55,
+      "comparison_direction": "lower_is_better",
+      "minimum_age_years": 30,
+      "maximum_age_years": 39,
+      "sex_scope": "sex_neutral",
+      "numeric_value_origin": "direct_textbook_reference",
+      "operational_use_origin": "evidence_informed_engineering_proposal",
+      "threshold_rationale": "Uses the slowest reported 10th-percentile cell only as a conspicuously low collegiate reference; it is included to expose, not hide, the population mismatch.",
+      "population_match": "low",
+      "population_match_notes": "NCAA Division I athletes are younger and more sport-selected than the owner; combining sex and sport cells is not validated.",
+      "source_ids": [
+        "nsca-5-table-14-30"
+      ],
+      "evidence_gap": "A directly applicable recreational adult reference and a justified sex-neutral floor are still missing.",
+      "prerequisites_before_release": [
+        "Do not release without more applicable reference data or an explicit professional-judgment authority.",
+        "Govern earned sprint/deceleration exposure, surface, footwear, timing, and symptom criteria."
+      ],
+      "does_not_establish": [
+        "Safe readiness for maximal cutting.",
+        "A universal agility threshold or training dose."
+      ],
+      "review_questions": [
+        "Should this candidate be rejected rather than converted into a floor?",
+        "Would a lower-intensity deceleration/control assessment be better for initial planning?"
+      ]
+    }
+  ],
+  "release_boundary": "These 15 records are research proposals only. They cannot be batch-ratified, create competency floors, satisfy planning prerequisites, select an assessment, or prescribe training. Each requires owner review; each released floor must then receive exact protocol, evidence or judgment authority, digest, attestation, and immutable persistence separately."
+}

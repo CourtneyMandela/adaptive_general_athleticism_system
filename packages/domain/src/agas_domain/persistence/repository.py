@@ -45,6 +45,8 @@ from agas_domain.models import (
     CapabilityNeed,
     CatalogImport,
     CompetencyFloor,
+    CompetencyFloorAuthority,
+    CompetencyFloorAuthorityReview,
     CompetencyFloorReview,
     DecisionRecord,
     Environment,
@@ -141,8 +143,13 @@ from agas_domain.persistence.models import (
     CatalogImportEvidenceRecord,
     CatalogImportExerciseRecord,
     CatalogImportRecord,
+    CompetencyFloorAuthorityEvidenceClaimRecord,
+    CompetencyFloorAuthorityLinkRecord,
+    CompetencyFloorAuthorityRecord,
+    CompetencyFloorAuthorityReviewRecord,
     CompetencyFloorEvidenceClaimRecord,
     CompetencyFloorRecord,
+    CompetencyFloorReviewAuthorityLinkRecord,
     CompetencyFloorReviewEvidenceClaimRecord,
     CompetencyFloorReviewRecord,
     DecisionRecordRecord,
@@ -1040,9 +1047,86 @@ class DomainRepository:
         ]
         self.session.add(record)
 
+    def add_competency_floor_authority(self, authority: CompetencyFloorAuthority) -> None:
+        self._require_ids_exist(
+            EvidenceClaimRecord.id,
+            authority.supporting_evidence_claim_ids,
+            "competency-floor authority supporting evidence claims",
+        )
+        record = CompetencyFloorAuthorityRecord(
+            id=authority.id,
+            schema_version=authority.schema_version,
+            created_at=authority.created_at,
+            authority_kind=authority.authority_kind.value,
+            statement=authority.statement,
+            scope=authority.scope,
+            population=authority.population,
+            rationale=authority.rationale,
+            applicability_notes=authority.applicability_notes,
+            uncertainty=authority.uncertainty,
+            limitations=list(authority.limitations),
+            authored_by=authority.authored_by,
+            qualification_context=authority.qualification_context,
+            content_digest=authority.content_digest,
+            authority_version=authority.authority_version,
+        )
+        record.evidence_links = [
+            CompetencyFloorAuthorityEvidenceClaimRecord(
+                authority_id=authority.id,
+                evidence_claim_id=claim_id,
+                position=position,
+            )
+            for position, claim_id in enumerate(authority.supporting_evidence_claim_ids)
+        ]
+        self.session.add(record)
+
+    def add_competency_floor_authority_review(
+        self, review: CompetencyFloorAuthorityReview
+    ) -> None:
+        if self.get_competency_floor_authority(review.authority_id) is None:
+            raise DomainIntegrityError("competency floor authority does not exist")
+        current = self.get_current_competency_floor_authority_review(review.authority_id)
+        if current is None:
+            if review.sequence_number != 1 or review.supersedes_review_id is not None:
+                raise DomainIntegrityError("the first authority review must start sequence one")
+        else:
+            if review.sequence_number != current.sequence_number + 1:
+                raise DomainIntegrityError(
+                    "an authority review replacement must use the next sequence number"
+                )
+            if review.supersedes_review_id != current.id:
+                raise DomainIntegrityError(
+                    "an authority review replacement must supersede the current review"
+                )
+            if review.reviewed_at < current.reviewed_at:
+                raise DomainIntegrityError(
+                    "an authority review replacement cannot predate the current review"
+                )
+        self.session.add(
+            CompetencyFloorAuthorityReviewRecord(
+                id=review.id,
+                schema_version=review.schema_version,
+                created_at=review.created_at,
+                authority_id=review.authority_id,
+                decision=review.decision.value,
+                sequence_number=review.sequence_number,
+                supersedes_review_id=review.supersedes_review_id,
+                reviewed_at=review.reviewed_at,
+                reviewed_by=review.reviewed_by,
+                attestation=review.attestation,
+                uncertainty=review.uncertainty,
+                review_version=review.review_version,
+            )
+        )
+
     def add_competency_floor(self, floor: CompetencyFloor) -> None:
         self._require_ids_exist(
             EvidenceClaimRecord.id, floor.evidence_claim_ids, "competency-floor evidence claims"
+        )
+        self._require_ids_exist(
+            CompetencyFloorAuthorityRecord.id,
+            floor.judgment_authority_ids,
+            "competency-floor judgment authorities",
         )
         record = CompetencyFloorRecord(
             id=floor.id,
@@ -1068,6 +1152,14 @@ class DomainRepository:
             )
             for position, evidence_claim_id in enumerate(floor.evidence_claim_ids)
         ]
+        record.judgment_authority_links = [
+            CompetencyFloorAuthorityLinkRecord(
+                competency_floor_id=floor.id,
+                authority_id=authority_id,
+                position=position,
+            )
+            for position, authority_id in enumerate(floor.judgment_authority_ids)
+        ]
         self.session.add(record)
 
     def add_competency_floor_review(self, review: CompetencyFloorReview) -> None:
@@ -1079,10 +1171,29 @@ class DomainRepository:
             review.evidence_claim_ids,
             "competency floor review evidence claims",
         )
+        self._require_ids_exist(
+            CompetencyFloorAuthorityRecord.id,
+            review.judgment_authority_ids,
+            "competency floor review judgment authorities",
+        )
         if not set(floor.evidence_claim_ids).issubset(review.evidence_claim_ids):
             raise DomainIntegrityError(
                 "competency floor review must include every claim cited by the floor"
             )
+        if not set(floor.judgment_authority_ids).issubset(review.judgment_authority_ids):
+            raise DomainIntegrityError(
+                "competency floor review must include every judgment authority cited by the floor"
+            )
+        for authority_id in review.judgment_authority_ids:
+            authority_review = self.get_current_competency_floor_authority_review(authority_id)
+            if (
+                authority_review is None
+                or authority_review.decision is not AssessmentReviewDecision.APPROVED
+                or authority_review.reviewed_at > review.reviewed_at
+            ):
+                raise DomainIntegrityError(
+                    "competency floor review requires a current approved judgment authority review"
+                )
         current = self.get_current_competency_floor_review(floor.id)
         if current is None:
             if review.sequence_number != 1 or review.supersedes_review_id is not None:
@@ -1124,6 +1235,14 @@ class DomainRepository:
                 position=position,
             )
             for position, evidence_claim_id in enumerate(review.evidence_claim_ids)
+        ]
+        record.judgment_authority_links = [
+            CompetencyFloorReviewAuthorityLinkRecord(
+                competency_floor_review_id=review.id,
+                authority_id=authority_id,
+                position=position,
+            )
+            for position, authority_id in enumerate(review.judgment_authority_ids)
         ]
         self.session.add(record)
 
@@ -4172,6 +4291,72 @@ class DomainRepository:
         )
         return self.get_block_review(review_id) if review_id is not None else None
 
+    def get_competency_floor_authority(
+        self, authority_id: UUID
+    ) -> CompetencyFloorAuthority | None:
+        record = self.session.get(CompetencyFloorAuthorityRecord, authority_id)
+        if record is None:
+            return None
+        return CompetencyFloorAuthority(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            authority_kind=record.authority_kind,
+            statement=record.statement,
+            scope=record.scope,
+            population=record.population,
+            rationale=record.rationale,
+            applicability_notes=record.applicability_notes,
+            uncertainty=record.uncertainty,
+            limitations=tuple(record.limitations),
+            authored_by=record.authored_by,
+            qualification_context=record.qualification_context,
+            supporting_evidence_claim_ids=tuple(
+                item.evidence_claim_id for item in record.evidence_links
+            ),
+            content_digest=record.content_digest,
+            authority_version=record.authority_version,
+        )
+
+    def get_competency_floor_authority_review(
+        self, review_id: UUID
+    ) -> CompetencyFloorAuthorityReview | None:
+        record = self.session.get(CompetencyFloorAuthorityReviewRecord, review_id)
+        return self._competency_floor_authority_review_from_record(record) if record else None
+
+    def get_current_competency_floor_authority_review(
+        self, authority_id: UUID
+    ) -> CompetencyFloorAuthorityReview | None:
+        record = self.session.scalar(
+            select(CompetencyFloorAuthorityReviewRecord)
+            .where(CompetencyFloorAuthorityReviewRecord.authority_id == authority_id)
+            .order_by(
+                CompetencyFloorAuthorityReviewRecord.sequence_number.desc(),
+                CompetencyFloorAuthorityReviewRecord.id.desc(),
+            )
+            .limit(1)
+        )
+        return self._competency_floor_authority_review_from_record(record) if record else None
+
+    @staticmethod
+    def _competency_floor_authority_review_from_record(
+        record: CompetencyFloorAuthorityReviewRecord,
+    ) -> CompetencyFloorAuthorityReview:
+        return CompetencyFloorAuthorityReview(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            authority_id=record.authority_id,
+            decision=record.decision,
+            sequence_number=record.sequence_number,
+            supersedes_review_id=record.supersedes_review_id,
+            reviewed_at=record.reviewed_at,
+            reviewed_by=record.reviewed_by,
+            attestation=record.attestation,
+            uncertainty=record.uncertainty,
+            review_version=record.review_version,
+        )
+
     def get_competency_floor(self, floor_id: UUID) -> CompetencyFloor | None:
         record = self.session.get(CompetencyFloorRecord, floor_id)
         if record is None:
@@ -4191,6 +4376,9 @@ class DomainRepository:
             applicability_notes=record.applicability_notes,
             uncertainty=record.uncertainty,
             evidence_claim_ids=tuple(item.evidence_claim_id for item in record.evidence_links),
+            judgment_authority_ids=tuple(
+                item.authority_id for item in record.judgment_authority_links
+            ),
             floor_version=record.floor_version,
         )
 
@@ -4234,6 +4422,9 @@ class DomainRepository:
             sequence_number=record.sequence_number,
             supersedes_review_id=record.supersedes_review_id,
             evidence_claim_ids=tuple(item.evidence_claim_id for item in record.evidence_links),
+            judgment_authority_ids=tuple(
+                item.authority_id for item in record.judgment_authority_links
+            ),
             reviewed_at=record.reviewed_at,
             reviewed_by=record.reviewed_by,
             applicability_rationale=record.applicability_rationale,

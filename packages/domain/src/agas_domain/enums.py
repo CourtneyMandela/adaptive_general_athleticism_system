@@ -239,6 +239,13 @@ class CompetencyStatus(StrEnum):
     INCOMPARABLE = "incomparable"
 
 
+class CompetencyFloorAuthorityKind(StrEnum):
+    """Non-scientific authority that may govern an operational floor choice."""
+
+    PROFESSIONAL_JUDGMENT = "professional_judgment"
+    PERSONAL_CALIBRATION = "personal_calibration"
+
+
 class TrainingPriorityState(StrEnum):
     DEVELOP = "develop"
     MAINTAIN = "maintain"

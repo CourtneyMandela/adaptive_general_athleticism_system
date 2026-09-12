@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -25,6 +27,7 @@ from agas_domain.enums import (
     BlockReviewOutcome,
     CapabilityDomain,
     ComparisonDirection,
+    CompetencyFloorAuthorityKind,
     CompetencyStatus,
     Confidence,
     CostLevel,
@@ -354,7 +357,7 @@ class Adaptation(VersionedRecord):
 
 
 class EvidenceSourceIdentifier(DomainModel):
-    scheme: Literal["doi", "pmid", "openalex", "other"]
+    scheme: Literal["doi", "pmid", "openalex", "isbn", "other"]
     value: NonEmptyText
 
 
@@ -854,13 +857,18 @@ class CompetencyFloor(VersionedRecord):
     maximum_age_years: int | None = Field(default=None, ge=0, le=130)
     applicability_notes: NonEmptyText
     uncertainty: NonEmptyText
-    evidence_claim_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
+    evidence_claim_ids: tuple[UUID, ...] = ()
+    judgment_authority_ids: tuple[UUID, ...] = ()
     floor_version: NonEmptyText
 
     @model_validator(mode="after")
     def validate_evidence(self) -> CompetencyFloor:
         if len(set(self.evidence_claim_ids)) != len(self.evidence_claim_ids):
             raise ValueError("evidence_claim_ids must not contain duplicates")
+        if len(set(self.judgment_authority_ids)) != len(self.judgment_authority_ids):
+            raise ValueError("judgment_authority_ids must not contain duplicates")
+        if not self.evidence_claim_ids and not self.judgment_authority_ids:
+            raise ValueError("a competency floor requires evidence or a judgment authority")
         if (
             self.minimum_age_years is not None
             and self.maximum_age_years is not None
@@ -870,12 +878,79 @@ class CompetencyFloor(VersionedRecord):
         return self
 
 
+class CompetencyFloorAuthority(VersionedRecord):
+    """An immutable, explicitly non-scientific basis for an operational floor."""
+
+    authority_kind: CompetencyFloorAuthorityKind
+    statement: NonEmptyText
+    scope: NonEmptyText
+    population: NonEmptyText
+    rationale: NonEmptyText
+    applicability_notes: NonEmptyText
+    uncertainty: NonEmptyText
+    limitations: Annotated[tuple[NonEmptyText, ...], Field(min_length=1)]
+    authored_by: NonEmptyText
+    qualification_context: NonEmptyText
+    supporting_evidence_claim_ids: tuple[UUID, ...] = ()
+    content_digest: Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
+    authority_version: NonEmptyText
+
+    @model_validator(mode="after")
+    def validate_authority(self) -> CompetencyFloorAuthority:
+        if len(set(self.supporting_evidence_claim_ids)) != len(
+            self.supporting_evidence_claim_ids
+        ):
+            raise ValueError("supporting_evidence_claim_ids must not contain duplicates")
+        canonical = json.dumps(
+            self.model_dump(mode="json", exclude={"content_digest"}),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
+        expected = f"sha256:{hashlib.sha256(canonical.encode()).hexdigest()}"
+        if self.content_digest != expected:
+            raise ValueError("competency floor authority content digest is stale")
+        return self
+
+
+class CompetencyFloorAuthorityReview(VersionedRecord):
+    """One append-only attestation about an exact judgment authority."""
+
+    authority_id: UUID
+    decision: AssessmentReviewDecision
+    sequence_number: Annotated[int, Field(ge=1)]
+    supersedes_review_id: UUID | None = None
+    reviewed_at: datetime
+    reviewed_by: NonEmptyText
+    attestation: NonEmptyText
+    uncertainty: NonEmptyText
+    review_version: NonEmptyText
+
+    @field_validator("reviewed_at")
+    @classmethod
+    def require_aware_reviewed_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("competency floor authority review time must include a timezone")
+        return value
+
+    @model_validator(mode="after")
+    def validate_review(self) -> CompetencyFloorAuthorityReview:
+        if self.sequence_number == 1 and self.supersedes_review_id is not None:
+            raise ValueError("the first authority review cannot supersede another record")
+        if self.sequence_number > 1 and self.supersedes_review_id is None:
+            raise ValueError("later authority reviews must reference their predecessor")
+        if self.supersedes_review_id == self.id:
+            raise ValueError("an authority review cannot supersede itself")
+        return self
+
+
 class CompetencyFloorReview(VersionedRecord):
     competency_floor_id: UUID
     decision: AssessmentReviewDecision
     sequence_number: Annotated[int, Field(ge=1)]
     supersedes_review_id: UUID | None = None
-    evidence_claim_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
+    evidence_claim_ids: tuple[UUID, ...] = ()
+    judgment_authority_ids: tuple[UUID, ...] = ()
     reviewed_at: datetime
     reviewed_by: NonEmptyText
     applicability_rationale: NonEmptyText
@@ -893,6 +968,10 @@ class CompetencyFloorReview(VersionedRecord):
     def validate_review(self) -> CompetencyFloorReview:
         if len(set(self.evidence_claim_ids)) != len(self.evidence_claim_ids):
             raise ValueError("evidence_claim_ids must not contain duplicates")
+        if len(set(self.judgment_authority_ids)) != len(self.judgment_authority_ids):
+            raise ValueError("judgment_authority_ids must not contain duplicates")
+        if not self.evidence_claim_ids and not self.judgment_authority_ids:
+            raise ValueError("a competency floor review requires evidence or a judgment authority")
         if self.sequence_number == 1 and self.supersedes_review_id is not None:
             raise ValueError("the first competency floor review cannot supersede another")
         if self.sequence_number > 1 and self.supersedes_review_id is None:

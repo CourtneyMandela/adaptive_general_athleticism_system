@@ -17,6 +17,7 @@ import {
 } from "@/lib/planning-authority-batch";
 
 import { CompetencyFloorGovernanceClient } from "./competency-floor-governance-client";
+import { CompetencyFloorProposalClient } from "./competency-floor-proposal-client";
 import { ResourceGovernanceClient } from "./resource-governance-client";
 import { TrainingConstructionGovernanceClient } from "./training-construction-governance-client";
 
@@ -405,6 +406,7 @@ export function PlanningGovernanceClient({ athleteId }: { athleteId?: string }) 
           ) : null}
         </div>
       ) : null}
+      <CompetencyFloorProposalClient />
       <CompetencyFloorGovernanceClient key={`floor-authorities-${authorityRevision}`} />
       <ResourceGovernanceClient key={`resource-authorities-${authorityRevision}`} />
       <TrainingConstructionGovernanceClient key={`construction-authorities-${authorityRevision}`} />

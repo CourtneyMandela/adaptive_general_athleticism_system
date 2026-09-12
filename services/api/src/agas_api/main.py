@@ -122,6 +122,10 @@ from agas_api.competency_floor_candidates import (
     ratify_competency_floor_candidate,
     ratify_competency_floor_candidate_batch,
 )
+from agas_api.competency_floor_proposals import (
+    CompetencyFloorProposalBatch,
+    competency_floor_proposal_batch,
+)
 from agas_api.current_week import (
     CurrentWeekConflictError,
     CurrentWeekNotFoundError,
@@ -706,6 +710,17 @@ def ratify_prepared_training_construction_candidate(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
         ) from error
+
+
+@app.get(
+    "/v1/operator/competency-floor-proposals",
+    tags=["operator"],
+    response_model=CompetencyFloorProposalBatch,
+)
+def get_competency_floor_proposals(
+    _authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+) -> CompetencyFloorProposalBatch:
+    return competency_floor_proposal_batch()
 
 
 @app.get(

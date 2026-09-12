@@ -807,6 +807,86 @@ class AssessmentPerformanceRecord(VersionedRecordMixin, Base):
     rule_version: Mapped[str] = mapped_column(String(120), nullable=False)
 
 
+class CompetencyFloorAuthorityRecord(VersionedRecordMixin, Base):
+    __tablename__ = "competency_floor_authorities"
+    __table_args__ = (
+        CheckConstraint(
+            "authority_kind IN ('professional_judgment', 'personal_calibration')",
+            name="ck_competency_floor_authority_kind",
+        ),
+        UniqueConstraint("content_digest", name="uq_competency_floor_authority_digest"),
+    )
+
+    authority_kind: Mapped[str] = mapped_column(String(60), index=True, nullable=False)
+    statement: Mapped[str] = mapped_column(Text(), nullable=False)
+    scope: Mapped[str] = mapped_column(String(200), nullable=False)
+    population: Mapped[str] = mapped_column(Text(), nullable=False)
+    rationale: Mapped[str] = mapped_column(Text(), nullable=False)
+    applicability_notes: Mapped[str] = mapped_column(Text(), nullable=False)
+    uncertainty: Mapped[str] = mapped_column(Text(), nullable=False)
+    limitations: Mapped[list[str]] = mapped_column(JsonType, nullable=False)
+    authored_by: Mapped[str] = mapped_column(String(160), nullable=False)
+    qualification_context: Mapped[str] = mapped_column(Text(), nullable=False)
+    content_digest: Mapped[str] = mapped_column(String(80), nullable=False)
+    authority_version: Mapped[str] = mapped_column(String(120), nullable=False)
+
+    evidence_links: Mapped[list[CompetencyFloorAuthorityEvidenceClaimRecord]] = relationship(
+        cascade="save-update, merge",
+        lazy="selectin",
+        order_by="CompetencyFloorAuthorityEvidenceClaimRecord.position",
+    )
+
+
+class CompetencyFloorAuthorityEvidenceClaimRecord(Base):
+    __tablename__ = "competency_floor_authority_evidence_claims"
+    __table_args__ = (
+        UniqueConstraint("authority_id", "position", name="uq_floor_authority_evidence_order"),
+    )
+
+    authority_id: Mapped[UUID] = mapped_column(
+        ForeignKey("competency_floor_authorities.id", ondelete="RESTRICT"), primary_key=True
+    )
+    evidence_claim_id: Mapped[UUID] = mapped_column(
+        ForeignKey("evidence_claims.id", ondelete="RESTRICT"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer(), nullable=False)
+
+
+class CompetencyFloorAuthorityReviewRecord(VersionedRecordMixin, Base):
+    __tablename__ = "competency_floor_authority_reviews"
+    __table_args__ = (
+        CheckConstraint(
+            "decision IN ('approved', 'needs_revision', 'rejected')",
+            name="ck_floor_authority_review_decision",
+        ),
+        CheckConstraint("sequence_number >= 1", name="ck_floor_authority_review_sequence"),
+        UniqueConstraint(
+            "authority_id", "sequence_number", name="uq_floor_authority_review_sequence"
+        ),
+        UniqueConstraint(
+            "supersedes_review_id", name="uq_floor_authority_review_superseded_once"
+        ),
+    )
+
+    authority_id: Mapped[UUID] = mapped_column(
+        ForeignKey("competency_floor_authorities.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=False,
+    )
+    decision: Mapped[str] = mapped_column(String(40), index=True, nullable=False)
+    sequence_number: Mapped[int] = mapped_column(Integer(), nullable=False)
+    supersedes_review_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("competency_floor_authority_reviews.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=True,
+    )
+    reviewed_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)
+    reviewed_by: Mapped[str] = mapped_column(String(160), nullable=False)
+    attestation: Mapped[str] = mapped_column(Text(), nullable=False)
+    uncertainty: Mapped[str] = mapped_column(Text(), nullable=False)
+    review_version: Mapped[str] = mapped_column(String(120), nullable=False)
+
+
 class CompetencyFloorRecord(VersionedRecordMixin, Base):
     __tablename__ = "competency_floors"
     __table_args__ = (
@@ -842,6 +922,11 @@ class CompetencyFloorRecord(VersionedRecordMixin, Base):
         lazy="selectin",
         order_by="CompetencyFloorEvidenceClaimRecord.position",
     )
+    judgment_authority_links: Mapped[list[CompetencyFloorAuthorityLinkRecord]] = relationship(
+        cascade="save-update, merge",
+        lazy="selectin",
+        order_by="CompetencyFloorAuthorityLinkRecord.position",
+    )
 
 
 class CompetencyFloorEvidenceClaimRecord(Base):
@@ -855,6 +940,21 @@ class CompetencyFloorEvidenceClaimRecord(Base):
     )
     evidence_claim_id: Mapped[UUID] = mapped_column(
         ForeignKey("evidence_claims.id", ondelete="RESTRICT"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer(), nullable=False)
+
+
+class CompetencyFloorAuthorityLinkRecord(Base):
+    __tablename__ = "competency_floor_authority_links"
+    __table_args__ = (
+        UniqueConstraint("competency_floor_id", "position", name="uq_floor_authority_order"),
+    )
+
+    competency_floor_id: Mapped[UUID] = mapped_column(
+        ForeignKey("competency_floors.id", ondelete="RESTRICT"), primary_key=True
+    )
+    authority_id: Mapped[UUID] = mapped_column(
+        ForeignKey("competency_floor_authorities.id", ondelete="RESTRICT"), primary_key=True
     )
     position: Mapped[int] = mapped_column(Integer(), nullable=False)
 
@@ -898,6 +998,13 @@ class CompetencyFloorReviewRecord(VersionedRecordMixin, Base):
         lazy="selectin",
         order_by="CompetencyFloorReviewEvidenceClaimRecord.position",
     )
+    judgment_authority_links: Mapped[
+        list[CompetencyFloorReviewAuthorityLinkRecord]
+    ] = relationship(
+        cascade="save-update, merge",
+        lazy="selectin",
+        order_by="CompetencyFloorReviewAuthorityLinkRecord.position",
+    )
 
 
 class CompetencyFloorReviewEvidenceClaimRecord(Base):
@@ -915,6 +1022,25 @@ class CompetencyFloorReviewEvidenceClaimRecord(Base):
     )
     evidence_claim_id: Mapped[UUID] = mapped_column(
         ForeignKey("evidence_claims.id", ondelete="RESTRICT"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer(), nullable=False)
+
+
+class CompetencyFloorReviewAuthorityLinkRecord(Base):
+    __tablename__ = "competency_floor_review_authority_links"
+    __table_args__ = (
+        UniqueConstraint(
+            "competency_floor_review_id",
+            "position",
+            name="uq_floor_review_authority_order",
+        ),
+    )
+
+    competency_floor_review_id: Mapped[UUID] = mapped_column(
+        ForeignKey("competency_floor_reviews.id", ondelete="RESTRICT"), primary_key=True
+    )
+    authority_id: Mapped[UUID] = mapped_column(
+        ForeignKey("competency_floor_authorities.id", ondelete="RESTRICT"), primary_key=True
     )
     position: Mapped[int] = mapped_column(Integer(), nullable=False)
 
@@ -3292,9 +3418,14 @@ for _record_type in (
     AssessmentSelectionRunItemRecord,
     AssessmentPerformanceRecord,
     CompetencyFloorRecord,
+    CompetencyFloorAuthorityRecord,
+    CompetencyFloorAuthorityEvidenceClaimRecord,
+    CompetencyFloorAuthorityReviewRecord,
+    CompetencyFloorAuthorityLinkRecord,
     CompetencyFloorEvidenceClaimRecord,
     CompetencyFloorReviewRecord,
     CompetencyFloorReviewEvidenceClaimRecord,
+    CompetencyFloorReviewAuthorityLinkRecord,
     CapabilityNeedRecord,
     CapabilityNeedEvidenceClaimRecord,
     PriorityPolicyRecord,
