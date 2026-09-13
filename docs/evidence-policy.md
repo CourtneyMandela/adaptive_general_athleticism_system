@@ -110,9 +110,11 @@ verification of a professional credential.
 Research proposals remain outside both authority paths. The owner-alpha floor proposal batch may
 show a textbook value, a derived reference, or an unsupported engineering number for criticism,
 but its `proposal_only` state has no ratification endpoint and cannot satisfy a planning prerequisite.
-After review, accepted content must be rebuilt as an exact governed release with a matching
-assessment/estimate scope. This prevents a preliminary batch review from silently becoming a
-training rule.
+Structured advance, revise, or reject feedback is append-only and bound to the exact proposal and
+batch digests. It records product direction only: it creates no evidence claim, judgment authority,
+competency floor, assessment, plan, or workout. After review, accepted content must be rebuilt as an
+exact governed release with a matching assessment/estimate scope. This prevents a preliminary batch
+review from silently becoming a training rule.
 
 Initial planning must retain the selected floor evidence and every estimate's direct source
 observations. General relevance, goal relevance, prerequisite value, expected trainability,

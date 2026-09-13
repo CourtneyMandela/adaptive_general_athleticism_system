@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   CompetencyFloorProposalError,
+  fetchCompetencyFloorProposalReviews,
   fetchCompetencyFloorProposals,
+  reviewCompetencyFloorProposal,
   type CompetencyFloorProposalBatch,
 } from "./competency-floor-proposals";
 
@@ -84,5 +86,72 @@ describe("competency-floor proposal transport", () => {
     await expect(fetchCompetencyFloorProposals("http://localhost:8000", fetcher)).rejects.toEqual(
       new CompetencyFloorProposalError("Competency-floor proposal response is invalid.", 200),
     );
+  });
+
+  it("loads feedback separately from non-operational proposal content", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({
+        projected_at: "2026-09-13T01:00:00Z",
+        projection_version: "competency-floor-proposal-review-projection@1.0.0",
+        batch,
+        items: [{ proposal: batch.proposals[0], status: "unreviewed", current_review: null }],
+      }), { status: 200 }),
+    );
+
+    const result = await fetchCompetencyFloorProposalReviews("http://localhost:8000", fetcher);
+
+    expect(result.items[0].status).toBe("unreviewed");
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://localhost:8000/v1/operator/competency-floor-proposal-reviews",
+      expect.any(Object),
+    );
+  });
+
+  it("submits exact-digest feedback without requesting training authority", async () => {
+    const review = {
+      id: "98700000-0000-4000-8000-000000000010",
+      schema_version: "1.0.0",
+      created_at: "2026-09-13T01:00:00Z",
+      proposal_id: batch.proposals[0].proposal_id,
+      proposal_content_digest: batch.proposals[0].content_digest,
+      batch_id: batch.batch_id,
+      batch_content_digest: batch.content_digest,
+      decision: "advance",
+      sequence_number: 1,
+      supersedes_review_id: null,
+      reviewed_at: "2026-09-13T01:00:00Z",
+      reviewer_account_id: "98700000-0000-4000-8000-000000000011",
+      reviewer_authority_assignment_id: "98700000-0000-4000-8000-000000000012",
+      rationale: "Prepare the matching assessment.",
+      attestation: "Feedback only.",
+      review_version: "competency-floor-proposal-review@1.0.0",
+    } as const;
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({
+        review,
+        created: true,
+        training_authority_created: false,
+      }), { status: 201 }),
+    );
+
+    const result = await reviewCompetencyFloorProposal(
+      "http://localhost:8000/",
+      batch,
+      batch.proposals[0],
+      "advance",
+      "Prepare the matching assessment.",
+      fetcher,
+    );
+
+    expect(result.training_authority_created).toBe(false);
+    const request = fetcher.mock.calls[0]?.[1];
+    expect(JSON.parse(String(request?.body))).toEqual({
+      proposal_content_digest: batch.proposals[0].content_digest,
+      batch_id: batch.batch_id,
+      batch_content_digest: batch.content_digest,
+      decision: "advance",
+      rationale: "Prepare the matching assessment.",
+      feedback_only_attestation: true,
+    });
   });
 });

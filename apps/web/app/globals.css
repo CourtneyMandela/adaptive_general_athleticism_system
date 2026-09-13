@@ -906,6 +906,11 @@ button { cursor: pointer; }
 .status-badge--match-moderate { background: #f2e8c9; color: #765c13; }
 .status-badge--match-high { background: var(--accent-soft); color: var(--accent); }
 .status-badge--match-low { background: var(--danger-soft); color: var(--danger); }
+.status-badge--proposal-advance { background: var(--accent-soft); color: var(--accent); }
+.status-badge--proposal-needs_revision,
+.status-badge--proposal-unreviewed,
+.status-badge--proposal-stale_review { background: #f2e8c9; color: #765c13; }
+.status-badge--proposal-rejected { background: var(--danger-soft); color: var(--danger); }
 
 .planning-queue-summary {
   display: grid;
@@ -1003,6 +1008,13 @@ button { cursor: pointer; }
 .assessment-candidate-approval input { width: auto; margin-top: .18rem; }
 .assessment-candidate-approval button { justify-self: start; }
 .assessment-candidate-approval button:disabled { cursor: not-allowed; opacity: .55; }
+.proposal-feedback-history { display: grid; gap: .35rem; padding: .8rem; border-left: .3rem solid var(--accent); border-radius: .5rem; background: var(--accent-soft); }
+.proposal-feedback-history p { margin: 0; line-height: 1.5; }
+.proposal-feedback-form { display: grid; gap: .7rem; padding: .9rem; border: 1px solid var(--line); border-radius: .75rem; background: #f9faf6; }
+.proposal-feedback-form label { color: var(--muted); font-size: .82rem; font-weight: 750; }
+.proposal-feedback-form textarea { width: 100%; min-width: 0; padding: .7rem; border: 1px solid #b9c2bb; border-radius: .65rem; background: #fff; color: var(--ink); resize: vertical; line-height: 1.45; }
+.proposal-feedback-actions { display: flex; flex-wrap: wrap; gap: .55rem; }
+.proposal-feedback-actions button:disabled { cursor: not-allowed; opacity: .55; }
 
 .post-block-queue {
   display: grid;

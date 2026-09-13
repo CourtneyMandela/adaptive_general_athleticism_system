@@ -14,6 +14,7 @@ from agas_domain.enums import (
     AssessmentDecision,
     AssessmentEligibilityOutcome,
     AssessmentReviewDecision,
+    CompetencyFloorProposalDecision,
 )
 from agas_domain.evidence import EvidenceClaimAuthorityState
 from agas_domain.evidence import (
@@ -47,6 +48,7 @@ from agas_domain.models import (
     CompetencyFloor,
     CompetencyFloorAuthority,
     CompetencyFloorAuthorityReview,
+    CompetencyFloorProposalReview,
     CompetencyFloorReview,
     DecisionRecord,
     Environment,
@@ -148,6 +150,7 @@ from agas_domain.persistence.models import (
     CompetencyFloorAuthorityRecord,
     CompetencyFloorAuthorityReviewRecord,
     CompetencyFloorEvidenceClaimRecord,
+    CompetencyFloorProposalReviewRecord,
     CompetencyFloorRecord,
     CompetencyFloorReviewAuthorityLinkRecord,
     CompetencyFloorReviewEvidenceClaimRecord,
@@ -1113,6 +1116,69 @@ class DomainRepository:
                 reviewed_by=review.reviewed_by,
                 attestation=review.attestation,
                 uncertainty=review.uncertainty,
+                review_version=review.review_version,
+            )
+        )
+
+    def add_competency_floor_proposal_review(self, review: CompetencyFloorProposalReview) -> None:
+        assignment = self.get_account_role_assignment(review.reviewer_authority_assignment_id)
+        if assignment is None:
+            raise DomainIntegrityError("proposal reviewer authority assignment does not exist")
+        if (
+            assignment.account_id != review.reviewer_account_id
+            or assignment.role is not AccountRole.PLANNING_REVIEWER
+        ):
+            raise DomainIntegrityError(
+                "proposal reviewer authority does not match the planning-reviewer account"
+            )
+        current_assignment = self.get_current_account_role_assignment(
+            review.reviewer_account_id, AccountRole.PLANNING_REVIEWER
+        )
+        if (
+            assignment.status is not AccountRoleStatus.ACTIVE
+            or current_assignment is None
+            or current_assignment.id != assignment.id
+        ):
+            raise DomainIntegrityError(
+                "proposal reviewer authority must be the current active "
+                "planning-reviewer assignment"
+            )
+        if review.reviewed_at < assignment.assigned_at:
+            raise DomainIntegrityError("proposal review cannot predate reviewer authority")
+        current = self.get_current_competency_floor_proposal_review(review.proposal_id)
+        if current is None:
+            if review.sequence_number != 1 or review.supersedes_review_id is not None:
+                raise DomainIntegrityError("the first proposal review must start sequence one")
+        else:
+            if review.sequence_number != current.sequence_number + 1:
+                raise DomainIntegrityError(
+                    "a proposal review replacement must use the next sequence number"
+                )
+            if review.supersedes_review_id != current.id:
+                raise DomainIntegrityError(
+                    "a proposal review replacement must supersede the current review"
+                )
+            if review.reviewed_at < current.reviewed_at:
+                raise DomainIntegrityError(
+                    "a proposal review replacement cannot predate the current review"
+                )
+        self.session.add(
+            CompetencyFloorProposalReviewRecord(
+                id=review.id,
+                schema_version=review.schema_version,
+                created_at=review.created_at,
+                proposal_id=review.proposal_id,
+                proposal_content_digest=review.proposal_content_digest,
+                batch_id=review.batch_id,
+                batch_content_digest=review.batch_content_digest,
+                decision=review.decision.value,
+                sequence_number=review.sequence_number,
+                supersedes_review_id=review.supersedes_review_id,
+                reviewed_at=review.reviewed_at,
+                reviewer_account_id=review.reviewer_account_id,
+                reviewer_authority_assignment_id=review.reviewer_authority_assignment_id,
+                rationale=review.rationale,
+                attestation=review.attestation,
                 review_version=review.review_version,
             )
         )
@@ -4319,6 +4385,49 @@ class DomainRepository:
     ) -> CompetencyFloorAuthorityReview | None:
         record = self.session.get(CompetencyFloorAuthorityReviewRecord, review_id)
         return self._competency_floor_authority_review_from_record(record) if record else None
+
+    def get_competency_floor_proposal_review(
+        self, review_id: UUID
+    ) -> CompetencyFloorProposalReview | None:
+        record = self.session.get(CompetencyFloorProposalReviewRecord, review_id)
+        return self._competency_floor_proposal_review_from_record(record) if record else None
+
+    def get_current_competency_floor_proposal_review(
+        self, proposal_id: UUID
+    ) -> CompetencyFloorProposalReview | None:
+        record = self.session.scalar(
+            select(CompetencyFloorProposalReviewRecord)
+            .where(CompetencyFloorProposalReviewRecord.proposal_id == proposal_id)
+            .order_by(
+                CompetencyFloorProposalReviewRecord.sequence_number.desc(),
+                CompetencyFloorProposalReviewRecord.id.desc(),
+            )
+            .limit(1)
+        )
+        return self._competency_floor_proposal_review_from_record(record) if record else None
+
+    @staticmethod
+    def _competency_floor_proposal_review_from_record(
+        record: CompetencyFloorProposalReviewRecord,
+    ) -> CompetencyFloorProposalReview:
+        return CompetencyFloorProposalReview(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            proposal_id=record.proposal_id,
+            proposal_content_digest=record.proposal_content_digest,
+            batch_id=record.batch_id,
+            batch_content_digest=record.batch_content_digest,
+            decision=CompetencyFloorProposalDecision(record.decision),
+            sequence_number=record.sequence_number,
+            supersedes_review_id=record.supersedes_review_id,
+            reviewed_at=record.reviewed_at,
+            reviewer_account_id=record.reviewer_account_id,
+            reviewer_authority_assignment_id=record.reviewer_authority_assignment_id,
+            rationale=record.rationale,
+            attestation=record.attestation,
+            review_version=record.review_version,
+        )
 
     def get_current_competency_floor_authority_review(
         self, authority_id: UUID

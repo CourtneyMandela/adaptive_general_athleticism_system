@@ -124,7 +124,13 @@ from agas_api.competency_floor_candidates import (
 )
 from agas_api.competency_floor_proposals import (
     CompetencyFloorProposalBatch,
+    CompetencyFloorProposalReviewConflictError,
+    CompetencyFloorProposalReviewProjection,
+    CompetencyFloorProposalReviewResult,
+    ReviewCompetencyFloorProposalCommand,
     competency_floor_proposal_batch,
+    competency_floor_proposal_review_projection,
+    review_competency_floor_proposal,
 )
 from agas_api.current_week import (
     CurrentWeekConflictError,
@@ -721,6 +727,42 @@ def get_competency_floor_proposals(
     _authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
 ) -> CompetencyFloorProposalBatch:
     return competency_floor_proposal_batch()
+
+
+@app.get(
+    "/v1/operator/competency-floor-proposal-reviews",
+    tags=["operator"],
+    response_model=CompetencyFloorProposalReviewProjection,
+)
+def get_competency_floor_proposal_reviews(
+    session: Annotated[Session, Depends(database_session_dependency)],
+    _authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+) -> CompetencyFloorProposalReviewProjection:
+    return competency_floor_proposal_review_projection(session)
+
+
+@app.post(
+    "/v1/operator/competency-floor-proposals/{proposal_id}/reviews",
+    tags=["operator"],
+    response_model=CompetencyFloorProposalReviewResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def record_competency_floor_proposal_review(
+    proposal_id: UUID,
+    command: ReviewCompetencyFloorProposalCommand,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authority: Annotated[AuthorizedRole, Depends(planning_reviewer_dependency)],
+) -> CompetencyFloorProposalReviewResult:
+    try:
+        return review_competency_floor_proposal(session, proposal_id, command, authority)
+    except KeyError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except CompetencyFloorProposalReviewConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
 
 
 @app.get(

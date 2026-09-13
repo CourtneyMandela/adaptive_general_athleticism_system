@@ -1,0 +1,102 @@
+"""add competency-floor proposal reviews
+
+Revision ID: d3e4f5a6b7c8
+Revises: c2d3e4f5a6b7
+Create Date: 2026-09-13 01:00:00
+"""
+
+from collections.abc import Sequence
+
+import sqlalchemy as sa
+from agas_domain.persistence.types import UTCDateTime
+from alembic import op
+
+revision: str = "d3e4f5a6b7c8"
+down_revision: str | None = "c2d3e4f5a6b7"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
+
+
+def upgrade() -> None:
+    op.create_table(
+        "competency_floor_proposal_reviews",
+        sa.Column("proposal_id", sa.Uuid(), nullable=False),
+        sa.Column("proposal_content_digest", sa.String(length=80), nullable=False),
+        sa.Column("batch_id", sa.Uuid(), nullable=False),
+        sa.Column("batch_content_digest", sa.String(length=80), nullable=False),
+        sa.Column("decision", sa.String(length=40), nullable=False),
+        sa.Column("sequence_number", sa.Integer(), nullable=False),
+        sa.Column("supersedes_review_id", sa.Uuid(), nullable=True),
+        sa.Column("reviewed_at", UTCDateTime(), nullable=False),
+        sa.Column("reviewer_account_id", sa.Uuid(), nullable=False),
+        sa.Column("reviewer_authority_assignment_id", sa.Uuid(), nullable=False),
+        sa.Column("rationale", sa.Text(), nullable=False),
+        sa.Column("attestation", sa.Text(), nullable=False),
+        sa.Column("review_version", sa.String(length=120), nullable=False),
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("schema_version", sa.String(length=40), nullable=False),
+        sa.Column("created_at", UTCDateTime(), nullable=False),
+        sa.CheckConstraint(
+            "decision IN ('advance', 'needs_revision', 'rejected')",
+            name="ck_floor_proposal_review_decision",
+        ),
+        sa.CheckConstraint(
+            "sequence_number >= 1",
+            name="ck_floor_proposal_review_sequence",
+        ),
+        sa.ForeignKeyConstraint(
+            ["supersedes_review_id"],
+            ["competency_floor_proposal_reviews.id"],
+            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(["reviewer_account_id"], ["accounts.id"], ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(
+            ["reviewer_authority_assignment_id"],
+            ["account_role_assignments.id"],
+            ondelete="RESTRICT",
+        ),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint(
+            "proposal_id",
+            "sequence_number",
+            name="uq_floor_proposal_review_sequence",
+        ),
+        sa.UniqueConstraint(
+            "supersedes_review_id",
+            name="uq_floor_proposal_review_superseded_once",
+        ),
+    )
+    for column in (
+        "proposal_id",
+        "proposal_content_digest",
+        "batch_id",
+        "decision",
+        "supersedes_review_id",
+        "reviewed_at",
+        "reviewer_account_id",
+        "reviewer_authority_assignment_id",
+    ):
+        op.create_index(
+            f"ix_competency_floor_proposal_reviews_{column}",
+            "competency_floor_proposal_reviews",
+            [column],
+            unique=False,
+        )
+
+
+def downgrade() -> None:
+    for column in (
+        "reviewer_authority_assignment_id",
+        "reviewer_account_id",
+        "reviewed_at",
+        "supersedes_review_id",
+        "decision",
+        "batch_id",
+        "proposal_content_digest",
+        "proposal_id",
+    ):
+        op.drop_index(
+            f"ix_competency_floor_proposal_reviews_{column}",
+            table_name="competency_floor_proposal_reviews",
+        )
+    op.drop_table("competency_floor_proposal_reviews")

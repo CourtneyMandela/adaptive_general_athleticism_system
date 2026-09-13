@@ -1023,13 +1023,17 @@ attestation and replacement lineage. Floors and floor reviews may cite evidence 
 authorities, or both, but the repository rejects an ungoverned floor and requires every cited
 judgment authority to have a current approved review before the floor review can be recorded.
 
-`GET /v1/operator/competency-floor-proposals` is an earlier, read-only research boundary. It loads a
+`GET /v1/operator/competency-floor-proposals` is an earlier research boundary. It loads a
 15-item content-addressed batch from `data/governance_proposals/competency_floors`, including exact
 textbook edition ISBNs, table/page locators, source populations, proposed thresholds, athlete-match
-ratings, evidence gaps, and pre-release prerequisites. Every item is `proposal_only`; there is no
-ratification route and the records do not enter persistence or planning. Accepted proposals must be
-converted into ordinary governed releases only after their assessment, demographic applicability,
-and evidence-or-judgment authority are complete.
+ratings, evidence gaps, and pre-release prerequisites. A planning reviewer may append feedback on
+the exact batch and proposal digest through the proposal-review endpoint: advance to engineering,
+needs revision, or reject. That review retains the reviewer account and exact role assignment,
+attestation, rationale, timestamp, and supersession lineage. It remains product feedback, not a
+ratification: every item stays `proposal_only`, no floor or authority is created, and the review
+cannot satisfy a planning prerequisite. Accepted proposals must be converted into ordinary governed
+releases only after their assessment, demographic applicability, and evidence-or-judgment authority
+are complete. If proposal content changes, prior feedback is shown as stale rather than inherited.
 
 ## Web
 

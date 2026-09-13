@@ -3,17 +3,29 @@ from __future__ import annotations
 import hashlib
 import json
 import sysconfig
+from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
 from uuid import UUID, uuid5
 
-from agas_domain import CapabilityDomain, ComparisonDirection
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from agas_domain import (
+    CapabilityDomain,
+    ComparisonDirection,
+    CompetencyFloorProposalDecision,
+    CompetencyFloorProposalReview,
+)
+from agas_domain.persistence.repository import DomainIntegrityError, DomainRepository
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from agas_api.identity import AuthorizedRole
 
 PROPOSAL_VERSION = "competency-floor-proposal@1.0.0"
 PROPOSAL_BATCH_VERSION = "competency-floor-proposal-batch@1.0.0"
 PROPOSAL_BATCH_NAMESPACE = UUID("98800000-0000-4000-8000-000000000100")
+PROPOSAL_REVIEW_VERSION = "competency-floor-proposal-review@1.0.0"
 NonEmptyText = Annotated[str, Field(min_length=1)]
 Sha256Digest = Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
 
@@ -105,8 +117,159 @@ class CompetencyFloorProposalBatch(BaseModel):
     release_boundary: NonEmptyText
 
 
+class ReviewCompetencyFloorProposalCommand(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    proposal_content_digest: Sha256Digest
+    batch_id: UUID
+    batch_content_digest: Sha256Digest
+    decision: CompetencyFloorProposalDecision
+    rationale: Annotated[str, Field(min_length=1, max_length=2000)]
+    feedback_only_attestation: Literal[True]
+
+    @field_validator("rationale")
+    @classmethod
+    def normalize_rationale(cls, value: str) -> str:
+        normalized = " ".join(value.split())
+        if not normalized:
+            raise ValueError("proposal review rationale must not be blank")
+        return normalized
+
+
+class CompetencyFloorProposalReviewResult(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    review: CompetencyFloorProposalReview
+    created: bool
+    training_authority_created: Literal[False] = False
+
+
+class CompetencyFloorProposalReviewItem(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    proposal: CompetencyFloorProposal
+    status: Literal["unreviewed", "advance", "needs_revision", "rejected", "stale_review"]
+    current_review: CompetencyFloorProposalReview | None = None
+
+
+class CompetencyFloorProposalReviewProjection(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    projected_at: datetime
+    batch: CompetencyFloorProposalBatch
+    items: tuple[CompetencyFloorProposalReviewItem, ...]
+    projection_version: str = "competency-floor-proposal-review-projection@1.0.0"
+
+
 class CompetencyFloorProposalValidationError(RuntimeError):
     pass
+
+
+class CompetencyFloorProposalReviewConflictError(RuntimeError):
+    pass
+
+
+def competency_floor_proposal_review_projection(
+    session: Session,
+) -> CompetencyFloorProposalReviewProjection:
+    batch = competency_floor_proposal_batch()
+    repository = DomainRepository(session)
+    items = []
+    for proposal in batch.proposals:
+        review = repository.get_current_competency_floor_proposal_review(proposal.proposal_id)
+        review_status: Literal[
+            "unreviewed", "advance", "needs_revision", "rejected", "stale_review"
+        ]
+        if review is None:
+            review_status = "unreviewed"
+        elif (
+            review.proposal_content_digest != proposal.content_digest
+            or review.batch_id != batch.batch_id
+            or review.batch_content_digest != batch.content_digest
+        ):
+            review_status = "stale_review"
+        else:
+            review_status = review.decision.value
+        items.append(
+            CompetencyFloorProposalReviewItem(
+                proposal=proposal,
+                status=review_status,
+                current_review=review,
+            )
+        )
+    return CompetencyFloorProposalReviewProjection(
+        projected_at=datetime.now(UTC),
+        batch=batch,
+        items=tuple(items),
+    )
+
+
+def review_competency_floor_proposal(
+    session: Session,
+    proposal_id: UUID,
+    command: ReviewCompetencyFloorProposalCommand,
+    authority: AuthorizedRole,
+) -> CompetencyFloorProposalReviewResult:
+    batch = competency_floor_proposal_batch()
+    proposal = next(
+        (item for item in batch.proposals if item.proposal_id == proposal_id),
+        None,
+    )
+    if proposal is None:
+        raise KeyError(f"unknown competency-floor proposal {proposal_id}")
+    if (
+        command.proposal_content_digest != proposal.content_digest
+        or command.batch_id != batch.batch_id
+        or command.batch_content_digest != batch.content_digest
+    ):
+        raise CompetencyFloorProposalReviewConflictError(
+            "proposal review does not match the current content-addressed research batch"
+        )
+
+    repository = DomainRepository(session)
+    current = repository.get_current_competency_floor_proposal_review(proposal_id)
+    attestation = (
+        "This decision is product feedback on an exact research proposal. It does not approve a "
+        "competency floor, scientific claim, assessment, plan, or workout."
+    )
+    if current is not None and (
+        current.proposal_content_digest == proposal.content_digest
+        and current.batch_id == batch.batch_id
+        and current.batch_content_digest == batch.content_digest
+        and current.decision is command.decision
+        and current.reviewer_account_id == authority.account_id
+        and current.reviewer_authority_assignment_id == authority.assignment_id
+        and current.rationale == command.rationale
+        and current.attestation == attestation
+    ):
+        return CompetencyFloorProposalReviewResult(review=current, created=False)
+
+    now = datetime.now(UTC)
+    review = CompetencyFloorProposalReview(
+        proposal_id=proposal_id,
+        proposal_content_digest=proposal.content_digest,
+        batch_id=batch.batch_id,
+        batch_content_digest=batch.content_digest,
+        decision=command.decision,
+        sequence_number=1 if current is None else current.sequence_number + 1,
+        supersedes_review_id=None if current is None else current.id,
+        reviewed_at=now,
+        reviewer_account_id=authority.account_id,
+        reviewer_authority_assignment_id=authority.assignment_id,
+        rationale=command.rationale,
+        attestation=attestation,
+        review_version=PROPOSAL_REVIEW_VERSION,
+        created_at=now,
+    )
+    try:
+        repository.add_competency_floor_proposal_review(review)
+        session.commit()
+    except (DomainIntegrityError, IntegrityError) as error:
+        session.rollback()
+        raise CompetencyFloorProposalReviewConflictError(
+            "proposal feedback conflicts with the current append-only review chain"
+        ) from error
+    return CompetencyFloorProposalReviewResult(review=review, created=True)
 
 
 @lru_cache

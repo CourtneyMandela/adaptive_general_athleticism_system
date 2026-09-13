@@ -28,6 +28,7 @@ from agas_domain.enums import (
     CapabilityDomain,
     ComparisonDirection,
     CompetencyFloorAuthorityKind,
+    CompetencyFloorProposalDecision,
     CompetencyStatus,
     Confidence,
     CostLevel,
@@ -939,6 +940,41 @@ class CompetencyFloorAuthorityReview(VersionedRecord):
             raise ValueError("later authority reviews must reference their predecessor")
         if self.supersedes_review_id == self.id:
             raise ValueError("an authority review cannot supersede itself")
+        return self
+
+
+class CompetencyFloorProposalReview(VersionedRecord):
+    """Append-only owner feedback on one exact, non-operational research proposal."""
+
+    proposal_id: UUID
+    proposal_content_digest: Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
+    batch_id: UUID
+    batch_content_digest: Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
+    decision: CompetencyFloorProposalDecision
+    sequence_number: Annotated[int, Field(ge=1)]
+    supersedes_review_id: UUID | None = None
+    reviewed_at: datetime
+    reviewer_account_id: UUID
+    reviewer_authority_assignment_id: UUID
+    rationale: NonEmptyText
+    attestation: NonEmptyText
+    review_version: NonEmptyText
+
+    @field_validator("reviewed_at")
+    @classmethod
+    def require_aware_reviewed_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("competency-floor proposal review time must include a timezone")
+        return value
+
+    @model_validator(mode="after")
+    def validate_review(self) -> CompetencyFloorProposalReview:
+        if self.sequence_number == 1 and self.supersedes_review_id is not None:
+            raise ValueError("the first proposal review cannot supersede another record")
+        if self.sequence_number > 1 and self.supersedes_review_id is None:
+            raise ValueError("later proposal reviews must reference their predecessor")
+        if self.supersedes_review_id == self.id:
+            raise ValueError("a proposal review cannot supersede itself")
         return self
 
 

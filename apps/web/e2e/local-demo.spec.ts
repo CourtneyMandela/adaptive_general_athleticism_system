@@ -658,6 +658,7 @@ test("owner can ratify exact prepared authorities, including a floor batch", asy
   let submittedBody: Record<string, unknown> = {};
   let submittedFloorBatchBody: Record<string, unknown> = {};
   let submittedResourceBody: Record<string, unknown> = {};
+  let submittedProposalReviewBody: Record<string, unknown> = {};
   const candidate = {
     candidate_version: "planning-governance-candidate@1.0.0",
     candidate_id: "98400000-0000-4000-8000-000000000001",
@@ -816,11 +817,7 @@ test("owner can ratify exact prepared authorities, including a floor batch", asy
       }),
     }),
   );
-  await page.route(
-    "http://localhost:8000/v1/operator/competency-floor-proposals",
-    async (route) => route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({
+  const proposalBatch = {
         batch_version: "competency-floor-proposal-batch@1.0.0",
         batch_id: "c3b1083d-5d15-520e-b449-4f3539434be5",
         label: "Owner-alpha adult competency-floor research batch 1",
@@ -870,8 +867,71 @@ test("owner can ratify exact prepared authorities, including a floor batch", asy
           review_questions: ["Is the 55th percentile the right boundary?"],
         }],
         release_boundary: "Proposal only; no active floor is created.",
+  };
+  await page.route(
+    "http://localhost:8000/v1/operator/competency-floor-proposal-reviews",
+    async (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        projected_at: "2026-09-13T01:00:00Z",
+        projection_version: "competency-floor-proposal-review-projection@1.0.0",
+        batch: proposalBatch,
+        items: [{
+          proposal: proposalBatch.proposals[0],
+          status: submittedProposalReviewBody.decision ?? "unreviewed",
+          current_review: submittedProposalReviewBody.decision ? {
+            id: "98700000-0000-4000-8000-000000000010",
+            schema_version: "1.0.0",
+            created_at: "2026-09-13T01:00:00Z",
+            proposal_id: proposalBatch.proposals[0].proposal_id,
+            proposal_content_digest: proposalBatch.proposals[0].content_digest,
+            batch_id: proposalBatch.batch_id,
+            batch_content_digest: proposalBatch.content_digest,
+            decision: submittedProposalReviewBody.decision,
+            sequence_number: 1,
+            supersedes_review_id: null,
+            reviewed_at: "2026-09-13T01:00:00Z",
+            reviewer_account_id: "98700000-0000-4000-8000-000000000011",
+            reviewer_authority_assignment_id: "98700000-0000-4000-8000-000000000012",
+            rationale: submittedProposalReviewBody.rationale,
+            attestation: "Feedback only.",
+            review_version: "competency-floor-proposal-review@1.0.0",
+          } : null,
+        }],
       }),
     }),
+  );
+  await page.route(
+    "http://localhost:8000/v1/operator/competency-floor-proposals/*/reviews",
+    async (route) => {
+      submittedProposalReviewBody = route.request().postDataJSON() as Record<string, unknown>;
+      return route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({
+          created: true,
+          training_authority_created: false,
+          review: {
+            id: "98700000-0000-4000-8000-000000000010",
+            schema_version: "1.0.0",
+            created_at: "2026-09-13T01:00:00Z",
+            proposal_id: proposalBatch.proposals[0].proposal_id,
+            proposal_content_digest: proposalBatch.proposals[0].content_digest,
+            batch_id: proposalBatch.batch_id,
+            batch_content_digest: proposalBatch.content_digest,
+            decision: submittedProposalReviewBody.decision,
+            sequence_number: 1,
+            supersedes_review_id: null,
+            reviewed_at: "2026-09-13T01:00:00Z",
+            reviewer_account_id: "98700000-0000-4000-8000-000000000011",
+            reviewer_authority_assignment_id: "98700000-0000-4000-8000-000000000012",
+            rationale: submittedProposalReviewBody.rationale,
+            attestation: "Feedback only.",
+            review_version: "competency-floor-proposal-review@1.0.0",
+          },
+        }),
+      });
+    },
   );
 
   await page.goto(`/review/planning-authorities?athleteId=${athleteId}`);
@@ -900,11 +960,23 @@ test("owner can ratify exact prepared authorities, including a floor batch", asy
 
   await expect(page.getByRole("heading", { name: "Competency-floor candidates" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Adult competency-floor proposals" })).toBeVisible();
+  await page.getByText("Source table and population", { exact: true }).click();
   await expect(page.getByText("Table 3.8, Treadmill-Based Cardiorespiratory Fitness")).toBeVisible();
   await expect(page.getByText("FRIEND Registry adults aged 30-39.")).toBeVisible();
   await expect(page.getByText("41.6 mL/kg/min", { exact: true })).toBeVisible();
   await expect(page.getByText("Medical safety, diagnosis, or clearance to train.")).toBeVisible();
   await expect(page.getByText("evidence informed engineering judgment")).toBeVisible();
+  await page.getByRole("button", { name: "Advance to engineering" }).click();
+  await expect(page.getByText(/was saved as feedback only/)).toBeVisible();
+  expect(submittedProposalReviewBody).toEqual({
+    proposal_content_digest: `sha256:${"d".repeat(64)}`,
+    batch_id: proposalBatch.batch_id,
+    batch_content_digest: proposalBatch.content_digest,
+    decision: "advance",
+    rationale: "Advance this exact proposal for engineering preparation of its assessment, applicability, and governed authority artifacts.",
+    feedback_only_attestation: true,
+  });
+  expect(submittedProposalReviewBody).not.toHaveProperty("threshold");
   const approveFloorBatch = page.getByRole("button", { name: "Approve exact batch (1 new)" });
   await expect(approveFloorBatch).toBeDisabled();
 

@@ -201,6 +201,14 @@ class AssessmentReviewDecision(StrEnum):
     REJECTED = "rejected"
 
 
+class CompetencyFloorProposalDecision(StrEnum):
+    """Owner feedback about whether engineering should advance a research proposal."""
+
+    ADVANCE = "advance"
+    NEEDS_REVISION = "needs_revision"
+    REJECTED = "rejected"
+
+
 class AssessmentEligibilityOutcome(StrEnum):
     SELECTION_ALLOWED = "selection_allowed"
     SELECTION_BLOCKED = "selection_blocked"

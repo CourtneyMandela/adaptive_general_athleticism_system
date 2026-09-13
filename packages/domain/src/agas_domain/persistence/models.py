@@ -885,6 +885,45 @@ class CompetencyFloorAuthorityReviewRecord(VersionedRecordMixin, Base):
     review_version: Mapped[str] = mapped_column(String(120), nullable=False)
 
 
+class CompetencyFloorProposalReviewRecord(VersionedRecordMixin, Base):
+    __tablename__ = "competency_floor_proposal_reviews"
+    __table_args__ = (
+        CheckConstraint(
+            "decision IN ('advance', 'needs_revision', 'rejected')",
+            name="ck_floor_proposal_review_decision",
+        ),
+        CheckConstraint("sequence_number >= 1", name="ck_floor_proposal_review_sequence"),
+        UniqueConstraint(
+            "proposal_id", "sequence_number", name="uq_floor_proposal_review_sequence"
+        ),
+        UniqueConstraint("supersedes_review_id", name="uq_floor_proposal_review_superseded_once"),
+    )
+
+    proposal_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), index=True, nullable=False)
+    proposal_content_digest: Mapped[str] = mapped_column(String(80), index=True, nullable=False)
+    batch_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), index=True, nullable=False)
+    batch_content_digest: Mapped[str] = mapped_column(String(80), nullable=False)
+    decision: Mapped[str] = mapped_column(String(40), index=True, nullable=False)
+    sequence_number: Mapped[int] = mapped_column(Integer(), nullable=False)
+    supersedes_review_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("competency_floor_proposal_reviews.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=True,
+    )
+    reviewed_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)
+    reviewer_account_id: Mapped[UUID] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    reviewer_authority_assignment_id: Mapped[UUID] = mapped_column(
+        ForeignKey("account_role_assignments.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=False,
+    )
+    rationale: Mapped[str] = mapped_column(Text(), nullable=False)
+    attestation: Mapped[str] = mapped_column(Text(), nullable=False)
+    review_version: Mapped[str] = mapped_column(String(120), nullable=False)
+
+
 class CompetencyFloorRecord(VersionedRecordMixin, Base):
     __tablename__ = "competency_floors"
     __table_args__ = (
@@ -3417,6 +3456,7 @@ for _record_type in (
     CompetencyFloorAuthorityRecord,
     CompetencyFloorAuthorityEvidenceClaimRecord,
     CompetencyFloorAuthorityReviewRecord,
+    CompetencyFloorProposalReviewRecord,
     CompetencyFloorAuthorityLinkRecord,
     CompetencyFloorEvidenceClaimRecord,
     CompetencyFloorReviewRecord,
