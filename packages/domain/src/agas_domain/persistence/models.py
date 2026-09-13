@@ -897,6 +897,10 @@ class CompetencyFloorProposalReviewRecord(VersionedRecordMixin, Base):
             "proposal_id", "sequence_number", name="uq_floor_proposal_review_sequence"
         ),
         UniqueConstraint("supersedes_review_id", name="uq_floor_proposal_review_superseded_once"),
+        Index(
+            "ix_floor_proposal_review_assignment",
+            "reviewer_authority_assignment_id",
+        ),
     )
 
     proposal_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), index=True, nullable=False)
@@ -916,7 +920,6 @@ class CompetencyFloorProposalReviewRecord(VersionedRecordMixin, Base):
     )
     reviewer_authority_assignment_id: Mapped[UUID] = mapped_column(
         ForeignKey("account_role_assignments.id", ondelete="RESTRICT"),
-        index=True,
         nullable=False,
     )
     rationale: Mapped[str] = mapped_column(Text(), nullable=False)

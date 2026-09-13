@@ -21,3 +21,17 @@ def test_initial_planning_index_names_fit_postgresql_identifier_limit() -> None:
     assert all(
         len(index_name) <= postgresql_dialect.max_identifier_length for index_name in index_names
     )
+
+
+def test_proposal_review_index_names_fit_postgresql_identifier_limit() -> None:
+    migration = import_module(
+        "migrations.versions.d3e4f5a6b7c8_add_competency_floor_proposal_reviews"
+    )
+    index_names = list(migration._INDEX_NAMES.values())
+
+    assert len(index_names) == 8
+    assert len(index_names) == len(set(index_names))
+    postgresql_dialect = cast(type[Dialect], dialect)()
+    assert all(
+        len(index_name) <= postgresql_dialect.max_identifier_length for index_name in index_names
+    )

@@ -16,6 +16,17 @@ down_revision: str | None = "c2d3e4f5a6b7"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
+_INDEX_NAMES = {
+    "proposal_id": "ix_competency_floor_proposal_reviews_proposal_id",
+    "proposal_content_digest": "ix_competency_floor_proposal_reviews_proposal_content_digest",
+    "batch_id": "ix_competency_floor_proposal_reviews_batch_id",
+    "decision": "ix_competency_floor_proposal_reviews_decision",
+    "supersedes_review_id": "ix_competency_floor_proposal_reviews_supersedes_review_id",
+    "reviewed_at": "ix_competency_floor_proposal_reviews_reviewed_at",
+    "reviewer_account_id": "ix_competency_floor_proposal_reviews_reviewer_account_id",
+    "reviewer_authority_assignment_id": "ix_floor_proposal_review_assignment",
+}
+
 
 def upgrade() -> None:
     op.create_table(
@@ -66,18 +77,9 @@ def upgrade() -> None:
             name="uq_floor_proposal_review_superseded_once",
         ),
     )
-    for column in (
-        "proposal_id",
-        "proposal_content_digest",
-        "batch_id",
-        "decision",
-        "supersedes_review_id",
-        "reviewed_at",
-        "reviewer_account_id",
-        "reviewer_authority_assignment_id",
-    ):
+    for column, index_name in _INDEX_NAMES.items():
         op.create_index(
-            f"ix_competency_floor_proposal_reviews_{column}",
+            index_name,
             "competency_floor_proposal_reviews",
             [column],
             unique=False,
@@ -85,18 +87,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    for column in (
-        "reviewer_authority_assignment_id",
-        "reviewer_account_id",
-        "reviewed_at",
-        "supersedes_review_id",
-        "decision",
-        "batch_id",
-        "proposal_content_digest",
-        "proposal_id",
-    ):
+    for index_name in reversed(_INDEX_NAMES.values()):
         op.drop_index(
-            f"ix_competency_floor_proposal_reviews_{column}",
+            index_name,
             table_name="competency_floor_proposal_reviews",
         )
     op.drop_table("competency_floor_proposal_reviews")
