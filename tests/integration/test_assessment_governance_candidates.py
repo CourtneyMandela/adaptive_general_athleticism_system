@@ -20,6 +20,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 NOW = datetime(2026, 9, 8, 15, 0, tzinfo=UTC)
+PUSHUP_RATIFIED_AT = datetime(2026, 9, 15, 10, 0, tzinfo=UTC)
 ACCOUNT_ID = UUID("10000000-0000-0000-0000-000000000001")
 ASSIGNMENT_ID = UUID("20000000-0000-0000-0000-000000000001")
 
@@ -33,8 +34,15 @@ def _authority() -> AuthorizedRole:
     )
 
 
-def _command(session: Session) -> tuple[UUID, RatifyAssessmentGovernanceCandidateCommand]:
-    candidate = list_assessment_governance_candidates(session, projected_at=NOW).items[0].candidate
+def _command(
+    session: Session,
+    slug: str = "thirty_second_chair_stand",
+) -> tuple[UUID, RatifyAssessmentGovernanceCandidateCommand]:
+    candidate = next(
+        item.candidate
+        for item in list_assessment_governance_candidates(session, projected_at=NOW).items
+        if item.candidate.slug == slug
+    )
     return candidate.candidate_id, RatifyAssessmentGovernanceCandidateCommand(
         candidate_version=CANDIDATE_VERSION,
         content_digest=candidate.content_digest,
@@ -48,9 +56,12 @@ def test_candidate_presents_narrow_meaning_protocol_and_source_limitations(
     projection = list_assessment_governance_candidates(session, projected_at=NOW)
 
     assert projection.projection_version == "assessment-governance-candidates@1.0.0"
-    assert len(projection.items) == 1
-    item = projection.items[0]
+    assert len(projection.items) == 2
+    item = next(
+        item for item in projection.items if item.candidate.slug == "thirty_second_chair_stand"
+    )
     assert item.status == "available"
+    assert item.candidate.capability_domain.value == "muscular_endurance"
     assert item.candidate.slug == "thirty_second_chair_stand"
     assert item.candidate.content_digest.startswith("sha256:")
     assert "Maximum strength" in item.candidate.does_not_measure[0]
@@ -62,6 +73,60 @@ def test_candidate_presents_narrow_meaning_protocol_and_source_limitations(
         "https://pubmed.ncbi.nlm.nih.gov/40330808/",
     }
     assert any("1.5 repetitions" in value for value in item.candidate.unresolved_limitations)
+
+
+def test_standard_pushup_candidate_is_narrow_sex_neutral_and_does_not_import_a_floor(
+    session: Session,
+) -> None:
+    projection = list_assessment_governance_candidates(session, projected_at=NOW)
+    item = next(
+        item
+        for item in projection.items
+        if item.candidate.slug == "maximum_consecutive_standard_pushups"
+    )
+
+    assert item.status == "available"
+    assert item.candidate.setup_requirements[0].startswith("Level nonslip floor")
+    assert item.candidate.estimate_scope == (
+        "assessment_specific:maximum_consecutive_standard_pushup_repetitions"
+    )
+    assert any("does not infer sex" in value for value in item.candidate.operational_choices)
+    assert any("not activated" in value for value in item.candidate.operational_choices)
+    assert any("competency floor" in value for value in item.candidate.unresolved_limitations)
+    assert len(item.candidate.evidence) == 1
+    assert "ACSM Guidelines" in item.candidate.evidence[0].title
+
+
+def test_standard_pushup_ratification_persists_textbook_provenance_and_narrow_policy(
+    session: Session,
+) -> None:
+    candidate_id, command = _command(session, "maximum_consecutive_standard_pushups")
+
+    result = ratify_assessment_governance_candidate(
+        session,
+        candidate_id,
+        command,
+        _authority(),
+        ratified_at=PUSHUP_RATIFIED_AT,
+    )
+    repository = DomainRepository(session)
+    source = repository.get_evidence_source(UUID("90000000-0000-4000-8000-000000000003"))
+
+    assert result.assessment.readiness == "ready"
+    assert result.assessment.definition.intensity.value == "high"
+    assert result.assessment.definition.required_equipment_categories == ()
+    assert result.assessment.current_estimation_policy is not None
+    assert result.assessment.current_estimation_policy.calculation_method == (
+        "latest-matching-observation"
+    )
+    assert result.created_equipment_ids == ()
+    assert source is not None
+    assert source.primary_identifier.scheme == "isbn"
+    assert source.primary_identifier.value == "9781975219246"
+    assert source.authors[-1] == "Paul M. Gallo"
+    assert source.retrieval_uri == "https://www.ncbi.nlm.nih.gov/nlmcatalog/137328"
+    assert any("Table 3.11" in note for note in source.provenance_notes)
+    assert repository.list_competency_floors() == ()
 
 
 def test_exact_candidate_ratification_is_atomic_and_idempotent(session: Session) -> None:
@@ -89,8 +154,11 @@ def test_exact_candidate_ratification_is_atomic_and_idempotent(session: Session)
     assert first.decision_record_created is True
     assert second.decision_record_created is False
     assert second.content_digest == first.content_digest
-    assert projection.items[0].status == "ratified"
-    assert projection.items[0].ratified_at == NOW
+    chair_item = next(
+        item for item in projection.items if item.candidate.slug == "thirty_second_chair_stand"
+    )
+    assert chair_item.status == "ratified"
+    assert chair_item.ratified_at == NOW
     assert decision is not None
     assert f"candidate_content_digest:{command.content_digest}" in decision.evidence
     assert repository.get_evidence_source(UUID("90000000-0000-4000-8000-000000000001")) is not None
@@ -140,7 +208,11 @@ def test_candidate_endpoints_require_assessment_reviewer_role(session: Session) 
             "/v1/operator/assessment-governance/candidates",
             headers={"Authorization": "Bearer dev.assessment-reviewer"},
         )
-        item = allowed.json()["items"][0]["candidate"]
+        item = next(
+            candidate_item["candidate"]
+            for candidate_item in allowed.json()["items"]
+            if candidate_item["candidate"]["slug"] == "thirty_second_chair_stand"
+        )
         ratified = client.post(
             f"/v1/operator/assessment-governance/candidates/{item['candidate_id']}/ratifications",
             headers={"Authorization": "Bearer dev.assessment-reviewer"},

@@ -26,6 +26,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from agas_api.assessment_catalog import list_evidence_ready_assessment_definitions
+from agas_api.assessment_readiness import (
+    READINESS_RULE_VERSION,
+    owner_readiness_rule_is_current,
+)
 from agas_api.assessment_schedule import resolve_assessment_reassessment_schedule
 
 NonEmptyText = Annotated[str, Field(min_length=1)]
@@ -35,6 +39,39 @@ ASSESSMENT_INTENSITY_RANK = {
     AssessmentIntensity.HIGH: 2,
     AssessmentIntensity.MAXIMAL: 3,
 }
+
+
+def _assessment_screening_flags(measurement: object) -> tuple[str, ...]:
+    if not isinstance(measurement, dict):
+        raise AssessmentSelectionRunValidationError(
+            "assessment readiness observation has an invalid measurement payload"
+        )
+    flags: list[str] = []
+    for field, safe_value, flag in (
+        (
+            "current_lower_body_or_balance_concern",
+            "no",
+            "lower_body_or_balance_concern",
+        ),
+        (
+            "controlled_chair_stand_without_arms",
+            "yes",
+            "chair_stand_control_not_confirmed",
+        ),
+        (
+            "current_upper_body_wrist_or_hand_concern",
+            "no",
+            "upper_body_wrist_or_hand_concern",
+        ),
+        (
+            "controlled_standard_pushup",
+            "yes",
+            "standard_pushup_control_not_confirmed",
+        ),
+    ):
+        if measurement.get(field) != safe_value:
+            flags.append(flag)
+    return tuple(flags)
 
 
 def _utc_now() -> datetime:
@@ -157,9 +194,32 @@ class PersistedAssessmentSelectionRunService:
             raise AssessmentSelectionRunConflictError(
                 "current assessment eligibility review does not allow selection"
             )
+        if not owner_readiness_rule_is_current(eligibility.rule_version):
+            raise AssessmentSelectionRunConflictError(
+                "current assessment eligibility review uses an obsolete readiness screen"
+            )
         if not eligibility.reviewed_at <= command.evaluated_at < eligibility.valid_until:
             raise AssessmentSelectionRunConflictError(
                 "current assessment eligibility review is not active at evaluation time"
+            )
+        assessment_screening_flags: tuple[str, ...] = ()
+        if eligibility.rule_version == READINESS_RULE_VERSION:
+            if len(eligibility.source_observation_ids) != 1:
+                raise AssessmentSelectionRunValidationError(
+                    "current owner readiness review has unexpected source lineage"
+                )
+            readiness_observation = self.repository.get_observation(
+                eligibility.source_observation_ids[0]
+            )
+            if (
+                readiness_observation is None
+                or readiness_observation.observation_type != "assessment_readiness_self_report"
+            ):
+                raise AssessmentSelectionRunValidationError(
+                    "current owner readiness review has no matching readiness observation"
+                )
+            assessment_screening_flags = _assessment_screening_flags(
+                readiness_observation.measurement
             )
 
         reviewed_definitions = tuple(
@@ -244,6 +304,7 @@ class PersistedAssessmentSelectionRunService:
                 "available_equipment_categories": list(equipment_categories),
                 "source_availability_ids": [str(item) for item in snapshot.source_availability_ids],
                 "assessment_eligibility_review_id": str(eligibility.id),
+                "assessment_screening_flags": list(assessment_screening_flags),
             },
             source=ObservationSource.USER_REPORT,
             reliability=command.reliability,
@@ -258,6 +319,7 @@ class PersistedAssessmentSelectionRunService:
             source_observation_ids=source_observation_ids,
             body_mass_kg=command.body_mass_kg,
             health_screening_completed=True,
+            health_screening_flags=assessment_screening_flags,
             training_age_months_by_domain=training_history,
             exercise_skill_tags=command.exercise_skill_tags,
             recent_exposure_tags=command.recent_exposure_tags,

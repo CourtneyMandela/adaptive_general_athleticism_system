@@ -461,6 +461,10 @@ test("the phone workflow turns a factual readiness report into a narrow decision
   await page.getByLabel("Has a healthcare professional told you to avoid or limit exercise").selectOption("no");
   await page.getByLabel("Do you currently have lower-body pain").selectOption("no");
   await page.getByLabel("Using the exact stable chair setup").selectOption("yes");
+  await page.getByLabel("Do you currently have upper-body, wrist, or hand pain").selectOption("no");
+  await page
+    .getByLabel("On a nonslip floor, can you comfortably complete one controlled standard push-up")
+    .selectOption("yes");
   await page.getByLabel("These answers describe my current state").check();
   await submit.click();
 
@@ -471,6 +475,8 @@ test("the phone workflow turns a factual readiness report into a narrow decision
     adult_confirmed: true,
     concerning_signs_or_symptoms: "no",
     controlled_chair_stand_without_arms: "yes",
+    current_upper_body_wrist_or_hand_concern: "no",
+    controlled_standard_pushup: "yes",
     answers_confirmed: true,
   });
   expect(submittedBody).not.toHaveProperty("outcome");

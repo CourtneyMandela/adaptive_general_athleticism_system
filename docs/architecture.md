@@ -160,10 +160,14 @@ Athlete-level authority is separate. `AssessmentEligibilityReview` is an append-
 time-bounded decision that references the observations and screening process actually reviewed.
 The owner-alpha readiness service stores a grouped factual self-report and its deterministic
 eligibility result in one transaction; the caller cannot select the result, validity window,
-reviewer, or intensity ceiling. The initial rule expires after 24 hours and caps downstream
-selection at moderate intensity. An independent operator can still append a separately reviewed
-decision through the local administration boundary. Outcomes allow selection, block selection, or
-require further review; no record is a diagnosis or medical clearance.
+reviewer, or intensity ceiling. The current rule expires after 24 hours. It permits high-effort
+assessment consideration only when the athlete reports the required recent moderate-activity base;
+otherwise the ceiling remains moderate. Global safety factors control the overall eligibility
+outcome, while movement-specific concern and controlled-repetition answers become explicit selector
+flags so one incompatible test does not block an unrelated compatible test. An older owner-readiness
+rule is inactive for new selection, while a separately operator-reviewed eligibility process retains
+its own versioned authority. Outcomes allow selection, block selection, or require further review;
+no record is a diagnosis or medical clearance.
 
 The persisted assessment-run service loads the athlete's current allowed eligibility decision and
 the catalog's current approved, evidence-ready, self-administered definitions at or below that
@@ -171,7 +175,9 @@ decision's persisted maximum intensity. It derives equipment
 categories from the effective-dated state of an owned environment, records the non-medical context
 as a direct observation, and atomically appends decisions, selections, and an
 `AssessmentSelectionRun`.
-Athlete input cannot supply injury, symptom, health-classification, or equipment-category fields.
+Athlete input cannot supply injury, symptom, health-classification, or equipment-category fields in
+the run request. For the owner-readiness path, the server derives assessment constraint flags only
+from the exact persisted readiness observation cited by the active eligibility review.
 
 The selector uses exact tag matching and a versioned deterministic rule. Each selected, deferred, or excluded
 decision records reason codes, human-readable rationale, and the immutable intake observations it

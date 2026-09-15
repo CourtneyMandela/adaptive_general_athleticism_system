@@ -9,6 +9,7 @@ from agas_api.assessment_readiness import (
     AssessmentReadinessValidationError,
     PersistedAssessmentReadinessService,
     SubmitAssessmentReadinessReportCommand,
+    owner_readiness_rule_is_current,
 )
 from agas_api.database import database_session_dependency
 from agas_api.identity import AuthenticatedPrincipal
@@ -27,6 +28,12 @@ PRINCIPAL = AuthenticatedPrincipal(
 )
 
 
+def test_only_obsolete_owner_readiness_versions_are_invalidated() -> None:
+    assert owner_readiness_rule_is_current(READINESS_RULE_VERSION) is True
+    assert owner_readiness_rule_is_current("assessment-readiness-screen@1.0.0") is False
+    assert owner_readiness_rule_is_current("operator-clinical-review@7.0.0") is True
+
+
 def command(**updates: object) -> SubmitAssessmentReadinessReportCommand:
     values: dict[str, object] = {
         "report_id": uuid4(),
@@ -38,6 +45,8 @@ def command(**updates: object) -> SubmitAssessmentReadinessReportCommand:
         "clinician_exercise_restriction": "no",
         "current_lower_body_or_balance_concern": "no",
         "controlled_chair_stand_without_arms": "yes",
+        "current_upper_body_wrist_or_hand_concern": "no",
+        "controlled_standard_pushup": "yes",
         "answers_confirmed": True,
     }
     values.update(updates)
@@ -83,6 +92,22 @@ def test_clear_report_creates_a_narrow_idempotent_eligibility_chain(session: Ses
     assert review.rule_version == READINESS_RULE_VERSION
 
 
+def test_recent_training_base_allows_high_but_not_maximal_assessment_intensity(
+    session: Session,
+) -> None:
+    athlete = athlete_fixture(session)
+    result = PersistedAssessmentReadinessService(session).execute(
+        athlete.id,
+        command(regular_moderate_activity_last_three_months="yes"),
+        PRINCIPAL,
+        recorded_at=NOW,
+    )
+
+    assert result.outcome is AssessmentEligibilityOutcome.SELECTION_ALLOWED
+    assert result.maximum_assessment_intensity is AssessmentIntensity.HIGH
+    assert "up to high effort" in result.next_action
+
+
 @pytest.mark.parametrize(
     ("field", "value", "expected"),
     (
@@ -94,16 +119,6 @@ def test_clear_report_creates_a_narrow_idempotent_eligibility_chain(session: Ses
         ),
         ("concerning_signs_or_symptoms", "unsure", AssessmentEligibilityOutcome.REVIEW_REQUIRED),
         ("clinician_exercise_restriction", "yes", AssessmentEligibilityOutcome.REVIEW_REQUIRED),
-        (
-            "current_lower_body_or_balance_concern",
-            "yes",
-            AssessmentEligibilityOutcome.REVIEW_REQUIRED,
-        ),
-        (
-            "controlled_chair_stand_without_arms",
-            "no",
-            AssessmentEligibilityOutcome.REVIEW_REQUIRED,
-        ),
     ),
 )
 def test_concerns_uncertainty_and_product_scope_fail_closed(
@@ -121,6 +136,28 @@ def test_concerns_uncertainty_and_product_scope_fail_closed(
     )
     assert result.outcome is expected
     assert "Do not" in result.next_action
+
+
+def test_movement_specific_concerns_are_preserved_for_per_assessment_selection(
+    session: Session,
+) -> None:
+    athlete = athlete_fixture(session)
+    result = PersistedAssessmentReadinessService(session).execute(
+        athlete.id,
+        command(
+            current_upper_body_wrist_or_hand_concern="yes",
+            controlled_standard_pushup="no",
+        ),
+        PRINCIPAL,
+        recorded_at=NOW,
+    )
+
+    observation = DomainRepository(session).get_observation(result.observation_id)
+    assert result.outcome is AssessmentEligibilityOutcome.SELECTION_ALLOWED
+    assert observation is not None
+    assert observation.measurement["current_upper_body_wrist_or_hand_concern"] == "yes"
+    assert observation.measurement["controlled_standard_pushup"] == "no"
+    assert "Incompatible assessments will be excluded" in result.next_action
 
 
 def test_new_report_supersedes_without_destroying_history_and_rejects_identity_reuse(

@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from uuid import uuid4
 
 import agas_api.assessment_estimation as assessment_estimation_module
 import agas_api.assessment_performance as assessment_performance_module
@@ -7,6 +8,10 @@ import agas_api.assessment_selection as assessment_selection_module
 import pytest
 from agas_api.assessment_eligibility_admin import record_assessment_eligibility_review
 from agas_api.assessment_performance import AssessmentPerformanceResult
+from agas_api.assessment_readiness import (
+    PersistedAssessmentReadinessService,
+    SubmitAssessmentReadinessReportCommand,
+)
 from agas_api.assessment_selection import (
     AssessmentSelectionRunConflictError,
     AssessmentSelectionRunResult,
@@ -15,6 +20,7 @@ from agas_api.assessment_selection import (
 )
 from agas_api.assessment_workflow import AssessmentWorkflowProjection
 from agas_api.database import database_session_dependency
+from agas_api.identity import AuthenticatedPrincipal
 from agas_api.main import app
 from agas_domain import (
     Applicability,
@@ -332,6 +338,7 @@ def test_owned_athlete_creates_a_provenance_complete_assessment_selection_run(
         "available_equipment_categories": ["cycle_ergometer"],
         "source_availability_ids": availability_ids,
         "assessment_eligibility_review_id": str(eligibility.id),
+        "assessment_screening_flags": [],
     }
     assert tuple(item.selection.decision.value for item in result.decisions) == (
         "selected",
@@ -347,6 +354,58 @@ def test_owned_athlete_creates_a_provenance_complete_assessment_selection_run(
     assert repository.get_assessment_selection_run(result.run.id) == result.run
     for item in result.decisions:
         assert repository.get_assessment_selection(item.selection.id) == item.selection
+
+
+def test_owner_readiness_movement_flags_exclude_only_the_matching_assessment(
+    session: Session,
+) -> None:
+    athlete, environment, _eligibility = setup_run_state(session)
+    repository = DomainRepository(session)
+    flagged = definition("upper_body_flagged_fixture").model_copy(
+        update={"blocked_by_health_screening_flags": ("upper_body_wrist_or_hand_concern",)}
+    )
+    repository.add_assessment_definition(flagged)
+    approve(repository, flagged, repository.list_evidence_claims()[0])
+    session.commit()
+    readiness = SubmitAssessmentReadinessReportCommand(
+        report_id=uuid4(),
+        reported_at=NOW,
+        adult_confirmed=True,
+        regular_moderate_activity_last_three_months="yes",
+        known_cardiovascular_metabolic_or_renal_disease="no",
+        concerning_signs_or_symptoms="no",
+        clinician_exercise_restriction="no",
+        current_lower_body_or_balance_concern="no",
+        controlled_chair_stand_without_arms="yes",
+        current_upper_body_wrist_or_hand_concern="yes",
+        controlled_standard_pushup="no",
+        answers_confirmed=True,
+    )
+    principal = AuthenticatedPrincipal(
+        issuer="urn:agas:test",
+        subject="assessment-selection-athlete",
+        authentication_method="test",
+        test_bypass=True,
+    )
+    PersistedAssessmentReadinessService(session).execute(
+        athlete.id,
+        readiness,
+        principal,
+        recorded_at=NOW,
+    )
+
+    result = PersistedAssessmentSelectionRunService(session).execute(
+        athlete.id,
+        CreateAssessmentSelectionRunCommand.model_validate(request_body(environment)),
+    )
+    decisions = {item.definition.slug: item.selection.decision for item in result.decisions}
+
+    assert result.context_observation.measurement["assessment_screening_flags"] == [
+        "upper_body_wrist_or_hand_concern",
+        "standard_pushup_control_not_confirmed",
+    ]
+    assert decisions["available_fixture"].value == "selected"
+    assert decisions["upper_body_flagged_fixture"].value == "excluded"
 
 
 def test_eligibility_intensity_scope_cannot_authorize_a_harder_protocol(

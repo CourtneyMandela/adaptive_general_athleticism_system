@@ -195,6 +195,12 @@ repetition count as assessment-specific state. It is not production authority un
 even after ratification it authorizes no normative, maximum-strength, sport-performance, or training
 interpretation. Other synthetic test policies prove software lineage only.
 
+The prepared standard-push-up candidate follows the same boundary for a more owner-relevant,
+no-equipment upper-body endurance measure. It cites ACSM 12th edition, Box 3.10 and Table 3.11, but
+does not activate the table's sex-specific categories because the male and female rows use different
+movement protocols. AGAS applies one explicitly selected standard version for within-person tracking,
+does not infer sex, and creates no competency floor or dose from the count.
+
 The development-only assessment-governance bundle importer is a typed transport for externally
 curated records, not an evidence-review engine. New approved records must cite claims whose exact
 source snapshots and approved claim reviews were already available at the authority's review time.

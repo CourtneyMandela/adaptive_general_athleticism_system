@@ -279,19 +279,25 @@ def _existing_candidate_result(
 
 @lru_cache
 def _candidate_registry() -> dict[UUID, PreparedAssessmentGovernanceCandidate]:
-    prepared = _chair_stand_release()
-    presentation_fields = _chair_stand_presentation_fields()
-    content_digest = _candidate_digest(prepared, presentation_fields)
-    presentation = AssessmentGovernanceCandidate(
-        candidate_version=CANDIDATE_VERSION,
-        content_digest=content_digest,
-        **presentation_fields,
-    )
-    candidate = PreparedAssessmentGovernanceCandidate(
-        presentation=presentation,
-        release=prepared,
-    )
-    return {presentation.candidate_id: candidate}
+    candidates: dict[UUID, PreparedAssessmentGovernanceCandidate] = {}
+    for prepared, presentation_fields in (
+        (_chair_stand_release(), _chair_stand_presentation_fields()),
+        (_standard_pushup_release(), _standard_pushup_presentation_fields()),
+    ):
+        content_digest = _candidate_digest(prepared, presentation_fields)
+        presentation = AssessmentGovernanceCandidate(
+            candidate_version=CANDIDATE_VERSION,
+            content_digest=content_digest,
+            **presentation_fields,
+        )
+        candidate = PreparedAssessmentGovernanceCandidate(
+            presentation=presentation,
+            release=prepared,
+        )
+        if presentation.candidate_id in candidates:
+            raise ValueError("assessment candidate ids must be unique")
+        candidates[presentation.candidate_id] = candidate
+    return candidates
 
 
 def _candidate_digest(
@@ -449,6 +455,10 @@ def _chair_stand_release() -> PreparedAssessmentGovernanceRelease:
         unit_or_scale="repetitions",
         protocol_version="agas-thirty-second-chair-stand@1.0.0",
         required_equipment_categories=("chair",),
+        blocked_by_health_screening_flags=(
+            "lower_body_or_balance_concern",
+            "chair_stand_control_not_confirmed",
+        ),
     )
     chair = Equipment(
         id=UUID("97000000-0000-4000-8000-000000000001"),
@@ -654,6 +664,281 @@ def _chair_stand_presentation_fields() -> dict[str, object]:
                     "Population transfer is uncertain and the inter-rater confidence interval was wide.",
                 ),
                 conflict_disclosure="The paper reports employment, advisory, founder, and other roles involving Joint Academy among several authors.",
+            ),
+        ),
+    }
+
+
+def _standard_pushup_release() -> PreparedAssessmentGovernanceRelease:
+    source_created_at = datetime(2026, 9, 15, 9, 0, tzinfo=UTC)
+    claim_created_at = datetime(2026, 9, 15, 9, 10, tzinfo=UTC)
+    definition_created_at = datetime(2026, 9, 15, 9, 20, tzinfo=UTC)
+    prepared_at = datetime(2026, 9, 15, 9, 30, tzinfo=UTC)
+
+    isbn = EvidenceSourceIdentifier(scheme="isbn", value="9781975219246")
+    source = EvidenceSource(
+        id=UUID("90000000-0000-4000-8000-000000000003"),
+        created_at=source_created_at,
+        title="ACSM's Guidelines for Exercise Testing and Prescription",
+        authors=(
+            "Cemal Ozemek",
+            "Amanda Bonikowske",
+            "Jeffrey Christle",
+            "Paul M. Gallo",
+        ),
+        journal=None,
+        publication_year=2026,
+        publication_types=("Professional guideline", "Textbook"),
+        primary_identifier=isbn,
+        source_identifiers=(isbn,),
+        metadata_provider="manual",
+        retrieval_uri="https://www.ncbi.nlm.nih.gov/nlmcatalog/137328",
+        retrieval_query="ISBN 9781975219246; Chapter 3; Box 3.10; Table 3.11",
+        retrieved_at=source_created_at,
+        metadata_version="owner-supplied-acsm-12-pdf-and-nlm-catalog@2026-09-15",
+        provenance_notes=(
+            "The owner supplied a local copy for review; the PDF itself is not stored in AGAS.",
+            "The NLM Catalog record confirms the editors, edition, publisher, and EPUB ISBN 9781975219246.",
+            "The protocol statement was checked against Chapter 3, PDF pages 244-245, including Box 3.10.",
+            "Table 3.11 was inspected but its sex-specific categories are not activated by this release.",
+        ),
+    )
+    claim = EvidenceClaim(
+        id=UUID("91000000-0000-4000-8000-000000000003"),
+        created_at=claim_created_at,
+        claim=(
+            "ACSM's 12th-edition guideline describes the maximum number of consecutive push-ups "
+            "performed without rest, with standardized body alignment and repetition criteria, "
+            "as a simple field assessment of upper-body muscular endurance."
+        ),
+        domain="assessment_protocol_and_construct",
+        population=(
+            "Apparently healthy adults addressed by the guideline; the accompanying reference "
+            "categories are age- and sex-stratified and do not define one universal population."
+        ),
+        intervention=(
+            "Maximum consecutive push-up field test performed with the Box 3.10 technique."
+        ),
+        comparator="No comparator is required for the direct repetition-count observation.",
+        outcome="Maximum consecutive repetitions completed without rest while technique is retained.",
+        study_design="Professional guideline and textbook synthesis citing primary references 166-168",
+        effect_direction=(
+            "A larger valid repetition count represents greater performance on this exact test."
+        ),
+        uncertainty=(
+            "The source provides a protocol and descriptive reference categories; it does not "
+            "establish an AGAS competency floor, exercise prescription, or total-body fitness inference."
+        ),
+        limitations=(
+            "Push-up results are specific to the exact movement, range of motion, pace, and stopping rules.",
+            "Table 3.11 uses standard push-ups for males and modified knee push-ups for females, so its rows are not directly comparable.",
+            "The textbook does not reproduce subgroup sampling details for the reference table.",
+            "Self-counted technique has not been independently validated by this release.",
+        ),
+        evidence_strength=EvidenceStrength.LOW,
+        athlete_applicability=Applicability.MODERATE,
+        applicability_notes=(
+            "The no-equipment field protocol is practical for an adult recreationally trained "
+            "athlete, but only within-person tracking of the standard version is authorized."
+        ),
+        source_identifiers=(isbn,),
+        source_record_ids=(source.id,),
+        reviewer="Codex evidence synthesis candidate; authority pending",
+        claim_version="acsm-standard-pushup-protocol@1.0.0",
+    )
+    definition = AssessmentDefinition(
+        id=UUID("92000000-0000-4000-8000-000000000002"),
+        created_at=definition_created_at,
+        slug="maximum_consecutive_standard_pushups",
+        name="Maximum consecutive standard push-ups",
+        domain=CapabilityDomain.MUSCULAR_ENDURANCE,
+        observation_type="maximum_consecutive_standard_pushup_repetitions",
+        intensity=AssessmentIntensity.HIGH,
+        unit_or_scale="repetitions",
+        protocol_version="agas-maximum-consecutive-standard-pushups@1.0.0",
+        blocked_by_health_screening_flags=(
+            "upper_body_wrist_or_hand_concern",
+            "standard_pushup_control_not_confirmed",
+        ),
+    )
+    review_id = UUID("93000000-0000-4000-8000-000000000002")
+    return PreparedAssessmentGovernanceRelease(
+        release_id=UUID("94000000-0000-4000-8000-000000000002"),
+        release_label="Maximum consecutive standard push-ups owner-alpha release",
+        prepared_at=prepared_at,
+        sources=(source,),
+        claims=(claim,),
+        evidence_reviews=(
+            EvidenceClaimReviewDraft(
+                id=UUID("95000000-0000-4000-8000-000000000003"),
+                evidence_claim_id=claim.id,
+                sequence_number=1,
+                source_verification_rationale=(
+                    "The construct statement, consecutive-without-rest score, technique criteria, "
+                    "stopping rule, sex-specific protocol difference, and normative limitation were "
+                    "checked against Chapter 3, Box 3.10 and Table 3.11 on PDF pages 244-245."
+                ),
+                extraction_rationale=(
+                    "The claim retains only the source-supported test construct and procedure. It "
+                    "does not import an age/sex category, percentile, fitness grade, or training dose."
+                ),
+                evidence_strength_rationale=(
+                    "Low reflects use of a textbook synthesis for a narrow protocol claim without "
+                    "independent appraisal of its cited primary validation studies."
+                ),
+                applicability_rationale=(
+                    "Moderate reflects a practical no-equipment adult field test while limiting "
+                    "interpretation to repeat performance on the exact standard version."
+                ),
+                uncertainty=(
+                    "Self-counting, technique drift, familiarization, fatigue, and day-to-day "
+                    "variation may materially affect the result."
+                ),
+                conflict_disclosure=(
+                    "No protocol-specific conflict disclosure was identified in the inspected "
+                    "textbook pages; this is not a claim that the cited primary studies had none."
+                ),
+                review_version="acsm-standard-pushup-evidence-review@1.0.0",
+            ),
+        ),
+        definition=definition,
+        protocol_review=AssessmentDefinitionReviewDraft(
+            id=review_id,
+            assessment_definition_id=definition.id,
+            sequence_number=1,
+            protocol_instructions=(
+                "Use a nonslip, level floor with enough clear space for a full plank. Wear the same footwear, or use the same barefoot setup, on later attempts.",
+                "Warm up for 5 to 10 minutes with light aerobic movement, dynamic upper-body movement, and several comfortable practice push-ups; rest until breathing is comfortable before the recorded attempt.",
+                "Start in the standard down position with fingers pointing forward under the shoulders, toes as the pivot, head neutral, and the body held in one straight line.",
+                "Press to straight arms, then lower under control until the chin lightly touches a clean folded towel or other thin, consistent target while the abdomen stays off the floor.",
+                "Continue consecutive repetitions without resting. Count only repetitions that return to straight arms while body alignment and the same target depth are maintained.",
+                "End the attempt when you stop to rest, strain forcibly, or cannot restore the required technique within two attempted repetitions. Record only the valid completed repetitions before the stopping condition.",
+            ),
+            result_entry_instructions=(
+                "Enter the whole-number count of valid consecutive standard push-ups directly "
+                "observed. Do not convert it to a sex/age category, pressing-strength score, or "
+                "training dose. Do not enter a completed result if pain or another safety stop ended the attempt."
+            ),
+            measurement_schema=AssessmentMeasurementSchema(
+                measurement_type=AssessmentMeasurementType.INTEGER,
+                label="Valid consecutive standard push-up repetitions",
+                minimum=0,
+                step=1,
+                measurement_schema_version="maximum-standard-pushup-count@1.0.0",
+            ),
+            recommended_reassessment_days=28,
+            self_administered=True,
+            evidence_claim_ids=(claim.id,),
+            applicability_notes=(
+                "Owner-alpha use is limited to repeat measurement of the same athlete's standard "
+                "push-up performance after current readiness screening and a pain-free controlled repetition."
+            ),
+            uncertainty=(
+                "The sex-neutral use of the standard version is an AGAS operational choice for "
+                "within-person tracking, not a claim that the source's male and female reference "
+                "rows are interchangeable. No normative category is calculated."
+            ),
+            review_version="agas-maximum-standard-pushup-review@1.0.0",
+        ),
+        estimation_policy=CapabilityEstimationPolicyDraft(
+            id=UUID("96000000-0000-4000-8000-000000000002"),
+            assessment_definition_id=definition.id,
+            assessment_definition_review_id=review_id,
+            sequence_number=1,
+            domain=definition.domain,
+            observation_type=definition.observation_type,
+            unit_or_scale=definition.unit_or_scale,
+            calculation_method="latest-matching-observation",
+            valid_for_days=28,
+            multi_observation_window_days=28,
+            evidence_claim_ids=(claim.id,),
+            applicability_notes=(
+                "Preserve the direct repetition count as a low-confidence, assessment-specific "
+                "upper-body muscular-endurance estimate for within-person tracking only."
+            ),
+            uncertainty=(
+                "No normative conversion, universal score, maximum-strength inference, competency "
+                "floor, or exercise prescription is authorized."
+            ),
+            rule_version="standard-pushup-latest-matching-observation@1.0.0",
+        ),
+        release_rationale=(
+            "Add a practical no-equipment upper-body endurance measurement while retaining exact "
+            "protocol provenance and refusing the source's non-comparable sex-specific categories."
+        ),
+        release_uncertainty=(
+            "This owner-alpha release has not received independent domain-expert review. Approval "
+            "would authorize only the exact assessment and narrow estimate, not a training threshold."
+        ),
+    )
+
+
+def _standard_pushup_presentation_fields() -> dict[str, object]:
+    return {
+        "candidate_id": UUID("94000000-0000-4000-8000-000000000002"),
+        "slug": "maximum_consecutive_standard_pushups",
+        "release_label": "Maximum consecutive standard push-ups owner-alpha release",
+        "prepared_at": datetime(2026, 9, 15, 9, 30, tzinfo=UTC),
+        "summary": (
+            "A no-equipment count of consecutive standard push-ups using one repeatable form. It "
+            "creates a personal baseline, not a sex-based fitness grade or a workout prescription."
+        ),
+        "measures": (
+            "Assessment-specific upper-body muscular-endurance performance during consecutive standard push-ups."
+        ),
+        "does_not_measure": (
+            "Maximum pressing strength, whole-body athleticism, injury risk, or medical fitness.",
+            "A universal 0-100 score or a valid comparison between standard and knee push-ups.",
+            "Whether push-ups belong in a workout or what dose should be prescribed.",
+        ),
+        "capability_domain": CapabilityDomain.MUSCULAR_ENDURANCE,
+        "estimate_scope": "assessment_specific:maximum_consecutive_standard_pushup_repetitions",
+        "setup_requirements": (
+            "Level nonslip floor with clear space for a full plank.",
+            "A clean folded towel or similarly thin, repeatable chin-depth target.",
+            "The same footwear, surface, hand position, and depth target on future attempts.",
+        ),
+        "protocol_steps": (
+            "Warm up with light movement and comfortable practice repetitions, then rest until breathing is comfortable.",
+            "Use the standard toes-as-pivot version with hands under shoulders and body held in one straight line.",
+            "Press to straight arms and lower until the chin lightly touches the consistent target without the abdomen touching the floor.",
+            "Continue without rest and count only valid repetitions; stop when the governed technique rule is reached.",
+        ),
+        "stop_conditions": (
+            "Do not start when the current readiness screen is missing, expired, or does not authorize the assessment.",
+            "Stop immediately for pain, dizziness, chest discomfort, unusual shortness of breath, numbness, or loss of control.",
+            "End the test when you rest, strain forcibly, or cannot restore valid technique within two attempted repetitions.",
+        ),
+        "operational_choices": (
+            "The same standard movement is recorded for any athlete who selects this protocol; AGAS does not infer sex.",
+            "ACSM Table 3.11 age/sex categories are not activated because the table compares different movement versions.",
+            "The estimate stores the direct count, remains assessment-specific, and is valid for 28 days.",
+            "A single completed attempt produces low confidence and is intended for within-person comparison only.",
+        ),
+        "unresolved_limitations": (
+            "The source is a professional guideline/textbook synthesis; its cited primary protocol studies were not independently appraised in this release.",
+            "Self-counting may miss depth, alignment, locking, or rest errors without an observer or video review.",
+            "The warm-up and thin chin target make the instructions reproducible but are AGAS operational details, not a verbatim reproduction of Box 3.10.",
+            "No governed competency floor or training dose currently consumes this estimate.",
+            "No independent domain expert has reviewed this owner-alpha candidate.",
+        ),
+        "evidence": (
+            AssessmentCandidateEvidenceSummary(
+                title="ACSM Guidelines, 12th edition: Box 3.10 and Table 3.11",
+                source_url="https://www.ncbi.nlm.nih.gov/nlmcatalog/137328",
+                population=(
+                    "Apparently healthy adults addressed by the guideline; the reference table is age- and sex-stratified."
+                ),
+                finding=(
+                    "The guideline presents maximum consecutive push-ups without rest as a simple field assessment of upper-body muscular endurance and specifies repetition technique."
+                ),
+                limitations=(
+                    "The reference table uses standard push-ups for males and modified knee push-ups for females.",
+                    "This release does not use the table's categories or claim that self-counted form is externally validated.",
+                ),
+                conflict_disclosure=(
+                    "No protocol-specific conflict disclosure was identified on the inspected textbook pages."
+                ),
             ),
         ),
     }

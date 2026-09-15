@@ -134,6 +134,8 @@ export interface AssessmentReadinessInput {
   clinicianExerciseRestriction: ReadinessAnswer;
   currentLowerBodyOrBalanceConcern: ReadinessAnswer;
   controlledChairStandWithoutArms: ReadinessAnswer;
+  currentUpperBodyWristOrHandConcern: ReadinessAnswer;
+  controlledStandardPushup: ReadinessAnswer;
   answersConfirmed: boolean;
 }
 
@@ -147,6 +149,8 @@ export interface AssessmentReadinessReportCommand {
   clinician_exercise_restriction: ReadinessAnswer;
   current_lower_body_or_balance_concern: ReadinessAnswer;
   controlled_chair_stand_without_arms: ReadinessAnswer;
+  current_upper_body_wrist_or_hand_concern: ReadinessAnswer;
+  controlled_standard_pushup: ReadinessAnswer;
   answers_confirmed: true;
 }
 
@@ -238,6 +242,8 @@ export function buildAssessmentReadinessReportCommand(
     clinician_exercise_restriction: input.clinicianExerciseRestriction,
     current_lower_body_or_balance_concern: input.currentLowerBodyOrBalanceConcern,
     controlled_chair_stand_without_arms: input.controlledChairStandWithoutArms,
+    current_upper_body_wrist_or_hand_concern: input.currentUpperBodyWristOrHandConcern,
+    controlled_standard_pushup: input.controlledStandardPushup,
     answers_confirmed: true,
   };
 }

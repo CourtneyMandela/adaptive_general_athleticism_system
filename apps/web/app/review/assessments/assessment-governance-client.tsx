@@ -247,7 +247,7 @@ export function AssessmentGovernanceClient({ athleteId }: { athleteId?: string }
                     <ul>{evidence.limitations.map((value) => <li key={value}>{value}</li>)}</ul>
                     <p><strong>Conflicts:</strong> {evidence.conflict_disclosure}</p>
                     <a href={evidence.source_url} target="_blank" rel="noreferrer" className="text-link">
-                      Open primary PubMed record
+                      Open source record
                     </a>
                   </article>
                 ))}

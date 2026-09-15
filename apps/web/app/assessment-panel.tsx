@@ -190,6 +190,8 @@ export function AssessmentPanel({
   const [restriction, setRestriction] = useState<ReadinessAnswer>("unsure");
   const [movementConcern, setMovementConcern] = useState<ReadinessAnswer>("unsure");
   const [controlledRepetition, setControlledRepetition] = useState<ReadinessAnswer>("unsure");
+  const [upperBodyConcern, setUpperBodyConcern] = useState<ReadinessAnswer>("unsure");
+  const [controlledPushup, setControlledPushup] = useState<ReadinessAnswer>("unsure");
   const [readinessConfirmed, setReadinessConfirmed] = useState(false);
   const [readinessAction, setReadinessAction] = useState("");
 
@@ -273,6 +275,8 @@ export function AssessmentPanel({
           clinicianExerciseRestriction: restriction,
           currentLowerBodyOrBalanceConcern: movementConcern,
           controlledChairStandWithoutArms: controlledRepetition,
+          currentUpperBodyWristOrHandConcern: upperBodyConcern,
+          controlledStandardPushup: controlledPushup,
           answersConfirmed: readinessConfirmed,
         }),
       );
@@ -377,7 +381,7 @@ export function AssessmentPanel({
             </label>
             <ReadinessSelect
               label="For the last 3 months, have you done planned moderate exercise at least 3 days per week for 30 minutes?"
-              help="This records context. It is not converted to a fitness score."
+              help="This sets only the maximum assessment-effort ceiling. It is not converted to a fitness score."
               value={activity}
               onChange={setActivity}
             />
@@ -393,7 +397,7 @@ export function AssessmentPanel({
               onChange={setSymptoms}
             />
             <ReadinessSelect
-              label="Has a healthcare professional told you to avoid or limit exercise that would include repeated chair stands?"
+              label="Has a healthcare professional told you to avoid or limit exercise that would include repeated chair stands or push-ups?"
               value={restriction}
               onChange={setRestriction}
             />
@@ -406,6 +410,17 @@ export function AssessmentPanel({
               label="Using the exact stable chair setup, can you comfortably stand once and sit with control without using your arms?"
               value={controlledRepetition}
               onChange={setControlledRepetition}
+            />
+            <ReadinessSelect
+              label="Do you currently have upper-body, wrist, or hand pain or an injury that could affect standard push-ups?"
+              value={upperBodyConcern}
+              onChange={setUpperBodyConcern}
+            />
+            <ReadinessSelect
+              label="On a nonslip floor, can you comfortably complete one controlled standard push-up from toes to straight arms without pain?"
+              help="This is only a movement pre-check. It is not the maximum-repetition test."
+              value={controlledPushup}
+              onChange={setControlledPushup}
             />
             <label>
               <input
@@ -422,7 +437,7 @@ export function AssessmentPanel({
             </button>
             <p className="form-help">
               A clear result expires after 24 hours and can authorize only evidence-ready
-              low/moderate self-administered assessment selection. Stop if your condition changes.
+              self-administered assessments up to the server-calculated effort ceiling. Stop if your condition changes.
               This app cannot assess urgency; if you think you may have a medical emergency, use
               local emergency services.
             </p>

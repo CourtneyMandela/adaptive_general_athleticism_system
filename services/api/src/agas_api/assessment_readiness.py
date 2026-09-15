@@ -20,12 +20,18 @@ from sqlalchemy.orm import Session
 
 from agas_api.identity import AuthenticatedPrincipal
 
-READINESS_RULE_VERSION = "assessment-readiness-screen@1.0.0"
+READINESS_RULE_VERSION = "assessment-readiness-screen@1.1.0"
 SCREENING_PROCESS_REFERENCE = (
     "agas-readiness@1.0.0;ACSM-factors:PMID26473759;application:PMID28557860"
 )
 READINESS_VALID_FOR = timedelta(hours=24)
 Answer = Literal["no", "yes", "unsure"]
+
+
+def owner_readiness_rule_is_current(rule_version: str) -> bool:
+    return not rule_version.startswith("assessment-readiness-screen@") or (
+        rule_version == READINESS_RULE_VERSION
+    )
 
 
 class SubmitAssessmentReadinessReportCommand(BaseModel):
@@ -42,6 +48,8 @@ class SubmitAssessmentReadinessReportCommand(BaseModel):
     clinician_exercise_restriction: Answer
     current_lower_body_or_balance_concern: Answer
     controlled_chair_stand_without_arms: Answer
+    current_upper_body_wrist_or_hand_concern: Answer | None = None
+    controlled_standard_pushup: Answer | None = None
     answers_confirmed: Literal[True]
 
     @field_validator("reported_at")
@@ -127,7 +135,7 @@ class PersistedAssessmentReadinessService:
                 "readiness report cannot predate the current eligibility decision"
             )
 
-        outcome, rationale, next_action = self._evaluate(command)
+        outcome, maximum_intensity, rationale, next_action = self._evaluate(command)
         review = AssessmentEligibilityReview(
             created_at=command.reported_at,
             athlete_id=athlete_id,
@@ -137,7 +145,7 @@ class PersistedAssessmentReadinessService:
             source_observation_ids=(observation.id,),
             reviewed_at=command.reported_at,
             valid_until=command.reported_at + READINESS_VALID_FOR,
-            maximum_assessment_intensity=AssessmentIntensity.MODERATE,
+            maximum_assessment_intensity=maximum_intensity,
             reviewed_by=f"deterministic-rule:{READINESS_RULE_VERSION}",
             screening_process_reference=SCREENING_PROCESS_REFERENCE,
             rationale=rationale,
@@ -194,12 +202,18 @@ class PersistedAssessmentReadinessService:
                 "controlled_chair_stand_without_arms": (
                     command.controlled_chair_stand_without_arms
                 ),
+                "current_upper_body_wrist_or_hand_concern": (
+                    command.current_upper_body_wrist_or_hand_concern
+                ),
+                "controlled_standard_pushup": command.controlled_standard_pushup,
             },
             source=ObservationSource.USER_REPORT,
             reliability=Confidence.MODERATE,
             context={
                 "readiness_rule_version": READINESS_RULE_VERSION,
-                "intended_assessment_intensity": AssessmentIntensity.MODERATE.value,
+                "assessment_intensity_ceiling_rule": (
+                    "high only when recent moderate activity is yes; moderate otherwise"
+                ),
                 "evidence_source_identifiers": ["PMID:26473759", "PMID:28557860"],
                 "data_minimization": "grouped readiness factors; no diagnosis inferred",
             },
@@ -213,10 +227,11 @@ class PersistedAssessmentReadinessService:
     @staticmethod
     def _evaluate(
         command: SubmitAssessmentReadinessReportCommand,
-    ) -> tuple[AssessmentEligibilityOutcome, str, str]:
+    ) -> tuple[AssessmentEligibilityOutcome, AssessmentIntensity, str, str]:
         if not command.adult_confirmed:
             return (
                 AssessmentEligibilityOutcome.SELECTION_BLOCKED,
+                AssessmentIntensity.MODERATE,
                 "The owner-alpha assessment workflow is limited to adults.",
                 "Do not perform the assessment through AGAS.",
             )
@@ -224,31 +239,30 @@ class PersistedAssessmentReadinessService:
             command.known_cardiovascular_metabolic_or_renal_disease,
             command.concerning_signs_or_symptoms,
             command.clinician_exercise_restriction,
-            command.current_lower_body_or_balance_concern,
         )
         if "yes" in concern_answers or "unsure" in concern_answers:
             return (
                 AssessmentEligibilityOutcome.REVIEW_REQUIRED,
+                AssessmentIntensity.MODERATE,
                 "At least one safety-relevant factor was present or uncertain; AGAS does not "
                 "interpret its medical significance.",
                 "Do not perform the assessment. Seek appropriate qualified guidance before "
                 "submitting a new current-state report.",
             )
-        if command.controlled_chair_stand_without_arms != "yes":
-            return (
-                AssessmentEligibilityOutcome.REVIEW_REQUIRED,
-                "A controlled unassisted repetition was not confirmed, so the full timed test is "
-                "not authorized.",
-                "Do not perform the timed assessment. Seek appropriate qualified guidance if the "
-                "movement is difficult, painful, or uncertain.",
-            )
+        maximum_intensity = (
+            AssessmentIntensity.HIGH
+            if command.regular_moderate_activity_last_three_months == "yes"
+            else AssessmentIntensity.MODERATE
+        )
         return (
             AssessmentEligibilityOutcome.SELECTION_ALLOWED,
-            "The adult athlete reported no listed safety concern or restriction and confirmed one "
-            "controlled unassisted chair stand. Current activity was recorded as context and was "
-            "not converted into a fitness judgment.",
-            "Continue to governed low/moderate assessment selection. Stop if current state "
-            "changes.",
+            maximum_intensity,
+            "The adult athlete reported no global listed safety concern or restriction. Each "
+            "available assessment will separately apply the reported movement concerns and "
+            "controlled-repetition checks. The recent-activity answer sets only the maximum "
+            "assessment effort and is not converted into a fitness judgment.",
+            f"Continue to governed assessment selection up to {maximum_intensity.value} effort. "
+            "Incompatible assessments will be excluded; stop if current state changes.",
         )
 
     @staticmethod
@@ -258,7 +272,10 @@ class PersistedAssessmentReadinessService:
         created: bool,
     ) -> AssessmentReadinessReportResult:
         if review.outcome is AssessmentEligibilityOutcome.SELECTION_ALLOWED:
-            next_action = "Continue to governed low/moderate assessment selection."
+            next_action = (
+                "Continue to governed assessment selection up to "
+                f"{review.maximum_assessment_intensity.value} effort."
+            )
         elif review.outcome is AssessmentEligibilityOutcome.SELECTION_BLOCKED:
             next_action = "Do not perform the assessment through AGAS."
         else:

@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy.orm import Session
 
 from agas_api.assessment_catalog import list_evidence_ready_assessment_definitions
+from agas_api.assessment_readiness import owner_readiness_rule_is_current
 from agas_api.assessment_schedule import resolve_assessment_reassessment_schedule
 
 AssessmentWorkflowStatus = Literal[
@@ -207,6 +208,7 @@ def get_assessment_workflow_projection(
     eligibility_active = bool(
         eligibility
         and eligibility.outcome is AssessmentEligibilityOutcome.SELECTION_ALLOWED
+        and owner_readiness_rule_is_current(eligibility.rule_version)
         and eligibility.reviewed_at <= instant < eligibility.valid_until
     )
     selection_prerequisites_ready = bool(environments and due_definition_ids and eligibility_active)

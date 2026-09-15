@@ -78,6 +78,18 @@ movement. These are conservative stop boundaries, not symptom classification, di
 clearance, or proof that self-administration is suitable for a particular person. Candidate
 ratification cannot bypass the separate eligibility gate.
 
+The standard-push-up candidate requires a clear nonslip floor, a repeatable depth target, a warm-up,
+and one comfortable pain-free controlled repetition before the maximum-consecutive attempt. The
+current readiness screen therefore records upper-body, wrist, and hand concerns separately from the
+chair-stand checks. Expanding those questions creates a new readiness-rule version; an older active
+owner-readiness review cannot authorize a new assessment run and must be replaced by a current
+report. A concern or failed movement pre-check excludes the affected assessment without blocking an
+unrelated compatible one. High-effort assessment selection additionally requires a reported recent
+moderate-activity base; otherwise the owner-readiness ceiling remains moderate.
+Pain, dizziness, chest discomfort, unusual shortness of breath, numbness, loss of control, forced
+straining, rest, or unresolved technique failure ends the attempt. These rules do not constitute
+medical clearance or certify push-ups as appropriate training.
+
 An approved competency floor is not a safety policy. The first prepared chair-stand floor compares
 only an age-compatible, current, matching assessment estimate with a provisional lower reference.
 Meeting it cannot clear an athlete to train, and falling below it cannot diagnose impairment or

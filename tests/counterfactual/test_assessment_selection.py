@@ -144,3 +144,38 @@ def test_incomplete_screening_excludes_and_missing_body_mass_defers() -> None:
     assert incomplete.decision is AssessmentDecision.EXCLUDED
     assert screened.decision is AssessmentDecision.DEFERRED
     assert fully_observed.decision is AssessmentDecision.SELECTED
+
+
+def test_movement_precheck_excludes_only_the_affected_assessment() -> None:
+    context = AssessmentContext(
+        athlete_id=uuid4(),
+        source_observation_ids=(uuid4(),),
+        health_screening_completed=True,
+        health_screening_flags=("upper_body_wrist_or_hand_concern",),
+        evaluated_at=NOW,
+    )
+    chair_stand = AssessmentDefinition(
+        slug="chair_stand_fixture",
+        name="Chair stand fixture",
+        domain=CapabilityDomain.MUSCULAR_ENDURANCE,
+        observation_type="chair_stand_fixture_count",
+        intensity=AssessmentIntensity.MODERATE,
+        unit_or_scale="repetitions",
+        protocol_version="chair-stand-fixture@1.0.0",
+        blocked_by_health_screening_flags=("lower_body_or_balance_concern",),
+    )
+    standard_pushup = AssessmentDefinition(
+        slug="standard_pushup_fixture",
+        name="Standard push-up fixture",
+        domain=CapabilityDomain.MUSCULAR_ENDURANCE,
+        observation_type="standard_pushup_fixture_count",
+        intensity=AssessmentIntensity.HIGH,
+        unit_or_scale="repetitions",
+        protocol_version="standard-pushup-fixture@1.0.0",
+        blocked_by_health_screening_flags=("upper_body_wrist_or_hand_concern",),
+    )
+
+    decisions = AdaptiveAssessmentSelector().select(context, (chair_stand, standard_pushup))
+
+    assert decisions[0].decision is AssessmentDecision.SELECTED
+    assert decisions[1].decision is AssessmentDecision.EXCLUDED
