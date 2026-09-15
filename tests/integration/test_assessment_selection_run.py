@@ -399,8 +399,10 @@ def test_owner_readiness_movement_flags_exclude_only_the_matching_assessment(
         CreateAssessmentSelectionRunCommand.model_validate(request_body(environment)),
     )
     decisions = {item.definition.slug: item.selection.decision for item in result.decisions}
+    measurement = result.context_observation.measurement
 
-    assert result.context_observation.measurement["assessment_screening_flags"] == [
+    assert isinstance(measurement, dict)
+    assert measurement["assessment_screening_flags"] == [
         "upper_body_wrist_or_hand_concern",
         "standard_pushup_control_not_confirmed",
     ]

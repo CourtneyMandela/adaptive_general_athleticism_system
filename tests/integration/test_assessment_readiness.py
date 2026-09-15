@@ -155,8 +155,10 @@ def test_movement_specific_concerns_are_preserved_for_per_assessment_selection(
     observation = DomainRepository(session).get_observation(result.observation_id)
     assert result.outcome is AssessmentEligibilityOutcome.SELECTION_ALLOWED
     assert observation is not None
-    assert observation.measurement["current_upper_body_wrist_or_hand_concern"] == "yes"
-    assert observation.measurement["controlled_standard_pushup"] == "no"
+    measurement = observation.measurement
+    assert isinstance(measurement, dict)
+    assert measurement["current_upper_body_wrist_or_hand_concern"] == "yes"
+    assert measurement["controlled_standard_pushup"] == "no"
     assert "Incompatible assessments will be excluded" in result.next_action
 
 
