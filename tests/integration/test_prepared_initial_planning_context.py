@@ -46,7 +46,9 @@ NOW = datetime.now(UTC).replace(microsecond=0)
 ADAPTATION_ID = UUID("a0000000-0000-4000-8000-000000000004")
 
 
-def _persist_ready_path(session: Session) -> tuple[Athlete, AuthorizedRole]:
+def _persist_ready_path(
+    session: Session, *, use_pushup_path: bool = False
+) -> tuple[Athlete, AuthorizedRole]:
     repository = DomainRepository(session)
     athlete = Athlete(
         created_at=NOW - timedelta(days=2),
@@ -72,11 +74,26 @@ def _persist_ready_path(session: Session) -> tuple[Athlete, AuthorizedRole]:
         reviewer="automated-test",
         claim_version="fixture@1.0.0",
     )
+    observation_type = (
+        "maximum_consecutive_standard_pushup_repetitions"
+        if use_pushup_path
+        else "thirty_second_chair_stand_repetitions"
+    )
+    estimate_scope = (
+        "assessment_specific:maximum_consecutive_standard_pushup_repetitions"
+        if use_pushup_path
+        else "assessment_specific:thirty_second_chair_stand_repetitions"
+    )
+    floor_version = (
+        "owner-alpha-standard-pushup-provisional-floor@1.0.0"
+        if use_pushup_path
+        else "chair-stand-age-30-39-lower-reference-floor@1.0.0"
+    )
     observation = Observation(
         created_at=NOW - timedelta(hours=2),
         athlete_id=athlete.id,
         observed_at=NOW - timedelta(hours=2),
-        observation_type="thirty_second_chair_stand_repetitions",
+        observation_type=observation_type,
         measurement=10,
         unit="repetitions",
         source=ObservationSource.TEST_RESULT,
@@ -94,20 +111,20 @@ def _persist_ready_path(session: Session) -> tuple[Athlete, AuthorizedRole]:
         domain=CapabilityDomain.MUSCULAR_ENDURANCE,
         estimate=10,
         unit_or_scale="repetitions",
-        estimate_scope="assessment_specific:thirty_second_chair_stand_repetitions",
+        estimate_scope=estimate_scope,
         confidence=Confidence.LOW,
         calculation_method="latest-matching-observation",
         source_observation_ids=(observation.id,),
         estimated_at=NOW - timedelta(hours=1),
         valid_until=NOW + timedelta(days=28),
-        rule_version="fixture-chair-stand-estimate@1.0.0",
+        rule_version="fixture-owner-alpha-estimate@1.0.0",
     )
     floor = CompetencyFloor(
         created_at=NOW - timedelta(days=1),
         domain=CapabilityDomain.MUSCULAR_ENDURANCE,
         estimate_scope=estimate.estimate_scope,
         unit_or_scale="repetitions",
-        threshold=11,
+        threshold=10 if use_pushup_path else 11,
         comparison_direction=ComparisonDirection.HIGHER_IS_BETTER,
         population="Synthetic age-compatible fixture.",
         minimum_age_years=30,
@@ -115,7 +132,7 @@ def _persist_ready_path(session: Session) -> tuple[Athlete, AuthorizedRole]:
         applicability_notes="Software test only.",
         uncertainty="Not an operational floor.",
         evidence_claim_ids=(claim.id,),
-        floor_version="chair-stand-age-30-39-lower-reference-floor@1.0.0",
+        floor_version=floor_version,
     )
     adaptation = Adaptation(
         id=ADAPTATION_ID,
@@ -232,6 +249,25 @@ def test_projection_prepares_only_governed_deficit_and_explicit_unused_values(
     )
     assert "not medical clearance" in candidate.safety_boundary
     assert "not because" in candidate.applicability_rationale
+
+
+def test_projection_accepts_owner_pushup_path_without_chair_stand_state(
+    session: Session,
+) -> None:
+    athlete, authority = _persist_ready_path(session, use_pushup_path=True)
+
+    candidate = (
+        PreparedInitialPlanningContextProjector(session)
+        .project(athlete.id, authority, NOW)
+        .candidate
+    )
+
+    assert candidate is not None
+    assert candidate.estimate_scope == (
+        "assessment_specific:maximum_consecutive_standard_pushup_repetitions"
+    )
+    assert candidate.floor_version == "owner-alpha-standard-pushup-provisional-floor@1.0.0"
+    assert "standard-push-up estimate" in candidate.applicability_rationale
 
 
 def test_ratification_is_content_addressed_and_idempotent(session: Session) -> None:

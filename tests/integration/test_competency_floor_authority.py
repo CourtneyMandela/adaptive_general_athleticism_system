@@ -31,12 +31,18 @@ FLOOR_ID = UUID("98700000-0000-4000-8000-000000000003")
 FLOOR_REVIEW_ID = UUID("98700000-0000-4000-8000-000000000004")
 
 
-def _authority(*, content_digest: str | None = None) -> CompetencyFloorAuthority:
+def _authority(
+    *,
+    content_digest: str | None = None,
+    authority_kind: CompetencyFloorAuthorityKind = (
+        CompetencyFloorAuthorityKind.PROFESSIONAL_JUDGMENT
+    ),
+) -> CompetencyFloorAuthority:
     values: dict[str, Any] = {
         "id": AUTHORITY_ID,
         "schema_version": "1.0.0",
         "created_at": NOW,
-        "authority_kind": CompetencyFloorAuthorityKind.PROFESSIONAL_JUDGMENT,
+        "authority_kind": authority_kind,
         "statement": "Use 100 metres as the test distance for this scoped carry floor.",
         "scope": "assessment_specific:loaded_carry_distance_at_relative_load",
         "population": "Owner-only alpha; recreationally trained adult doing physical work.",
@@ -152,6 +158,20 @@ def test_professional_judgment_floor_round_trip_preserves_distinct_authority(
     assert repository.get_competency_floor(FLOOR_ID) == floor
     assert repository.get_competency_floor_review(FLOOR_REVIEW_ID) == floor_review
     assert repository.get_competency_floor(FLOOR_ID).evidence_claim_ids == ()  # type: ignore[union-attr]
+
+
+def test_engineering_judgment_is_a_distinct_persistable_authority_kind(
+    session: Session,
+) -> None:
+    repository = DomainRepository(session)
+    authority = _authority(authority_kind=CompetencyFloorAuthorityKind.ENGINEERING_JUDGMENT)
+
+    repository.add_competency_floor_authority(authority)
+    session.commit()
+
+    persisted = repository.get_competency_floor_authority(authority.id)
+    assert persisted is not None
+    assert persisted.authority_kind is CompetencyFloorAuthorityKind.ENGINEERING_JUDGMENT
 
 
 def test_floor_review_requires_current_approved_authority_attestation(session: Session) -> None:

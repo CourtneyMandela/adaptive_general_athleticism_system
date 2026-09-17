@@ -7,6 +7,11 @@ from uuid import UUID, uuid4
 
 import agas_api.competency_floor_candidates as floor_candidates
 import pytest
+from agas_api.assessment_governance_candidates import (
+    RatifyAssessmentGovernanceCandidateCommand,
+    list_assessment_governance_candidates,
+    ratify_assessment_governance_candidate,
+)
 from agas_api.competency_floor_candidates import (
     CANDIDATE_VERSION,
     CompetencyFloorCandidateConflictError,
@@ -35,7 +40,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
-NOW = datetime(2026, 9, 10, 15, 0, tzinfo=UTC)
+NOW = datetime(2026, 9, 15, 19, 0, tzinfo=UTC)
 ACCOUNT_ID = UUID("10000000-0000-0000-0000-000000000001")
 ASSIGNMENT_ID = UUID("20000000-0000-0000-0000-000000000001")
 
@@ -50,7 +55,11 @@ def _authority() -> AuthorizedRole:
 
 
 def _command(session: Session) -> tuple[UUID, RatifyCompetencyFloorCandidateCommand]:
-    candidate = list_competency_floor_candidates(session, projected_at=NOW).items[0].candidate
+    candidate = next(
+        item.candidate
+        for item in list_competency_floor_candidates(session, projected_at=NOW).items
+        if item.candidate.slug == "chair_stand_age_30_39_lower_reference_floor"
+    )
     return candidate.candidate_id, RatifyCompetencyFloorCandidateCommand(
         candidate_version=CANDIDATE_VERSION,
         content_digest=candidate.content_digest,
@@ -62,7 +71,7 @@ def test_candidate_exposes_exact_floor_and_population_limitations(session: Sessi
     projection = list_competency_floor_candidates(session, projected_at=NOW)
 
     assert projection.projection_version == "competency-floor-candidates@1.1.0"
-    assert len(projection.items) == 1
+    assert len(projection.items) == 2
     assert projection.batch.candidates[0].candidate_id == projection.items[0].candidate.candidate_id
     assert projection.batch.content_digest.startswith("sha256:")
     candidate = projection.items[0].candidate
@@ -100,6 +109,8 @@ def test_exact_floor_ratification_is_atomic_idempotent_and_provenanced(session: 
     assert first.created_source is True
     assert first.created_claim is True
     assert first.created_evidence_review is True
+    assert first.created_authority is False
+    assert first.created_authority_review is False
     assert first.created_floor is True
     assert first.created_floor_review is True
     assert first.decision_record_created is True
@@ -111,6 +122,94 @@ def test_exact_floor_ratification_is_atomic_idempotent_and_provenanced(session: 
     assert second.floor == first.floor
     assert decision is not None
     assert f"candidate_content_digest:{command.content_digest}" in decision.evidence
+
+
+def test_judgment_backed_pushup_floor_keeps_protocol_evidence_and_number_separate(
+    session: Session,
+) -> None:
+    item = next(
+        item
+        for item in list_competency_floor_candidates(session, projected_at=NOW).items
+        if item.candidate.slug == "owner_alpha_standard_pushup_provisional_floor"
+    )
+    command = RatifyCompetencyFloorCandidateCommand(
+        candidate_version=CANDIDATE_VERSION,
+        content_digest=item.candidate.content_digest,
+        approval_attestation=True,
+    )
+
+    result = ratify_competency_floor_candidate(
+        session,
+        item.candidate.candidate_id,
+        command,
+        _authority(),
+        ratified_at=NOW,
+    )
+    repository = DomainRepository(session)
+    authority_id = result.floor.judgment_authority_ids[0]
+    authority = repository.get_competency_floor_authority(authority_id)
+    authority_review = repository.get_current_competency_floor_authority_review(authority_id)
+
+    assert item.candidate.authority_basis.numeric_value_origin == "engineering_judgment"
+    assert "not extracted" in item.candidate.authority_basis.numeric_value_explanation
+    assert result.floor.threshold == 10
+    assert result.floor.evidence_claim_ids == (UUID("91000000-0000-4000-8000-000000000006"),)
+    assert result.created_authority is True
+    assert result.created_authority_review is True
+    assert authority is not None
+    assert authority.authored_by == "AGAS engineering candidate prepared by Codex"
+    assert "not user-authored" in authority.qualification_context
+    assert authority_review is not None
+    assert authority_review.decision.value == "approved"
+    assert result.floor_review.judgment_authority_ids == (authority_id,)
+
+
+def test_pushup_floor_reuses_assessment_source_without_sharing_claim_review_identity(
+    session: Session,
+) -> None:
+    assessment = next(
+        item.candidate
+        for item in list_assessment_governance_candidates(session, projected_at=NOW).items
+        if item.candidate.slug == "maximum_consecutive_standard_pushups"
+    )
+    assessment_authority = AuthorizedRole(
+        account_id=ACCOUNT_ID,
+        assignment_id=UUID("20000000-0000-0000-0000-000000000002"),
+        role=AccountRole.ASSESSMENT_REVIEWER,
+        assigned_at=NOW - timedelta(days=1),
+    )
+    assessment_result = ratify_assessment_governance_candidate(
+        session,
+        assessment.candidate_id,
+        RatifyAssessmentGovernanceCandidateCommand(
+            candidate_version=assessment.candidate_version,
+            content_digest=assessment.content_digest,
+            approval_attestation=True,
+        ),
+        assessment_authority,
+        ratified_at=NOW - timedelta(minutes=10),
+    )
+    floor_item = next(
+        item
+        for item in list_competency_floor_candidates(session, projected_at=NOW).items
+        if item.candidate.slug == "owner_alpha_standard_pushup_provisional_floor"
+    )
+    floor_result = ratify_competency_floor_candidate(
+        session,
+        floor_item.candidate.candidate_id,
+        RatifyCompetencyFloorCandidateCommand(
+            candidate_version=floor_item.candidate.candidate_version,
+            content_digest=floor_item.candidate.content_digest,
+            approval_attestation=True,
+        ),
+        _authority(),
+        ratified_at=NOW,
+    )
+
+    assert assessment_result.created_source_ids == (UUID("90000000-0000-4000-8000-000000000003"),)
+    assert floor_result.created_source is False
+    assert floor_result.created_claim is True
+    assert floor_result.created_evidence_review is True
 
 
 def test_exact_batch_ratification_is_atomic_idempotent_and_audited(session: Session) -> None:
@@ -370,4 +469,4 @@ def test_floor_candidate_endpoints_require_planning_reviewer_role(session: Sessi
     assert ratified.json()["floor"]["minimum_age_years"] == 30
     assert batch_ratified.status_code == 201
     assert batch_ratified.json()["batch"]["content_digest"] == batch["content_digest"]
-    assert len(batch_ratified.json()["candidate_results"]) == 1
+    assert len(batch_ratified.json()["candidate_results"]) == 2

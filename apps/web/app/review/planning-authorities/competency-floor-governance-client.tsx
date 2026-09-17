@@ -64,7 +64,7 @@ export function CompetencyFloorGovernanceClient() {
       setAttestations((current) => ({ ...current, [candidateId]: false }));
       setMessageKind("success");
       setMessage(
-        "The source, extracted claim, evidence review, age-bounded floor, approval, and decision history were saved atomically.",
+        "The exact supporting evidence, any explicit judgment authority, floor, reviews, and decision history were saved atomically.",
       );
     } catch (error) {
       setMessageKind("error");
@@ -85,7 +85,7 @@ export function CompetencyFloorGovernanceClient() {
       setAttestations({});
       setMessageKind("success");
       setMessage(
-        "The exact batch and every artifact-specific evidence, floor, review, and decision record were saved in one transaction.",
+        "The exact batch and every artifact-specific evidence, judgment authority, floor, review, and decision record were saved in one transaction.",
       );
     } catch (error) {
       setMessageKind("error");
@@ -158,7 +158,7 @@ export function CompetencyFloorGovernanceClient() {
           >
             <header>
               <div>
-                <p className="eyebrow">Age-bounded lower reference · owner alpha</p>
+                <p className="eyebrow">Governed comparison · owner alpha</p>
                 <h2 id={`floor-candidate-${candidate.candidate_id}`}>
                   {candidate.release_label}
                 </h2>
@@ -214,7 +214,7 @@ export function CompetencyFloorGovernanceClient() {
                     <ul>{evidence.limitations.map((value) => <li key={value}>{value}</li>)}</ul>
                     <p><strong>Conflicts:</strong> {evidence.conflict_disclosure}</p>
                     <a href={evidence.source_url} target="_blank" rel="noreferrer" className="text-link">
-                      Open primary full-text record
+                      Open source record
                     </a>
                   </article>
                 ))}

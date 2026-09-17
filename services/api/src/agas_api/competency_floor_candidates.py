@@ -16,6 +16,8 @@ from agas_domain import (
     CapabilityDomain,
     ComparisonDirection,
     CompetencyFloor,
+    CompetencyFloorAuthority,
+    CompetencyFloorAuthorityReview,
     CompetencyFloorReview,
     DecisionRecord,
     EvidenceClaim,
@@ -61,12 +63,14 @@ class CompetencyFloorAuthorityBasis(BaseModel):
     numeric_value_origin: Literal[
         "direct_study_result",
         "derived_from_study",
+        "engineering_judgment",
         "professional_judgment",
         "personal_calibration",
     ]
     operational_use_origin: Literal[
         "evidence_validated",
         "evidence_informed_engineering_judgment",
+        "engineering_judgment",
         "professional_judgment",
         "personal_calibration",
     ]
@@ -153,11 +157,34 @@ class PreparedCompetencyFloorRelease(BaseModel):
     claim: EvidenceClaim
     evidence_review_id: UUID
     evidence_review_content: dict[str, str]
+    authority: CompetencyFloorAuthority | None = None
+    authority_review_id: UUID | None = None
+    authority_review_content: dict[str, str] | None = None
     floor: CompetencyFloor
     floor_review_id: UUID
     floor_review_content: dict[str, str]
     release_rationale: NonEmptyText
     release_uncertainty: NonEmptyText
+
+    @model_validator(mode="after")
+    def validate_judgment_authority_bundle(self) -> PreparedCompetencyFloorRelease:
+        authority_parts = (
+            self.authority,
+            self.authority_review_id,
+            self.authority_review_content,
+        )
+        if any(item is not None for item in authority_parts) and not all(
+            item is not None for item in authority_parts
+        ):
+            raise ValueError("judgment authority release fields must be supplied together")
+        if self.authority is None and self.floor.judgment_authority_ids:
+            raise ValueError("candidate floor judgment authority must be included in the release")
+        if (
+            self.authority is not None
+            and self.authority.id not in self.floor.judgment_authority_ids
+        ):
+            raise ValueError("candidate floor must cite its included judgment authority")
+        return self
 
 
 class PreparedCompetencyFloorCandidate(BaseModel):
@@ -231,6 +258,8 @@ class CompetencyFloorRatificationResult(BaseModel):
     created_source: bool
     created_claim: bool
     created_evidence_review: bool
+    created_authority: bool
+    created_authority_review: bool
     created_floor: bool
     created_floor_review: bool
     decision_record_created: bool
@@ -508,13 +537,30 @@ def _persist_candidate(
         reviewer=reviewer,
         **release.evidence_review_content,
     )
+    authority_review = (
+        CompetencyFloorAuthorityReview(
+            id=release.authority_review_id,
+            created_at=instant,
+            authority_id=release.authority.id,
+            decision=AssessmentReviewDecision.APPROVED,
+            sequence_number=1,
+            reviewed_at=instant,
+            reviewed_by=reviewer,
+            **release.authority_review_content,
+        )
+        if release.authority is not None
+        and release.authority_review_id is not None
+        and release.authority_review_content is not None
+        else None
+    )
     floor_review = CompetencyFloorReview(
         id=release.floor_review_id,
         created_at=instant,
         competency_floor_id=release.floor.id,
         decision=AssessmentReviewDecision.APPROVED,
         sequence_number=1,
-        evidence_claim_ids=(release.claim.id,),
+        evidence_claim_ids=release.floor.evidence_claim_ids,
+        judgment_authority_ids=release.floor.judgment_authority_ids,
         reviewed_at=instant,
         reviewed_by=reviewer,
         **release.floor_review_content,
@@ -534,6 +580,11 @@ def _persist_candidate(
             f"authority_account_id:{authority.account_id}",
             f"authority_assignment_id:{authority.assignment_id}",
             f"evidence_claim_id:{release.claim.id}",
+            *(
+                (f"judgment_authority_id:{release.authority.id}",)
+                if release.authority is not None
+                else ()
+            ),
             f"competency_floor_id:{release.floor.id}",
             f"competency_floor_review_id:{floor_review.id}",
         ),
@@ -564,6 +615,23 @@ def _persist_candidate(
     )
     session.flush()
     EvidenceAuthorityEvaluator(session).require_ready((release.claim.id,), instant)
+    created_authority = False
+    created_authority_review = False
+    if release.authority is not None and authority_review is not None:
+        created_authority = _ensure_exact(
+            label="competency floor authority",
+            expected=release.authority,
+            existing=repository.get_competency_floor_authority(release.authority.id),
+            add=repository.add_competency_floor_authority,
+        )
+        session.flush()
+        created_authority_review = _ensure_exact(
+            label="competency floor authority review",
+            expected=authority_review,
+            existing=repository.get_competency_floor_authority_review(authority_review.id),
+            add=repository.add_competency_floor_authority_review,
+        )
+        session.flush()
     created_floor = _ensure_exact(
         label="competency floor",
         expected=release.floor,
@@ -593,6 +661,8 @@ def _persist_candidate(
         created_source=created_source,
         created_claim=created_claim,
         created_evidence_review=created_evidence_review,
+        created_authority=created_authority,
+        created_authority_review=created_authority_review,
         created_floor=created_floor,
         created_floor_review=created_floor_review,
         decision_record_created=decision_record_created,
@@ -638,6 +708,8 @@ def _existing_result(
         created_source=False,
         created_claim=False,
         created_evidence_review=False,
+        created_authority=False,
+        created_authority_review=False,
         created_floor=False,
         created_floor_review=False,
         decision_record_created=False,

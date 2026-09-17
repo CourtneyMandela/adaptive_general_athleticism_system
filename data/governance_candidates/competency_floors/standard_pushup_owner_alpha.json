@@ -1,0 +1,210 @@
+{
+  "document_schema_version": "competency-floor-candidate-document@1.0.0",
+  "candidate_version": "competency-floor-candidate@1.1.0",
+  "content_digest": "sha256:7a0d51a3f47adb4146cb8ebd198d8a65ab76b947ff7c4bfb0ea9302841fbc675",
+  "accepted_historical_content_digests": [],
+  "presentation": {
+    "candidate_id": "98400000-0000-4000-8000-000000000003",
+    "slug": "owner_alpha_standard_pushup_provisional_floor",
+    "release_label": "Owner-alpha provisional standard-push-up floor",
+    "prepared_at": "2026-09-15T18:00:00Z",
+    "summary": "A deliberately conservative owner-only comparison point: 10 valid consecutive standard push-ups under the exact governed protocol. The number is an AGAS engineering judgment, not a textbook norm and not a statement authored by the athlete.",
+    "authority_basis": {
+      "numeric_value_origin": "engineering_judgment",
+      "operational_use_origin": "engineering_judgment",
+      "numeric_value_explanation": "The value 10 was selected by AGAS engineering as a provisional whole-number minimum for repeated performance on this exact test. It was not extracted from ACSM's sex-specific reference table.",
+      "operational_use_explanation": "Using 10 repetitions as an owner-alpha competency floor is an accountable, replaceable product judgment. Ratification would adopt that narrow use without converting it into a scientific finding."
+    },
+    "domain": "muscular_endurance",
+    "estimate_scope": "assessment_specific:maximum_consecutive_standard_pushup_repetitions",
+    "unit_or_scale": "repetitions",
+    "threshold": 10.0,
+    "comparison_direction": "higher_is_better",
+    "minimum_age_years": 30,
+    "maximum_age_years": 39,
+    "governs": [
+      "Whether a current matching standard-push-up estimate is below, meets, or exceeds this provisional owner-alpha floor.",
+      "Whether that comparison may enter a separately reviewed planning context for upper-body muscular endurance."
+    ],
+    "does_not_establish": [
+      "A published population norm, fitness grade, sex-based category, or health threshold.",
+      "Medical safety, pain-free readiness, pressing strength, or total-body athleticism.",
+      "A push-up exercise prescription, number of sets, training intensity, session, or progression rule.",
+      "Applicability to another athlete, age band, push-up variation, or movement standard."
+    ],
+    "unresolved_limitations": [
+      "No study or textbook table validates 10 standard push-ups as a minimum useful athletic competency.",
+      "The owner has not yet supplied a personal result under the governed protocol, so longitudinal calibration is not available.",
+      "A self-counted maximum can vary with technique, familiarization, fatigue, and motivation.",
+      "The floor should be reviewed after initial measurement and training-response history exist."
+    ],
+    "evidence": [
+      {
+        "title": "ACSM's Guidelines for Exercise Testing and Prescription, 12th edition",
+        "source_url": "https://www.ncbi.nlm.nih.gov/nlmcatalog/137328",
+        "population": "Apparently healthy adults addressed by the guideline; the source's reference categories are age- and sex-stratified.",
+        "finding": "The source supports the standardized maximum-consecutive-push-up protocol and its narrow upper-body muscular-endurance construct; it does not support the AGAS value of 10.",
+        "limitations": [
+          "The table uses standard push-ups for males and modified knee push-ups for females, so its rows are not directly comparable.",
+          "The supporting source establishes the protocol and construct, not this numeric floor."
+        ],
+        "conflict_disclosure": "No protocol-specific conflict disclosure was identified in the inspected textbook pages; AGAS did not independently audit the cited primary studies."
+      }
+    ]
+  },
+  "release": {
+    "release_id": "98400000-0000-4000-8000-000000000003",
+    "release_label": "Owner-alpha provisional standard-push-up floor",
+    "prepared_at": "2026-09-15T18:00:00Z",
+    "source": {
+      "id": "90000000-0000-4000-8000-000000000003",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-15T09:00:00Z",
+      "title": "ACSM's Guidelines for Exercise Testing and Prescription",
+      "authors": [
+        "Cemal Ozemek",
+        "Amanda Bonikowske",
+        "Jeffrey Christle",
+        "Paul M. Gallo"
+      ],
+      "journal": null,
+      "publication_year": 2026,
+      "publication_date": null,
+      "abstract": null,
+      "publication_types": [
+        "Professional guideline",
+        "Textbook"
+      ],
+      "primary_identifier": {
+        "scheme": "isbn",
+        "value": "9781975219246"
+      },
+      "source_identifiers": [
+        {
+          "scheme": "isbn",
+          "value": "9781975219246"
+        }
+      ],
+      "metadata_provider": "manual",
+      "retrieval_uri": "https://www.ncbi.nlm.nih.gov/nlmcatalog/137328",
+      "retrieval_query": "ISBN 9781975219246; Chapter 3; Box 3.10; Table 3.11",
+      "retrieved_at": "2026-09-15T09:00:00Z",
+      "metadata_version": "owner-supplied-acsm-12-pdf-and-nlm-catalog@2026-09-15",
+      "provenance_notes": [
+        "The owner supplied a local copy for review; the PDF itself is not stored in AGAS.",
+        "The NLM Catalog record confirms the editors, edition, publisher, and EPUB ISBN 9781975219246.",
+        "The protocol statement was checked against Chapter 3, PDF pages 244-245, including Box 3.10.",
+        "Table 3.11 was inspected but its sex-specific categories are not activated by this release."
+      ],
+      "sequence_number": 1,
+      "supersedes_source_id": null
+    },
+    "claim": {
+      "id": "91000000-0000-4000-8000-000000000006",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-15T17:40:00Z",
+      "claim": "ACSM's 12th-edition guideline supports a standardized maximum-consecutive-push-up protocol and its narrow upper-body muscular-endurance construct, but does not establish a sex-neutral universal threshold or the AGAS value of 10 repetitions.",
+      "domain": "assessment_protocol_and_construct",
+      "population": "Apparently healthy adults addressed by the guideline; the accompanying reference categories are age- and sex-stratified and do not define one universal population.",
+      "intervention": "Maximum consecutive push-up field test performed with the Box 3.10 technique.",
+      "comparator": "No comparator is required for the direct repetition-count observation.",
+      "outcome": "Maximum consecutive repetitions completed without rest while technique is retained.",
+      "study_design": "Professional guideline and textbook synthesis citing primary references 166-168",
+      "sample_size": null,
+      "duration": null,
+      "effect_direction": "A larger valid repetition count represents greater performance on this exact test.",
+      "uncertainty": "The source provides a protocol and descriptive reference categories; it does not establish an AGAS competency floor, exercise prescription, or total-body fitness inference.",
+      "limitations": [
+        "Push-up results are specific to the exact movement, range of motion, pace, and stopping rules.",
+        "Table 3.11 uses standard push-ups for males and modified knee push-ups for females, so its rows are not directly comparable.",
+        "The textbook does not reproduce subgroup sampling details for the reference table.",
+        "Self-counted technique has not been independently validated by this release."
+      ],
+      "evidence_strength": "low",
+      "athlete_applicability": "moderate",
+      "applicability_notes": "The no-equipment field protocol is practical for an adult recreationally trained athlete, but only within-person tracking of the standard version is authorized.",
+      "source_identifiers": [
+        {
+          "scheme": "isbn",
+          "value": "9781975219246"
+        }
+      ],
+      "source_record_ids": [
+        "90000000-0000-4000-8000-000000000003"
+      ],
+      "reviewer": "Codex floor-support evidence synthesis candidate; authority pending",
+      "claim_version": "acsm-standard-pushup-floor-support@1.0.0"
+    },
+    "evidence_review_id": "91100000-0000-4000-8000-000000000006",
+    "evidence_review_content": {
+      "source_verification_rationale": "The construct statement, consecutive-without-rest score, technique criteria, stopping rule, sex-specific protocol difference, and normative limitation were checked against Chapter 3, Box 3.10 and Table 3.11 on PDF pages 244-245.",
+      "extraction_rationale": "The claim retains only the source-supported test construct and procedure. It does not import an age/sex category, percentile, fitness grade, or training dose.",
+      "evidence_strength_rationale": "Low reflects use of a textbook synthesis for a narrow protocol claim without independent appraisal of its cited primary validation studies.",
+      "applicability_rationale": "Moderate reflects a practical no-equipment adult field test while limiting interpretation to repeat performance on the exact standard version.",
+      "uncertainty": "Self-counting, technique drift, familiarization, fatigue, and day-to-day variation may materially affect the result.",
+      "conflict_disclosure": "No protocol-specific conflict disclosure was identified in the inspected textbook pages; this is not a claim that the cited primary studies had none.",
+      "review_version": "acsm-standard-pushup-floor-support-review@1.0.0"
+    },
+    "authority": {
+      "id": "98700000-0000-4000-8000-000000000005",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-15T17:50:00Z",
+      "authority_kind": "engineering_judgment",
+      "statement": "For the owner-alpha athlete only, treat 10 valid consecutive standard push-ups under the exact governed protocol as a provisional minimum useful repeat-performance floor.",
+      "scope": "assessment_specific:maximum_consecutive_standard_pushup_repetitions",
+      "population": "Owner-only alpha; age 30 to 39; recreationally trained adult doing physical work.",
+      "rationale": "Ten is a deliberately conservative whole-number threshold that distinguishes an inability to sustain a short series of valid repetitions from capacity suitable for maintenance review. The number is an engineering judgment, not a source-derived norm.",
+      "applicability_notes": "Use only with a current estimate from the exact governed standard-push-up protocol. Review after personal baseline and response history exist.",
+      "uncertainty": "No scientific source validates 10 repetitions as a minimum useful athletic competency, and the first personal result may show that this floor is too low or otherwise unhelpful.",
+      "limitations": [
+        "This threshold has no population-validity claim.",
+        "It cannot establish medical safety, pressing strength, total-body fitness, or an exercise dose.",
+        "It may be cleared easily by the owner and therefore yield maintenance rather than development.",
+        "Personal longitudinal calibration should replace it when enough observations exist."
+      ],
+      "authored_by": "AGAS engineering candidate prepared by Codex",
+      "qualification_context": "System engineering synthesis; not user-authored and not a claim of a licensed clinical or strength credential. A planning reviewer must explicitly adopt the exact judgment before operational use.",
+      "supporting_evidence_claim_ids": [
+        "91000000-0000-4000-8000-000000000006"
+      ],
+      "content_digest": "sha256:c4811579d528e0caf58e566179c27ca633edfa6a53f699f33302cd9e35fb9bb1",
+      "authority_version": "owner-alpha-standard-pushup-provisional-floor-authority@1.0.0"
+    },
+    "authority_review_id": "98700000-0000-4000-8000-000000000006",
+    "authority_review_content": {
+      "attestation": "I adopt this exact owner-alpha product judgment for narrow planning use and understand that the value 10 is not a scientific finding, population norm, safety clearance, or exercise prescription.",
+      "uncertainty": "Approval does not establish external validity; replace or withdraw this authority when personal calibration or better applicable evidence supports a different decision.",
+      "review_version": "owner-alpha-standard-pushup-floor-authority-review@1.0.0"
+    },
+    "floor": {
+      "id": "98500000-0000-4000-8000-000000000002",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-15T18:00:00Z",
+      "domain": "muscular_endurance",
+      "estimate_scope": "assessment_specific:maximum_consecutive_standard_pushup_repetitions",
+      "unit_or_scale": "repetitions",
+      "threshold": 10.0,
+      "comparison_direction": "higher_is_better",
+      "population": "Owner-only alpha; age 30 to 39; exact governed standard-push-up protocol.",
+      "minimum_age_years": 30,
+      "maximum_age_years": 39,
+      "applicability_notes": "Compare only with a current estimate from the matching governed protocol. Use the result as one planning input; never as diagnosis, safety clearance, or a universal fitness judgment.",
+      "uncertainty": "The threshold is an explicit AGAS engineering judgment with supporting protocol evidence but no numeric scientific validation. It is provisional and replaceable after personal calibration.",
+      "evidence_claim_ids": [
+        "91000000-0000-4000-8000-000000000006"
+      ],
+      "judgment_authority_ids": [
+        "98700000-0000-4000-8000-000000000005"
+      ],
+      "floor_version": "owner-alpha-standard-pushup-provisional-floor@1.0.0"
+    },
+    "floor_review_id": "98600000-0000-4000-8000-000000000002",
+    "floor_review_content": {
+      "applicability_rationale": "Approve only for the owner-alpha athlete, ages 30 to 39, after a current estimate from the exact standard-push-up protocol. The comparison may inform development or maintenance but is not a medical or safety decision.",
+      "uncertainty": "The protocol construct is source-supported; the number 10 is not. Approval adopts the separate reviewed engineering authority and requires later personal calibration.",
+      "review_version": "owner-alpha-standard-pushup-floor-review@1.0.0"
+    },
+    "release_rationale": "Provide one honest, owner-relevant floor so the governed standard-push-up estimate can enter planning without inferring sex or disguising a product judgment as a textbook result.",
+    "release_uncertainty": "Ratification authorizes only this owner-alpha comparison. It creates no diagnosis, universal norm, adaptation priority, workout, exercise dose, session, or progression."
+  }
+}

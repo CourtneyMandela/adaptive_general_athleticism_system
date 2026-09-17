@@ -77,9 +77,9 @@ AGAS competency floor remains a separate operational decision.
 
 ## Assumptions and unresolved questions
 
-- `professional_judgment` and `personal_calibration` are the only non-scientific authority kinds in
-  version 1. Evidence-informed engineering proposals remain proposals until a named reviewer adopts
-  them through one of those explicit paths.
+- At this decision's version, `professional_judgment` and `personal_calibration` were the only
+  non-scientific authority kinds. Decision 0119 adds `engineering_judgment` so a system-authored
+  product choice is not mislabeled as the owner's professional opinion or a credentialed judgment.
 - The application can record reviewer account provenance but cannot verify an ATC or other external
   professional credential. Qualification context is therefore attested metadata, not a credential
   claim made by AGAS.

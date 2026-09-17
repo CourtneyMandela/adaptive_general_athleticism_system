@@ -96,6 +96,12 @@ Meeting it cannot clear an athlete to train, and falling below it cannot diagnos
 authorize a dose. Eligibility review, stop conditions, and session-level safety decisions remain
 independent and controlling.
 
+The same boundary applies to the prepared owner-alpha standard-push-up floor. Its value of 10 is a
+provisional engineering judgment, not a pain screen or clearance threshold. A result at or above
+10 cannot authorize push-up training, and a result below 10 cannot diagnose weakness or justify a
+dose. Current readiness, assessment stop conditions, exercise resolution, dose governance, and the
+session safety gate remain separate requirements.
+
 ### Planning-policy candidates
 
 Approving a priority policy authorizes only deterministic ranking of later reviewed inputs. It is

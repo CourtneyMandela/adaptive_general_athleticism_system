@@ -24,10 +24,20 @@ from agas_api.initial_planning_context import (
 )
 from agas_api.initial_planning_preparation import InitialPlanningPreparationProjector
 
-CANDIDATE_VERSION = "prepared-initial-planning-context@1.0.0"
+CANDIDATE_VERSION = "prepared-initial-planning-context@1.1.0"
 POLICY_VERSION = "owner-alpha-deficit-only-priority@1.0.0"
-ESTIMATE_SCOPE = "assessment_specific:thirty_second_chair_stand_repetitions"
-FLOOR_VERSION = "chair-stand-age-30-39-lower-reference-floor@1.0.0"
+PREFERRED_PATHWAYS = (
+    (
+        "assessment_specific:maximum_consecutive_standard_pushup_repetitions",
+        "owner-alpha-standard-pushup-provisional-floor@1.0.0",
+        "standard-push-up",
+    ),
+    (
+        "assessment_specific:thirty_second_chair_stand_repetitions",
+        "chair-stand-age-30-39-lower-reference-floor@1.0.0",
+        "chair-stand",
+    ),
+)
 ADAPTATION_ID = UUID("a0000000-0000-4000-8000-000000000004")
 CANDIDATE_NAMESPACE = UUID("d85bc2d2-c821-4f0a-a126-a7a776f36d21")
 NonEmptyText = Annotated[str, Field(min_length=1)]
@@ -46,7 +56,7 @@ class PreparedContextComponent(BaseModel):
 class PreparedInitialPlanningContextCandidate(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    candidate_version: Literal["prepared-initial-planning-context@1.0.0"]
+    candidate_version: Literal["prepared-initial-planning-context@1.1.0"]
     candidate_id: UUID
     content_digest: Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
     prepared_at: datetime
@@ -88,7 +98,7 @@ class PreparedInitialPlanningContextProjection(BaseModel):
 class RatifyPreparedInitialPlanningContextCommand(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    candidate_version: Literal["prepared-initial-planning-context@1.0.0"]
+    candidate_version: Literal["prepared-initial-planning-context@1.1.0"]
     content_digest: Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
     approval_attestation: Literal[True]
 
@@ -143,22 +153,31 @@ class PreparedInitialPlanningContextProjector:
                 "context can be prepared."
             )
 
-        pathways = []
-        for option in preparation.estimate_options:
-            if option.estimate.estimate_scope != ESTIMATE_SCOPE:
-                continue
-            floors = tuple(
-                item for item in option.floor_options if item.floor.floor_version == FLOOR_VERSION
-            )
-            adaptations = tuple(
-                item for item in option.adaptation_options if item.id == ADAPTATION_ID
-            )
-            if len(floors) == 1 and len(adaptations) == 1:
-                pathways.append((option, floors[0], adaptations[0]))
-        if len(pathways) != 1:
+        pathway = None
+        pathway_label = None
+        for estimate_scope, floor_version, label in PREFERRED_PATHWAYS:
+            matching = []
+            for option in preparation.estimate_options:
+                if option.estimate.estimate_scope != estimate_scope:
+                    continue
+                floors = tuple(
+                    item
+                    for item in option.floor_options
+                    if item.floor.floor_version == floor_version
+                )
+                adaptations = tuple(
+                    item for item in option.adaptation_options if item.id == ADAPTATION_ID
+                )
+                if len(floors) == 1 and len(adaptations) == 1:
+                    matching.append((option, floors[0], adaptations[0]))
+            if len(matching) == 1:
+                pathway = matching[0]
+                pathway_label = label
+                break
+        if pathway is None or pathway_label is None:
             blockers.append(
-                "Exactly one current chair-stand estimate, approved age-applicable floor, "
-                "and muscular-endurance adaptation path is required."
+                "Exactly one current owner-alpha push-up or fallback chair-stand estimate, "
+                "approved age-applicable floor, and muscular-endurance adaptation path is required."
             )
 
         if blockers:
@@ -172,7 +191,9 @@ class PreparedInitialPlanningContextProjector:
             )
 
         policy_option = policies[0]
-        estimate_option, floor_option, adaptation = pathways[0]
+        assert pathway is not None
+        assert pathway_label is not None
+        estimate_option, floor_option, adaptation = pathway
         context = InitialPlanningCandidateContext(
             adaptation_id=adaptation.id,
             competency_floor_id=floor_option.floor.id,
@@ -203,14 +224,16 @@ class PreparedInitialPlanningContextProjector:
         )
         rationale = (
             "System-prepared owner-alpha context using one current assessment-specific "
-            "chair-stand estimate, its exact approved age-applicable floor, the domain-matched "
+            f"{pathway_label} estimate, its exact approved age-applicable floor, the "
+            "domain-matched "
             "muscular-endurance adaptation, and the deficit-only priority policy. Contextual "
             "scores are explicit zeros because this policy gives them zero weight, not because "
             "the system has evidence that they are unimportant."
         )
         uncertainty = (
-            "The estimate is a low-confidence self-administered count and the floor is a narrow "
-            "reference-distribution interpretation. The planning inclusion flag is not medical "
+            "The estimate is a low-confidence self-administered count and the floor is a narrow, "
+            "provisional owner-alpha comparison whose authority is retained in the floor record. "
+            "The planning inclusion flag is not medical "
             "clearance or session readiness. Exercise, dose, feasibility, and a current session "
             "safety decision remain separate required gates."
         )

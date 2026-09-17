@@ -811,7 +811,8 @@ class CompetencyFloorAuthorityRecord(VersionedRecordMixin, Base):
     __tablename__ = "competency_floor_authorities"
     __table_args__ = (
         CheckConstraint(
-            "authority_kind IN ('professional_judgment', 'personal_calibration')",
+            "authority_kind IN ('engineering_judgment', 'professional_judgment', "
+            "'personal_calibration')",
             name="ck_competency_floor_authority_kind",
         ),
         UniqueConstraint("content_digest", name="uq_competency_floor_authority_digest"),

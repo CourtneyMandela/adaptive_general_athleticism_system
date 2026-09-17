@@ -98,14 +98,21 @@ A floor candidate must distinguish the origin of its numeric value from the auth
 that value operationally. A paper can directly report a percentile without validating that
 percentile as a competency, health, safety, or training threshold. In that case the number is
 study-sourced while the floor interpretation is evidence-informed engineering judgment. A value
-supplied solely by professional judgment must be labeled as such and may not be laundered through a
-general citation. A `CompetencyFloorAuthority` is the distinct non-scientific path for that case. It
+supplied solely by engineering or professional judgment must be labeled with its exact authority
+kind and may not be laundered through a general citation. A `CompetencyFloorAuthority` is the
+distinct non-scientific path for that case. It
 records the exact statement, scope, population, rationale, applicability, uncertainty, limitations,
 named author and qualification context, optional supporting-but-nonauthorizing evidence, version,
 and a canonical SHA-256 digest. A separate append-only authority review records the reviewer,
 decision, time, explicit attestation, uncertainty, and replacement lineage. An approved floor review
 must cite the current approved authority review. A role assignment is application permission, not
 verification of a professional credential.
+
+The owner-alpha standard-push-up floor is the first release through this combined path. ACSM's
+guideline supports the assessment protocol and narrow construct; it explicitly does not support
+the value 10. That number is stored and presented as an AGAS engineering judgment authored by the
+system engineering process, not as Courtney's professional opinion. Reviewer approval adopts the
+exact product judgment for narrow owner-alpha use and does not attest an external credential.
 
 Research proposals remain outside both authority paths. The owner-alpha floor proposal batch may
 show a textbook value, a derived reference, or an unsupported engineering number for criticism,

@@ -14,7 +14,7 @@ export interface PreparedContextComponent {
 }
 
 export interface PreparedInitialPlanningContextCandidate {
-  candidate_version: "prepared-initial-planning-context@1.0.0";
+  candidate_version: "prepared-initial-planning-context@1.1.0";
   candidate_id: string;
   content_digest: string;
   prepared_at: string;

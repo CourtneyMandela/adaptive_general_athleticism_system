@@ -7,7 +7,7 @@ import {
 } from "./prepared-planning-context";
 
 const candidate = {
-  candidate_version: "prepared-initial-planning-context@1.0.0",
+  candidate_version: "prepared-initial-planning-context@1.1.0",
   candidate_id: "10000000-0000-4000-8000-000000000001",
   content_digest: `sha256:${"a".repeat(64)}`,
 } as PreparedInitialPlanningContextCandidate;

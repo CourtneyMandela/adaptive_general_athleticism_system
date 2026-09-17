@@ -3,12 +3,14 @@ import { authorizedHeaders, reviewerDevelopmentAccessToken } from "./identity";
 const numericValueOrigins = new Set<string>([
   "direct_study_result",
   "derived_from_study",
+  "engineering_judgment",
   "professional_judgment",
   "personal_calibration",
 ]);
 const operationalUseOrigins = new Set<string>([
   "evidence_validated",
   "evidence_informed_engineering_judgment",
+  "engineering_judgment",
   "professional_judgment",
   "personal_calibration",
 ]);
@@ -34,11 +36,13 @@ export interface CompetencyFloorCandidate {
     numeric_value_origin:
       | "direct_study_result"
       | "derived_from_study"
+      | "engineering_judgment"
       | "professional_judgment"
       | "personal_calibration";
     operational_use_origin:
       | "evidence_validated"
       | "evidence_informed_engineering_judgment"
+      | "engineering_judgment"
       | "professional_judgment"
       | "personal_calibration";
     numeric_value_explanation: string;

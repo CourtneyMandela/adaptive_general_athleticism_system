@@ -85,6 +85,11 @@ def test_baseline_migration_matches_current_metadata(
         assert "capability_estimation_policy_evidence_claims" in actual_tables
         assert "competency_floor_reviews" in actual_tables
         assert "competency_floor_review_evidence_claims" in actual_tables
+        assert any(
+            "engineering_judgment" in str(constraint.get("sqltext", ""))
+            for constraint in inspector.get_check_constraints("competency_floor_authorities")
+            if constraint["name"] == "ck_competency_floor_authority_kind"
+        )
         assert "priority_policy_reviews" in actual_tables
         assert "priority_policy_review_evidence_claims" in actual_tables
         assert "initial_planning_context_drafts" in actual_tables

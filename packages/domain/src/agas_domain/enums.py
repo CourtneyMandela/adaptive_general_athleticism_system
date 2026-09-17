@@ -250,6 +250,7 @@ class CompetencyStatus(StrEnum):
 class CompetencyFloorAuthorityKind(StrEnum):
     """Non-scientific authority that may govern an operational floor choice."""
 
+    ENGINEERING_JUDGMENT = "engineering_judgment"
     PROFESSIONAL_JUDGMENT = "professional_judgment"
     PERSONAL_CALIBRATION = "personal_calibration"
 

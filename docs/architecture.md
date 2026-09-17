@@ -1012,22 +1012,30 @@ numeric-value versus operational-use authority classifications. Prepared content
 typed, digest-checked documents in `data/governance_candidates/competency_floors`; invalid,
 cross-field-inconsistent, duplicate, or stale-digest documents fail closed. `POST
 /v1/operator/competency-floor-candidates/{candidate_id}/ratifications` accepts only the exact
-version, digest, and attestation. The first candidate atomically creates the source snapshot,
-reviewed descriptive claim, age-bounded `CompetencyFloor`, exact current floor review, actor
-provenance, and decision record. The release treats an empirical population lower-reference value
-as a provisional owner-alpha screening floor while explicitly denying universal, medical, safety,
-or workout meaning. Age, scope, unit, evidence-readiness, and review checks remain enforced again
+version, digest, and attestation. Each candidate atomically creates or reuses its exact source
+snapshot and then persists its reviewed supporting claim, optional judgment authority and authority
+review, age-bounded `CompetencyFloor`, exact current floor review, actor provenance, and decision
+record. The first release treats an empirical population lower-reference value as a provisional
+owner-alpha screening floor. The standard-push-up release instead labels 10 repetitions as a
+separate AGAS engineering judgment while using ACSM only for protocol and construct support. Both
+explicitly deny universal, medical, safety, or workout meaning. Age, scope, unit, evidence-readiness, and review checks remain enforced again
 at planning time. The batch ratification route accepts the exact sorted manifest and persists every
 member plus a batch audit in one transaction. Each member keeps its own digest and decision; any
 stale or conflicting member rolls back the whole batch. The individual route remains available.
 
-Professional judgment is not stored as an `EvidenceClaim`. A `CompetencyFloorAuthority` is an
+Non-scientific operational judgment is not stored as an `EvidenceClaim`. A
+`CompetencyFloorAuthority` is an
 immutable, self-digested record containing the exact operational statement, scope, population,
 rationale, applicability, uncertainty, limitations, author, qualification context, optional
 supporting evidence, and semantic version. Its separate append-only review carries the actor-bound
 attestation and replacement lineage. Floors and floor reviews may cite evidence claims, judgment
 authorities, or both, but the repository rejects an ungoverned floor and requires every cited
 judgment authority to have a current approved review before the floor review can be recorded.
+Authority kind distinguishes system-authored `engineering_judgment`, named-human
+`professional_judgment`, and athlete-history-based `personal_calibration`.
+The prepared-release schema requires the authority record, review identity, and review content as
+an all-or-none bundle and requires the floor to cite that exact authority. This makes the already
+modeled non-scientific path operational without weakening its provenance.
 
 `GET /v1/operator/competency-floor-proposals` is an earlier research boundary. It loads a
 15-item content-addressed batch from `data/governance_proposals/competency_floors`, including exact
@@ -1040,6 +1048,12 @@ ratification: every item stays `proposal_only`, no floor or authority is created
 cannot satisfy a planning prerequisite. Accepted proposals must be converted into ordinary governed
 releases only after their assessment, demographic applicability, and evidence-or-judgment authority
 are complete. If proposal content changes, prior feedback is shown as stale rather than inherited.
+
+The prepared initial-planning context prefers the exact owner-alpha standard-push-up estimate and
+provisional judgment-backed floor. It falls back to the historical chair-stand path only when that
+preferred pathway is unavailable. Selection remains deterministic and requires exactly one current
+estimate, exact approved age-applicable floor review, and domain-matched adaptation; it does not
+blend protocols or choose a threshold at runtime.
 
 ## Web
 
