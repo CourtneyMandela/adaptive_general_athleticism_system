@@ -113,6 +113,168 @@ test("the bootstrap athlete deep link opens the PWA without UUID copy and paste"
   await expect(page.getByText("There is no persisted plan covering")).toBeVisible();
 });
 
+test("a phone user can safety-check and record an exact set-by-set session", async ({
+  page,
+}) => {
+  const weeklyPlanId = "d1000000-0000-4000-8000-000000000001";
+  const plannedSessionId = "d1000000-0000-4000-8000-000000000002";
+  const prescriptionId = "d1000000-0000-4000-8000-000000000003";
+  const safetyDecisionId = "d1000000-0000-4000-8000-000000000004";
+  let safetyRecorded = false;
+  let executionBody: Record<string, unknown> | null = null;
+
+  await page.route("http://localhost:8000/v1/**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (url.pathname === `/v1/athletes/${athleteId}/current-week`) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          athlete_id: athleteId,
+          athlete_display_name: "Courtney fixture",
+          as_of: "2026-09-17",
+          safety_policy_assignment: {
+            assignment_id: "d1000000-0000-4000-8000-000000000005",
+            safety_policy_id: "d1000000-0000-4000-8000-000000000006",
+            policy_version: "owner-alpha-session-safety@1.0.0",
+            sequence_number: 1,
+            assigned_at: "2026-09-17T12:00:00Z",
+            assigned_by: "owner-alpha",
+            applicability_rationale: "Owner-alpha fixture.",
+            rule_version: "safety-policy-assignment@1.0.0",
+          },
+          week: {
+            weekly_plan_id: weeklyPlanId,
+            block_plan_id: "d1000000-0000-4000-8000-000000000007",
+            week_start: "2026-09-14",
+            week_end: "2026-09-20",
+            block_week: 1,
+            status: "feasible",
+            availability: { source_observation_ids: [], rule_version: "fixture@1", windows: [] },
+            review: {
+              status: "awaiting_sessions",
+              reason: "One scheduled session remains.",
+              scheduled_sessions: 1,
+              recorded_sessions: 0,
+              completed_sessions: 0,
+              post_session_closed: 0,
+              progression_items: 1,
+              resolved_progression_items: 0,
+              progression_outcomes: { progress: 0, repeat: 0, hold: 0, review_required: 0 },
+              next_week_start: null,
+              confirmed_availability: null,
+              unresolved_environment_prescriptions: 0,
+            },
+            sessions: [{
+              planned_session_id: plannedSessionId,
+              session_template_id: "d1000000-0000-4000-8000-000000000008",
+              session_name: "Push-up foundation",
+              starts_at: "2026-09-17T22:00:00Z",
+              ends_at: "2026-09-17T22:06:00Z",
+              planned_duration_minutes: 6,
+              environment_id: "d1000000-0000-4000-8000-000000000009",
+              environment_name: "Home",
+              status: safetyRecorded ? "cleared" : "scheduled",
+              pre_session_safety: safetyRecorded ? {
+                decision_id: safetyDecisionId,
+                outcome: "proceed",
+                required_modifications: [],
+                decided_at: "2026-09-17T21:55:00Z",
+              } : null,
+              execution: null,
+              prescriptions: [{
+                order_index: 1,
+                section: "primary",
+                prescription_id: prescriptionId,
+                exercise_id: "d1000000-0000-4000-8000-000000000010",
+                exercise_name: "Standard push-up",
+                adaptation_id: "d1000000-0000-4000-8000-000000000011",
+                adaptation_name: "Upper-body muscular endurance",
+                reason_for_inclusion: "Scope-matched governed dose.",
+                sets: 2,
+                repetitions_per_set: 6,
+                duration_seconds: null,
+                intensity_targets: ["RPE 5-7"],
+                rest_seconds: 120,
+                adherence: null,
+                progression: null,
+                progression_action: {
+                  status: "awaiting_execution",
+                  rule_reference: "owner-alpha-pushup@1.0.0",
+                  progression_policy_id: null,
+                  adjustment_dimension: null,
+                  adjustment_description: null,
+                  reason: "A recorded execution is required.",
+                },
+              }],
+            }],
+          },
+        }),
+      });
+    }
+    if (
+      url.pathname === `/v1/weekly-plans/${weeklyPlanId}/sessions/${plannedSessionId}/safety-checks`
+      && request.method() === "POST"
+    ) {
+      safetyRecorded = true;
+      return route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({ decision: { id: safetyDecisionId, outcome: "proceed" } }),
+      });
+    }
+    if (
+      url.pathname === `/v1/weekly-plans/${weeklyPlanId}/sessions/${plannedSessionId}/executions`
+      && request.method() === "POST"
+    ) {
+      executionBody = request.postDataJSON() as Record<string, unknown>;
+      return route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({ execution: { id: "d1000000-0000-4000-8000-000000000012", status: "partial" } }),
+      });
+    }
+    return route.fulfill({
+      status: 404,
+      contentType: "application/json",
+      body: JSON.stringify({ detail: "not needed by the live-workout browser test" }),
+    });
+  });
+
+  await page.goto(`/?athleteId=${athleteId}&on=2026-09-17`);
+  await expect(page.getByRole("heading", { name: "Push-up foundation" })).toBeVisible();
+  await page.getByRole("button", { name: "Save and evaluate" }).click();
+  await page.getByText("Train this session").click();
+  await page.getByRole("button", { name: "Start workout" }).click();
+  await page.getByLabel("Set 1 done").check();
+  await page.reload();
+  await page.getByText("Train this session").click();
+  await page.getByRole("button", { name: "Resume saved workout" }).click();
+  await expect(page.getByLabel("Set 1 done")).toBeChecked();
+  await expect(page.getByLabel("Set 2 done")).not.toBeChecked();
+  await page.getByLabel("Set 2 done").check();
+  await page.getByLabel("Actual reps").nth(1).fill("5");
+  await page.getByRole("button", { name: "Finish workout" }).click();
+  await page.getByLabel("Session RPE").fill("6");
+  await page.getByRole("button", { name: "Save final workout record" }).click();
+
+  await expect.poll(() => executionBody).not.toBeNull();
+  const items = executionBody!.items as Array<{
+    status: string;
+    performances: Array<{ actual_repetitions: number; target_completed: boolean }>;
+  }>;
+  expect(executionBody).toMatchObject({
+    pre_session_safety_decision_id: safetyDecisionId,
+    status: "partial",
+    session_rpe: 6,
+  });
+  expect(items[0].status).toBe("partial");
+  expect(items[0].performances).toMatchObject([
+    { actual_repetitions: 6, target_completed: true },
+    { actual_repetitions: 5, target_completed: false },
+  ]);
+});
+
 test("the first-session path surfaces a prepared assessment as the next owner action", async ({
   page,
 }) => {

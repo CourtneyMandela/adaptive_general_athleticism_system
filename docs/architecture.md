@@ -413,6 +413,13 @@ method, timestamp, and rule version. Optional
 post-session safety decisions reference the completed execution without rewriting it. None of
 these records chooses a progression.
 
+The athlete PWA treats a workout-in-progress as a non-authoritative device-local draft. It starts
+only after the current pre-session decision authorizes the exact planned occurrence, keeps every
+prescribed set identity, and allows a reload to resume the draft only when the safety-decision ID
+and prescription signature still match. No partial browser draft reaches PostgreSQL or becomes an
+observation. Explicit final submission sends the full set history through the same execution
+validator and atomic observation/execution/adherence transaction as every other client.
+
 ### Progression and exposure
 
 `ProgressionPolicy` makes adherence, effort, technique, adjustment, exposure, evidence, and

@@ -231,9 +231,15 @@ export interface SessionExecutionCommand {
 
 export interface PrescriptionLogDraft {
   prescriptionId: string;
-  performedSets: number;
-  actualDosePerSet: number;
+  sets: SetLogDraft[];
   itemRpe: number | null;
+}
+
+export interface SetLogDraft {
+  setIndex: number;
+  performed: boolean;
+  actualDose: number;
+  effortRpe: number | null;
   techniqueConstraintMet: boolean | null;
 }
 
@@ -448,6 +454,22 @@ export function buildProgressionEvaluationCommand(
   };
 }
 
+export function createPrescriptionLogDrafts(
+  session: PlannedSessionProjection,
+): PrescriptionLogDraft[] {
+  return session.prescriptions.map((prescription) => ({
+    prescriptionId: prescription.prescription_id,
+    sets: Array.from({ length: prescription.sets }, (_, index) => ({
+      setIndex: index + 1,
+      performed: false,
+      actualDose: prescription.repetitions_per_set ?? prescription.duration_seconds ?? 0,
+      effortRpe: null,
+      techniqueConstraintMet: null,
+    })),
+    itemRpe: null,
+  }));
+}
+
 export function isIsoDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const parsed = new Date(`${value}T12:00:00Z`);
@@ -576,43 +598,48 @@ export function buildExecutionCommand({
   const items = session.prescriptions.map((prescription) => {
     const draft = draftsById.get(prescription.prescription_id);
     if (!draft) throw new Error(`Missing log entry for ${prescription.exercise_name}.`);
-    if (!Number.isInteger(draft.performedSets) || draft.performedSets < 0 || draft.performedSets > prescription.sets) {
-      throw new Error(`${prescription.exercise_name} performed sets must be between 0 and ${prescription.sets}.`);
-    }
-    if (!Number.isInteger(draft.actualDosePerSet) || draft.actualDosePerSet < 0) {
-      throw new Error(`${prescription.exercise_name} actual dose must be a non-negative whole number.`);
+    if (draft.sets.length !== prescription.sets) {
+      throw new Error(`${prescription.exercise_name} must retain all ${prescription.sets} prescribed sets.`);
     }
 
     const target = prescription.repetitions_per_set ?? prescription.duration_seconds;
     if (target === null) throw new Error(`${prescription.exercise_name} has no executable dose.`);
-    const targetCompleted = draft.actualDosePerSet >= target;
-    const performances: SetPerformanceInput[] = Array.from(
-      { length: prescription.sets },
-      (_, index) => {
-        const performed = index < draft.performedSets;
+    const performances: SetPerformanceInput[] = draft.sets
+      .slice()
+      .sort((left, right) => left.setIndex - right.setIndex)
+      .map((setDraft, index) => {
+        if (setDraft.setIndex !== index + 1) {
+          throw new Error(`${prescription.exercise_name} set identities must be consecutive.`);
+        }
+        if (setDraft.performed && (!Number.isInteger(setDraft.actualDose) || setDraft.actualDose < 0)) {
+          throw new Error(
+            `${prescription.exercise_name} set ${setDraft.setIndex} dose must be a non-negative whole number.`,
+          );
+        }
         const result: SetPerformanceInput = {
-          set_index: index + 1,
-          performed,
-          target_completed: performed && targetCompleted,
+          set_index: setDraft.setIndex,
+          performed: setDraft.performed,
+          target_completed: setDraft.performed && setDraft.actualDose >= target,
         };
-        if (performed) {
+        if (setDraft.performed) {
           if (prescription.repetitions_per_set !== null) {
-            result.actual_repetitions = draft.actualDosePerSet;
+            result.actual_repetitions = setDraft.actualDose;
           } else {
-            result.actual_duration_seconds = draft.actualDosePerSet;
+            result.actual_duration_seconds = setDraft.actualDose;
           }
-          if (draft.itemRpe !== null) result.effort_rpe = draft.itemRpe;
-          if (draft.techniqueConstraintMet !== null) {
-            result.technique_constraint_met = draft.techniqueConstraintMet;
+          if (setDraft.effortRpe !== null) result.effort_rpe = setDraft.effortRpe;
+          if (setDraft.techniqueConstraintMet !== null) {
+            result.technique_constraint_met = setDraft.techniqueConstraintMet;
           }
         }
         return result;
-      },
-    );
+      });
+    const performed = performances.filter((performance) => performance.performed);
     const status =
-      draft.performedSets === 0
+      performed.length === 0
         ? "not_started"
-        : draft.performedSets === prescription.sets && targetCompleted
+        : performed.length === prescription.sets
+          && performed.every((performance) => performance.target_completed)
           ? "completed"
           : "partial";
     return {

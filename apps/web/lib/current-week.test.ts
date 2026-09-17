@@ -5,6 +5,7 @@ import {
   buildWeeklyRollForwardCommand,
   buildProgressionEvaluationCommand,
   buildExecutionCommand,
+  createPrescriptionLogDrafts,
   CurrentWeekRequestError,
   fetchCurrentWeek,
   formatDose,
@@ -76,6 +77,22 @@ describe("current-week presentation", () => {
     ).toBe("1 × 18 min");
   });
 
+  it("creates an unperformed set-by-set draft without claiming scheduled work happened", () => {
+    const drafts = createPrescriptionLogDrafts(session);
+
+    expect(drafts).toEqual([{
+      prescriptionId: prescription.prescription_id,
+      sets: [1, 2, 3].map((setIndex) => ({
+        setIndex,
+        performed: false,
+        actualDose: 5,
+        effortRpe: null,
+        techniqueConstraintMet: null,
+      })),
+      itemRpe: null,
+    }]);
+  });
+
   it("moves the requested date by a week and validates athlete identifiers", () => {
     expect(shiftIsoDate("2026-08-24", 7)).toBe("2026-08-31");
     expect(isIsoDate("2026-08-24")).toBe(true);
@@ -133,10 +150,14 @@ describe("current-week presentation", () => {
       session,
       drafts: [{
         prescriptionId: prescription.prescription_id,
-        performedSets: 3,
-        actualDosePerSet: 5,
+        sets: [1, 2, 3].map((setIndex) => ({
+          setIndex,
+          performed: true,
+          actualDose: 5,
+          effortRpe: 7,
+          techniqueConstraintMet: true,
+        })),
         itemRpe: 7,
-        techniqueConstraintMet: true,
       }],
       safetyDecisionId: session.pre_session_safety.decision_id,
       requiredModifications: session.pre_session_safety.required_modifications,
@@ -177,10 +198,14 @@ describe("current-week presentation", () => {
       session,
       drafts: [{
         prescriptionId: prescription.prescription_id,
-        performedSets: 2,
-        actualDosePerSet: 4,
+        sets: [1, 2, 3].map((setIndex) => ({
+          setIndex,
+          performed: setIndex < 3,
+          actualDose: setIndex === 1 ? 5 : 4,
+          effortRpe: null,
+          techniqueConstraintMet: setIndex < 3 ? false : null,
+        })),
         itemRpe: null,
-        techniqueConstraintMet: false,
       }],
       safetyDecisionId: session.pre_session_safety.decision_id,
       requiredModifications: [],
@@ -194,7 +219,13 @@ describe("current-week presentation", () => {
     expect(partial.status).toBe("partial");
     expect(partial.items[0].performances[0]).toMatchObject({
       performed: true,
+      actual_repetitions: 5,
       technique_constraint_met: false,
+    });
+    expect(partial.items[0].performances[1]).toMatchObject({
+      performed: true,
+      actual_repetitions: 4,
+      target_completed: false,
     });
     expect(partial.items[0].performances.at(-1)).toEqual({
       set_index: 3,
@@ -204,13 +235,7 @@ describe("current-week presentation", () => {
 
     const notStarted = buildExecutionCommand({
       session,
-      drafts: [{
-        prescriptionId: prescription.prescription_id,
-        performedSets: 0,
-        actualDosePerSet: 5,
-        itemRpe: null,
-        techniqueConstraintMet: null,
-      }],
+      drafts: createPrescriptionLogDrafts(session),
       safetyDecisionId: session.pre_session_safety.decision_id,
       requiredModifications: [],
       startedAt: null,
@@ -227,6 +252,23 @@ describe("current-week presentation", () => {
       session_rpe: null,
     });
     expect(notStarted.items[0]).toMatchObject({ status: "not_started", performances: [] });
+  });
+
+  it("rejects a set log that drops or renumbers part of the prescription", () => {
+    const malformed = createPrescriptionLogDrafts(session);
+    malformed[0].sets = malformed[0].sets.slice(1);
+
+    expect(() => buildExecutionCommand({
+      session,
+      drafts: malformed,
+      safetyDecisionId: session.pre_session_safety.decision_id,
+      requiredModifications: [],
+      startedAt: new Date("2026-08-24T14:00:00Z"),
+      endedAt: new Date("2026-08-24T14:30:00Z"),
+      sessionRpe: null,
+      note: null,
+      reliability: "moderate",
+    })).toThrow("must retain all 3 prescribed sets");
   });
 
   it("posts safety and execution commands only to their governed use-case endpoints", async () => {
@@ -278,13 +320,7 @@ describe("current-week presentation", () => {
 
     const execution = buildExecutionCommand({
       session,
-      drafts: [{
-        prescriptionId: prescription.prescription_id,
-        performedSets: 0,
-        actualDosePerSet: 5,
-        itemRpe: null,
-        techniqueConstraintMet: null,
-      }],
+      drafts: createPrescriptionLogDrafts(session),
       safetyDecisionId: session.pre_session_safety.decision_id,
       requiredModifications: [],
       startedAt: null,

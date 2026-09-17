@@ -194,6 +194,12 @@ at a time. The execution must preserve every ordered template item and any requi
 modifications exactly. Item-level completion and adherence remain visible without weakening the
 session-level hold or escalation boundary.
 
+The phone's in-progress set log is not a safety decision, execution, or clinical record. It stays
+device-local until the athlete reviews and explicitly submits it, and it can resume only against
+the same pre-session decision and prescription signature. The API revalidates the complete final
+payload; browser storage cannot bypass hold/escalation outcomes, replace required modifications,
+drop prescribed set identities, or create authoritative history by itself.
+
 Block review may preserve post-session safety decisions as context, but it does not reinterpret
 their signal tags, infer a condition, or diagnose why a response occurred. Safety history and
 measurement uncertainty remain visible for a later governed state-update decision.

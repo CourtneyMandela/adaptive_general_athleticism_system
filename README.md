@@ -883,8 +883,12 @@ link. Set
 `NEXT_PUBLIC_AGAS_ATHLETE_ID` in `.env` to prefill it for a local demo. The backend projection
 reports whether a reviewed safety policy is assigned; no policy UUID is entered in the browser.
 After connecting, an athlete with an assignment can append a pre-session readiness report,
-receive the backend's deterministic safety result, and log actual sets, dose, effort, timestamps,
-and notes. The screen then collects a short post-session recovery report and displays persisted
+receive the backend's deterministic safety result, and run the authorized session from the phone.
+The live view records completion, actual dose, effort, and technique separately for every set;
+captures start/end time, session effort, and notes; and retains an unfinished draft only in that
+browser until final submission. Reloading the page does not turn the draft into athlete history:
+the user must resume, review, and explicitly save it. The screen then collects a short post-session
+recovery report and displays persisted
 progression outcomes per exercise. When an exact unique non-exposure load or repetition policy is
 resolved from the prescription's versioned rule reference, the athlete can ask the deterministic
 backend to evaluate progression without submitting that policy identity. It refreshes from the
@@ -906,8 +910,10 @@ correction/attempt workflow,
 qualified independent protocol-review workflow, complete scientific-governance UI, protocol-specific
 structured/duration assessment-result controls, estimation-policy authoring UI, or early-retest
 override yet. General governed competency-floor and priority-policy authoring workflows are also
-not implemented. The protected planning-authorities screen instead presents one immutable prepared
-priority policy and one immutable, age-bounded chair-stand floor; explicit owner-alpha ratification
+not implemented. The protected planning-authorities screen instead presents immutable prepared
+priority, floor, resource, and construction authorities. This includes the historical age-bounded
+chair-stand scaffold and a separate owner-relevant standard-push-up path whose provisional numeric
+floor and dose are visibly labeled as engineering judgment. Explicit owner-alpha ratification
 persists each exact authority chain without asking the owner to author scientific JSON. Other
 domains still require externally prepared, reviewed authorities even though candidate-context,
 post-block review, and replanning inputs can be authored through role-protected structured forms.
