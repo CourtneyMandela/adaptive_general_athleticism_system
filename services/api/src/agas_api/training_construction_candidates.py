@@ -231,7 +231,9 @@ def list_training_construction_candidates(
                 "blocked" if issues else "available"
             )
             ratified_at = None
-        elif f"candidate_content_digest:{prepared.presentation.content_digest}" in decision.evidence:
+        elif (
+            f"candidate_content_digest:{prepared.presentation.content_digest}" in decision.evidence
+        ):
             try:
                 _existing_result(repository, prepared, decision)
             except TrainingConstructionCandidateConflictError as error:
@@ -519,9 +521,7 @@ def _load_candidate(
         raise TrainingConstructionCandidateValidationError(
             "training-construction candidate identity is not recognized"
         )
-    if tuple(item.claim_id for item in presentation.evidence) != (
-        expected_evidence_claim_id,
-    ):
+    if tuple(item.claim_id for item in presentation.evidence) != (expected_evidence_claim_id,):
         raise TrainingConstructionCandidateValidationError(
             "training-construction candidate cites an unexpected evidence claim"
         )
@@ -598,8 +598,7 @@ def _existing_result(
         or scheduling_review.decision is not AssessmentReviewDecision.APPROVED
         or scheduling_review.sequence_number != 1
         or scheduling_review.supersedes_review_id is not None
-        or scheduling_review.evidence_claim_ids
-        != release.progression_policy.evidence_claim_ids
+        or scheduling_review.evidence_claim_ids != release.progression_policy.evidence_claim_ids
         or scheduling_review.reviewed_by != expected_reviewer
         or scheduling_review.applicability_rationale != review_content["applicability_rationale"]
         or scheduling_review.uncertainty != review_content["uncertainty"]

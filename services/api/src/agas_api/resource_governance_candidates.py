@@ -219,7 +219,9 @@ def list_resource_governance_candidates(
             status = "available"
             ratified_at = None
             issues = ()
-        elif f"candidate_content_digest:{prepared.presentation.content_digest}" in decision.evidence:
+        elif (
+            f"candidate_content_digest:{prepared.presentation.content_digest}" in decision.evidence
+        ):
             try:
                 _existing_result(repository, prepared, decision)
             except ResourceGovernanceCandidateConflictError as error:
@@ -741,7 +743,9 @@ def _evidence_review_id(prepared: PreparedResourceGovernanceCandidate) -> UUID:
         return EVIDENCE_REVIEW_ID
     if prepared.presentation.candidate_id == PUSHUP_CANDIDATE_ID:
         return PUSHUP_EVIDENCE_REVIEW_ID
-    raise ResourceGovernanceCandidateValidationError("resource candidate review identity is unknown")
+    raise ResourceGovernanceCandidateValidationError(
+        "resource candidate review identity is unknown"
+    )
 
 
 def _ensure_exact[Record: VersionedRecord](
@@ -782,11 +786,7 @@ def _existing_result(
     records = (
         repository.get_evidence_claim(release.claim.id),
         repository.get_evidence_claim_review(_evidence_review_id(prepared)),
-        (
-            repository.get_equipment(release.equipment.id)
-            if release.equipment is not None
-            else None
-        ),
+        (repository.get_equipment(release.equipment.id) if release.equipment is not None else None),
         repository.get_exercise(release.exercise.id),
         repository.get_exercise_resolver_policy(release.resolver_policy.id),
         repository.get_resource_allocation_policy(release.allocation_policy.id),
