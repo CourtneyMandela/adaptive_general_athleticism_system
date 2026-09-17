@@ -46,12 +46,18 @@ from agas_api.planning_governance_candidates import prepared_acsm_resistance_tra
 
 CANDIDATE_VERSION = "resource-governance-candidate@1.0.0"
 CANDIDATE_ID = UUID("98600000-0000-4000-8000-000000000001")
+PUSHUP_CANDIDATE_ID = UUID("98600000-0000-4000-8000-000000000002")
 EVIDENCE_CLAIM_ID = UUID("91000000-0000-4000-8000-000000000005")
 EVIDENCE_REVIEW_ID = UUID("91100000-0000-4000-8000-000000000005")
+PUSHUP_EVIDENCE_CLAIM_ID = UUID("91000000-0000-4000-8000-000000000007")
+PUSHUP_EVIDENCE_REVIEW_ID = UUID("91100000-0000-4000-8000-000000000007")
 EQUIPMENT_ID = UUID("e1000000-0000-4000-8000-000000000001")
 EXERCISE_ID = UUID("b1000000-0000-4000-8000-000000000001")
+PUSHUP_EXERCISE_ID = UUID("b1000000-0000-4000-8000-000000000002")
 RESOLVER_POLICY_ID = UUID("98700000-0000-4000-8000-000000000001")
+PUSHUP_RESOLVER_POLICY_ID = UUID("98700000-0000-4000-8000-000000000002")
 ALLOCATION_POLICY_ID = UUID("98800000-0000-4000-8000-000000000001")
+PUSHUP_ALLOCATION_POLICY_ID = UUID("98800000-0000-4000-8000-000000000002")
 ADAPTATION_ID = UUID("a0000000-0000-4000-8000-000000000004")
 NonEmptyText = Annotated[str, Field(min_length=1)]
 
@@ -120,7 +126,7 @@ class ResourceGovernanceRatificationResult(BaseModel):
     created_resolver_policy: bool
     created_allocation_policy: bool
     decision_record_created: bool
-    equipment: Equipment
+    equipment: Equipment | None
     exercise: Exercise
     resolver_policy: ExerciseResolverPolicy
     allocation_policy: ResourceAllocationPolicy
@@ -141,7 +147,7 @@ class PreparedResourceGovernanceRelease(BaseModel):
     prepared_at: datetime
     claim: EvidenceClaim
     evidence_review_content: dict[str, str]
-    equipment: Equipment
+    equipment: Equipment | None
     exercise: Exercise
     resolver_policy: ExerciseResolverPolicy
     allocation_policy: ResourceAllocationPolicy
@@ -162,65 +168,83 @@ def prepared_resource_governance_candidate() -> PreparedResourceGovernanceCandid
     return _prepared_candidate()
 
 
+def prepared_resource_governance_candidates() -> tuple[PreparedResourceGovernanceCandidate, ...]:
+    """Return every immutable resource release, preserving the historical chair release."""
+
+    return (_prepared_candidate(), _prepared_pushup_candidate())
+
+
+def prepared_resource_governance_candidate_for_scope(
+    estimate_scope: str,
+) -> PreparedResourceGovernanceCandidate:
+    if estimate_scope == "assessment_specific:maximum_consecutive_standard_pushup_repetitions":
+        return _prepared_pushup_candidate()
+    if estimate_scope == "assessment_specific:thirty_second_chair_stand_repetitions":
+        return _prepared_candidate()
+    raise KeyError(f"no resource-governance candidate is registered for {estimate_scope}")
+
+
 def list_resource_governance_candidates(
     session: Session, *, projected_at: datetime | None = None
 ) -> ResourceGovernanceCandidateProjection:
     instant = projected_at or datetime.now(UTC)
     if instant.tzinfo is None or instant.utcoffset() is None:
         raise ValueError("resource-governance projection time must include a timezone")
-    prepared = _prepared_candidate()
     repository = DomainRepository(session)
-    decision = repository.get_decision_record(CANDIDATE_ID)
-    source = repository.get_evidence_source(prepared.release.claim.source_record_ids[0])
     adaptation = repository.get_adaptation(ADAPTATION_ID)
-    issues: tuple[str, ...]
-    prerequisite_issues = tuple(
-        issue
-        for missing, issue in (
-            (
-                source is None,
-                "Approve the prepared deficit-only planning policy first so its exact ACSM source snapshot exists.",
-            ),
-            (
-                adaptation is None,
-                "Import the controlled seed catalog so the exact muscular-endurance adaptation exists.",
-            ),
+    items: list[ResourceGovernanceCandidateItem] = []
+    for prepared in prepared_resource_governance_candidates():
+        decision = repository.get_decision_record(prepared.presentation.candidate_id)
+        source = repository.get_evidence_source(prepared.release.claim.source_record_ids[0])
+        issues: tuple[str, ...]
+        prerequisite_issues = tuple(
+            issue
+            for missing, issue in (
+                (
+                    source is None,
+                    "Approve the prepared deficit-only planning policy first so its exact ACSM source snapshot exists.",
+                ),
+                (
+                    adaptation is None,
+                    "Import the controlled seed catalog so the exact muscular-endurance adaptation exists.",
+                ),
+            )
+            if missing
         )
-        if missing
-    )
-    if decision is None and prerequisite_issues:
-        status: Literal["available", "blocked", "ratified", "conflict"] = "blocked"
-        ratified_at = None
-        issues = prerequisite_issues
-    elif decision is None:
-        status = "available"
-        ratified_at = None
-        issues = ()
-    elif f"candidate_content_digest:{prepared.presentation.content_digest}" in decision.evidence:
-        try:
-            _existing_result(repository, prepared, decision)
-        except ResourceGovernanceCandidateConflictError as error:
+        if decision is None and prerequisite_issues:
+            status: Literal["available", "blocked", "ratified", "conflict"] = "blocked"
+            ratified_at = None
+            issues = prerequisite_issues
+        elif decision is None:
+            status = "available"
+            ratified_at = None
+            issues = ()
+        elif f"candidate_content_digest:{prepared.presentation.content_digest}" in decision.evidence:
+            try:
+                _existing_result(repository, prepared, decision)
+            except ResourceGovernanceCandidateConflictError as error:
+                status = "conflict"
+                ratified_at = decision.created_at
+                issues = (str(error),)
+            else:
+                status = "ratified"
+                ratified_at = decision.created_at
+                issues = ()
+        else:
             status = "conflict"
             ratified_at = decision.created_at
-            issues = (str(error),)
-        else:
-            status = "ratified"
-            ratified_at = decision.created_at
-            issues = ()
-    else:
-        status = "conflict"
-        ratified_at = decision.created_at
-        issues = ("The release identity is occupied by different immutable content.",)
-    return ResourceGovernanceCandidateProjection(
-        projected_at=instant,
-        items=(
+            issues = ("The release identity is occupied by different immutable content.",)
+        items.append(
             ResourceGovernanceCandidateItem(
                 candidate=prepared.presentation,
                 status=status,
                 ratified_at=ratified_at,
                 issues=issues,
-            ),
-        ),
+            )
+        )
+    return ResourceGovernanceCandidateProjection(
+        projected_at=instant,
+        items=tuple(items),
     )
 
 
@@ -232,9 +256,16 @@ def ratify_resource_governance_candidate(
     *,
     ratified_at: datetime | None = None,
 ) -> ResourceGovernanceRatificationResult:
-    if candidate_id != CANDIDATE_ID:
+    prepared = next(
+        (
+            item
+            for item in prepared_resource_governance_candidates()
+            if item.presentation.candidate_id == candidate_id
+        ),
+        None,
+    )
+    if prepared is None:
         raise KeyError("resource-governance candidate does not exist")
-    prepared = _prepared_candidate()
     if authority.role is not AccountRole.PLANNING_REVIEWER:
         raise ResourceGovernanceCandidateValidationError(
             "resource-governance ratification requires planning_reviewer authority"
@@ -248,7 +279,7 @@ def ratify_resource_governance_candidate(
             "candidate content changed; refresh and review the exact current release"
         )
     repository = DomainRepository(session)
-    existing_decision = repository.get_decision_record(CANDIDATE_ID)
+    existing_decision = repository.get_decision_record(candidate_id)
     if existing_decision is not None:
         return _existing_result(repository, prepared, existing_decision)
     instant = ratified_at or datetime.now(UTC)
@@ -271,7 +302,7 @@ def ratify_resource_governance_candidate(
         )
     reviewer = f"account:{authority.account_id}"
     review = EvidenceClaimReview(
-        id=EVIDENCE_REVIEW_ID,
+        id=_evidence_review_id(prepared),
         created_at=instant,
         evidence_claim_id=prepared.release.claim.id,
         decision=EvidenceReviewDecision.APPROVED,
@@ -281,9 +312,9 @@ def ratify_resource_governance_candidate(
         **prepared.release.evidence_review_content,
     )
     decision = DecisionRecord(
-        id=CANDIDATE_ID,
+        id=candidate_id,
         created_at=instant,
-        decision="Ratified the first owner-alpha resource-governance bundle.",
+        decision=f"Ratified owner-alpha resource-governance bundle {prepared.presentation.release_label}.",
         reason=prepared.release.release_rationale,
         alternatives_considered=(
             "Ask the owner to invent resolver, allocation, equipment, and exercise records.",
@@ -296,7 +327,11 @@ def ratify_resource_governance_candidate(
             f"authority_assignment_id:{authority.assignment_id}",
             f"evidence_claim_id:{prepared.release.claim.id}",
             f"evidence_review_id:{review.id}",
-            f"equipment_id:{prepared.release.equipment.id}",
+            *(
+                (f"equipment_id:{prepared.release.equipment.id}",)
+                if prepared.release.equipment is not None
+                else ()
+            ),
             f"exercise_id:{prepared.release.exercise.id}",
             f"exercise_resolver_policy_id:{prepared.release.resolver_policy.id}",
             f"resource_allocation_policy_id:{prepared.release.allocation_policy.id}",
@@ -321,13 +356,16 @@ def ratify_resource_governance_candidate(
         )
         session.flush()
         EvidenceAuthorityEvaluator(session).require_ready((prepared.release.claim.id,), instant)
-        created_equipment = _ensure_exact(
-            "equipment",
-            prepared.release.equipment,
-            repository.get_equipment,
-            repository.add_equipment,
-        )
-        session.flush()
+        if prepared.release.equipment is None:
+            created_equipment = False
+        else:
+            created_equipment = _ensure_exact(
+                "equipment",
+                prepared.release.equipment,
+                repository.get_equipment,
+                repository.add_equipment,
+            )
+            session.flush()
         created_exercise = _ensure_exact(
             "exercise", prepared.release.exercise, repository.get_exercise, repository.add_exercise
         )
@@ -366,7 +404,7 @@ def ratify_resource_governance_candidate(
         session.rollback()
         raise
     return ResourceGovernanceRatificationResult(
-        candidate_id=CANDIDATE_ID,
+        candidate_id=candidate_id,
         candidate_content_digest=prepared.presentation.content_digest,
         created_claim=created_claim,
         created_evidence_review=created_review,
@@ -544,6 +582,168 @@ def _prepared_candidate() -> PreparedResourceGovernanceCandidate:
     return PreparedResourceGovernanceCandidate(presentation=presentation, release=release)
 
 
+@lru_cache
+def _prepared_pushup_candidate() -> PreparedResourceGovernanceCandidate:
+    source = prepared_acsm_resistance_training_source()
+    prepared_at = datetime(2026, 9, 17, 12, 0, tzinfo=UTC)
+    claim = EvidenceClaim(
+        id=PUSHUP_EVIDENCE_CLAIM_ID,
+        created_at=prepared_at - timedelta(minutes=10),
+        claim="Progressive resistance training performed at least twice weekly can improve muscular endurance in healthy adults; this broad evidence does not establish standard push-ups as a superior exercise or validate an exact starting dose.",
+        domain="resistance_training_frequency",
+        population="Healthy adults aged 18 years or older, with much of the synthesized evidence from inexperienced trainees.",
+        intervention="Progressive resistance training lasting at least six weeks and at least twelve exposures in the review eligibility criteria.",
+        comparator="No exercise or distinct resistance-training prescriptions, depending on the underlying review.",
+        outcome="Muscle function and physical performance, including muscular endurance.",
+        study_design="ACSM position stand using an overview of systematic reviews of randomized trials",
+        duration="Eligible resistance-training programs lasted at least six weeks.",
+        effect_direction="Resistance training improved multiple muscle-function and physical-performance outcomes.",
+        uncertainty="The recommendation supports resistance-training direction and at-least-twice-weekly frequency. It does not validate standard push-ups, exact sets or repetitions, weekly minutes, resolver weights, or allocation weights.",
+        limitations=(
+            "The overview combines heterogeneous populations, outcomes, exercises, and prescriptions.",
+            "Its overview method does not estimate comparative effectiveness of complete programs.",
+            "Broad muscular-endurance improvement does not prove that standard push-ups are optimal or guarantee individual response.",
+        ),
+        evidence_strength=EvidenceStrength.HIGH,
+        athlete_applicability=Applicability.MODERATE,
+        applicability_notes="Directionally relevant to a healthy-adult owner alpha; current session safety, exact movement feasibility, dose review, and observed response remain controlling.",
+        source_identifiers=source.source_identifiers,
+        source_record_ids=(source.id,),
+        reviewer="Codex evidence synthesis candidate; authority pending",
+        claim_version="acsm-resistance-training-muscular-endurance@1.0.0",
+    )
+    exercise = Exercise(
+        id=PUSHUP_EXERCISE_ID,
+        created_at=prepared_at,
+        name="Standard push-up",
+        movement_patterns=(MovementPattern.HORIZONTAL_PUSH,),
+        primary_adaptation_ids=(ADAPTATION_ID,),
+        joint_demands=(JointRegion.WRIST, JointRegion.ELBOW, JointRegion.SHOULDER),
+        equipment_requirement_ids=(),
+        loading_type=LoadingType.BODYWEIGHT,
+        laterality=Laterality.BILATERAL,
+        loadability=Loadability.LIMITED,
+        skill_complexity=CostLevel.LOW,
+        impact_level=ImpactLevel.NONE,
+        velocity_characteristics=(VelocityCharacteristic.CONTROLLED,),
+        stability_demand=CostLevel.MODERATE,
+        fatigue_cost=CostLevel.MODERATE,
+        soreness_cost=CostLevel.MODERATE,
+        minimum_floor_area_m2=2,
+        noise_level=CostLevel.LOW,
+        measurement_methods=("valid consecutive repetitions",),
+    )
+    resolver = ExerciseResolverPolicy(
+        id=PUSHUP_RESOLVER_POLICY_ID,
+        created_at=prepared_at,
+        adaptation_role_weight=1,
+        movement_pattern_weight=0,
+        loading_type_weight=0,
+        loadability_weight=0,
+        velocity_weight=0,
+        laterality_weight=0,
+        secondary_adaptation_credit=0,
+        partial_match_threshold=1,
+        full_match_threshold=1,
+        max_ranked_candidates=1,
+        policy_version="owner-alpha-pushup-exact-primary-match@1.0.0",
+    )
+    allocation = ResourceAllocationPolicy(
+        id=PUSHUP_ALLOCATION_POLICY_ID,
+        created_at=prepared_at,
+        develop_weight=1,
+        maintain_weight=1,
+        expose_weight=0,
+        allow_partial_exercise_resolution=False,
+        policy_version="owner-alpha-single-active-pushup-allocation@1.0.0",
+    )
+    release = PreparedResourceGovernanceRelease(
+        prepared_at=prepared_at,
+        claim=claim,
+        evidence_review_content={
+            "source_verification_rationale": "The full PMC text and PubMed metadata for PMID 41843416 were checked for population, review eligibility, muscular-endurance outcomes, and the authors' primary frequency recommendation.",
+            "extraction_rationale": "The claim retains broad resistance-training direction and at-least-twice-weekly frequency while excluding unsupported exercise, minute, set, repetition, and policy conclusions.",
+            "evidence_strength_rationale": "A current professional position stand synthesizing 137 systematic reviews strongly supports the broad claim; heterogeneity limits program-specific inference.",
+            "applicability_rationale": "The healthy-adult evidence is directionally applicable to the owner alpha, subject to current safety, exact push-up feasibility, and individualized response.",
+            "uncertainty": "This review does not approve a complete workout, medical clearance, the push-up exercise choice, or the engineering policy constants.",
+            "conflict_disclosure": "No conflict was identified by the reviewing agent; source-author disclosures require dedicated review before broader production use.",
+            "review_version": "evidence-review-acsm-muscular-endurance@1.0.0",
+        },
+        equipment=None,
+        exercise=exercise,
+        resolver_policy=resolver,
+        allocation_policy=allocation,
+        release_rationale="Provide exact, inspectable no-equipment push-up resource artifacts for the owner-alpha pathway without asking the owner to author ontology, resolver, or allocation constants.",
+        release_uncertainty="Standard push-up is assessment-proximal and may produce test-specific learning. The ontology and policies are engineering choices, not proof of exercise superiority. No dose, block, week, or session is created.",
+    )
+    fields = {
+        "candidate_version": CANDIDATE_VERSION,
+        "candidate_id": PUSHUP_CANDIDATE_ID,
+        "prepared_at": prepared_at,
+        "release_label": "Owner-alpha push-up resource authorities",
+        "summary": "A narrow no-equipment bundle for resolving the governed push-up muscular-endurance priority while preserving both DEVELOP and MAINTAIN paths.",
+        "exact_artifacts": (
+            f"Exercise: {exercise.name} ({exercise.id})",
+            f"Resolver: {resolver.policy_version} ({resolver.id})",
+            f"Allocator: {allocation.policy_version} ({allocation.id})",
+        ),
+        "governs": (
+            "The exact standard push-up ontology record with no equipment requirement.",
+            "A resolver that requires an exact primary-adaptation and full constraint match.",
+            "A single-active-priority allocator that can resource either DEVELOP or MAINTAIN without treating maintenance as no training.",
+        ),
+        "does_not_establish": (
+            "That the athlete can currently perform a standard push-up safely or with valid technique.",
+            "Medical clearance, current session readiness, pain tolerance, or exercise safety.",
+            "Sets, repetitions, effort target, rest, weekly minutes, progression, or a workout.",
+        ),
+        "operational_choices": (
+            "Standard push-up is modeled as bilateral, bodyweight, controlled, horizontal-push, low-skill, no-impact, and moderate stability/fatigue cost.",
+            "Only a primary adaptation match contributes resolver score; every constraint must still match for FULL status.",
+            "Partial exercise resolutions are not allocatable in the owner-alpha path.",
+            "The sole active priority receives equal allocation weight whether its state is DEVELOP or MAINTAIN.",
+        ),
+        "unresolved_limitations": (
+            "Exercise metadata is a reviewed engineering ontology assertion, not proof of superiority.",
+            "Assessment-proximal training may improve test familiarity as well as underlying capacity.",
+            "Wrist, elbow, shoulder, trunk-control, and floor-access constraints still require current review.",
+            "A separate dose authority is required before a session can be built.",
+        ),
+        "evidence": (
+            ResourceGovernanceEvidenceSummary(
+                title="ACSM resistance-training position stand (2026)",
+                source_url="https://pmc.ncbi.nlm.nih.gov/articles/PMC12965823/",
+                population="Healthy adults across 137 systematic reviews; much evidence involved novice participants.",
+                finding="Resistance training improved muscular endurance; the primary recommendation includes high-effort resistance training at least twice weekly.",
+                limitations=(
+                    "The source does not identify standard push-up as an optimal exercise.",
+                    "The source does not validate the resolver or allocator constants.",
+                    "A complete dose and current safety decision remain separate.",
+                ),
+            ),
+        ),
+    }
+    canonical = json.dumps(
+        {"presentation": fields, "release": release.model_dump(mode="json")},
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    presentation = ResourceGovernanceCandidate(
+        **fields,
+        content_digest=f"sha256:{hashlib.sha256(canonical.encode()).hexdigest()}",
+    )
+    return PreparedResourceGovernanceCandidate(presentation=presentation, release=release)
+
+
+def _evidence_review_id(prepared: PreparedResourceGovernanceCandidate) -> UUID:
+    if prepared.presentation.candidate_id == CANDIDATE_ID:
+        return EVIDENCE_REVIEW_ID
+    if prepared.presentation.candidate_id == PUSHUP_CANDIDATE_ID:
+        return PUSHUP_EVIDENCE_REVIEW_ID
+    raise ResourceGovernanceCandidateValidationError("resource candidate review identity is unknown")
+
+
 def _ensure_exact[Record: VersionedRecord](
     label: str,
     expected: Record,
@@ -581,13 +781,18 @@ def _existing_result(
         )
     records = (
         repository.get_evidence_claim(release.claim.id),
-        repository.get_evidence_claim_review(EVIDENCE_REVIEW_ID),
-        repository.get_equipment(release.equipment.id),
+        repository.get_evidence_claim_review(_evidence_review_id(prepared)),
+        (
+            repository.get_equipment(release.equipment.id)
+            if release.equipment is not None
+            else None
+        ),
         repository.get_exercise(release.exercise.id),
         repository.get_exercise_resolver_policy(release.resolver_policy.id),
         repository.get_resource_allocation_policy(release.allocation_policy.id),
     )
-    if records[0] != release.claim or any(item is None for item in records[1:]):
+    required_records = (records[1], *records[3:])
+    if records[0] != release.claim or any(item is None for item in required_records):
         raise ResourceGovernanceCandidateConflictError(
             "persisted resource-governance release has incomplete lineage"
         )
@@ -601,7 +806,7 @@ def _existing_result(
             "persisted resource-governance artifacts differ from the prepared release"
         )
     return ResourceGovernanceRatificationResult(
-        candidate_id=CANDIDATE_ID,
+        candidate_id=prepared.presentation.candidate_id,
         candidate_content_digest=prepared.presentation.content_digest,
         created_claim=False,
         created_evidence_review=False,

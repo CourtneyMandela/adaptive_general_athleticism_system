@@ -44,9 +44,9 @@ from agas_api.first_week_preparation import (
 )
 from agas_api.identity import AuthorizedRole
 from agas_api.training_construction_candidates import (
-    CANDIDATE_ID as TRAINING_CONSTRUCTION_CANDIDATE_ID,
+    PreparedTrainingConstructionCandidate,
+    prepared_training_construction_candidate_for_scope,
 )
-from agas_api.training_construction_candidates import prepared_training_construction_candidate
 from agas_api.weekly_planning import (
     AvailabilityWindowDraft,
     CreateWeeklyPlanCommand,
@@ -187,7 +187,7 @@ class PreparedFirstWeekValidationError(RuntimeError):
 
 
 class PreparedFirstWeekProjector:
-    """Build one exact chair-stand Week 1 from governed dose and factual availability."""
+    """Build one exact Week 1 from a scope-matched governed dose and factual availability."""
 
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -218,8 +218,7 @@ class PreparedFirstWeekProjector:
             blockers.append(
                 "The current owner-alpha prepared week requires exactly one active allocation."
             )
-        exact_policy, exact_review = self._construction_authority(instant, blockers)
-        if blockers or len(active) != 1 or exact_policy is None or exact_review is None:
+        if blockers or len(active) != 1:
             return self._blocked(block.id, block.athlete_id, instant, blockers)
 
         allocation_input = active[0]
@@ -270,25 +269,45 @@ class PreparedFirstWeekProjector:
             else None
         )
         adaptation = self.repository.get_adaptation(allocation.adaptation_id)
-        dose_policy = prepared_training_construction_candidate().release.repetition_dose_policy
         if adaptation is None or estimate is None:
             blockers.append("The allocation no longer has its exact capability estimate lineage.")
             dose = None
+            training_candidate = None
+            exact_policy = None
+            exact_review = None
         else:
             try:
+                training_candidate = prepared_training_construction_candidate_for_scope(
+                    estimate.estimate_scope
+                )
+                exact_policy, exact_review = self._construction_authority(
+                    instant, blockers, training_candidate
+                )
+                dose_policy = training_candidate.release.repetition_dose_policy
                 dose = RepetitionDosePlanner().derive(
                     adaptation=adaptation,
                     estimate=estimate,
                     policy=dose_policy,
                     derived_at=instant,
                 )
-            except RepetitionDoseError as error:
+            except (KeyError, RepetitionDoseError) as error:
                 blockers.append(f"The governed starting dose cannot be derived: {error}")
                 dose = None
-        if blockers or environment is None or estimate is None or dose is None:
+                training_candidate = None
+                exact_policy = None
+                exact_review = None
+        if (
+            blockers
+            or environment is None
+            or estimate is None
+            or dose is None
+            or training_candidate is None
+            or exact_policy is None
+            or exact_review is None
+        ):
             return self._blocked(block.id, block.athlete_id, instant, blockers)
 
-        release = prepared_training_construction_candidate().release
+        release = training_candidate.release
         expected_assignment_id = uuid5(
             CANDIDATE_NAMESPACE,
             f"safety-assignment:{block.athlete_id}:{release.session_safety_policy.id}:"
@@ -337,8 +356,8 @@ class PreparedFirstWeekProjector:
             "windows": [item.model_dump(mode="json") for item in command.windows],
             "prepared_at": instant.isoformat(),
             "review_authority_assignment_id": str(authority.assignment_id),
-            "training_construction_candidate_id": str(TRAINING_CONSTRUCTION_CANDIDATE_ID),
-            "training_construction_digest": prepared_training_construction_candidate().presentation.content_digest,
+            "training_construction_candidate_id": str(training_candidate.presentation.candidate_id),
+            "training_construction_digest": training_candidate.presentation.content_digest,
         }
         canonical = json.dumps(stable_content, sort_keys=True, separators=(",", ":"))
         content_digest = f"sha256:{hashlib.sha256(canonical.encode()).hexdigest()}"
@@ -375,6 +394,7 @@ class PreparedFirstWeekProjector:
             prepared_at=instant,
             authority=authority,
             content_digest=content_digest,
+            training_candidate=training_candidate,
         )
         try:
             preview = PersistedWeeklyPlanService(self.session).preview(
@@ -474,11 +494,13 @@ class PreparedFirstWeekProjector:
         )
 
     def _construction_authority(
-        self, instant: datetime, blockers: list[str]
+        self,
+        instant: datetime,
+        blockers: list[str],
+        prepared: PreparedTrainingConstructionCandidate,
     ) -> tuple[WeeklySchedulingPolicy | None, WeeklySchedulingPolicyReview | None]:
-        prepared = prepared_training_construction_candidate()
         release = prepared.release
-        decision = self.repository.get_decision_record(TRAINING_CONSTRUCTION_CANDIDATE_ID)
+        decision = self.repository.get_decision_record(prepared.presentation.candidate_id)
         policy = self.repository.get_weekly_scheduling_policy(release.weekly_scheduling_policy.id)
         review = self.repository.get_weekly_scheduling_policy_review(
             release.weekly_scheduling_policy_review_id
@@ -553,6 +575,7 @@ class PreparedFirstWeekProjector:
         prepared_at: datetime,
         authority: AuthorizedRole,
         content_digest: str,
+        training_candidate: PreparedTrainingConstructionCandidate,
     ) -> CreateWeeklyPlanCommand:
         requirement = allocation_input.stimulus_requirement
         exercise = allocation_input.selected_exercise
@@ -565,7 +588,7 @@ class PreparedFirstWeekProjector:
                 (
                     *allocation_input.resource_demand.evidence_claim_ids,
                     *requirement.evidence_claim_ids,
-                    *prepared_training_construction_candidate().release.repetition_dose_policy.evidence_claim_ids,
+                    *training_candidate.release.repetition_dose_policy.evidence_claim_ids,
                 )
             )
         )
@@ -580,8 +603,10 @@ class PreparedFirstWeekProjector:
         prescription = SessionPrescriptionDraft(
             resource_allocation_id=allocation_input.allocation.id,
             reason_for_inclusion=(
-                "Deliver the block's sole DEVELOP allocation through its exact FULL exercise "
-                "resolution using the ratified assessment-calibrated starting-dose policy."
+                "Deliver the block's sole "
+                f"{allocation_input.allocation.priority_state.value.upper()} allocation through "
+                "its exact FULL exercise resolution using the ratified assessment-calibrated "
+                "starting-dose policy."
             ),
             sets=dose.sets,
             repetitions_per_set=dose.repetitions_per_set,
@@ -591,9 +616,7 @@ class PreparedFirstWeekProjector:
                 TechniqueTarget(constraints=dose.technique_constraints),
             ),
             rest_seconds=dose.rest_seconds,
-            progression_rule_reference=(
-                prepared_training_construction_candidate().release.progression_policy.reference
-            ),
+            progression_rule_reference=training_candidate.release.progression_policy.reference,
             substitution_class="exact_full_resolution_only",
             planned_duration_minutes=dose.planned_duration_minutes,
             fatigue_cost=exercise.fatigue_cost,
@@ -602,7 +625,7 @@ class PreparedFirstWeekProjector:
             rule_version=(f"prepared-first-week-prescription@1.0.0;dose={dose.rule_version}"),
         )
         template = SessionTemplateDraft(
-            name="First chair sit-to-stand session",
+            name=f"First {exercise.name.casefold()} session",
             items=(
                 SessionTemplateItemDraft(
                     resource_allocation_id=allocation_input.allocation.id,
@@ -788,7 +811,10 @@ def ratify_prepared_first_week(
         adaptation = repository.get_adaptation(active.allocation.adaptation_id)
         if estimate is None or adaptation is None:
             raise PreparedFirstWeekValidationError("the dose inputs are unavailable")
-        release = prepared_training_construction_candidate().release
+        training_candidate = prepared_training_construction_candidate_for_scope(
+            estimate.estimate_scope
+        )
+        release = training_candidate.release
         dose = RepetitionDosePlanner().derive(
             adaptation=adaptation,
             estimate=estimate,
@@ -809,6 +835,7 @@ def ratify_prepared_first_week(
                 prepared_at=command.prepared_at,
                 authority=authority,
                 content_digest=candidate.content_digest,
+                training_candidate=training_candidate,
             ),
             identities=candidate.identities.service_identities(),
         )

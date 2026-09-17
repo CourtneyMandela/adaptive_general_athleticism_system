@@ -780,15 +780,15 @@ production release API also retains the authenticated atomic boundary for a comp
 prepared chain. Neither path silently approves a protocol or lets the browser supply reviewer
 identity.
 
-The planning-authority workbench also exposes a content-addressed first-block resource bundle after
-the exact deficit-only policy and controlled adaptation catalog exist. The bundle prepares a stable-
-chair equipment record, chair sit-to-stand exercise metadata, a full-match-only resolver, a single-
-DEVELOP-priority allocator, and the separately reviewed evidence claim behind its narrow scope.
-Approval creates those authorities atomically; it does not assert chair availability or create a
+The planning-authority workbench also exposes content-addressed resource bundles after the exact
+deficit-only policy and controlled adaptation catalog exist. It retains the historical stable-chair
+scaffold and adds an owner-relevant no-equipment standard-push-up bundle with exact exercise
+metadata, a full-match-only resolver, and an allocator that preserves both DEVELOP and MAINTAIN.
+Approval creates those authorities atomically; it does not assert exercise feasibility or create a
 resource demand, dose, block, week, session, or workout.
 
 The same workbench now exposes a digest-locked training-construction batch after that resource
-bundle is ratified. `GET /v1/operator/training-construction-candidates` shows one exact
+bundle is ratified. `GET /v1/operator/training-construction-candidates` shows each exact
 repetition-dose policy, progression policy, weekly scheduling policy plus review, and ordinary
 readiness-modification policy. The candidate explicitly separates the broad scientific support
 from the exact engineering constants. Its ratification route accepts one version, digest, and
@@ -810,25 +810,26 @@ The assessment workbench reuses that evaluator at each protocol-review and estim
 timestamp, so the screen cannot present a later evidence approval as the original basis of an older
 authority.
 
-After a strategy exists, `http://localhost:3000/review/resource-demands` first loads a
-server-prepared, content-addressed owner-alpha candidate. It combines the exact muscular-endurance
-DEVELOP priority, ratified resource authorities, current stable-chair availability, and at least
-2 m² of recorded usable floor space. It previews a FULL chair sit-to-stand resolution and reserves
-ten weekly minutes across two slots. That small amount is an engineering scheduling envelope, not
-a literature-derived dose: sets, repetitions, effort, tempo, rest, progression, and current-session
-safety remain separate. Acceptance deterministically appends the requirement, resolution, demand,
-and decision in one transaction; unchanged retries are idempotent and changed factual state fails
-closed. The original blank expert editor remains collapsed as an advanced recovery path. No block,
-week, session, or workout is created.
+After a strategy exists, `http://localhost:3000/review/resource-demands` loads a server-prepared,
+content-addressed owner-alpha candidate selected from the exact capability-estimate scope. The
+standard-push-up path accepts either a DEVELOP or MAINTAIN priority, requires no equipment, still
+requires at least 2 m² of recorded usable floor space, previews a FULL resolution, and reserves
+twelve weekly minutes across two slots. The historical chair path remains available for its exact
+scope. These values are engineering scheduling envelopes, not literature-derived doses: sets,
+repetitions, effort, tempo, rest, progression, and current-session safety remain separate.
+Acceptance deterministically appends the requirement, resolution, demand, and decision in one
+transaction; unchanged retries are idempotent and changed factual state fails closed. The original
+blank expert editor remains collapsed as an advanced recovery path. No block, week, session, or
+workout is created.
 
-The first training-construction candidate is loaded from a typed, digest-validated document under
-`data/governance_candidates/training_construction`. Its `RepetitionDosePolicy` requires a current
-matching chair-stand estimate and deterministically derives two sets at half that count per set,
-rounded down and bounded to 1–8 repetitions. The exact fraction, bounds, RPE 5–7 range, 90-second
-rest, five-minute duration, 24-hour high-fatigue scheduling constraint, and one-repetition
-progression are provisional owner-alpha engineering priors—not values attributed to the cited
-position stand. The derived result retains the estimate, dose policy, adaptation, and progression
-policy identities so a later prescription can preserve the complete rule lineage.
+Training-construction candidates are loaded from typed, digest-validated documents under
+`data/governance_candidates/training_construction`. The new push-up `RepetitionDosePolicy` requires
+a current matching standard-push-up estimate and derives two sets at 40% of that count per set,
+rounded down and bounded to 1–10 repetitions, with 120 seconds rest and RPE 5–7. Those constants,
+the six-minute duration, scheduling constraints, and one-repetition progression are provisional
+owner-alpha engineering priors—not values attributed to the cited position stand. The historical
+chair policy remains immutable for its own scope. Derived results retain estimate, dose-policy,
+adaptation, and progression-policy identities so prescriptions preserve complete rule lineage.
 
 When every priority has its one governed demand, `http://localhost:3000/review/blocks` prepares the
 owner-alpha first block from exact persisted state. The owner chooses only a Monday start date; the

@@ -18,6 +18,7 @@ from agas_api.planning_governance_candidates import (
 from agas_api.resource_governance_candidates import (
     CANDIDATE_ID,
     CANDIDATE_VERSION,
+    PUSHUP_CANDIDATE_ID,
     RatifyResourceGovernanceCandidateCommand,
     ResourceGovernanceCandidateConflictError,
     list_resource_governance_candidates,
@@ -120,6 +121,7 @@ def test_exact_bundle_ratification_is_atomic_and_idempotent(session: Session) ->
     assert first.decision_record_created is True
     assert second.decision_record_created is False
     assert first.exercise.name == "Chair sit-to-stand"
+    assert first.equipment is not None
     assert first.exercise.equipment_requirement_ids == (first.equipment.id,)
     assert first.resolver_policy.partial_match_threshold == 1
     assert first.allocation_policy.allow_partial_exercise_resolution is False
@@ -130,6 +132,39 @@ def test_exact_bundle_ratification_is_atomic_and_idempotent(session: Session) ->
         .status
         == "ratified"
     )
+
+
+def test_pushup_bundle_requires_no_equipment_and_preserves_maintenance(session: Session) -> None:
+    authority = _authority()
+    _persist_source_prerequisite(session, authority)
+    item = next(
+        item
+        for item in list_resource_governance_candidates(
+            session, projected_at=NOW + timedelta(minutes=1)
+        ).items
+        if item.candidate.candidate_id == PUSHUP_CANDIDATE_ID
+    )
+
+    result = ratify_resource_governance_candidate(
+        session,
+        PUSHUP_CANDIDATE_ID,
+        RatifyResourceGovernanceCandidateCommand(
+            candidate_version=CANDIDATE_VERSION,
+            content_digest=item.candidate.content_digest,
+            approval_attestation=True,
+        ),
+        authority,
+        ratified_at=item.candidate.prepared_at + timedelta(minutes=2),
+    )
+
+    assert result.created_equipment is False
+    assert result.equipment is None
+    assert result.exercise.name == "Standard push-up"
+    assert result.exercise.equipment_requirement_ids == ()
+    assert result.allocation_policy.develop_weight == 1
+    assert result.allocation_policy.maintain_weight == 1
+    assert "MAINTAIN" in " ".join(item.candidate.governs)
+    assert DomainRepository(session).get_exercise(result.exercise.id) == result.exercise
 
 
 def test_stale_digest_does_not_persist_bundle(session: Session) -> None:

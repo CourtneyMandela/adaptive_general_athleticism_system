@@ -38,17 +38,12 @@ from agas_api.prepared_resource_demand import (
     ratify_prepared_resource_demand,
 )
 from agas_api.resource_governance_candidates import (
-    CANDIDATE_ID as RESOURCE_AUTHORITY_CANDIDATE_ID,
-)
-from agas_api.resource_governance_candidates import (
-    prepared_resource_governance_candidate,
-)
-from agas_api.training_construction_candidates import (
-    CANDIDATE_ID as TRAINING_CONSTRUCTION_CANDIDATE_ID,
+    prepared_resource_governance_candidate_for_scope,
 )
 from agas_api.training_construction_candidates import (
     RatifyTrainingConstructionCandidateCommand,
     prepared_training_construction_candidate,
+    prepared_training_construction_candidate_for_scope,
     ratify_training_construction_candidate,
 )
 from agas_api.weekly_planning import AvailabilityWindowDraft
@@ -97,7 +92,13 @@ ADAPTATION_ID = UUID("a0000000-0000-4000-8000-000000000004")
 
 
 def _persist_ready_strategy(
-    session: Session, *, chair_available: bool = True, floor_area_m2: float | None = 4
+    session: Session,
+    *,
+    chair_available: bool = True,
+    floor_area_m2: float | None = 4,
+    estimate_scope: str = "assessment_specific:thirty_second_chair_stand_repetitions",
+    estimate_value: int = 10,
+    floor_value: int = 11,
 ) -> tuple[LongRangeStrategy, AuthorizedRole]:
     repository = DomainRepository(session)
     athlete = Athlete(
@@ -128,8 +129,8 @@ def _persist_ready_strategy(
         created_at=NOW - timedelta(hours=2),
         athlete_id=athlete.id,
         observed_at=NOW - timedelta(hours=2),
-        observation_type="thirty_second_chair_stand_repetitions",
-        measurement=10,
+        observation_type=estimate_scope.removeprefix("assessment_specific:"),
+        measurement=estimate_value,
         unit="repetitions",
         source=ObservationSource.TEST_RESULT,
         reliability=Confidence.LOW,
@@ -144,9 +145,9 @@ def _persist_ready_strategy(
         created_at=NOW - timedelta(hours=1),
         athlete_id=athlete.id,
         domain=CapabilityDomain.MUSCULAR_ENDURANCE,
-        estimate=10,
+        estimate=estimate_value,
         unit_or_scale="repetitions",
-        estimate_scope="assessment_specific:thirty_second_chair_stand_repetitions",
+        estimate_scope=estimate_scope,
         confidence=Confidence.LOW,
         calculation_method="latest-matching-observation",
         source_observation_ids=(observation.id,),
@@ -159,7 +160,7 @@ def _persist_ready_strategy(
         domain=CapabilityDomain.MUSCULAR_ENDURANCE,
         estimate_scope=estimate.estimate_scope,
         unit_or_scale="repetitions",
-        threshold=11,
+        threshold=floor_value,
         comparison_direction=ComparisonDirection.HIGHER_IS_BETTER,
         population="Synthetic fixture.",
         applicability_notes="Software test only.",
@@ -242,7 +243,7 @@ def _persist_ready_strategy(
     session.flush()
     repository.add_long_range_strategy(strategy)
 
-    resource = prepared_resource_governance_candidate()
+    resource = prepared_resource_governance_candidate_for_scope(estimate_scope)
     release = resource.release
     repository.add_evidence_source(prepared_acsm_resistance_training_source())
     repository.add_evidence_claim(release.claim)
@@ -258,14 +259,15 @@ def _persist_ready_strategy(
             **release.evidence_review_content,
         )
     )
-    repository.add_equipment(release.equipment)
-    session.flush()
+    if release.equipment is not None:
+        repository.add_equipment(release.equipment)
+        session.flush()
     repository.add_exercise(release.exercise)
     repository.add_exercise_resolver_policy(release.resolver_policy)
     repository.add_resource_allocation_policy(release.allocation_policy)
     repository.add_decision_record(
         DecisionRecord(
-            id=RESOURCE_AUTHORITY_CANDIDATE_ID,
+            id=resource.presentation.candidate_id,
             created_at=NOW - timedelta(minutes=20),
             decision="Ratified exact resource fixture.",
             reason="Prepared resource-demand integration fixture.",
@@ -284,16 +286,17 @@ def _persist_ready_strategy(
     )
     repository.add_environment(environment)
     session.flush()
-    repository.add_equipment_availability(
-        EquipmentAvailability(
-            created_at=NOW - timedelta(minutes=10),
-            environment_id=environment.id,
-            equipment_id=release.equipment.id,
-            is_available=chair_available,
-            effective_from=NOW - timedelta(minutes=10),
-            reason="Synthetic current availability.",
+    if release.equipment is not None:
+        repository.add_equipment_availability(
+            EquipmentAvailability(
+                created_at=NOW - timedelta(minutes=10),
+                environment_id=environment.id,
+                equipment_id=release.equipment.id,
+                is_available=chair_available,
+                effective_from=NOW - timedelta(minutes=10),
+                reason="Synthetic current availability.",
+            )
         )
-    )
     session.commit()
     account, assignment, _, _ = set_account_role(
         session,
@@ -468,12 +471,23 @@ def test_endpoints_require_reviewer_and_accept_digest_only(session: Session) -> 
     assert ratified.json()["result"]["resource_demand"]["sessions_per_week"] == 2
 
 
-def _persist_ready_first_block(session: Session) -> tuple[LongRangeStrategy, AuthorizedRole]:
-    strategy, authority = _persist_ready_strategy(session)
-    training = prepared_training_construction_candidate()
+def _persist_ready_first_block(
+    session: Session,
+    *,
+    estimate_scope: str = "assessment_specific:thirty_second_chair_stand_repetitions",
+    estimate_value: int = 10,
+    floor_value: int = 11,
+) -> tuple[LongRangeStrategy, AuthorizedRole]:
+    strategy, authority = _persist_ready_strategy(
+        session,
+        estimate_scope=estimate_scope,
+        estimate_value=estimate_value,
+        floor_value=floor_value,
+    )
+    training = prepared_training_construction_candidate_for_scope(estimate_scope)
     ratify_training_construction_candidate(
         session,
-        TRAINING_CONSTRUCTION_CANDIDATE_ID,
+        training.presentation.candidate_id,
         RatifyTrainingConstructionCandidateCommand(
             candidate_version=training.presentation.candidate_version,
             content_digest=training.presentation.content_digest,
@@ -707,6 +721,84 @@ def test_prepared_first_week_derives_dose_and_schedules_only_reported_times(
         item.starts_at.isoformat() for item in windows
     }
     assert "does not clear" in candidate.safety_boundary
+
+
+def test_pushup_maintain_path_builds_an_exact_no_equipment_first_week(
+    session: Session,
+) -> None:
+    scope = "assessment_specific:maximum_consecutive_standard_pushup_repetitions"
+    strategy, authority = _persist_ready_first_block(
+        session,
+        estimate_scope=scope,
+        estimate_value=15,
+        floor_value=10,
+    )
+    assert strategy.priorities[0].state.value == "maintain"
+    starts_on = _next_monday(datetime.now(UTC).date())
+    block_candidate = (
+        PreparedFirstBlockProjector(session).project(strategy.id, starts_on, authority).candidate
+    )
+    assert block_candidate is not None
+    assert block_candidate.expected_allocations[0].priority_state.value == "maintain"
+    block = ratify_prepared_first_block(
+        session,
+        strategy.id,
+        block_candidate.candidate_id,
+        RatifyPreparedFirstBlockCommand(
+            candidate_version=FIRST_BLOCK_CANDIDATE_VERSION,
+            content_digest=block_candidate.content_digest,
+            starts_on=starts_on,
+            approval_attestation=True,
+        ),
+        authority,
+    ).result.block_plan
+    environment_id = DomainRepository(session).list_environments(strategy.athlete_id)[0].id
+    windows = tuple(
+        AvailabilityWindowDraft(
+            environment_id=environment_id,
+            starts_at=datetime.combine(
+                starts_on + timedelta(days=day), datetime.min.time(), tzinfo=UTC
+            )
+            + timedelta(hours=18),
+            ends_at=datetime.combine(
+                starts_on + timedelta(days=day), datetime.min.time(), tzinfo=UTC
+            )
+            + timedelta(hours=18, minutes=30),
+        )
+        for day in (1, 3)
+    )
+    projected_at = datetime.now(UTC)
+    projection = PreparedFirstWeekProjector(session).project(
+        block.id,
+        PrepareFirstWeekCommand(windows=windows),
+        authority,
+        projected_at,
+    )
+
+    assert projection.status == "available"
+    assert projection.candidate is not None
+    candidate = projection.candidate
+    assert candidate.exercise_name == "Standard push-up"
+    assert candidate.sets == 2
+    assert candidate.repetitions_per_set == 6
+    assert candidate.rest_seconds == 120
+    assert candidate.planned_duration_minutes == 6
+    result = ratify_prepared_first_week(
+        session,
+        block.id,
+        candidate.candidate_id,
+        RatifyPreparedFirstWeekCommand(
+            candidate_version=FIRST_WEEK_CANDIDATE_VERSION,
+            content_digest=candidate.content_digest,
+            prepared_at=projected_at,
+            windows=windows,
+            approval_attestation=True,
+        ),
+        authority,
+    )
+    assert result.result.session_templates[0].name == "First standard push-up session"
+    assert result.result.prescriptions[0].repetitions_per_set == 6
+    assert "MAINTAIN allocation" in result.result.prescriptions[0].reason_for_inclusion
 
 
 def test_prepared_first_week_ratification_is_idempotent_and_observes_availability(

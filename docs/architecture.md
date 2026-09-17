@@ -983,20 +983,24 @@ session.
 
 Resource-authority preparation uses the same content-addressed contract at `GET
 /v1/operator/resource-governance/candidates` and its candidate-specific ratification route. The
-first bundle reuses the exact reviewed ACSM source, adds a narrower reviewed frequency/function
-claim, and creates one equipment record, one exercise ontology record, one resolver policy, one
-allocation policy, and an actor-bound decision audit atomically. It remains blocked until the
-source and controlled muscular-endurance adaptation exist. These artifacts are eligible inputs for
-a later athlete-specific preparation; they do not report environmental availability or create a
-training dose.
+historical chair bundle and the owner-relevant no-equipment push-up bundle each reuse the exact
+reviewed ACSM source, add a narrowly scoped reviewed claim, and create their exercise ontology,
+resolver policy, allocation policy, optional equipment, and actor-bound decision audit atomically.
+The push-up allocator gives the sole active priority equal weight in DEVELOP and MAINTAIN so
+meeting a conservative floor does not erase training. Candidates remain blocked until their source
+and controlled muscular-endurance adaptation exist. These artifacts are eligible inputs for later
+athlete-specific preparation; they do not report environmental availability or create a dose.
 
 Training-construction authority preparation follows at `GET
-/v1/operator/training-construction-candidates`. Its data-loaded, schema-validated document groups
+/v1/operator/training-construction-candidates`. Each data-loaded, schema-validated document groups
 four independently versioned records behind one exact digest and attestation: a
 `RepetitionDosePolicy`, its linked `ProgressionPolicy`, a `WeeklySchedulingPolicy` with an approved
 actor-bound review, and a `SessionSafetyPolicy`. Ratification is atomic and idempotent, and remains
 blocked until the exact resource bundle, adaptation, and reviewed evidence claim exist. Grouping
-reduces reviewer round trips without collapsing artifact identities or provenance.
+reduces reviewer round trips without collapsing artifact identities or provenance. The registry
+now retains the original chair path and a scope-matched standard-push-up batch; downstream resource,
+block, dose, and week preparation select the exact batch from capability-estimate lineage rather
+than a runtime default.
 
 `RepetitionDosePlanner` consumes the exact adaptation, a current compatible
 `CapabilityEstimate`, and the persisted dose policy. It rejects future, stale, nonnumeric,

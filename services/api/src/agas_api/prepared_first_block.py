@@ -35,13 +35,13 @@ from agas_api.evidence_governance import (
 )
 from agas_api.identity import AuthorizedRole
 from agas_api.resource_governance_candidates import (
-    CANDIDATE_ID as RESOURCE_AUTHORITY_CANDIDATE_ID,
+    PreparedResourceGovernanceCandidate,
+    prepared_resource_governance_candidate_for_scope,
 )
-from agas_api.resource_governance_candidates import prepared_resource_governance_candidate
 from agas_api.training_construction_candidates import (
-    CANDIDATE_ID as TRAINING_CONSTRUCTION_CANDIDATE_ID,
+    PreparedTrainingConstructionCandidate,
+    prepared_training_construction_candidate_for_scope,
 )
-from agas_api.training_construction_candidates import prepared_training_construction_candidate
 
 CANDIDATE_VERSION = "prepared-first-block@1.0.0"
 CANDIDATE_NAMESPACE = UUID("eb9952ad-f7d8-47af-b203-b6a5fa64aa1c")
@@ -156,12 +156,13 @@ class PreparedFirstBlockProjector:
             raise ValueError("prepared first-block time must include a timezone")
         preparation = BlockPreparationProjector(self.session).project(strategy_id, instant)
         strategy = preparation.strategy
-        blockers = self._authority_blockers(instant)
+        blockers: list[str] = []
         if starts_on.weekday() != 0:
             blockers.append("Choose a Monday so every training week has an unambiguous boundary.")
 
         selected_demands = []
         selected_resolutions = []
+        selected_scopes: list[str] = []
         for option in preparation.priorities:
             if len(option.demand_history) != 1:
                 blockers.append(
@@ -179,8 +180,43 @@ class PreparedFirstBlockProjector:
                 continue
             selected_demands.append(history.resource_demand)
             selected_resolutions.append(history.exercise_resolution)
+            need = self.repository.get_capability_need(option.priority.capability_need_id)
+            estimate = (
+                self.repository.get_capability_estimate(need.capability_estimate_id)
+                if need is not None and need.capability_estimate_id is not None
+                else None
+            )
+            if estimate is None:
+                blockers.append(
+                    f"{option.adaptation.name} has no governed capability-estimate lineage."
+                )
+            else:
+                selected_scopes.append(estimate.estimate_scope)
 
-        resource_release = prepared_resource_governance_candidate().release
+        if len(set(selected_scopes)) != 1:
+            blockers.append("The first block requires exactly one governed estimate scope.")
+            resource_candidate = None
+            training_candidate = None
+        else:
+            try:
+                resource_candidate = prepared_resource_governance_candidate_for_scope(
+                    selected_scopes[0]
+                )
+                training_candidate = prepared_training_construction_candidate_for_scope(
+                    selected_scopes[0]
+                )
+            except KeyError as error:
+                blockers.append(str(error))
+                resource_candidate = None
+                training_candidate = None
+        if resource_candidate is not None and training_candidate is not None:
+            blockers.extend(
+                self._authority_blockers(instant, resource_candidate, training_candidate)
+            )
+        if resource_candidate is None or training_candidate is None:
+            return self._blocked(strategy.id, strategy.athlete_id, starts_on, instant, blockers)
+
+        resource_release = resource_candidate.release
         matching_policies = tuple(
             policy
             for policy in preparation.resource_allocation_policies
@@ -231,10 +267,10 @@ class PreparedFirstBlockProjector:
             "exercise_resolutions": [item.model_dump(mode="json") for item in selected_resolutions],
             "resource_allocation_policy": policy.model_dump(mode="json"),
             "review_authority_assignment_id": str(authority.assignment_id),
-            "resource_authority_candidate_id": str(RESOURCE_AUTHORITY_CANDIDATE_ID),
-            "resource_authority_digest": prepared_resource_governance_candidate().presentation.content_digest,
-            "training_construction_candidate_id": str(TRAINING_CONSTRUCTION_CANDIDATE_ID),
-            "training_construction_digest": prepared_training_construction_candidate().presentation.content_digest,
+            "resource_authority_candidate_id": str(resource_candidate.presentation.candidate_id),
+            "resource_authority_digest": resource_candidate.presentation.content_digest,
+            "training_construction_candidate_id": str(training_candidate.presentation.candidate_id),
+            "training_construction_digest": training_candidate.presentation.content_digest,
             "constraints": constraints,
             "construction_basis": construction_basis,
             "applicability_rationale": applicability,
@@ -352,10 +388,14 @@ class PreparedFirstBlockProjector:
             candidate=candidate,
         )
 
-    def _authority_blockers(self, instant: datetime) -> list[str]:
+    def _authority_blockers(
+        self,
+        instant: datetime,
+        resource: PreparedResourceGovernanceCandidate,
+        training: PreparedTrainingConstructionCandidate,
+    ) -> list[str]:
         repository = self.repository
-        resource = prepared_resource_governance_candidate()
-        resource_decision = repository.get_decision_record(RESOURCE_AUTHORITY_CANDIDATE_ID)
+        resource_decision = repository.get_decision_record(resource.presentation.candidate_id)
         resource_exact = (
             resource_decision is not None
             and f"candidate_content_digest:{resource.presentation.content_digest}"
@@ -363,8 +403,7 @@ class PreparedFirstBlockProjector:
             and repository.get_resource_allocation_policy(resource.release.allocation_policy.id)
             == resource.release.allocation_policy
         )
-        training = prepared_training_construction_candidate()
-        training_decision = repository.get_decision_record(TRAINING_CONSTRUCTION_CANDIDATE_ID)
+        training_decision = repository.get_decision_record(training.presentation.candidate_id)
         release = training.release
         scheduling_review = repository.get_weekly_scheduling_policy_review(
             release.weekly_scheduling_policy_review_id

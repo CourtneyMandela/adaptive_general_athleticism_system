@@ -22,6 +22,9 @@ from agas_api.resource_governance_candidates import (
     CANDIDATE_VERSION as RESOURCE_CANDIDATE_VERSION,
 )
 from agas_api.resource_governance_candidates import (
+    PUSHUP_CANDIDATE_ID as PUSHUP_RESOURCE_CANDIDATE_ID,
+)
+from agas_api.resource_governance_candidates import (
     RatifyResourceGovernanceCandidateCommand,
     list_resource_governance_candidates,
     ratify_resource_governance_candidate,
@@ -29,6 +32,7 @@ from agas_api.resource_governance_candidates import (
 from agas_api.training_construction_candidates import (
     CANDIDATE_ID,
     CANDIDATE_VERSION,
+    PUSHUP_CANDIDATE_ID,
     RatifyTrainingConstructionCandidateCommand,
     TrainingConstructionCandidateConflictError,
     list_training_construction_candidates,
@@ -149,6 +153,55 @@ def test_exact_construction_bundle_is_atomic_and_idempotent(session: Session) ->
         .status
         == "ratified"
     )
+
+
+def test_pushup_construction_bundle_uses_matching_resource_and_scope(session: Session) -> None:
+    authority = _authority()
+    _persist_prerequisites(session, authority)
+    resource = next(
+        item
+        for item in list_resource_governance_candidates(
+            session, projected_at=datetime(2026, 9, 17, 12, 5, tzinfo=UTC)
+        ).items
+        if item.candidate.candidate_id == PUSHUP_RESOURCE_CANDIDATE_ID
+    )
+    ratify_resource_governance_candidate(
+        session,
+        PUSHUP_RESOURCE_CANDIDATE_ID,
+        RatifyResourceGovernanceCandidateCommand(
+            candidate_version=RESOURCE_CANDIDATE_VERSION,
+            content_digest=resource.candidate.content_digest,
+            approval_attestation=True,
+        ),
+        authority,
+        ratified_at=datetime(2026, 9, 17, 12, 10, tzinfo=UTC),
+    )
+    candidate = next(
+        item.candidate
+        for item in list_training_construction_candidates(
+            session, projected_at=datetime(2026, 9, 17, 12, 35, tzinfo=UTC)
+        ).items
+        if item.candidate.candidate_id == PUSHUP_CANDIDATE_ID
+    )
+
+    result = ratify_training_construction_candidate(
+        session,
+        PUSHUP_CANDIDATE_ID,
+        RatifyTrainingConstructionCandidateCommand(
+            candidate_version=CANDIDATE_VERSION,
+            content_digest=candidate.content_digest,
+            approval_attestation=True,
+        ),
+        authority,
+        ratified_at=datetime(2026, 9, 17, 12, 40, tzinfo=UTC),
+    )
+
+    assert result.repetition_dose_policy.estimate_scope == (
+        "assessment_specific:maximum_consecutive_standard_pushup_repetitions"
+    )
+    assert result.repetition_dose_policy.target_fraction_of_estimate == 0.4
+    assert result.repetition_dose_policy.maximum_repetitions_per_set == 10
+    assert result.repetition_dose_policy.rest_seconds == 120
 
 
 def test_stale_digest_persists_none_of_the_construction_bundle(session: Session) -> None:

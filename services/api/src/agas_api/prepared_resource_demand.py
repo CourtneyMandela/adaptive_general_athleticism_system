@@ -8,18 +8,14 @@ from typing import Annotated, Literal
 from uuid import UUID, uuid5
 
 from agas_domain import (
-    CostLevel,
     EnvironmentSnapshot,
-    ImpactLevel,
     Laterality,
     Loadability,
     LoadingType,
     LongRangeStrategy,
-    MovementPattern,
     ResolutionStatus,
     StimulusSpecification,
     TrainingPriorityState,
-    VelocityCharacteristic,
 )
 from agas_domain.persistence.repository import DomainRepository
 from agas_planner import ExerciseResolver, StimulusRequirementBuilder
@@ -39,11 +35,14 @@ from agas_api.resource_demand_preparation import (
     ResourceDemandPriorityOption,
 )
 from agas_api.resource_governance_candidates import (
-    CANDIDATE_ID as RESOURCE_AUTHORITY_CANDIDATE_ID,
+    CANDIDATE_ID as CHAIR_RESOURCE_AUTHORITY_CANDIDATE_ID,
 )
 from agas_api.resource_governance_candidates import (
-    EQUIPMENT_ID,
-    prepared_resource_governance_candidate,
+    PUSHUP_CANDIDATE_ID as PUSHUP_RESOURCE_AUTHORITY_CANDIDATE_ID,
+)
+from agas_api.resource_governance_candidates import (
+    PreparedResourceGovernanceCandidate,
+    prepared_resource_governance_candidate_for_scope,
 )
 from agas_api.resource_preparation import (
     ActiveResourceDemandCommand,
@@ -57,7 +56,8 @@ CANDIDATE_NAMESPACE = UUID("78ca646d-31c2-4b7b-a074-11edcdd26443")
 MINIMUM_WEEKLY_MINUTES = 10
 TARGET_WEEKLY_MINUTES = 10
 SESSIONS_PER_WEEK = 2
-DEMAND_VERSION = "owner-alpha-chair-stand-resource-envelope@1.0.0"
+CHAIR_DEMAND_VERSION = "owner-alpha-chair-stand-resource-envelope@1.0.0"
+PUSHUP_DEMAND_VERSION = "owner-alpha-standard-pushup-resource-envelope@1.0.0"
 NonEmptyText = Annotated[str, Field(min_length=1)]
 
 
@@ -167,17 +167,25 @@ class PreparedResourceDemandProjector:
             raise ValueError("prepared resource-demand time must include a timezone")
         preparation = ResourceDemandPreparationProjector(self.session).project(strategy_id, instant)
         strategy = preparation.strategy
-        blockers = self._authority_blockers(instant)
         priority = self._eligible_priority(preparation.priorities)
         if priority is None:
+            blockers: list[str] = []
             blockers.append(
-                "The strategy must contain exactly one muscular-endurance DEVELOP priority."
+                "The strategy must contain exactly one governed muscular-endurance DEVELOP or MAINTAIN priority with an active resource policy."
             )
+            prepared_authority = None
+        else:
+            prepared_authority = self._resource_authority(priority)
+            blockers = self._authority_blockers(instant, prepared_authority)
 
         environment_blockers: list[str] = []
         eligible_environments: list[ResourceDemandEnvironmentOption] = []
         for option in preparation.environments:
-            issues = self._environment_issues(option)
+            issues = (
+                ()
+                if prepared_authority is None
+                else self._environment_issues(option, prepared_authority)
+            )
             if issues:
                 environment_blockers.extend(
                     f"{option.environment.name}: {issue}" for issue in issues
@@ -187,7 +195,7 @@ class PreparedResourceDemandProjector:
         if not eligible_environments:
             blockers.extend(environment_blockers or ["No training environment exists."])
 
-        if blockers or priority is None:
+        if blockers or priority is None or prepared_authority is None:
             return PreparedResourceDemandProjection(
                 strategy_id=strategy.id,
                 athlete_id=strategy.athlete_id,
@@ -201,7 +209,16 @@ class PreparedResourceDemandProjector:
         candidates = tuple(
             candidate
             for environment in eligible_environments
-            if (candidate := self._candidate(strategy, priority, environment, authority, instant))
+            if (
+                candidate := self._candidate(
+                    strategy,
+                    priority,
+                    environment,
+                    prepared_authority,
+                    authority,
+                    instant,
+                )
+            )
             is not None
         )
         if not candidates:
@@ -231,16 +248,23 @@ class PreparedResourceDemandProjector:
             blockers=(),
         )
 
-    def _authority_blockers(self, instant: datetime) -> list[str]:
-        prepared = prepared_resource_governance_candidate()
+    def _authority_blockers(
+        self,
+        instant: datetime,
+        prepared: PreparedResourceGovernanceCandidate,
+    ) -> list[str]:
         release = prepared.release
-        decision = self.repository.get_decision_record(RESOURCE_AUTHORITY_CANDIDATE_ID)
+        decision = self.repository.get_decision_record(prepared.presentation.candidate_id)
+        equipment_exact = (
+            release.equipment is None
+            or self.repository.get_equipment(release.equipment.id) == release.equipment
+        )
         exact = (
             decision is not None
             and f"candidate_content_digest:{prepared.presentation.content_digest}"
             in decision.evidence
             and self.repository.get_evidence_claim(release.claim.id) == release.claim
-            and self.repository.get_equipment(release.equipment.id) == release.equipment
+            and equipment_exact
             and self.repository.get_exercise(release.exercise.id) == release.exercise
             and self.repository.get_exercise_resolver_policy(release.resolver_policy.id)
             == release.resolver_policy
@@ -257,58 +281,100 @@ class PreparedResourceDemandProjector:
             return [f"The resource evidence authority is not current: {error}"]
         return []
 
-    @staticmethod
     def _eligible_priority(
+        self,
         options: tuple[ResourceDemandPriorityOption, ...],
     ) -> ResourceDemandPriorityOption | None:
-        release = prepared_resource_governance_candidate().release
-        eligible = tuple(
-            option
-            for option in options
-            if option.priority.state is TrainingPriorityState.DEVELOP
-            and option.priority.adaptation_id in release.exercise.primary_adaptation_ids
-        )
+        eligible = []
+        for option in options:
+            try:
+                prepared = self._resource_authority(option)
+            except (KeyError, PreparedResourceDemandValidationError):
+                continue
+            allocation = prepared.release.allocation_policy
+            active_weight = {
+                TrainingPriorityState.DEVELOP: allocation.develop_weight,
+                TrainingPriorityState.MAINTAIN: allocation.maintain_weight,
+                TrainingPriorityState.EXPOSE: allocation.expose_weight,
+            }.get(option.priority.state, 0)
+            if (
+                active_weight > 0
+                and option.priority.adaptation_id
+                in prepared.release.exercise.primary_adaptation_ids
+            ):
+                eligible.append(option)
         return eligible[0] if len(eligible) == 1 else None
 
     @staticmethod
-    def _environment_issues(option: ResourceDemandEnvironmentOption) -> tuple[str, ...]:
+    def _environment_issues(
+        option: ResourceDemandEnvironmentOption,
+        prepared: PreparedResourceGovernanceCandidate,
+    ) -> tuple[str, ...]:
         snapshot = option.snapshot
         issues = []
-        if EQUIPMENT_ID not in {item.equipment_id for item in snapshot.available_equipment}:
-            issues.append("report a stable chair as currently available")
-        required_area = (
-            prepared_resource_governance_candidate().release.exercise.minimum_floor_area_m2
+        available_equipment_ids = {item.equipment_id for item in snapshot.available_equipment}
+        missing_equipment = tuple(
+            equipment_id
+            for equipment_id in prepared.release.exercise.equipment_requirement_ids
+            if equipment_id not in available_equipment_ids
         )
+        if missing_equipment:
+            equipment_name = (
+                prepared.release.equipment.name
+                if prepared.release.equipment is not None
+                else "required equipment"
+            )
+            issues.append(f"report {equipment_name.casefold()} as currently available")
+        required_area = prepared.release.exercise.minimum_floor_area_m2
         if required_area is not None and (
             snapshot.floor_area_m2 is None or snapshot.floor_area_m2 < required_area
         ):
             issues.append(f"record at least {required_area:g} m² of usable floor space")
         return tuple(issues)
 
+    def _resource_authority(
+        self,
+        option: ResourceDemandPriorityOption,
+    ) -> PreparedResourceGovernanceCandidate:
+        need = self.repository.get_capability_need(option.priority.capability_need_id)
+        if need is None or need.capability_estimate_id is None:
+            raise PreparedResourceDemandValidationError(
+                "the priority has no governed capability estimate"
+            )
+        estimate = self.repository.get_capability_estimate(need.capability_estimate_id)
+        if estimate is None:
+            raise PreparedResourceDemandValidationError(
+                "the priority capability estimate is unavailable"
+            )
+        return prepared_resource_governance_candidate_for_scope(estimate.estimate_scope)
+
     def _candidate(
         self,
         strategy: LongRangeStrategy,
         option: ResourceDemandPriorityOption,
         environment: ResourceDemandEnvironmentOption,
+        release: PreparedResourceGovernanceCandidate,
         authority: AuthorizedRole,
         instant: datetime,
     ) -> PreparedResourceDemandCandidate | None:
         priority = option.priority
-        release = prepared_resource_governance_candidate()
         exercise = release.release.exercise
         claim = release.release.claim
         resolver = release.release.resolver_policy
+        minimum_weekly_minutes, target_weekly_minutes, sessions_per_week = (
+            _weekly_resource_envelope(release.presentation.candidate_id)
+        )
         specification = StimulusSpecification(
-            movement_patterns=(MovementPattern.KNEE_DOMINANT,),
+            movement_patterns=exercise.movement_patterns,
             allowed_loading_types=(LoadingType.BODYWEIGHT,),
             allowed_lateralities=(Laterality.BILATERAL,),
             minimum_loadability=Loadability.LIMITED,
-            required_velocity_characteristics=(VelocityCharacteristic.CONTROLLED,),
-            maximum_skill_complexity=CostLevel.LOW,
-            maximum_impact_level=ImpactLevel.NONE,
-            maximum_stability_demand=CostLevel.LOW,
-            maximum_fatigue_cost=CostLevel.LOW,
-            maximum_soreness_cost=CostLevel.LOW,
+            required_velocity_characteristics=exercise.velocity_characteristics,
+            maximum_skill_complexity=exercise.skill_complexity,
+            maximum_impact_level=exercise.impact_level,
+            maximum_stability_demand=exercise.stability_demand,
+            maximum_fatigue_cost=exercise.fatigue_cost,
+            maximum_soreness_cost=exercise.soreness_cost,
             minimum_floor_area_m2=exercise.minimum_floor_area_m2,
             source_observation_ids=tuple(
                 dict.fromkeys(
@@ -317,9 +383,9 @@ class PreparedResourceDemandProjector:
             ),
             evidence_claim_ids=tuple(dict.fromkeys((*strategy.evidence_claim_ids, claim.id))),
             rationale=(
-                "Require one controlled, bilateral, bodyweight, knee-dominant, low-complexity, "
-                "no-impact, low-cost muscular-endurance stimulus that can be resolved only when "
-                "the exact stable-chair and floor-space constraints are currently satisfied."
+                f"Require the exact controlled, bilateral, bodyweight {exercise.name} "
+                "muscular-endurance stimulus and resolve it only when every ontology, equipment, "
+                "and current floor-space constraint is satisfied."
             ),
         )
         preview_requirement = StimulusRequirementBuilder().build(
@@ -344,24 +410,26 @@ class PreparedResourceDemandProjector:
                 "the exact governed exercise did not fully resolve against the selected environment"
             )
         scheduling_basis = (
-            "Reserve 10 minutes per week across two five-minute slots as a deliberately small "
+            f"Reserve {target_weekly_minutes} minutes per week across {sessions_per_week} "
+            f"{target_weekly_minutes // sessions_per_week}-minute scheduling slots as a deliberately small "
             "owner-alpha scheduling envelope. This is an explicit engineering starting allowance, "
             "not a literature-derived physiological dose."
         )
         applicability_rationale = (
-            "Apply the ratified muscular-endurance resource authority to the sole DEVELOP priority "
+            "Apply the ratified muscular-endurance resource authority to the sole active priority "
             f"in the factual {environment.environment.name} snapshot. The ACSM claim supports "
-            "resistance-training direction and at-least-twice-weekly frequency; the ten-minute "
+            "resistance-training direction and at-least-twice-weekly frequency; the "
+            f"{target_weekly_minutes}-minute "
             "weekly reservation is a provisional scheduling choice only."
         )
         uncertainty = (
-            "Chair sit-to-stand is assessment-proximal and improvement may include test familiarity. "
+            f"{exercise.name} is assessment-proximal and improvement may include test familiarity. "
             "No exact repetitions, sets, effort, tempo, rest, progression, current-session safety, "
             "or individualized response is established here."
         )
         safety_boundary = (
-            "A reported available chair and adequate floor space establish environmental feasibility "
-            "only. They do not certify chair stability, technique, pain tolerance, medical clearance, "
+            "Current equipment availability and adequate floor space establish environmental feasibility "
+            "only. They do not certify technique, pain tolerance, medical clearance, "
             "or readiness on the day of training; every session still requires its safety gate."
         )
         dose_boundary = (
@@ -393,22 +461,22 @@ class PreparedResourceDemandProjector:
                 "outdoor_access": environment.snapshot.outdoor_access,
             },
             "authority_assignment_id": str(authority.assignment_id),
-            "resource_authority_candidate_id": str(RESOURCE_AUTHORITY_CANDIDATE_ID),
+            "resource_authority_candidate_id": str(release.presentation.candidate_id),
             "resource_authority_content_digest": release.presentation.content_digest,
             "stimulus_specification": specification.model_dump(mode="json"),
             "exercise_candidate_id": str(exercise.id),
             "exercise_resolver_policy_id": str(resolver.id),
             "expected_resolution_status": preview_resolution.status.value,
             "expected_selected_exercise_id": str(exercise.id),
-            "minimum_weekly_minutes": MINIMUM_WEEKLY_MINUTES,
-            "target_weekly_minutes": TARGET_WEEKLY_MINUTES,
-            "sessions_per_week": SESSIONS_PER_WEEK,
+            "minimum_weekly_minutes": minimum_weekly_minutes,
+            "target_weekly_minutes": target_weekly_minutes,
+            "sessions_per_week": sessions_per_week,
             "scheduling_basis": scheduling_basis,
             "applicability_rationale": applicability_rationale,
             "uncertainty": uncertainty,
             "safety_boundary": safety_boundary,
             "dose_boundary": dose_boundary,
-            "demand_version": DEMAND_VERSION,
+            "demand_version": _demand_version(release.presentation.candidate_id),
         }
         canonical = json.dumps(stable_content, sort_keys=True, separators=(",", ":"))
         content_digest = f"sha256:{hashlib.sha256(canonical.encode()).hexdigest()}"
@@ -428,6 +496,10 @@ class PreparedResourceDemandProjector:
             specification=specification,
             exercise_id=exercise.id,
             resolver_policy_id=resolver.id,
+            demand_version=_demand_version(release.presentation.candidate_id),
+            minimum_weekly_minutes=minimum_weekly_minutes,
+            target_weekly_minutes=target_weekly_minutes,
+            sessions_per_week=sessions_per_week,
         )
         history_ids = {item.resource_demand.id for item in option.demand_history}
         if history_ids and history_ids != {identities.resource_demand_id}:
@@ -446,7 +518,7 @@ class PreparedResourceDemandProjector:
             environment_id=environment.environment.id,
             environment_name=environment.environment.name,
             environment_snapshot=environment.snapshot,
-            resource_authority_candidate_id=RESOURCE_AUTHORITY_CANDIDATE_ID,
+            resource_authority_candidate_id=release.presentation.candidate_id,
             resource_authority_content_digest=release.presentation.content_digest,
             stimulus_specification=specification,
             exercise_candidate_id=exercise.id,
@@ -454,10 +526,10 @@ class PreparedResourceDemandProjector:
             exercise_resolver_policy_id=resolver.id,
             expected_resolution_status=preview_resolution.status,
             expected_selected_exercise_id=exercise.id,
-            minimum_weekly_minutes=MINIMUM_WEEKLY_MINUTES,
-            target_weekly_minutes=TARGET_WEEKLY_MINUTES,
-            sessions_per_week=SESSIONS_PER_WEEK,
-            per_session_scheduling_minutes=MINIMUM_WEEKLY_MINUTES // SESSIONS_PER_WEEK,
+            minimum_weekly_minutes=minimum_weekly_minutes,
+            target_weekly_minutes=target_weekly_minutes,
+            sessions_per_week=sessions_per_week,
+            per_session_scheduling_minutes=minimum_weekly_minutes // sessions_per_week,
             scheduling_basis=scheduling_basis,
             applicability_rationale=applicability_rationale,
             uncertainty=uncertainty,
@@ -478,6 +550,10 @@ class PreparedResourceDemandProjector:
         specification: StimulusSpecification,
         exercise_id: UUID,
         resolver_policy_id: UUID,
+        demand_version: str,
+        minimum_weekly_minutes: int,
+        target_weekly_minutes: int,
+        sessions_per_week: int,
     ) -> ResourceDemandPreparationResult | None:
         demand = self.repository.get_adaptation_resource_demand(identities.resource_demand_id)
         if demand is None:
@@ -506,7 +582,7 @@ class PreparedResourceDemandProjector:
             or requirement.long_range_strategy_id != strategy.id
             or requirement.adaptation_priority_id != option.priority.id
             or requirement.adaptation_id != option.adaptation.id
-            or requirement.priority_state is not TrainingPriorityState.DEVELOP
+            or requirement.priority_state is not option.priority.state
             or requirement.movement_patterns != specification.movement_patterns
             or requirement.allowed_loading_types != specification.allowed_loading_types
             or requirement.allowed_lateralities != specification.allowed_lateralities
@@ -535,13 +611,13 @@ class PreparedResourceDemandProjector:
             or demand.long_range_strategy_id != strategy.id
             or demand.adaptation_priority_id != option.priority.id
             or demand.adaptation_id != option.adaptation.id
-            or demand.priority_state is not TrainingPriorityState.DEVELOP
-            or demand.minimum_weekly_minutes != MINIMUM_WEEKLY_MINUTES
-            or demand.target_weekly_minutes != TARGET_WEEKLY_MINUTES
-            or demand.sessions_per_week != SESSIONS_PER_WEEK
+            or demand.priority_state is not option.priority.state
+            or demand.minimum_weekly_minutes != minimum_weekly_minutes
+            or demand.target_weekly_minutes != target_weekly_minutes
+            or demand.sessions_per_week != sessions_per_week
             or demand.source_observation_ids != specification.source_observation_ids
             or demand.evidence_claim_ids != specification.evidence_claim_ids
-            or demand.demand_version != DEMAND_VERSION
+            or demand.demand_version != demand_version
             or content_digest not in decision.reason
             or f"adaptation_resource_demand:{demand.id}" not in decision.evidence
         ):
@@ -603,7 +679,7 @@ def ratify_prepared_resource_demand(
             target_weekly_minutes=candidate.target_weekly_minutes,
             sessions_per_week=candidate.sessions_per_week,
             demand_rationale=(f"{candidate.scheduling_basis} {candidate.dose_boundary}"),
-            demand_version=DEMAND_VERSION,
+            demand_version=_demand_version(candidate.resource_authority_candidate_id),
             applicability_rationale=(
                 f"{candidate.applicability_rationale} Prepared candidate digest: "
                 f"{candidate.content_digest}."
@@ -618,3 +694,19 @@ def ratify_prepared_resource_demand(
         created=True,
         result=result,
     )
+
+
+def _demand_version(resource_candidate_id: UUID) -> str:
+    if resource_candidate_id == CHAIR_RESOURCE_AUTHORITY_CANDIDATE_ID:
+        return CHAIR_DEMAND_VERSION
+    if resource_candidate_id == PUSHUP_RESOURCE_AUTHORITY_CANDIDATE_ID:
+        return PUSHUP_DEMAND_VERSION
+    raise PreparedResourceDemandValidationError("resource authority has no demand version")
+
+
+def _weekly_resource_envelope(resource_candidate_id: UUID) -> tuple[int, int, int]:
+    if resource_candidate_id == CHAIR_RESOURCE_AUTHORITY_CANDIDATE_ID:
+        return MINIMUM_WEEKLY_MINUTES, TARGET_WEEKLY_MINUTES, SESSIONS_PER_WEEK
+    if resource_candidate_id == PUSHUP_RESOURCE_AUTHORITY_CANDIDATE_ID:
+        return 12, 12, 2
+    raise PreparedResourceDemandValidationError("resource authority has no weekly envelope")

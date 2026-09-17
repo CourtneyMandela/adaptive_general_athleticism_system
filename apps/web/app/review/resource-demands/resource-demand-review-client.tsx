@@ -539,8 +539,8 @@ function PreparedResourceDemandPanel({
           {projection.blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}
         </ul>
         <p className="form-help">
-          Chair availability and usable floor space can both be reported in the athlete PWA. Each
-          report appends dated history; AGAS will not guess either fact.
+          Required equipment availability and usable floor space can be reported in the athlete
+          PWA. Each report appends dated history; AGAS will not guess either fact.
         </p>
         <Link href="/" className="secondary-button">Review training environment</Link>
       </section>

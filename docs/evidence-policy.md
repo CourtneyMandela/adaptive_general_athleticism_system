@@ -250,17 +250,19 @@ because evidence establishes zero relevance or cost. Its `0.01` threshold is an 
 against zero and numerical noise rather than a scientific meaningful-change threshold. The
 athlete-specific prepared context must expose that distinction for every field.
 
-The first resource-authority bundle extracts the 2026 ACSM position stand's broad resistance-
-training function findings and at-least-twice-weekly primary recommendation into a distinct claim
-and review. That claim does not establish chair sit-to-stand as an optimal exercise, a weekly-minute
-amount, sets, repetitions, effort target, rest interval, or the bundle's resolver/allocation
-constants. The candidate presentation and decision history must preserve those exclusions.
+The resource-authority bundles extract the 2026 ACSM position stand's broad resistance-training
+function findings and at-least-twice-weekly primary recommendation into distinct claims and reviews.
+Those claims establish neither chair sit-to-stand nor standard push-up as an optimal exercise, nor
+do they establish a weekly-minute amount, sets, repetitions, effort target, rest interval, or the
+bundles' resolver/allocation constants. Candidate presentation and decision history must preserve
+those exclusions.
 
-The first prepared resource demand cites that reviewed claim only for the broad resistance-training
-direction and twice-weekly frequency. Its ten-minute weekly value is labeled and audited as a
-replaceable engineering scheduling envelope, not a physiological dose or minimum-effective-dose
-claim. Exercise sets, repetitions, effort, tempo, rest, and progression require a later, separately
-reviewed evidence-to-policy decision.
+Prepared resource demands cite their reviewed claim only for broad resistance-training direction
+and twice-weekly frequency. The chair path's ten-minute and push-up path's twelve-minute weekly
+values are labeled and audited as replaceable engineering scheduling envelopes sized to their
+separately governed session durations, not physiological doses or minimum-effective-dose claims.
+Exercise sets, repetitions, effort, tempo, rest, and progression require a separate reviewed
+construction authority.
 
 Competency-floor applicability must be enforceable where a source population has a meaningful age
 boundary. `minimum_age_years` and `maximum_age_years` record inclusive reviewed bounds; missing

@@ -1,0 +1,150 @@
+{
+  "document_schema_version": "training-construction-candidate-document@1.0.0",
+  "candidate_version": "training-construction-candidate@1.0.0",
+  "content_digest": "sha256:23e01899f37590a70040e4f6d6bc2255c851ba062738bf45a6103da944855c63",
+  "presentation": {
+    "candidate_id": "98900000-0000-4000-8000-000000000002",
+    "slug": "owner_alpha_pushup_construction_authorities",
+    "release_label": "Owner-alpha push-up construction authorities",
+    "prepared_at": "2026-09-17T12:30:00Z",
+    "summary": "One atomic batch defining a bounded first-session push-up dose, scheduling, progression, and non-diagnostic readiness modifications for either a DEVELOP or MAINTAIN priority.",
+    "authority_basis": {
+      "scientific_support": "The reviewed ACSM claim supports resistance training, muscular-endurance benefit, and at-least-twice-weekly exposure. It does not establish this batch's exact push-up dose, recovery interval, progression trigger, or readiness modifications.",
+      "engineering_prior": "Every numeric constant and modification mapping in this batch is an explicit, conservative owner-alpha engineering prior. Ratification accepts those product choices provisionally; it does not relabel them as scientific findings."
+    },
+    "exact_artifacts": [
+      "One repetition-dose policy tied to the exact standard-push-up estimate scope and muscular-endurance adaptation.",
+      "One progression policy that adds one repetition per set only after complete, technique-compliant, non-interrupted work at session RPE 7 or below.",
+      "One weekly scheduling policy and one approved review of that exact policy.",
+      "One non-diagnostic session-safety policy permitting only volume reduction, intensity reduction, or session shortening."
+    ],
+    "governs": [
+      "Derivation of a 2-set standard-push-up prescription at 40% of the current governed assessment estimate, rounded down and bounded to 1-10 repetitions per set.",
+      "A 6-minute planned session with 120 seconds rest and target effort RPE 5-7.",
+      "First-session scheduling constraints, post-session repetition progression, and the allowed vocabulary of ordinary readiness modifications."
+    ],
+    "does_not_establish": [
+      "Medical clearance, diagnosis, injury prediction, pain tolerance, or permission to ignore concerning symptoms.",
+      "That the exact dose, RPE range, rest period, recovery interval, or progression increment is an ACSM recommendation or a scientific optimum.",
+      "That meeting the competency floor means push-up training is unnecessary; MAINTAIN remains a legitimate trainable state.",
+      "An athlete-specific strategy, block, week, safety-policy assignment, scheduled session, or permission to train."
+    ],
+    "unresolved_limitations": [
+      "The 40% starting fraction has not yet been calibrated against this athlete's longitudinal response.",
+      "Standard push-up practice may produce assessment-specific learning and is not a complete general-athleticism program.",
+      "Only one capability-specific dose policy is included; later domains require separate reviewed artifacts.",
+      "The exact magnitude of readiness-driven reductions remains a later governed policy decision."
+    ],
+    "evidence": [
+      {
+        "claim_id": "91000000-0000-4000-8000-000000000007",
+        "title": "ACSM resistance-training position stand (2026)",
+        "source_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC12965823/",
+        "supported_use": "Resistance training can improve muscular endurance, and the primary recommendation includes at least twice-weekly resistance training.",
+        "unsupported_specifics": "The source does not validate standard push-up as the optimal exercise or this batch's 40% estimate fraction, 2 sets, 1-10-repetition bounds, 120-second rest, RPE 5-7 target, 24-hour recovery rule, or one-repetition progression increment."
+      }
+    ]
+  },
+  "release": {
+    "prepared_at": "2026-09-17T12:30:00Z",
+    "weekly_scheduling_policy": {
+      "id": "98910000-0000-4000-8000-000000000002",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-17T12:30:00Z",
+      "minimum_high_fatigue_recovery_hours": 24,
+      "maximum_sessions_per_day": 1,
+      "maximum_high_fatigue_sessions_per_day": 1,
+      "allow_partial_exercise_resolution": false,
+      "policy_version": "owner-alpha-pushup-conservative-weekly-scheduling@1.0.0"
+    },
+    "weekly_scheduling_policy_review_id": "98920000-0000-4000-8000-000000000002",
+    "weekly_scheduling_policy_review_content": {
+      "applicability_rationale": "Approve for the owner-alpha push-up pathway: one session per day, no unresolved exercise match, and a 24-hour minimum after high-fatigue work. The current push-up session is moderate fatigue, so the high-fatigue interval is a forward-compatible guardrail rather than its frequency rationale.",
+      "uncertainty": "The one-session daily cap and 24-hour high-fatigue interval are conservative engineering constraints, not direct values extracted from the cited evidence. They should be replaced if observed recovery or later evidence supports a better rule.",
+      "review_version": "owner-alpha-pushup-conservative-weekly-scheduling-review@1.0.0"
+    },
+    "progression_policy": {
+      "id": "98930000-0000-4000-8000-000000000002",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-17T12:30:00Z",
+      "reference": "owner-alpha-pushup-repetition-progression@1.0.0",
+      "minimum_set_completion_ratio": 1.0,
+      "minimum_dose_completion_ratio": 1.0,
+      "maximum_session_rpe": 7.0,
+      "require_technique_constraint": true,
+      "adjustment": {
+        "dimension": "repetitions",
+        "amount": 1.0,
+        "unit": "repetitions_per_set",
+        "description": "Add one repetition to each set after full compliant completion."
+      },
+      "exposure_type": null,
+      "evidence_claim_ids": [
+        "91000000-0000-4000-8000-000000000007"
+      ],
+      "rationale": "Use the smallest supported discrete change only after both sets and their entire repetition dose were completed, the reviewed technique constraints were met, session RPE was no more than 7, and no post-session safety decision interrupted progression.",
+      "policy_version": "owner-alpha-pushup-repetition-progression@1.0.0"
+    },
+    "repetition_dose_policy": {
+      "id": "98940000-0000-4000-8000-000000000002",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-17T12:30:00Z",
+      "adaptation_id": "a0000000-0000-4000-8000-000000000004",
+      "estimate_scope": "assessment_specific:maximum_consecutive_standard_pushup_repetitions",
+      "unit_or_scale": "repetitions",
+      "minimum_eligible_estimate": 1.0,
+      "target_fraction_of_estimate": 0.4,
+      "rounding_mode": "floor",
+      "sets": 2,
+      "minimum_repetitions_per_set": 1,
+      "maximum_repetitions_per_set": 10,
+      "rest_seconds": 120,
+      "effort_rpe_minimum": 5.0,
+      "effort_rpe_maximum": 7.0,
+      "technique_constraints": [
+        "Use the exact standard-push-up setup and technique from the reviewed assessment protocol.",
+        "Stop the set if the reviewed technique can no longer be maintained or pain occurs."
+      ],
+      "planned_duration_minutes": 6,
+      "progression_policy_id": "98930000-0000-4000-8000-000000000002",
+      "evidence_claim_ids": [
+        "91000000-0000-4000-8000-000000000007"
+      ],
+      "rationale": "Begin at forty percent of the athlete's current maximum valid standard-push-up estimate per set, rounded down and bounded, to produce a short submaximal first exposure whose response can be observed before progression.",
+      "uncertainty": "The 40% fraction, two sets, bounds, rest period, RPE target, and duration are provisional engineering priors. The evidence claim supports resistance-training direction and frequency, not these exact constants.",
+      "policy_version": "owner-alpha-standard-pushup-dose@1.0.0"
+    },
+    "session_safety_policy": {
+      "id": "98950000-0000-4000-8000-000000000002",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-17T12:30:00Z",
+      "allowed_modifications": [
+        "reduce_volume",
+        "reduce_intensity",
+        "shorten_session"
+      ],
+      "limited_readiness_modifications": [
+        "reduce_volume",
+        "reduce_intensity"
+      ],
+      "unusual_soreness_modifications": [
+        "reduce_volume",
+        "reduce_intensity"
+      ],
+      "sleep_disruption_modifications": [
+        "reduce_volume",
+        "reduce_intensity"
+      ],
+      "schedule_limitation_modifications": [
+        "shorten_session"
+      ],
+      "evidence_claim_ids": [
+        "91000000-0000-4000-8000-000000000007"
+      ],
+      "rationale": "Provide only conservative, non-diagnostic reductions for ordinary limited readiness, unusual soreness, major sleep disruption, or schedule limitation. Concerning symptom signals remain governed by the separate stop-and-escalate path and cannot be overridden by this policy.",
+      "policy_version": "owner-alpha-pushup-conservative-session-safety@1.0.0"
+    },
+    "release_rationale": "Install the minimum explicit push-up construction authorities needed for deterministic first-session preparation without asking the owner to author technical policy values and without hiding defaults in runtime code.",
+    "release_uncertainty": "All exact operational constants are provisional engineering priors. Ratification creates reusable authorities only; athlete-specific planning and safety assignment remain separate reviewed steps."
+  }
+}

@@ -33,11 +33,15 @@ from agas_api.evidence_governance import (
     EvidenceAuthorityNotReadyError,
 )
 from agas_api.identity import AuthorizedRole
-from agas_api.resource_governance_candidates import prepared_resource_governance_candidate
+from agas_api.resource_governance_candidates import (
+    prepared_resource_governance_candidate_for_scope,
+)
 
 CANDIDATE_VERSION = "training-construction-candidate@1.0.0"
 CANDIDATE_ID = UUID("98900000-0000-4000-8000-000000000001")
+PUSHUP_CANDIDATE_ID = UUID("98900000-0000-4000-8000-000000000002")
 EVIDENCE_CLAIM_ID = UUID("91000000-0000-4000-8000-000000000005")
+PUSHUP_EVIDENCE_CLAIM_ID = UUID("91000000-0000-4000-8000-000000000007")
 ADAPTATION_ID = UUID("a0000000-0000-4000-8000-000000000004")
 NonEmptyText = Annotated[str, Field(min_length=1)]
 
@@ -108,8 +112,6 @@ class TrainingConstructionCandidateDocument(BaseModel):
             **self.presentation,
         )
         release = self.release
-        if presentation.candidate_id != CANDIDATE_ID:
-            raise ValueError("training-construction candidate identity is not recognized")
         if presentation.prepared_at != release.prepared_at:
             raise ValueError("candidate and release preparation times must match")
         if release.repetition_dose_policy.progression_policy_id != release.progression_policy.id:
@@ -121,10 +123,11 @@ class TrainingConstructionCandidateDocument(BaseModel):
             *release.repetition_dose_policy.evidence_claim_ids,
             *release.session_safety_policy.evidence_claim_ids,
         )
-        if set(authority_evidence) != {EVIDENCE_CLAIM_ID}:
-            raise ValueError("every evidence-linked authority must cite the exact reviewed claim")
-        if tuple(item.claim_id for item in presentation.evidence) != (EVIDENCE_CLAIM_ID,):
-            raise ValueError("candidate evidence summary must identify the exact reviewed claim")
+        presentation_claim_ids = tuple(item.claim_id for item in presentation.evidence)
+        if len(presentation_claim_ids) != 1 or set(authority_evidence) != set(
+            presentation_claim_ids
+        ):
+            raise ValueError("every evidence-linked authority must cite the exact summarized claim")
         required_review_keys = {
             "applicability_rationale",
             "uncertainty",
@@ -198,44 +201,61 @@ def prepared_training_construction_candidate() -> PreparedTrainingConstructionCa
     return _prepared_candidate()
 
 
+def prepared_training_construction_candidates() -> tuple[
+    PreparedTrainingConstructionCandidate, ...
+]:
+    return (_prepared_candidate(), _prepared_pushup_candidate())
+
+
+def prepared_training_construction_candidate_for_scope(
+    estimate_scope: str,
+) -> PreparedTrainingConstructionCandidate:
+    for prepared in prepared_training_construction_candidates():
+        if prepared.release.repetition_dose_policy.estimate_scope == estimate_scope:
+            return prepared
+    raise KeyError(f"no training-construction candidate is registered for {estimate_scope}")
+
+
 def list_training_construction_candidates(
     session: Session, *, projected_at: datetime | None = None
 ) -> TrainingConstructionCandidateProjection:
     instant = projected_at or datetime.now(UTC)
     _require_aware(instant, "candidate projection")
-    prepared = _prepared_candidate()
     repository = DomainRepository(session)
-    decision = repository.get_decision_record(CANDIDATE_ID)
-    if decision is None:
-        issues = _prerequisite_issues(session, instant)
-        status: Literal["available", "blocked", "ratified", "conflict"] = (
-            "blocked" if issues else "available"
-        )
-        ratified_at = None
-    elif f"candidate_content_digest:{prepared.presentation.content_digest}" in decision.evidence:
-        try:
-            _existing_result(repository, prepared, decision)
-        except TrainingConstructionCandidateConflictError as error:
-            status = "conflict"
-            issues = (str(error),)
+    items: list[TrainingConstructionCandidateItem] = []
+    for prepared in prepared_training_construction_candidates():
+        decision = repository.get_decision_record(prepared.presentation.candidate_id)
+        if decision is None:
+            issues = _prerequisite_issues(session, instant, prepared)
+            status: Literal["available", "blocked", "ratified", "conflict"] = (
+                "blocked" if issues else "available"
+            )
+            ratified_at = None
+        elif f"candidate_content_digest:{prepared.presentation.content_digest}" in decision.evidence:
+            try:
+                _existing_result(repository, prepared, decision)
+            except TrainingConstructionCandidateConflictError as error:
+                status = "conflict"
+                issues = (str(error),)
+            else:
+                status = "ratified"
+                issues = ()
+            ratified_at = decision.created_at
         else:
-            status = "ratified"
-            issues = ()
-        ratified_at = decision.created_at
-    else:
-        status = "conflict"
-        ratified_at = decision.created_at
-        issues = ("The release identity is occupied by different immutable content.",)
-    return TrainingConstructionCandidateProjection(
-        projected_at=instant,
-        items=(
+            status = "conflict"
+            ratified_at = decision.created_at
+            issues = ("The release identity is occupied by different immutable content.",)
+        items.append(
             TrainingConstructionCandidateItem(
                 candidate=prepared.presentation,
                 status=status,
                 ratified_at=ratified_at,
                 issues=issues,
-            ),
-        ),
+            )
+        )
+    return TrainingConstructionCandidateProjection(
+        projected_at=instant,
+        items=tuple(items),
     )
 
 
@@ -247,9 +267,16 @@ def ratify_training_construction_candidate(
     *,
     ratified_at: datetime | None = None,
 ) -> TrainingConstructionRatificationResult:
-    if candidate_id != CANDIDATE_ID:
+    prepared = next(
+        (
+            item
+            for item in prepared_training_construction_candidates()
+            if item.presentation.candidate_id == candidate_id
+        ),
+        None,
+    )
+    if prepared is None:
         raise KeyError("training-construction candidate does not exist")
-    prepared = _prepared_candidate()
     if authority.role is not AccountRole.PLANNING_REVIEWER:
         raise TrainingConstructionCandidateValidationError(
             "training-construction ratification requires planning_reviewer authority"
@@ -263,7 +290,7 @@ def ratify_training_construction_candidate(
             "candidate content changed; refresh and review the exact current release"
         )
     repository = DomainRepository(session)
-    existing_decision = repository.get_decision_record(CANDIDATE_ID)
+    existing_decision = repository.get_decision_record(candidate_id)
     if existing_decision is not None:
         return _existing_result(repository, prepared, existing_decision)
     instant = ratified_at or datetime.now(UTC)
@@ -274,7 +301,7 @@ def ratify_training_construction_candidate(
         )
     if instant > datetime.now(UTC) + timedelta(minutes=5):
         raise TrainingConstructionCandidateValidationError("ratification cannot be in the future")
-    prerequisite_issues = _prerequisite_issues(session, instant)
+    prerequisite_issues = _prerequisite_issues(session, instant, prepared)
     if prerequisite_issues:
         raise TrainingConstructionCandidateValidationError("; ".join(prerequisite_issues))
 
@@ -286,13 +313,13 @@ def ratify_training_construction_candidate(
         weekly_scheduling_policy_id=release.weekly_scheduling_policy.id,
         decision=AssessmentReviewDecision.APPROVED,
         sequence_number=1,
-        evidence_claim_ids=(EVIDENCE_CLAIM_ID,),
+        evidence_claim_ids=release.progression_policy.evidence_claim_ids,
         reviewed_at=instant,
         reviewed_by=reviewer,
         **release.weekly_scheduling_policy_review_content,
     )
     decision = DecisionRecord(
-        id=CANDIDATE_ID,
+        id=candidate_id,
         created_at=instant,
         decision="Ratified the owner-alpha first-session construction authority batch.",
         reason=release.release_rationale,
@@ -306,7 +333,10 @@ def ratify_training_construction_candidate(
             f"candidate_content_digest:{prepared.presentation.content_digest}",
             f"authority_account_id:{authority.account_id}",
             f"authority_assignment_id:{authority.assignment_id}",
-            f"evidence_claim_id:{EVIDENCE_CLAIM_ID}",
+            *(
+                f"evidence_claim_id:{claim_id}"
+                for claim_id in release.progression_policy.evidence_claim_ids
+            ),
             f"weekly_scheduling_policy_id:{release.weekly_scheduling_policy.id}",
             f"weekly_scheduling_policy_review_id:{scheduling_review.id}",
             f"progression_policy_id:{release.progression_policy.id}",
@@ -372,7 +402,7 @@ def ratify_training_construction_candidate(
         session.rollback()
         raise
     return TrainingConstructionRatificationResult(
-        candidate_id=CANDIDATE_ID,
+        candidate_id=candidate_id,
         candidate_content_digest=prepared.presentation.content_digest,
         created_weekly_scheduling_policy=created_scheduling,
         created_weekly_scheduling_policy_review=created_scheduling_review,
@@ -388,25 +418,36 @@ def ratify_training_construction_candidate(
     )
 
 
-def _prerequisite_issues(session: Session, instant: datetime) -> tuple[str, ...]:
+def _prerequisite_issues(
+    session: Session,
+    instant: datetime,
+    prepared: PreparedTrainingConstructionCandidate,
+) -> tuple[str, ...]:
     repository = DomainRepository(session)
-    resource = prepared_resource_governance_candidate()
+    scope = prepared.release.repetition_dose_policy.estimate_scope
+    resource = prepared_resource_governance_candidate_for_scope(scope)
     resource_decision = repository.get_decision_record(resource.presentation.candidate_id)
+    evidence_claim_ids = prepared.release.progression_policy.evidence_claim_ids
     issues: list[str] = []
     if resource_decision is None or (
         f"candidate_content_digest:{resource.presentation.content_digest}"
         not in resource_decision.evidence
     ):
         issues.append(
-            "Ratify the prepared owner-alpha resource-governance bundle first so the exact claim, exercise, equipment, resolver, and allocator exist."
+            "Ratify the matching owner-alpha resource-governance bundle first so the exact claim, exercise, resolver, and allocator exist."
         )
     if repository.get_adaptation(ADAPTATION_ID) is None:
         issues.append("Import the controlled seed catalog so the exact adaptation exists.")
-    if repository.get_evidence_claim(EVIDENCE_CLAIM_ID) is None:
+    missing_claim_ids = tuple(
+        claim_id
+        for claim_id in evidence_claim_ids
+        if repository.get_evidence_claim(claim_id) is None
+    )
+    if missing_claim_ids:
         issues.append("The exact reviewed ACSM evidence claim is unavailable.")
     elif not issues:
         try:
-            EvidenceAuthorityEvaluator(session).require_ready((EVIDENCE_CLAIM_ID,), instant)
+            EvidenceAuthorityEvaluator(session).require_ready(evidence_claim_ids, instant)
         except (EvidenceAuthorityEvaluationError, EvidenceAuthorityNotReadyError) as error:
             issues.append(f"The exact ACSM evidence claim is not ready: {error}")
     return tuple(issues)
@@ -414,7 +455,29 @@ def _prerequisite_issues(session: Session, instant: datetime) -> tuple[str, ...]
 
 @lru_cache
 def _prepared_candidate() -> PreparedTrainingConstructionCandidate:
-    path = _default_candidate_data_root() / "owner_alpha_chair_stand.json"
+    return _load_candidate(
+        "owner_alpha_chair_stand.json",
+        expected_candidate_id=CANDIDATE_ID,
+        expected_evidence_claim_id=EVIDENCE_CLAIM_ID,
+    )
+
+
+@lru_cache
+def _prepared_pushup_candidate() -> PreparedTrainingConstructionCandidate:
+    return _load_candidate(
+        "owner_alpha_pushup.json",
+        expected_candidate_id=PUSHUP_CANDIDATE_ID,
+        expected_evidence_claim_id=PUSHUP_EVIDENCE_CLAIM_ID,
+    )
+
+
+def _load_candidate(
+    filename: str,
+    *,
+    expected_candidate_id: UUID,
+    expected_evidence_claim_id: UUID,
+) -> PreparedTrainingConstructionCandidate:
+    path = _default_candidate_data_root() / filename
     try:
         with path.open(encoding="utf-8") as file:
             raw = json.load(file)
@@ -452,6 +515,16 @@ def _prepared_candidate() -> PreparedTrainingConstructionCandidate:
         content_digest=document.content_digest,
         **document.presentation,
     )
+    if presentation.candidate_id != expected_candidate_id:
+        raise TrainingConstructionCandidateValidationError(
+            "training-construction candidate identity is not recognized"
+        )
+    if tuple(item.claim_id for item in presentation.evidence) != (
+        expected_evidence_claim_id,
+    ):
+        raise TrainingConstructionCandidateValidationError(
+            "training-construction candidate cites an unexpected evidence claim"
+        )
     return PreparedTrainingConstructionCandidate(
         presentation=presentation,
         release=document.release,
@@ -525,7 +598,8 @@ def _existing_result(
         or scheduling_review.decision is not AssessmentReviewDecision.APPROVED
         or scheduling_review.sequence_number != 1
         or scheduling_review.supersedes_review_id is not None
-        or scheduling_review.evidence_claim_ids != (EVIDENCE_CLAIM_ID,)
+        or scheduling_review.evidence_claim_ids
+        != release.progression_policy.evidence_claim_ids
         or scheduling_review.reviewed_by != expected_reviewer
         or scheduling_review.applicability_rationale != review_content["applicability_rationale"]
         or scheduling_review.uncertainty != review_content["uncertainty"]
@@ -551,7 +625,7 @@ def _existing_result(
             "persisted training-construction authorities differ from the ratified release"
         )
     return TrainingConstructionRatificationResult(
-        candidate_id=CANDIDATE_ID,
+        candidate_id=prepared.presentation.candidate_id,
         candidate_content_digest=prepared.presentation.content_digest,
         created_weekly_scheduling_policy=False,
         created_weekly_scheduling_policy_review=False,
