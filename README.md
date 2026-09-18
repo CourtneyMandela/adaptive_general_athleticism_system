@@ -42,6 +42,12 @@ return, safety-gated execution, deterministic progression, reassessment, block r
 priorities, and a dependent second block. All fixture thresholds and doses remain test-only and
 are explicitly not production training rules.
 
+The hosted owner-alpha path now carries one selected athlete from the phone dashboard through the
+exact next governed planning boundary: initial strategy, training dose, first block, or Week 1
+scheduling. Accepted Week 1 records return to that athlete and exact calendar week, and the live
+session screen records the persisted prescription one set at a time. Missing prerequisites remain
+visible as system work; navigation does not bypass review or manufacture a workout.
+
 ## Architecture at a glance
 
 - `apps/web`: responsive Next.js interface foundation

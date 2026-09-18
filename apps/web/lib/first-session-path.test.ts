@@ -5,6 +5,32 @@ import {
   type FirstSessionAssessmentState,
   type FirstSessionPlanningState,
 } from "./first-session-path";
+import type {
+  PlanningReviewQueueItem,
+  PlanningWorkflowStage,
+} from "./planning-review-queue";
+
+const athleteId = "0fe4fa6f-d3de-49f8-8d95-239854fb0ecb";
+const strategyId = "1fe4fa6f-d3de-49f8-8d95-239854fb0ecb";
+const blockId = "2fe4fa6f-d3de-49f8-8d95-239854fb0ecb";
+
+function queueItem(
+  workflowStage: PlanningWorkflowStage,
+  overrides: Partial<PlanningReviewQueueItem> = {},
+): PlanningReviewQueueItem {
+  return {
+    workflow_stage: workflowStage,
+    status: `ready_for_${workflowStage}`,
+    readiness: "ready",
+    athlete_id: athleteId,
+    athlete_display_name: "Courtney",
+    strategy_id: workflowStage === "initial_planning" ? null : strategyId,
+    block_id: workflowStage === "first_week" ? blockId : null,
+    message: `The ${workflowStage} review is ready.`,
+    issues: [],
+    ...overrides,
+  };
+}
 
 function assessment(
   overrides: Partial<FirstSessionAssessmentState> = {},
@@ -52,7 +78,6 @@ describe("first-session path", () => {
   });
 
   it("makes a prepared assessment release the owner's explicit next action", () => {
-    const athleteId = "0fe4fa6f-d3de-49f8-8d95-239854fb0ecb";
     const result = buildFirstSessionPath(
       assessment(),
       planning(),
@@ -185,11 +210,73 @@ describe("first-session path", () => {
       }),
       planning({ current_capability_estimate_count: 1 }),
       false,
+      athleteId,
     );
 
     expect(result.steps.find((step) => step.id === "estimate")?.state).toBe("complete");
     expect(result.steps.find((step) => step.id === "plan")?.state).toBe("system_action");
-    expect(result.next_action?.href).toBe("/review/queue");
+    expect(result.next_action?.href).toBe(`/review/queue?athleteId=${athleteId}`);
+  });
+
+  it.each([
+    ["initial_planning", `/review?athleteId=${athleteId}`, "Review your initial strategy"],
+    ["resource_demands", `/review/resource-demands?strategyId=${strategyId}`, "Review your training dose"],
+    ["block_creation", `/review/blocks?strategyId=${strategyId}`, "Review your first training block"],
+    ["first_week", `/review/weeks?blockId=${blockId}`, "Schedule your first training week"],
+  ] as const)(
+    "routes the athlete directly to the %s planning boundary",
+    (stage, href, label) => {
+      const result = buildFirstSessionPath(
+        assessment({
+          status: "reassessment_not_due",
+          approved_self_administered_protocol_count: 1,
+          eligibility: { outcome: "selection_allowed" },
+        }),
+        planning({ current_capability_estimate_count: 1 }),
+        false,
+        athleteId,
+        undefined,
+        undefined,
+        queueItem(stage),
+      );
+
+      expect(result.heading).toBe("You have one clear next step.");
+      expect(result.steps.find((step) => step.id === "plan")).toMatchObject({
+        state: "your_action",
+        detail: `The ${stage} review is ready.`,
+      });
+      expect(result.next_action).toEqual({ href, label });
+    },
+  );
+
+  it("shows a blocked athlete-specific planning boundary as AGAS work", () => {
+    const result = buildFirstSessionPath(
+      assessment({
+        status: "reassessment_not_due",
+        approved_self_administered_protocol_count: 1,
+        eligibility: { outcome: "selection_allowed" },
+      }),
+      planning({ current_capability_estimate_count: 1 }),
+      false,
+      athleteId,
+      undefined,
+      undefined,
+      queueItem("resource_demands", {
+        readiness: "blocked",
+        message: "Training dose cannot be prepared yet.",
+        issues: ["No current training environment is available."],
+      }),
+    );
+
+    expect(result.heading).toBe("Your profile is saved; AGAS still owes you the training path.");
+    expect(result.steps.find((step) => step.id === "plan")).toMatchObject({
+      state: "system_action",
+      detail: expect.stringContaining("No current training environment is available."),
+    });
+    expect(result.next_action).toEqual({
+      href: `/review/resource-demands?strategyId=${strategyId}`,
+      label: "Inspect the current planning blocker",
+    });
   });
 
   it("routes missing planning authority to the prepared authority review", () => {
@@ -213,7 +300,6 @@ describe("first-session path", () => {
   });
 
   it("makes prepared planning authorities the owner's next action", () => {
-    const athleteId = "0fe4fa6f-d3de-49f8-8d95-239854fb0ecb";
     const result = buildFirstSessionPath(
       assessment({
         status: "reassessment_not_due",
@@ -272,7 +358,6 @@ describe("first-session path", () => {
   });
 
   it("preserves athlete context through governed review handoffs", () => {
-    const athleteId = "0fe4fa6f-d3de-49f8-8d95-239854fb0ecb";
     const assessmentReview = buildFirstSessionPath(assessment(), planning(), false, athleteId);
     expect(assessmentReview.next_action?.href).toBe(
       `/review/assessments?athleteId=${athleteId}`,

@@ -15,7 +15,7 @@ export type IntensityTarget =
   | { kind: "technique"; constraints: string[] };
 
 export interface FirstWeekPreparationProjection {
-  block: { id: string; status: "full" | "partial" | "infeasible"; starts_on: string; ends_on: string; duration_weeks: number; weekly_budget_minutes: number; hypothesis: string; constraints: string[]; generated_at: string; rule_version: string };
+  block: { id: string; athlete_id: string; status: "full" | "partial" | "infeasible"; starts_on: string; ends_on: string; duration_weeks: number; weekly_budget_minutes: number; hypothesis: string; constraints: string[]; generated_at: string; rule_version: string };
   projected_at: string;
   allocation_inputs: Array<{
     allocation: { id: string; priority_state: string; allocated_weekly_minutes: number; sessions_per_week: number; status: string; issues: Array<{ code: string; detail: string }> };

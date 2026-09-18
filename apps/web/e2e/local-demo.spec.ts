@@ -388,6 +388,111 @@ test("the first-session path surfaces a prepared assessment as the next owner ac
     .toHaveAttribute("href", `/review/assessments?athleteId=${athleteId}`);
 });
 
+test("the athlete home routes directly to the exact next planning boundary", async ({ page }) => {
+  await page.route("http://localhost:8000/v1/**", (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === `/v1/athletes/${athleteId}/current-week`) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          athlete_id: athleteId,
+          athlete_display_name: "Synthetic four-day traveler",
+          as_of: "2026-09-12",
+          safety_policy_assignment: null,
+          week: null,
+        }),
+      });
+    }
+    if (url.pathname === `/v1/athletes/${athleteId}/assessment-workflow`) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          athlete_id: athleteId,
+          athlete_display_name: "Synthetic four-day traveler",
+          as_of: "2026-09-12T16:00:00Z",
+          status: "reassessment_not_due",
+          message: "The current assessment remains usable.",
+          can_start_run: false,
+          can_record_results: false,
+          approved_self_administered_protocol_count: 1,
+          due_protocol_count: 0,
+          next_reassessment_at: "2026-10-12T16:00:00Z",
+          reassessment_rule_version: "assessment-reassessment-schedule@1.0.0",
+          eligibility: {
+            eligibility_review_id: "d1000000-0000-4000-8000-000000000002",
+            outcome: "selection_allowed",
+            reviewed_at: "2026-09-12T15:00:00Z",
+            valid_until: "2026-09-19T15:00:00Z",
+            maximum_assessment_intensity: "moderate",
+            rule_version: "assessment-readiness-screen@1.0.0",
+          },
+          environments: [],
+          latest_run: null,
+        }),
+      });
+    }
+    if (url.pathname === `/v1/athletes/${athleteId}/planning-status`) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          athlete_id: athleteId,
+          athlete_display_name: "Synthetic four-day traveler",
+          as_of: "2026-09-12T16:00:00Z",
+          status: "planning_context_review_required",
+          message: "A reviewed initial planning context is required.",
+          capability_estimate_count: 1,
+          current_capability_estimate_count: 1,
+          stale_capability_estimate_count: 0,
+          athlete_age_years: 35,
+          age_limited_floor_issue_count: 0,
+          approved_priority_policy_count: 1,
+          approved_compatible_competency_floor_count: 1,
+          covered_current_capability_estimate_count: 1,
+          uncovered_current_capability_estimate_count: 0,
+          requirements: [],
+          initial_strategy: null,
+          first_block_readiness: null,
+          first_week_readiness: null,
+          projection_version: "planning-status@1.0.0",
+        }),
+      });
+    }
+    if (url.pathname === "/v1/operator/planning-review-queue") {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          projected_at: "2026-09-12T16:00:00Z",
+          projection_version: "planning-review-queue@1.0.0",
+          items: [{
+            workflow_stage: "initial_planning",
+            status: "ready_for_explicit_initial_planning",
+            readiness: "ready",
+            athlete_id: athleteId,
+            athlete_display_name: "Synthetic four-day traveler",
+            strategy_id: null,
+            block_id: null,
+            message: "The measured state is ready for an explicit initial strategy review.",
+            issues: [],
+          }],
+        }),
+      });
+    }
+    return route.fulfill({
+      status: 404,
+      contentType: "application/json",
+      body: JSON.stringify({ detail: "not needed by planning handoff browser test" }),
+    });
+  });
+
+  await page.goto(`/?athleteId=${athleteId}`);
+
+  await expect(page.getByRole("heading", { name: "You have one clear next step." })).toBeVisible();
+  await expect(page.getByText("The measured state is ready for an explicit initial strategy review.").first())
+    .toBeVisible();
+  await expect(page.getByRole("link", { name: "Review your initial strategy →" }))
+    .toHaveAttribute("href", `/review?athleteId=${athleteId}`);
+});
+
 test("a signed-in account recovers one owned profile without device-local state", async ({
   page,
 }) => {

@@ -23,7 +23,7 @@ function label(value: string): string {
   return value.replaceAll("_", " ");
 }
 
-export function PlanningReviewQueueClient() {
+export function PlanningReviewQueueClient({ athleteId }: { athleteId?: string }) {
   const [projection, setProjection] = useState<PlanningReviewQueueProjection | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
@@ -59,8 +59,11 @@ export function PlanningReviewQueueClient() {
     };
   }, []);
 
-  const readyCount = projection?.items.filter((item) => item.readiness === "ready").length ?? 0;
-  const blockedCount = projection?.items.filter((item) => item.readiness === "blocked").length ?? 0;
+  const visibleItems = athleteId
+    ? projection?.items.filter((item) => item.athlete_id === athleteId) ?? []
+    : projection?.items ?? [];
+  const readyCount = visibleItems.filter((item) => item.readiness === "ready").length;
+  const blockedCount = visibleItems.filter((item) => item.readiness === "blocked").length;
 
   return (
     <main className="review-shell">
@@ -96,18 +99,22 @@ export function PlanningReviewQueueClient() {
         <dl className="review-metadata">
           <div><dt>Ready</dt><dd>{readyCount}</dd></div>
           <div><dt>Blocked</dt><dd>{blockedCount}</dd></div>
-          <div><dt>Total athletes</dt><dd>{projection?.items.length ?? 0}</dd></div>
+          <div><dt>Total athletes</dt><dd>{visibleItems.length}</dd></div>
         </dl>
       </section>
 
       {message ? <p className="form-error review-message" role="alert">{message}</p> : null}
       {!projection && loading ? <p className="planning-queue-empty">Loading reviewer work…</p> : null}
-      {projection && !projection.items.length ? (
-        <p className="planning-queue-empty">No athlete currently requires reviewer-owned planning work.</p>
+      {projection && !visibleItems.length ? (
+        <p className="planning-queue-empty">
+          {athleteId
+            ? "This athlete has no current reviewer-owned planning task. Return to the athlete PWA to refresh the path."
+            : "No athlete currently requires reviewer-owned planning work."}
+        </p>
       ) : null}
-      {projection?.items.length ? (
+      {visibleItems.length ? (
         <section className="planning-queue-items" aria-label="Planning queue items">
-          {projection.items.map((item) => (
+          {visibleItems.map((item) => (
             <article key={item.athlete_id}>
               <header>
                 <div>

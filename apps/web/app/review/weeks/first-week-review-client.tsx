@@ -19,6 +19,7 @@ import {
   type PreparedAvailabilityWindow,
   type PreparedFirstWeekProjection,
 } from "@/lib/prepared-first-week";
+import { athleteWeekHref } from "@/lib/athlete-navigation";
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -161,7 +162,7 @@ function WeekReceipt({ result }: { result: WeeklyPlanCreationResult }) {
       <details><summary>Authority and planning lineage</summary><ul>{result.decision_record.evidence.map((item) => <li key={item}>{item}</li>)}</ul></details>
       <Link
         className="primary-button"
-        href={`/?athleteId=${encodeURIComponent(result.weekly_plan.athlete_id)}&asOf=${encodeURIComponent(result.weekly_plan.week_start)}`}
+        href={athleteWeekHref(result.weekly_plan.athlete_id, result.weekly_plan.week_start)}
       >
         Open Week 1 in the phone app
       </Link>
@@ -188,6 +189,7 @@ function PreparedFirstWeekPanel({ projection }: { projection: FirstWeekPreparati
   const [message, setMessage] = useState("");
 
   if (projection.existing_first_week_plans.length > 0) {
+    const existingWeek = projection.existing_first_week_plans[0];
     return (
       <section className="resource-receipt">
         <p className="eyebrow">Week 1 already recorded</p>
@@ -196,7 +198,12 @@ function PreparedFirstWeekPanel({ projection }: { projection: FirstWeekPreparati
           Immutable Week 1 history already exists for this block. AGAS will not prepare a
           replacement over it.
         </p>
-        <Link href="/" className="primary-button">Open my current week</Link>
+        <Link
+          href={athleteWeekHref(projection.block.athlete_id, existingWeek.week_start)}
+          className="primary-button"
+        >
+          Open my current week
+        </Link>
       </section>
     );
   }

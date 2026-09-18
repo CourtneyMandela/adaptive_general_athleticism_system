@@ -1,4 +1,9 @@
 import { athleteReviewHref } from "./athlete-navigation";
+import {
+  planningReviewHref,
+  type PlanningReviewQueueItem,
+  type PlanningWorkflowStage,
+} from "./planning-review-queue";
 
 export type FirstSessionStepState = "complete" | "your_action" | "system_action" | "waiting";
 
@@ -56,6 +61,21 @@ export interface FirstSessionPath {
   } | null;
 }
 
+const planningStageActionLabels: Record<PlanningWorkflowStage, string> = {
+  initial_planning: "Review your initial strategy",
+  resource_demands: "Review your training dose",
+  block_creation: "Review your first training block",
+  first_week: "Schedule your first training week",
+};
+
+function planningQueueDetail(item: PlanningReviewQueueItem): string {
+  if (item.readiness === "ready") return item.message;
+  const firstIssue = item.issues[0];
+  return firstIssue
+    ? `${item.message} Current blocker: ${firstIssue}`
+    : item.message;
+}
+
 function assessmentNeedsAthleteAction(assessment: FirstSessionAssessmentState): boolean {
   return assessment.can_start_run
     || ["ready_to_start", "selection_deferred", "result_entry_ready", "reassessment_due"].includes(
@@ -97,6 +117,7 @@ export function buildFirstSessionPath(
   athleteId?: string,
   assessmentReview?: FirstSessionAssessmentReviewState,
   planningReview?: FirstSessionPlanningReviewState,
+  planningQueueItem?: PlanningReviewQueueItem,
 ): FirstSessionPath {
   const assessmentContentReady = assessment.approved_self_administered_protocol_count > 0;
   const preparedAssessmentAvailable = (assessmentReview?.available_candidate_count ?? 0) > 0;
@@ -192,7 +213,14 @@ export function buildFirstSessionPath(
         state: "complete",
         detail: "A reviewed first week has been persisted.",
       }
-    : {
+    : planningQueueItem
+      ? {
+          id: "plan",
+          title: "Governed first plan",
+          state: planningQueueItem.readiness === "ready" ? "your_action" : "system_action",
+          detail: planningQueueDetail(planningQueueItem),
+        }
+      : {
         id: "plan",
         title: "Governed first plan",
         state: hasEstimate && preparedPlanningAvailable ? "your_action" : hasEstimate
@@ -260,10 +288,17 @@ export function buildFirstSessionPath(
                 ? "Inspect the planning-authority conflict"
                 : "Inspect planning governance",
           }
-        : {
-            href: "/review/queue",
-            label: "Continue the governed planning review",
-          };
+        : planningQueueItem
+          ? {
+              href: planningReviewHref(planningQueueItem),
+              label: planningQueueItem.readiness === "ready"
+                ? planningStageActionLabels[planningQueueItem.workflow_stage]
+                : "Inspect the current planning blocker",
+            }
+          : {
+              href: athleteReviewHref("/review/queue", athleteId),
+              label: "Continue the governed planning review",
+            };
     }
   }
   const heading = hasScheduledWeek

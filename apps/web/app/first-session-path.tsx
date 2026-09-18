@@ -11,6 +11,7 @@ import {
   type FirstSessionStepState,
 } from "@/lib/first-session-path";
 import { fetchPlanningStatus } from "@/lib/planning-status";
+import { fetchPlanningReviewQueue } from "@/lib/planning-review-queue";
 import { fetchPlanningGovernanceCandidates } from "@/lib/planning-governance";
 import { fetchCompetencyFloorCandidates } from "@/lib/competency-floor-governance";
 import { fetchResourceGovernanceCandidates } from "@/lib/resource-governance";
@@ -58,6 +59,7 @@ export function FirstSessionPath({
         : undefined;
 
       let planningReview;
+      let planningQueueItem;
       if (
         planning.current_capability_estimate_count > 0
         && planning.status === "planning_authorities_required"
@@ -76,6 +78,15 @@ export function FirstSessionPath({
           blocked_candidate_count: statuses.filter((status) => status === "blocked").length,
           conflict_candidate_count: statuses.filter((status) => status === "conflict").length,
         };
+      } else if (
+        planning.current_capability_estimate_count > 0
+        && !planning.first_week_readiness?.first_week_plan
+      ) {
+        const queueResult = await Promise.allSettled([fetchPlanningReviewQueue(apiBaseUrl)]);
+        const queue = queueResult[0];
+        if (queue?.status === "fulfilled") {
+          planningQueueItem = queue.value.items.find((item) => item.athlete_id === athleteId);
+        }
       }
 
       return buildFirstSessionPath(
@@ -85,6 +96,7 @@ export function FirstSessionPath({
         athleteId,
         assessmentReview,
         planningReview,
+        planningQueueItem,
       );
     }
 

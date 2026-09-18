@@ -1254,10 +1254,16 @@ clearance. The general Week 1 editor remains an advanced recovery surface.
 The athlete-facing first-session path is also the navigation authority for this narrow vertical
 slice. It maps missing reviewed assessment content to the prepared assessment-governance screen,
 athlete-owned measurement actions to the in-page assessment section, missing planning authorities
-to their prepared batch review, and downstream planning work to the derived reviewer queue. Once a
-week is accepted, its receipt deep-links to the athlete and exact `week_start`; the PWA validates
-that date before using it for its current-week projection. These links only select a read/review
-surface and never perform a ratification or domain write.
+to their prepared batch review, and downstream planning work to the exact athlete-specific boundary
+reported by the derived reviewer queue. The path can therefore deep-link directly to initial
+strategy review, resource-demand review, first-block review, or first-week scheduling without
+asking the owner to interpret a generic operator queue. A blocked queue item remains system work
+and exposes its first persisted prerequisite issue; it is never relabeled as an athlete decision.
+If the optional reviewer projection is unavailable, the path falls back to an athlete-filtered
+queue rather than failing the athlete dashboard. Once a week is accepted, its receipt deep-links to
+the athlete and exact `week_start`; the PWA validates both values before using them for its
+current-week projection. These links only select a read/review surface and never perform a
+ratification or domain write.
 
 Assessment- and planning-authority handoffs carry the selected athlete UUID as optional browser
 context. The reviewer pages validate that shape before propagating it, preserve it across adjacent
