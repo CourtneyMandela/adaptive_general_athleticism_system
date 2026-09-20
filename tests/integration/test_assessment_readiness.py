@@ -11,10 +11,16 @@ from agas_api.assessment_readiness import (
     SubmitAssessmentReadinessReportCommand,
     owner_readiness_rule_is_current,
 )
+from agas_api.assessment_workflow import get_assessment_workflow_projection
 from agas_api.database import database_session_dependency
 from agas_api.identity import AuthenticatedPrincipal
 from agas_api.main import app
-from agas_domain import AssessmentEligibilityOutcome, AssessmentIntensity, Athlete
+from agas_domain import (
+    AssessmentEligibilityOutcome,
+    AssessmentIntensity,
+    Athlete,
+    ExposureNeedStatus,
+)
 from agas_domain.persistence.repository import DomainIntegrityError, DomainRepository
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -78,9 +84,12 @@ def test_clear_report_creates_a_narrow_idempotent_eligibility_chain(session: Ses
     assert created.outcome is AssessmentEligibilityOutcome.SELECTION_ALLOWED
     assert created.maximum_assessment_intensity is AssessmentIntensity.MODERATE
     assert created.valid_until == NOW + timedelta(hours=24)
+    assert created.jump_exposure_status is ExposureNeedStatus.RECENT_EXPOSURE_CONFIRMED
+    assert replayed.jump_exposure_need_id == created.jump_exposure_need_id
 
     repository = DomainRepository(session)
     observation = repository.get_observation(created.observation_id)
+    exposure_need = repository.get_exposure_need(created.jump_exposure_need_id)
     review = repository.get_current_assessment_eligibility_review(athlete.id)
     assert observation is not None
     assert observation.observation_type == "assessment_readiness_self_report"
@@ -88,10 +97,19 @@ def test_clear_report_creates_a_narrow_idempotent_eligibility_chain(session: Ses
         "PMID:26473759",
         "PMID:28557860",
     ]
+    assert exposure_need is not None
+    assert exposure_need.source_observation_ids == (observation.id,)
+    assert exposure_need.status is ExposureNeedStatus.RECENT_EXPOSURE_CONFIRMED
+    assert exposure_need.authority_reference == "engineering-decision:0124@1.0.0"
     assert review is not None
     assert review.source_observation_ids == (observation.id,)
     assert review.maximum_assessment_intensity is AssessmentIntensity.MODERATE
     assert review.rule_version == READINESS_RULE_VERSION
+    workflow = get_assessment_workflow_projection(session, athlete.id, NOW)
+    assert workflow.jump_exposure_need is not None
+    assert workflow.jump_exposure_need.exposure_need_id == exposure_need.id
+    assert workflow.jump_exposure_need.active is True
+    assert workflow.jump_exposure_need.source_observation_ids == (observation.id,)
 
 
 def test_recent_training_base_allows_high_but_not_maximal_assessment_intensity(
@@ -165,6 +183,8 @@ def test_movement_specific_concerns_are_preserved_for_per_assessment_selection(
     assert measurement["controlled_standard_pushup"] == "no"
     assert measurement["controlled_two_foot_jump_and_landing"] == "no"
     assert measurement["recent_two_foot_jump_and_landing_exposure_28_days"] == "no"
+    assert result.jump_exposure_status is ExposureNeedStatus.INTRODUCTORY_EXPOSURE_NEEDED
+    assert "Do not perform the maximal jump assessment yet" in result.jump_exposure_next_action
     assert "Incompatible assessments will be excluded" in result.next_action
 
 
@@ -178,6 +198,7 @@ def test_new_report_supersedes_without_destroying_history_and_rejects_identity_r
     second_command = command(
         reported_at=NOW + timedelta(minutes=2),
         concerning_signs_or_symptoms="yes",
+        recent_two_foot_jump_and_landing_exposure_28_days="no",
     )
     second = service.execute(
         athlete.id,
@@ -194,6 +215,15 @@ def test_new_report_supersedes_without_destroying_history_and_rejects_identity_r
     assert second_review.sequence_number == 2
     assert second_review.supersedes_review_id == first_review.id
     assert repository.get_observation(first.observation_id) is not None
+    exposure_history = repository.list_exposure_needs(
+        athlete.id,
+        exposure_type="jumping",
+        target_scope="assessment:countermovement_vertical_jump:maximal",
+    )
+    assert tuple(item.status for item in exposure_history) == (
+        ExposureNeedStatus.INTRODUCTORY_EXPOSURE_NEEDED,
+        ExposureNeedStatus.RECENT_EXPOSURE_CONFIRMED,
+    )
 
     with pytest.raises(AssessmentReadinessConflictError, match="different content"):
         service.execute(

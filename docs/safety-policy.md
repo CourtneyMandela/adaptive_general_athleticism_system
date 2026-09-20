@@ -208,6 +208,13 @@ measurement uncertainty remain visible for a later governed state-update decisio
 
 Running, high-speed running, jumping, landing, change of direction, and high-impact plyometrics require separate exposure histories. Cardiovascular readiness must not be treated as tissue readiness. Large unearned jumps in novel loading or impact must fail validation.
 
+An exposure prerequisite must not be disguised as a capability deficit. The owner readiness flow
+therefore creates a derived, immutable `ExposureNeed` from the exact jump-history self-report. Its
+status is narrow to the maximal countermovement-jump assessment and carries the provisional
+engineering-authority reference, source observation, uncertainty, and expiry. Confirmation is not
+medical clearance or a general tissue-capacity judgment. A missing prerequisite identifies work
+the planning system still owes the athlete; it does not authorize an exercise or dose by itself.
+
 The current validator derives entries only from actual workout-result observations and applies
 configurable initial, relative, and absolute caps. Rejected targets hold progression; no universal
 “10% rule” or cardiovascular proxy is used.

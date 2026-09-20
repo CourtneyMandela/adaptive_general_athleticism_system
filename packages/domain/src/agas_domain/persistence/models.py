@@ -2684,6 +2684,51 @@ class ExposureDefinitionRecord(VersionedRecordMixin, Base):
     )
 
 
+class ExposureNeedRecord(VersionedRecordMixin, Base):
+    __tablename__ = "exposure_needs"
+    __table_args__ = (
+        CheckConstraint("kind = 'derived'", name="ck_exposure_need_derived"),
+        CheckConstraint("lookback_days >= 1", name="ck_exposure_need_lookback_positive"),
+        CheckConstraint(
+            "minimum_exposure_days >= 1",
+            name="ck_exposure_need_minimum_days_positive",
+        ),
+        CheckConstraint(
+            "status IN ('unknown', 'introductory_exposure_needed', 'recent_exposure_confirmed')",
+            name="ck_exposure_need_status",
+        ),
+        UniqueConstraint(
+            "athlete_id",
+            "exposure_type",
+            "target_scope",
+            "identified_at",
+            name="uq_exposure_need_target_instant",
+        ),
+    )
+
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    athlete_id: Mapped[UUID] = mapped_column(
+        ForeignKey("athletes.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    exposure_type: Mapped[str] = mapped_column(String(60), index=True, nullable=False)
+    target_scope: Mapped[str] = mapped_column(String(200), index=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(60), index=True, nullable=False)
+    lookback_days: Mapped[int] = mapped_column(Integer(), nullable=False)
+    minimum_exposure_days: Mapped[int] = mapped_column(Integer(), nullable=False)
+    confidence: Mapped[str] = mapped_column(String(40), nullable=False)
+    rationale: Mapped[str] = mapped_column(Text(), nullable=False)
+    uncertainty: Mapped[str] = mapped_column(Text(), nullable=False)
+    authority_reference: Mapped[str] = mapped_column(String(200), nullable=False)
+    identified_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)
+    valid_until: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    rule_version: Mapped[str] = mapped_column(String(120), nullable=False)
+    observation_links: Mapped[list[ExposureNeedObservationRecord]] = relationship(
+        cascade="save-update, merge",
+        lazy="selectin",
+        order_by="ExposureNeedObservationRecord.position",
+    )
+
+
 class ExposureEntryRecord(VersionedRecordMixin, Base):
     __tablename__ = "exposure_entries"
     __table_args__ = (
@@ -2856,6 +2901,25 @@ class ExposureDefinitionEvidenceRecord(Base):
     )
     evidence_claim_id: Mapped[UUID] = mapped_column(
         ForeignKey("evidence_claims.id", ondelete="RESTRICT"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer(), nullable=False)
+
+
+class ExposureNeedObservationRecord(Base):
+    __tablename__ = "exposure_need_observations"
+    __table_args__ = (
+        UniqueConstraint(
+            "exposure_need_id",
+            "position",
+            name="uq_exposure_need_observation_order",
+        ),
+    )
+
+    exposure_need_id: Mapped[UUID] = mapped_column(
+        ForeignKey("exposure_needs.id", ondelete="RESTRICT"), primary_key=True
+    )
+    observation_id: Mapped[UUID] = mapped_column(
+        ForeignKey("observations.id", ondelete="RESTRICT"), primary_key=True
     )
     position: Mapped[int] = mapped_column(Integer(), nullable=False)
 

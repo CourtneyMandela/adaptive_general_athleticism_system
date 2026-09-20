@@ -243,6 +243,13 @@ context signals distinct from the persisted result. The deterministic planner re
 scores, rank, rationale, DEVELOP/MAINTAIN/EXPOSE/DEFER state, relative development allocation,
 sequencing hints, review triggers, and a block hypothesis in `LongRangeStrategy`.
 
+`ExposureNeed` is a parallel derived need for an explicitly scoped exposure prerequisite. It keeps
+recent running, jumping, landing, change-of-direction, or related exposure state out of capability
+scores and competency-floor comparisons. Each record cites its source observations, confidence,
+validity, versioned derivation rule, uncertainty, and the authority responsible for any provisional
+boundary. It may later support an EXPOSE priority, but cannot itself authorize an exercise, dose,
+or session.
+
 `CompetencyFloorReview` and `PriorityPolicyReview` keep governance separate from those immutable
 authorities. Each authority has one linear, append-only review history with decision, evidence,
 reviewer, applicability rationale, uncertainty, timestamp, and review version. Sequence and

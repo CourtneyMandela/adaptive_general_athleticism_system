@@ -64,6 +64,7 @@ from agas_domain.models import (
     ExerciseResolverPolicy,
     ExposureDefinition,
     ExposureEntry,
+    ExposureNeed,
     ExposureProgressionPolicy,
     ExposureValidationDecision,
     InitialPlanningCandidateContext,
@@ -175,6 +176,8 @@ from agas_domain.persistence.models import (
     ExposureDefinitionRecord,
     ExposureEntryObservationRecord,
     ExposureEntryRecord,
+    ExposureNeedObservationRecord,
+    ExposureNeedRecord,
     ExposureProgressionPolicyEvidenceRecord,
     ExposureProgressionPolicyRecord,
     ExposureValidationDecisionRecord,
@@ -3727,6 +3730,92 @@ class DomainRepository:
                 rationale=record.rationale,
                 definition_version=record.definition_version,
             )
+        )
+
+    def add_exposure_need(self, need: ExposureNeed) -> None:
+        self._require_athlete(need.athlete_id)
+        observations = self._observations_by_id(need.source_observation_ids)
+        if len(observations) != len(need.source_observation_ids):
+            raise DomainIntegrityError("exposure-need observation does not exist")
+        if any(item.athlete_id != need.athlete_id for item in observations):
+            raise DomainIntegrityError("exposure-need observation belongs to a different athlete")
+        record = ExposureNeedRecord(
+            id=need.id,
+            schema_version=need.schema_version,
+            created_at=need.created_at,
+            kind=need.kind,
+            athlete_id=need.athlete_id,
+            exposure_type=need.exposure_type.value,
+            target_scope=need.target_scope,
+            status=need.status.value,
+            lookback_days=need.lookback_days,
+            minimum_exposure_days=need.minimum_exposure_days,
+            confidence=need.confidence.value,
+            rationale=need.rationale,
+            uncertainty=need.uncertainty,
+            authority_reference=need.authority_reference,
+            identified_at=need.identified_at,
+            valid_until=need.valid_until,
+            rule_version=need.rule_version,
+        )
+        record.observation_links = [
+            ExposureNeedObservationRecord(
+                exposure_need_id=need.id,
+                observation_id=observation_id,
+                position=position,
+            )
+            for position, observation_id in enumerate(need.source_observation_ids)
+        ]
+        self.session.add(record)
+
+    def get_exposure_need(self, record_id: UUID) -> ExposureNeed | None:
+        record = self.session.get(ExposureNeedRecord, record_id)
+        if record is None:
+            return None
+        return ExposureNeed(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            kind=record.kind,
+            athlete_id=record.athlete_id,
+            exposure_type=record.exposure_type,
+            target_scope=record.target_scope,
+            status=record.status,
+            lookback_days=record.lookback_days,
+            minimum_exposure_days=record.minimum_exposure_days,
+            source_observation_ids=tuple(item.observation_id for item in record.observation_links),
+            confidence=record.confidence,
+            rationale=record.rationale,
+            uncertainty=record.uncertainty,
+            authority_reference=record.authority_reference,
+            identified_at=record.identified_at,
+            valid_until=record.valid_until,
+            rule_version=record.rule_version,
+        )
+
+    def list_exposure_needs(
+        self,
+        athlete_id: UUID,
+        *,
+        exposure_type: str | None = None,
+        target_scope: str | None = None,
+    ) -> tuple[ExposureNeed, ...]:
+        statement = select(ExposureNeedRecord.id).where(ExposureNeedRecord.athlete_id == athlete_id)
+        if exposure_type is not None:
+            statement = statement.where(ExposureNeedRecord.exposure_type == exposure_type)
+        if target_scope is not None:
+            statement = statement.where(ExposureNeedRecord.target_scope == target_scope)
+        record_ids = self.session.scalars(
+            statement.order_by(
+                ExposureNeedRecord.identified_at.desc(),
+                ExposureNeedRecord.created_at.desc(),
+                ExposureNeedRecord.id.desc(),
+            )
+        ).all()
+        return tuple(
+            need
+            for record_id in record_ids
+            if (need := self.get_exposure_need(record_id)) is not None
         )
 
     def add_exposure_entry(self, entry: ExposureEntry) -> None:

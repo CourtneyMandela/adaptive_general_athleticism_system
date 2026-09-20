@@ -12,13 +12,18 @@ from agas_domain import (
     AssessmentReviewDecision,
     CapabilityDomain,
     Confidence,
+    ExposureNeedStatus,
+    ExposureType,
 )
 from agas_domain.persistence.repository import DomainRepository
 from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy.orm import Session
 
 from agas_api.assessment_catalog import list_evidence_ready_assessment_definitions
-from agas_api.assessment_readiness import owner_readiness_rule_is_current
+from agas_api.assessment_readiness import (
+    JUMP_EXPOSURE_TARGET_SCOPE,
+    owner_readiness_rule_is_current,
+)
 from agas_api.assessment_schedule import resolve_assessment_reassessment_schedule
 
 AssessmentWorkflowStatus = Literal[
@@ -77,6 +82,26 @@ class AssessmentEligibilityProjection(BaseModel):
     reviewed_at: datetime
     valid_until: datetime
     maximum_assessment_intensity: AssessmentIntensity
+    rule_version: str
+
+
+class AssessmentExposureNeedProjection(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    exposure_need_id: UUID
+    exposure_type: ExposureType
+    target_scope: str
+    status: ExposureNeedStatus
+    lookback_days: int
+    minimum_exposure_days: int
+    source_observation_ids: tuple[UUID, ...]
+    confidence: Confidence
+    rationale: str
+    uncertainty: str
+    authority_reference: str
+    identified_at: datetime
+    valid_until: datetime | None
+    active: bool
     rule_version: str
 
 
@@ -169,6 +194,7 @@ class AssessmentWorkflowProjection(BaseModel):
     next_reassessment_at: datetime | None
     reassessment_rule_version: str
     eligibility: AssessmentEligibilityProjection | None
+    jump_exposure_need: AssessmentExposureNeedProjection | None
     environments: tuple[AssessmentEnvironmentProjection, ...]
     latest_run: AssessmentRunProjection | None
 
@@ -187,6 +213,12 @@ def get_assessment_workflow_projection(
     environments = repository.list_environments(athlete_id)
     environment_by_id = {item.id: item for item in environments}
     eligibility = repository.get_current_assessment_eligibility_review(athlete_id)
+    exposure_needs = repository.list_exposure_needs(
+        athlete_id,
+        exposure_type=ExposureType.JUMPING.value,
+        target_scope=JUMP_EXPOSURE_TARGET_SCOPE,
+    )
+    jump_exposure_need = exposure_needs[0] if exposure_needs else None
     reviewed_definitions = tuple(
         (definition, review)
         for definition, review in list_evidence_ready_assessment_definitions(repository)
@@ -468,6 +500,31 @@ def get_assessment_workflow_projection(
                 rule_version=eligibility.rule_version,
             )
             if eligibility
+            else None
+        ),
+        jump_exposure_need=(
+            AssessmentExposureNeedProjection(
+                exposure_need_id=jump_exposure_need.id,
+                exposure_type=jump_exposure_need.exposure_type,
+                target_scope=jump_exposure_need.target_scope,
+                status=jump_exposure_need.status,
+                lookback_days=jump_exposure_need.lookback_days,
+                minimum_exposure_days=jump_exposure_need.minimum_exposure_days,
+                source_observation_ids=jump_exposure_need.source_observation_ids,
+                confidence=jump_exposure_need.confidence,
+                rationale=jump_exposure_need.rationale,
+                uncertainty=jump_exposure_need.uncertainty,
+                authority_reference=jump_exposure_need.authority_reference,
+                identified_at=jump_exposure_need.identified_at,
+                valid_until=jump_exposure_need.valid_until,
+                active=jump_exposure_need.identified_at <= instant
+                and (
+                    jump_exposure_need.valid_until is None
+                    or instant < jump_exposure_need.valid_until
+                ),
+                rule_version=jump_exposure_need.rule_version,
+            )
+            if jump_exposure_need
             else None
         ),
         environments=tuple(

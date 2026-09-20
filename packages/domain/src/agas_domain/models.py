@@ -35,6 +35,7 @@ from agas_domain.enums import (
     DoseDimension,
     EvidenceReviewDecision,
     EvidenceStrength,
+    ExposureNeedStatus,
     ExposureType,
     ExposureValidationOutcome,
     ImpactLevel,
@@ -2539,6 +2540,41 @@ class ExposureDefinition(VersionedRecord):
     evidence_claim_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
     rationale: NonEmptyText
     definition_version: NonEmptyText
+
+
+class ExposureNeed(VersionedRecord):
+    """Derived prerequisite state for one explicit exposure-dependent target."""
+
+    kind: Literal["derived"] = "derived"
+    athlete_id: UUID
+    exposure_type: ExposureType
+    target_scope: NonEmptyText
+    status: ExposureNeedStatus
+    lookback_days: int = Field(ge=1)
+    minimum_exposure_days: int = Field(ge=1)
+    source_observation_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
+    confidence: Confidence
+    rationale: NonEmptyText
+    uncertainty: NonEmptyText
+    authority_reference: NonEmptyText
+    identified_at: datetime
+    valid_until: datetime | None = None
+    rule_version: NonEmptyText
+
+    @field_validator("identified_at", "valid_until")
+    @classmethod
+    def require_aware_exposure_need_times(cls, value: datetime | None) -> datetime | None:
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("exposure-need timestamps must include a timezone")
+        return value
+
+    @model_validator(mode="after")
+    def validate_exposure_need(self) -> ExposureNeed:
+        if len(set(self.source_observation_ids)) != len(self.source_observation_ids):
+            raise ValueError("source_observation_ids must not contain duplicates")
+        if self.valid_until is not None and self.valid_until <= self.identified_at:
+            raise ValueError("valid_until must be later than identified_at")
+        return self
 
 
 class ExposureEntry(VersionedRecord):

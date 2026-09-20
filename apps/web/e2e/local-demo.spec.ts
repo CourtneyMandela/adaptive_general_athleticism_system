@@ -634,6 +634,9 @@ test("the phone workflow turns a factual readiness report into a narrow decision
           maximum_assessment_intensity: "moderate",
           valid_until: "2026-09-09T16:00:00Z",
           next_action: "Continue to governed low/moderate assessment selection.",
+          jump_exposure_need_id: "d1000000-0000-4000-8000-000000000004",
+          jump_exposure_status: "recent_exposure_confirmed",
+          jump_exposure_next_action: "Recent jump exposure is confirmed for assessment selection.",
           created: true,
           rule_version: "assessment-readiness-screen@1.0.0",
         }),
@@ -738,6 +741,7 @@ test("the phone workflow turns a factual readiness report into a narrow decision
   await submit.click();
 
   await expect(page.getByText("Continue to governed low/moderate assessment selection.")).toBeVisible();
+  await expect(page.getByText("Recent jump exposure is confirmed for assessment selection.")).toBeVisible();
   await expect(page.getByText("Open the Assessment section below and select the governed assessment set.").first())
     .toBeVisible();
   expect(submittedBody).toMatchObject({

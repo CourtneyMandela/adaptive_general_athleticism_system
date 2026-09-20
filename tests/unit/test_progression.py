@@ -4,17 +4,22 @@ from uuid import uuid4
 import pytest
 from agas_domain import (
     AbsoluteLoadTarget,
+    Confidence,
     CostLevel,
     EffortRpeTarget,
     ExposureDefinition,
+    ExposureNeedStatus,
     ExposureProgressionPolicy,
     ExposureTarget,
     ExposureType,
     ExposureValidationOutcome,
+    Observation,
+    ObservationSource,
     PrescriptionAdjustment,
     ProgressionDimension,
     ProgressionOutcome,
     ProgressionPolicy,
+    Provenance,
     SafetyGateOutcome,
     SafetyGateTiming,
     SessionAdherence,
@@ -27,6 +32,7 @@ from agas_domain import (
 )
 from agas_planner import (
     ExposureEntryCalculator,
+    ExposureNeedDeriver,
     ExposureProgressionValidator,
     PrescriptionProgressionApplicator,
     ProgressionEngine,
@@ -34,6 +40,84 @@ from agas_planner import (
 )
 
 NOW = datetime(2026, 8, 19, 14, 0, tzinfo=UTC)
+
+
+def readiness_observation(answer: str | None) -> Observation:
+    return Observation(
+        athlete_id=uuid4(),
+        observed_at=NOW,
+        observation_type="assessment_readiness_self_report",
+        measurement={"recent_jump_exposure": answer},
+        source=ObservationSource.USER_REPORT,
+        reliability=Confidence.MODERATE,
+        provenance=Provenance(
+            recorded_by="fixture",
+            source_system="pytest",
+            ingestion_method="fixture",
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("answer", "expected"),
+    (
+        ("yes", ExposureNeedStatus.RECENT_EXPOSURE_CONFIRMED),
+        ("no", ExposureNeedStatus.INTRODUCTORY_EXPOSURE_NEEDED),
+        ("unsure", ExposureNeedStatus.UNKNOWN),
+        (None, ExposureNeedStatus.UNKNOWN),
+    ),
+)
+def test_exposure_need_is_derived_without_becoming_a_capability_score(
+    answer: str | None,
+    expected: ExposureNeedStatus,
+) -> None:
+    observation = readiness_observation(answer)
+    need = ExposureNeedDeriver().derive_from_report(
+        observation=observation,
+        need_id=uuid4(),
+        exposure_type=ExposureType.JUMPING,
+        target_scope="assessment:countermovement_jump:maximal",
+        response_field="recent_jump_exposure",
+        lookback_days=28,
+        minimum_exposure_days=2,
+        authority_reference="engineering-decision:0124@1.0.0",
+        valid_until=NOW + timedelta(hours=24),
+    )
+
+    assert need.kind == "derived"
+    assert need.status is expected
+    assert need.source_observation_ids == (observation.id,)
+    assert need.minimum_exposure_days == 2
+    assert need.authority_reference == "engineering-decision:0124@1.0.0"
+    assert "not a measured count" in need.uncertainty
+
+
+def test_exposure_need_rejects_unstructured_or_unsupported_source_answers() -> None:
+    deriver = ExposureNeedDeriver()
+    with pytest.raises(ProgressionError, match="structured report"):
+        deriver.derive_from_report(
+            observation=readiness_observation("yes").model_copy(update={"measurement": 3}),
+            need_id=uuid4(),
+            exposure_type=ExposureType.JUMPING,
+            target_scope="assessment:countermovement_jump:maximal",
+            response_field="recent_jump_exposure",
+            lookback_days=28,
+            minimum_exposure_days=2,
+            authority_reference="engineering-decision:0124@1.0.0",
+            valid_until=NOW + timedelta(hours=24),
+        )
+    with pytest.raises(ProgressionError, match="unsupported answer"):
+        deriver.derive_from_report(
+            observation=readiness_observation("sometimes"),
+            need_id=uuid4(),
+            exposure_type=ExposureType.JUMPING,
+            target_scope="assessment:countermovement_jump:maximal",
+            response_field="recent_jump_exposure",
+            lookback_days=28,
+            minimum_exposure_days=2,
+            authority_reference="engineering-decision:0124@1.0.0",
+            valid_until=NOW + timedelta(hours=24),
+        )
 
 
 def chain() -> tuple[SessionPrescription, SessionExecution, SessionAdherence]:

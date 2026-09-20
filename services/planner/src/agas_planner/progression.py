@@ -2,15 +2,20 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import datetime, timedelta
+from uuid import UUID
 
 from agas_domain import (
     AbsoluteLoadTarget,
     ExposureDefinition,
     ExposureEntry,
+    ExposureNeed,
+    ExposureNeedStatus,
     ExposureProgressionPolicy,
     ExposureTarget,
+    ExposureType,
     ExposureValidationDecision,
     ExposureValidationOutcome,
+    Observation,
     ProgressionDecision,
     ProgressionDimension,
     ProgressionOutcome,
@@ -28,6 +33,74 @@ from agas_domain import (
 
 class ProgressionError(ValueError):
     """Raised when progression inputs do not form one traceable execution chain."""
+
+
+class ExposureNeedDeriver:
+    """Derive a narrow exposure prerequisite without converting it into fitness."""
+
+    def __init__(self, rule_version: str = "exposure-need-derivation@1.0.0") -> None:
+        self.rule_version = rule_version
+
+    def derive_from_report(
+        self,
+        *,
+        observation: Observation,
+        need_id: UUID,
+        exposure_type: ExposureType,
+        target_scope: str,
+        response_field: str,
+        lookback_days: int,
+        minimum_exposure_days: int,
+        authority_reference: str,
+        valid_until: datetime | None,
+    ) -> ExposureNeed:
+        if not isinstance(observation.measurement, dict):
+            raise ProgressionError("exposure-need source must contain a structured report")
+        response = observation.measurement.get(response_field)
+        if response not in {"yes", "no", "unsure", None}:
+            raise ProgressionError("exposure-need source contains an unsupported answer")
+        if valid_until is not None:
+            ExposureProgressionValidator._require_aware(valid_until)
+        if response == "yes":
+            status = ExposureNeedStatus.RECENT_EXPOSURE_CONFIRMED
+            rationale = (
+                f"The athlete reported meeting the configured {minimum_exposure_days}-day "
+                f"{exposure_type.value} exposure prerequisite during the previous "
+                f"{lookback_days} days for {target_scope}."
+            )
+        elif response == "no":
+            status = ExposureNeedStatus.INTRODUCTORY_EXPOSURE_NEEDED
+            rationale = (
+                f"The athlete reported not meeting the configured {minimum_exposure_days}-day "
+                f"{exposure_type.value} exposure prerequisite during the previous "
+                f"{lookback_days} days for {target_scope}."
+            )
+        else:
+            status = ExposureNeedStatus.UNKNOWN
+            rationale = (
+                f"Recent {exposure_type.value} exposure could not be confirmed for {target_scope}."
+            )
+        return ExposureNeed(
+            id=need_id,
+            created_at=observation.observed_at,
+            athlete_id=observation.athlete_id,
+            exposure_type=exposure_type,
+            target_scope=target_scope,
+            status=status,
+            lookback_days=lookback_days,
+            minimum_exposure_days=minimum_exposure_days,
+            source_observation_ids=(observation.id,),
+            confidence=observation.reliability,
+            rationale=rationale,
+            uncertainty=(
+                "This state comes from a current self-report, not a measured count of contacts, "
+                "tissue-capacity test, medical clearance, or universal safety threshold."
+            ),
+            authority_reference=authority_reference,
+            identified_at=observation.observed_at,
+            valid_until=valid_until,
+            rule_version=self.rule_version,
+        )
 
 
 class ExposureEntryCalculator:

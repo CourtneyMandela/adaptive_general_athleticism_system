@@ -113,6 +113,23 @@ export interface AssessmentWorkflowProjection {
     maximum_assessment_intensity: "low" | "moderate" | "high" | "maximal";
     rule_version: string;
   } | null;
+  jump_exposure_need?: {
+    exposure_need_id: string;
+    exposure_type: "jumping";
+    target_scope: string;
+    status: "unknown" | "introductory_exposure_needed" | "recent_exposure_confirmed";
+    lookback_days: number;
+    minimum_exposure_days: number;
+    source_observation_ids: string[];
+    confidence: Confidence;
+    rationale: string;
+    uncertainty: string;
+    authority_reference: string;
+    identified_at: string;
+    valid_until: string | null;
+    active: boolean;
+    rule_version: string;
+  } | null;
   environments: Array<{ environment_id: string; name: string }>;
   latest_run: {
     run_id: string;
@@ -165,6 +182,12 @@ export interface AssessmentReadinessReportResult {
   maximum_assessment_intensity: "low" | "moderate" | "high" | "maximal";
   valid_until: string;
   next_action: string;
+  jump_exposure_need_id: string;
+  jump_exposure_status:
+    | "unknown"
+    | "introductory_exposure_needed"
+    | "recent_exposure_confirmed";
+  jump_exposure_next_action: string;
   created: boolean;
   rule_version: string;
 }

@@ -404,6 +404,14 @@ class ExposureType(StrEnum):
     HIGH_IMPACT_PLYOMETRICS = "high_impact_plyometrics"
 
 
+class ExposureNeedStatus(StrEnum):
+    """Narrow state of a governed exposure prerequisite, not a fitness score."""
+
+    UNKNOWN = "unknown"
+    INTRODUCTORY_EXPOSURE_NEEDED = "introductory_exposure_needed"
+    RECENT_EXPOSURE_CONFIRMED = "recent_exposure_confirmed"
+
+
 class ExposureValidationOutcome(StrEnum):
     APPROVED = "approved"
     REJECTED = "rejected"

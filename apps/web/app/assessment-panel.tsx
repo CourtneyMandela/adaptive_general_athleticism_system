@@ -284,7 +284,7 @@ export function AssessmentPanel({
           answersConfirmed: readinessConfirmed,
         }),
       );
-      setReadinessAction(result.next_action);
+      setReadinessAction(`${result.next_action} ${result.jump_exposure_next_action}`);
       await load();
       await onChanged();
     } catch (error) {
@@ -354,7 +354,29 @@ export function AssessmentPanel({
                   : "No current due date"}
             </dd>
           </div>
+          {workflow.jump_exposure_need ? (
+            <div>
+              <dt>Maximal jump assessment exposure</dt>
+              <dd>
+                {workflow.jump_exposure_need.status === "recent_exposure_confirmed"
+                  ? "Recent exposure reported"
+                  : workflow.jump_exposure_need.status === "introductory_exposure_needed"
+                    ? "Introductory jump-and-landing exposure needed"
+                    : "Recent exposure not confirmed"}
+                {workflow.jump_exposure_need.active ? "" : " · report expired"}
+              </dd>
+            </div>
+          ) : null}
         </dl>
+      ) : null}
+      {workflow?.jump_exposure_need?.status === "introductory_exposure_needed" ? (
+        <aside className="review-boundary">
+          <strong>AGAS owes you an introductory jump-and-landing path.</strong>
+          <span>
+            The maximal jump test stays excluded. This is an exposure prerequisite—not a low
+            fitness score—and it will require a separately governed exercise and dose before use.
+          </span>
+        </aside>
       ) : null}
       {readinessAction ? <p className="form-success" role="status">{readinessAction}</p> : null}
 

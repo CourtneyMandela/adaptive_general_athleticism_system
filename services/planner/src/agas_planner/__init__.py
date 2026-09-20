@@ -17,6 +17,7 @@ from agas_planner.execution import (
 from agas_planner.planning import CompetencyFloorDetector, LongRangeStrategyPlanner, PlanningError
 from agas_planner.progression import (
     ExposureEntryCalculator,
+    ExposureNeedDeriver,
     ExposureProgressionValidator,
     PrescriptionProgressionApplicator,
     ProgressionEngine,
@@ -51,6 +52,7 @@ __all__ = [
     "ExecutionRecordingError",
     "ExerciseResolver",
     "ExposureEntryCalculator",
+    "ExposureNeedDeriver",
     "ExposureProgressionValidator",
     "LongRangeStrategyPlanner",
     "PlanningError",

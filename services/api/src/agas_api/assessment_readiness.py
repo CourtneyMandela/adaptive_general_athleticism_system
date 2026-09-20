@@ -2,18 +2,22 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from typing import Literal
-from uuid import UUID
+from uuid import UUID, uuid5
 
 from agas_domain import (
     AssessmentEligibilityOutcome,
     AssessmentEligibilityReview,
     AssessmentIntensity,
     Confidence,
+    ExposureNeed,
+    ExposureNeedStatus,
+    ExposureType,
     Observation,
     ObservationSource,
     Provenance,
 )
 from agas_domain.persistence.repository import DomainIntegrityError, DomainRepository
+from agas_planner import ExposureNeedDeriver
 from pydantic import BaseModel, ConfigDict, field_validator
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -25,6 +29,9 @@ SCREENING_PROCESS_REFERENCE = (
     "agas-readiness@1.0.0;ACSM-factors:PMID26473759;application:PMID28557860"
 )
 READINESS_VALID_FOR = timedelta(hours=24)
+JUMP_EXPOSURE_NEED_NAMESPACE = UUID("a8f971f4-099c-4c70-ae0e-7a9982def17c")
+JUMP_EXPOSURE_TARGET_SCOPE = "assessment:countermovement_vertical_jump:maximal"
+JUMP_EXPOSURE_AUTHORITY_REFERENCE = "engineering-decision:0124@1.0.0"
 Answer = Literal["no", "yes", "unsure"]
 
 
@@ -71,6 +78,9 @@ class AssessmentReadinessReportResult(BaseModel):
     maximum_assessment_intensity: AssessmentIntensity
     valid_until: datetime
     next_action: str
+    jump_exposure_need_id: UUID
+    jump_exposure_status: ExposureNeedStatus
+    jump_exposure_next_action: str
     created: bool
     rule_version: str = READINESS_RULE_VERSION
 
@@ -109,6 +119,7 @@ class PersistedAssessmentReadinessService:
             raise AssessmentReadinessNotFoundError("athlete does not exist")
 
         observation = self._observation(athlete_id, command, principal)
+        exposure_need = self._jump_exposure_need(observation)
         existing = self.repository.get_observation(command.report_id)
         current = self.repository.get_current_assessment_eligibility_review(athlete_id)
         if existing is not None:
@@ -124,7 +135,21 @@ class PersistedAssessmentReadinessService:
                 raise AssessmentReadinessConflictError(
                     "readiness report was already processed but is no longer the current decision"
                 )
-            return self._result(current, created=False)
+            existing_need = self.repository.get_exposure_need(exposure_need.id)
+            if existing_need is None:
+                try:
+                    self.repository.add_exposure_need(exposure_need)
+                    self.session.commit()
+                except (DomainIntegrityError, IntegrityError) as error:
+                    self.session.rollback()
+                    raise AssessmentReadinessConflictError(
+                        "readiness exposure state could not be restored"
+                    ) from error
+            elif existing_need != exposure_need:
+                raise AssessmentReadinessConflictError(
+                    "readiness exposure-state identity is occupied by different content"
+                )
+            return self._result(current, exposure_need, created=False)
 
         if command.reported_at > instant + timedelta(minutes=5):
             raise AssessmentReadinessValidationError("reported_at cannot be in the future")
@@ -161,6 +186,7 @@ class PersistedAssessmentReadinessService:
         try:
             self.repository.add_observation(observation)
             self.session.flush()
+            self.repository.add_exposure_need(exposure_need)
             self.repository.add_assessment_eligibility_review(review)
             self.session.commit()
         except DomainIntegrityError as error:
@@ -174,7 +200,9 @@ class PersistedAssessmentReadinessService:
         except Exception:
             self.session.rollback()
             raise
-        return self._result(review, created=True).model_copy(update={"next_action": next_action})
+        return self._result(review, exposure_need, created=True).model_copy(
+            update={"next_action": next_action}
+        )
 
     @staticmethod
     def _observation(
@@ -274,8 +302,26 @@ class PersistedAssessmentReadinessService:
         )
 
     @staticmethod
+    def _jump_exposure_need(observation: Observation) -> ExposureNeed:
+        return ExposureNeedDeriver().derive_from_report(
+            observation=observation,
+            need_id=uuid5(
+                JUMP_EXPOSURE_NEED_NAMESPACE,
+                f"{observation.id}:{JUMP_EXPOSURE_TARGET_SCOPE}:{READINESS_RULE_VERSION}",
+            ),
+            exposure_type=ExposureType.JUMPING,
+            target_scope=JUMP_EXPOSURE_TARGET_SCOPE,
+            response_field="recent_two_foot_jump_and_landing_exposure_28_days",
+            lookback_days=28,
+            minimum_exposure_days=2,
+            authority_reference=JUMP_EXPOSURE_AUTHORITY_REFERENCE,
+            valid_until=observation.observed_at + READINESS_VALID_FOR,
+        )
+
+    @staticmethod
     def _result(
         review: AssessmentEligibilityReview,
+        exposure_need: ExposureNeed,
         *,
         created: bool,
     ) -> AssessmentReadinessReportResult:
@@ -288,6 +334,21 @@ class PersistedAssessmentReadinessService:
             next_action = "Do not perform the assessment through AGAS."
         else:
             next_action = "Do not perform the assessment; seek appropriate qualified guidance."
+        if exposure_need.status is ExposureNeedStatus.RECENT_EXPOSURE_CONFIRMED:
+            exposure_next_action = (
+                "Recent jump exposure is confirmed for assessment selection; the separate "
+                "movement and global readiness gates still apply."
+            )
+        elif exposure_need.status is ExposureNeedStatus.INTRODUCTORY_EXPOSURE_NEEDED:
+            exposure_next_action = (
+                "Do not perform the maximal jump assessment yet. AGAS should prescribe and log "
+                "introductory jump-and-landing exposure before reassessment."
+            )
+        else:
+            exposure_next_action = (
+                "Recent jump exposure is unknown. The maximal jump assessment remains excluded "
+                "until a current report confirms it or introductory exposure is completed."
+            )
         return AssessmentReadinessReportResult(
             observation_id=review.source_observation_ids[0],
             eligibility_review_id=review.id,
@@ -295,5 +356,8 @@ class PersistedAssessmentReadinessService:
             maximum_assessment_intensity=review.maximum_assessment_intensity,
             valid_until=review.valid_until,
             next_action=next_action,
+            jump_exposure_need_id=exposure_need.id,
+            jump_exposure_status=exposure_need.status,
+            jump_exposure_next_action=exposure_next_action,
             created=created,
         )
