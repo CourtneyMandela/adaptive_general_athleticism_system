@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 
 NOW = datetime(2026, 9, 8, 15, 0, tzinfo=UTC)
 PUSHUP_RATIFIED_AT = datetime(2026, 9, 15, 10, 0, tzinfo=UTC)
-JUMP_RATIFIED_AT = datetime(2026, 9, 20, 10, 0, tzinfo=UTC)
+JUMP_RATIFIED_AT = datetime(2026, 9, 21, 10, 0, tzinfo=UTC)
 ACCOUNT_ID = UUID("10000000-0000-0000-0000-000000000001")
 ASSIGNMENT_ID = UUID("20000000-0000-0000-0000-000000000001")
 
@@ -176,6 +176,7 @@ def test_countermovement_jump_ratification_preserves_source_lineage_and_narrow_p
     assert result.assessment.definition.blocked_by_health_screening_flags == (
         "lower_body_or_balance_concern",
         "controlled_jump_landing_not_confirmed",
+        "recent_jump_exposure_not_confirmed",
     )
     assert result.assessment.current_review is not None
     measurement_schema = result.assessment.current_review.measurement_schema

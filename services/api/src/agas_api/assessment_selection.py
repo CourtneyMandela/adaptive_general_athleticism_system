@@ -73,6 +73,11 @@ def _assessment_screening_flags(measurement: object) -> tuple[str, ...]:
             "yes",
             "controlled_jump_landing_not_confirmed",
         ),
+        (
+            "recent_two_foot_jump_and_landing_exposure_28_days",
+            "yes",
+            "recent_jump_exposure_not_confirmed",
+        ),
     ):
         if measurement.get(field) != safe_value:
             flags.append(flag)

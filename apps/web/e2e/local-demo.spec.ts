@@ -730,6 +730,7 @@ test("the phone workflow turns a factual readiness report into a narrow decision
   await page.getByLabel("Using the exact stable chair setup").selectOption("yes");
   await page.getByLabel("Do you currently have upper-body, wrist, or hand pain").selectOption("no");
   await page.getByLabel("On a clear nonslip surface").selectOption("yes");
+  await page.getByLabel("During the last 28 days").selectOption("yes");
   await page
     .getByLabel("On a nonslip floor, can you comfortably complete one controlled standard push-up")
     .selectOption("yes");
@@ -746,6 +747,7 @@ test("the phone workflow turns a factual readiness report into a narrow decision
     current_upper_body_wrist_or_hand_concern: "no",
     controlled_standard_pushup: "yes",
     controlled_two_foot_jump_and_landing: "yes",
+    recent_two_foot_jump_and_landing_exposure_28_days: "yes",
     answers_confirmed: true,
   });
   expect(submittedBody).not.toHaveProperty("outcome");

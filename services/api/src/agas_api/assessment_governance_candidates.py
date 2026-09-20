@@ -952,7 +952,7 @@ def _countermovement_vertical_jump_release() -> PreparedAssessmentGovernanceRele
     source_created_at = datetime(2026, 9, 18, 9, 0, tzinfo=UTC)
     claim_created_at = datetime(2026, 9, 18, 9, 10, tzinfo=UTC)
     definition_created_at = datetime(2026, 9, 18, 9, 20, tzinfo=UTC)
-    prepared_at = datetime(2026, 9, 18, 9, 30, tzinfo=UTC)
+    prepared_at = datetime(2026, 9, 20, 18, 0, tzinfo=UTC)
 
     # A source record is an immutable retrieval snapshot. The push-up release contains the first
     # snapshot of this ISBN; this section-specific review is a second snapshot in that lineage.
@@ -1093,11 +1093,12 @@ def _countermovement_vertical_jump_release() -> PreparedAssessmentGovernanceRele
         observation_type="countermovement_vertical_jump_height_cm",
         intensity=AssessmentIntensity.HIGH,
         unit_or_scale="centimeters",
-        protocol_version="agas-countermovement-vertical-jump@1.0.0",
+        protocol_version="agas-countermovement-vertical-jump@1.1.0",
         required_equipment_categories=("vertical_jump_measurement_setup",),
         blocked_by_health_screening_flags=(
             "lower_body_or_balance_concern",
             "controlled_jump_landing_not_confirmed",
+            "recent_jump_exposure_not_confirmed",
         ),
     )
     measurement_setup = Equipment(
@@ -1213,9 +1214,10 @@ def _countermovement_vertical_jump_release() -> PreparedAssessmentGovernanceRele
             uncertainty=(
                 "The wall-marking method is inexpensive but less controlled than force-platform or "
                 "validated device measurement. The 28-day interval is a conservative AGAS operating "
-                "choice, not a source-derived biological claim."
+                "choice, not a source-derived biological claim. A separate recent-exposure gate is "
+                "also a conservative product rule rather than a guarantee of tissue readiness."
             ),
-            review_version="agas-countermovement-vertical-jump-review@1.0.0",
+            review_version="agas-countermovement-vertical-jump-review@1.1.0",
         ),
         estimation_policy=CapabilityEstimationPolicyDraft(
             id=UUID("96000000-0000-4000-8000-000000000003"),
@@ -1255,7 +1257,7 @@ def _countermovement_vertical_jump_presentation_fields() -> dict[str, object]:
         "candidate_id": UUID("94000000-0000-4000-8000-000000000003"),
         "slug": "countermovement_vertical_jump",
         "release_label": "Countermovement vertical jump owner-alpha release",
-        "prepared_at": datetime(2026, 9, 18, 9, 30, tzinfo=UTC),
+        "prepared_at": datetime(2026, 9, 20, 18, 0, tzinfo=UTC),
         "summary": (
             "A three-trial wall-marked countermovement jump that creates a repeatable personal "
             "jump-height baseline without turning an age/sex norm into a fitness grade."
@@ -1281,18 +1283,21 @@ def _countermovement_vertical_jump_presentation_fields() -> dict[str, object]:
         ),
         "stop_conditions": (
             "Do not start when readiness is missing, expired, or does not authorize high-intensity assessment.",
+            "Do not start unless intentional two-foot jumping and controlled landing have been practiced on at least two separate days in the preceding 28 days.",
             "Do not start without a clear nonslip setup or a comfortable controlled practice jump and landing.",
             "Stop immediately for pain, dizziness, chest discomfort, unusual shortness of breath, instability, or loss of landing control.",
         ),
         "operational_choices": (
             "ACSM Table 3.12 and the Payne reference population are retained as context but no age/sex category is calculated.",
             "A dedicated measurement-setup equipment category prevents selection where the wall, marking, measuring, and landing setup is unavailable.",
+            "A factual recent-exposure gate prevents one easy practice jump from being treated as preparation for maximal testing.",
             "The estimate stores the direct best-of-three height, remains assessment-specific, and is valid for 28 days.",
             "A single completed test produces low confidence and is intended for within-person comparison only.",
         ),
         "unresolved_limitations": (
             "Self-marking and self-measuring may introduce reach, parallax, and fingertip-mark errors.",
             "The textbook's cited primary validation literature was not independently appraised for this release.",
+            "The two-days-in-28-days exposure gate is a conservative engineering boundary, not a source-validated injury-prevention threshold.",
             "The 571-person Canadian norm sample is broad, historic, and not established as a match for this athlete's training or occupation.",
             "No governed competency floor or training dose currently consumes this estimate.",
             "No independent domain expert has reviewed this owner-alpha candidate.",

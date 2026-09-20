@@ -181,12 +181,12 @@ def test_movement_precheck_excludes_only_the_affected_assessment() -> None:
     assert decisions[1].decision is AssessmentDecision.EXCLUDED
 
 
-def test_jump_landing_precheck_excludes_jump_without_blocking_unrelated_assessment() -> None:
+def test_recent_jump_exposure_gate_excludes_jump_without_blocking_unrelated_assessment() -> None:
     context = AssessmentContext(
         athlete_id=uuid4(),
         source_observation_ids=(uuid4(),),
         health_screening_completed=True,
-        health_screening_flags=("controlled_jump_landing_not_confirmed",),
+        health_screening_flags=("recent_jump_exposure_not_confirmed",),
         evaluated_at=NOW,
     )
     chair_stand = AssessmentDefinition(
@@ -206,7 +206,7 @@ def test_jump_landing_precheck_excludes_jump_without_blocking_unrelated_assessme
         intensity=AssessmentIntensity.HIGH,
         unit_or_scale="centimeters",
         protocol_version="countermovement-jump-fixture@1.0.0",
-        blocked_by_health_screening_flags=("controlled_jump_landing_not_confirmed",),
+        blocked_by_health_screening_flags=("recent_jump_exposure_not_confirmed",),
     )
 
     decisions = AdaptiveAssessmentSelector().select(context, (chair_stand, jump))

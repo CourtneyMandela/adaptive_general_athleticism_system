@@ -60,6 +60,7 @@ describe("assessment workflow client", () => {
         currentUpperBodyWristOrHandConcern: "no",
         controlledStandardPushup: "yes",
         controlledTwoFootJumpAndLanding: "yes",
+        recentTwoFootJumpAndLandingExposure28Days: "yes",
         answersConfirmed: true,
       },
       new Date("2026-09-08T16:00:00Z"),
@@ -89,6 +90,7 @@ describe("assessment workflow client", () => {
       currentUpperBodyWristOrHandConcern: "unsure",
       controlledStandardPushup: "unsure",
       controlledTwoFootJumpAndLanding: "unsure",
+      recentTwoFootJumpAndLandingExposure28Days: "unsure",
       answersConfirmed: false,
     })).toThrow("Confirm that the readiness answers");
   });

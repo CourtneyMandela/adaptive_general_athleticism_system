@@ -364,8 +364,16 @@ def test_owner_readiness_movement_flags_exclude_only_the_matching_assessment(
     flagged = definition("upper_body_flagged_fixture").model_copy(
         update={"blocked_by_health_screening_flags": ("upper_body_wrist_or_hand_concern",)}
     )
+    jump_flagged = definition("recent_jump_exposure_flagged_fixture").model_copy(
+        update={
+            "domain": CapabilityDomain.EXPLOSIVE_POWER,
+            "blocked_by_health_screening_flags": ("recent_jump_exposure_not_confirmed",),
+        }
+    )
     repository.add_assessment_definition(flagged)
+    repository.add_assessment_definition(jump_flagged)
     approve(repository, flagged, repository.list_evidence_claims()[0])
+    approve(repository, jump_flagged, repository.list_evidence_claims()[0])
     session.commit()
     readiness = SubmitAssessmentReadinessReportCommand(
         report_id=uuid4(),
@@ -380,6 +388,7 @@ def test_owner_readiness_movement_flags_exclude_only_the_matching_assessment(
         current_upper_body_wrist_or_hand_concern="yes",
         controlled_standard_pushup="no",
         controlled_two_foot_jump_and_landing="yes",
+        recent_two_foot_jump_and_landing_exposure_28_days="no",
         answers_confirmed=True,
     )
     principal = AuthenticatedPrincipal(
@@ -406,9 +415,11 @@ def test_owner_readiness_movement_flags_exclude_only_the_matching_assessment(
     assert measurement["assessment_screening_flags"] == [
         "upper_body_wrist_or_hand_concern",
         "standard_pushup_control_not_confirmed",
+        "recent_jump_exposure_not_confirmed",
     ]
     assert decisions["available_fixture"].value == "selected"
     assert decisions["upper_body_flagged_fixture"].value == "excluded"
+    assert decisions["recent_jump_exposure_flagged_fixture"].value == "excluded"
 
 
 def test_eligibility_intensity_scope_cannot_authorize_a_harder_protocol(

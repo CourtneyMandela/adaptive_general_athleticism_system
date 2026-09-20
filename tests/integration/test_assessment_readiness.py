@@ -48,6 +48,7 @@ def command(**updates: object) -> SubmitAssessmentReadinessReportCommand:
         "current_upper_body_wrist_or_hand_concern": "no",
         "controlled_standard_pushup": "yes",
         "controlled_two_foot_jump_and_landing": "yes",
+        "recent_two_foot_jump_and_landing_exposure_28_days": "yes",
         "answers_confirmed": True,
     }
     values.update(updates)
@@ -149,6 +150,7 @@ def test_movement_specific_concerns_are_preserved_for_per_assessment_selection(
             current_upper_body_wrist_or_hand_concern="yes",
             controlled_standard_pushup="no",
             controlled_two_foot_jump_and_landing="no",
+            recent_two_foot_jump_and_landing_exposure_28_days="no",
         ),
         PRINCIPAL,
         recorded_at=NOW,
@@ -162,6 +164,7 @@ def test_movement_specific_concerns_are_preserved_for_per_assessment_selection(
     assert measurement["current_upper_body_wrist_or_hand_concern"] == "yes"
     assert measurement["controlled_standard_pushup"] == "no"
     assert measurement["controlled_two_foot_jump_and_landing"] == "no"
+    assert measurement["recent_two_foot_jump_and_landing_exposure_28_days"] == "no"
     assert "Incompatible assessments will be excluded" in result.next_action
 
 

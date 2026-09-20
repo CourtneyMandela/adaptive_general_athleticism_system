@@ -137,6 +137,7 @@ export interface AssessmentReadinessInput {
   currentUpperBodyWristOrHandConcern: ReadinessAnswer;
   controlledStandardPushup: ReadinessAnswer;
   controlledTwoFootJumpAndLanding: ReadinessAnswer;
+  recentTwoFootJumpAndLandingExposure28Days: ReadinessAnswer;
   answersConfirmed: boolean;
 }
 
@@ -153,6 +154,7 @@ export interface AssessmentReadinessReportCommand {
   current_upper_body_wrist_or_hand_concern: ReadinessAnswer;
   controlled_standard_pushup: ReadinessAnswer;
   controlled_two_foot_jump_and_landing: ReadinessAnswer;
+  recent_two_foot_jump_and_landing_exposure_28_days: ReadinessAnswer;
   answers_confirmed: true;
 }
 
@@ -247,6 +249,8 @@ export function buildAssessmentReadinessReportCommand(
     current_upper_body_wrist_or_hand_concern: input.currentUpperBodyWristOrHandConcern,
     controlled_standard_pushup: input.controlledStandardPushup,
     controlled_two_foot_jump_and_landing: input.controlledTwoFootJumpAndLanding,
+    recent_two_foot_jump_and_landing_exposure_28_days:
+      input.recentTwoFootJumpAndLandingExposure28Days,
     answers_confirmed: true,
   };
 }

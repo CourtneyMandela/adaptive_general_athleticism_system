@@ -193,6 +193,7 @@ export function AssessmentPanel({
   const [upperBodyConcern, setUpperBodyConcern] = useState<ReadinessAnswer>("unsure");
   const [controlledPushup, setControlledPushup] = useState<ReadinessAnswer>("unsure");
   const [controlledJumpLanding, setControlledJumpLanding] = useState<ReadinessAnswer>("unsure");
+  const [recentJumpExposure, setRecentJumpExposure] = useState<ReadinessAnswer>("unsure");
   const [readinessConfirmed, setReadinessConfirmed] = useState(false);
   const [readinessAction, setReadinessAction] = useState("");
 
@@ -279,6 +280,7 @@ export function AssessmentPanel({
           currentUpperBodyWristOrHandConcern: upperBodyConcern,
           controlledStandardPushup: controlledPushup,
           controlledTwoFootJumpAndLanding: controlledJumpLanding,
+          recentTwoFootJumpAndLandingExposure28Days: recentJumpExposure,
           answersConfirmed: readinessConfirmed,
         }),
       );
@@ -429,6 +431,12 @@ export function AssessmentPanel({
               help="This is only a movement pre-check. It is not the maximal jump assessment."
               value={controlledJumpLanding}
               onChange={setControlledJumpLanding}
+            />
+            <ReadinessSelect
+              label="During the last 28 days, have you intentionally practiced two-foot jumping and controlled landing on at least two separate days?"
+              help="This is a factual recent-exposure check, not proof that maximal jumping is risk-free. No or unsure excludes only jump assessments."
+              value={recentJumpExposure}
+              onChange={setRecentJumpExposure}
             />
             <label>
               <input
