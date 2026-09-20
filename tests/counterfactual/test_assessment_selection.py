@@ -179,3 +179,37 @@ def test_movement_precheck_excludes_only_the_affected_assessment() -> None:
 
     assert decisions[0].decision is AssessmentDecision.SELECTED
     assert decisions[1].decision is AssessmentDecision.EXCLUDED
+
+
+def test_jump_landing_precheck_excludes_jump_without_blocking_unrelated_assessment() -> None:
+    context = AssessmentContext(
+        athlete_id=uuid4(),
+        source_observation_ids=(uuid4(),),
+        health_screening_completed=True,
+        health_screening_flags=("controlled_jump_landing_not_confirmed",),
+        evaluated_at=NOW,
+    )
+    chair_stand = AssessmentDefinition(
+        slug="chair_stand_unaffected_fixture",
+        name="Chair stand unaffected fixture",
+        domain=CapabilityDomain.MUSCULAR_ENDURANCE,
+        observation_type="chair_stand_unaffected_fixture_count",
+        intensity=AssessmentIntensity.MODERATE,
+        unit_or_scale="repetitions",
+        protocol_version="chair-stand-unaffected-fixture@1.0.0",
+    )
+    jump = AssessmentDefinition(
+        slug="countermovement_jump_fixture",
+        name="Countermovement jump fixture",
+        domain=CapabilityDomain.EXPLOSIVE_POWER,
+        observation_type="countermovement_jump_fixture_height",
+        intensity=AssessmentIntensity.HIGH,
+        unit_or_scale="centimeters",
+        protocol_version="countermovement-jump-fixture@1.0.0",
+        blocked_by_health_screening_flags=("controlled_jump_landing_not_confirmed",),
+    )
+
+    decisions = AdaptiveAssessmentSelector().select(context, (chair_stand, jump))
+
+    assert decisions[0].decision is AssessmentDecision.SELECTED
+    assert decisions[1].decision is AssessmentDecision.EXCLUDED

@@ -379,6 +379,7 @@ def test_owner_readiness_movement_flags_exclude_only_the_matching_assessment(
         controlled_chair_stand_without_arms="yes",
         current_upper_body_wrist_or_hand_concern="yes",
         controlled_standard_pushup="no",
+        controlled_two_foot_jump_and_landing="yes",
         answers_confirmed=True,
     )
     principal = AuthenticatedPrincipal(

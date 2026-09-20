@@ -283,6 +283,10 @@ def _candidate_registry() -> dict[UUID, PreparedAssessmentGovernanceCandidate]:
     for prepared, presentation_fields in (
         (_chair_stand_release(), _chair_stand_presentation_fields()),
         (_standard_pushup_release(), _standard_pushup_presentation_fields()),
+        (
+            _countermovement_vertical_jump_release(),
+            _countermovement_vertical_jump_presentation_fields(),
+        ),
     ):
         content_digest = _candidate_digest(prepared, presentation_fields)
         presentation = AssessmentGovernanceCandidate(
@@ -939,6 +943,382 @@ def _standard_pushup_presentation_fields() -> dict[str, object]:
                 conflict_disclosure=(
                     "No protocol-specific conflict disclosure was identified on the inspected textbook pages."
                 ),
+            ),
+        ),
+    }
+
+
+def _countermovement_vertical_jump_release() -> PreparedAssessmentGovernanceRelease:
+    source_created_at = datetime(2026, 9, 18, 9, 0, tzinfo=UTC)
+    claim_created_at = datetime(2026, 9, 18, 9, 10, tzinfo=UTC)
+    definition_created_at = datetime(2026, 9, 18, 9, 20, tzinfo=UTC)
+    prepared_at = datetime(2026, 9, 18, 9, 30, tzinfo=UTC)
+
+    # A source record is an immutable retrieval snapshot. The push-up release contains the first
+    # snapshot of this ISBN; this section-specific review is a second snapshot in that lineage.
+    predecessor_source = _standard_pushup_release().sources[0]
+    isbn = EvidenceSourceIdentifier(scheme="isbn", value="9781975219246")
+    acsm_source = EvidenceSource(
+        id=UUID("90000000-0000-4000-8000-000000000004"),
+        created_at=source_created_at,
+        title="ACSM's Guidelines for Exercise Testing and Prescription",
+        authors=(
+            "Cemal Ozemek",
+            "Amanda Bonikowske",
+            "Jeffrey Christle",
+            "Paul M. Gallo",
+        ),
+        journal=None,
+        publication_year=2026,
+        publication_types=("Professional guideline", "Textbook"),
+        primary_identifier=isbn,
+        source_identifiers=(isbn,),
+        metadata_provider="manual",
+        retrieval_uri="https://www.ncbi.nlm.nih.gov/nlmcatalog/137328",
+        retrieval_query="ISBN 9781975219246; Chapter 3; Box 3.11; Table 3.12",
+        retrieved_at=source_created_at,
+        metadata_version="owner-supplied-acsm-12-pdf-and-nlm-catalog@2026-09-18",
+        provenance_notes=(
+            "The owner supplied a local copy for review; the PDF itself is not stored in AGAS.",
+            "The NLM Catalog record confirms the editors, edition, publisher, and EPUB ISBN 9781975219246.",
+            "The countermovement-jump procedure was checked against Chapter 3, PDF pages 246-248, including Box 3.11.",
+            "Table 3.12 was inspected, but its age- and sex-stratified categories are not activated by this release.",
+        ),
+        sequence_number=2,
+        supersedes_source_id=predecessor_source.id,
+    )
+    pmid = EvidenceSourceIdentifier(scheme="pmid", value="11098155")
+    doi = EvidenceSourceIdentifier(scheme="doi", value="10.1139/h00-028")
+    norms_source = EvidenceSource(
+        id=UUID("90000000-0000-4000-8000-000000000005"),
+        created_at=source_created_at,
+        title="Canadian musculoskeletal fitness norms",
+        authors=("M W Payne", "M J Gledhill", "P T Katzmarzyk", "V Jamnik", "N Ferguson"),
+        journal="Canadian Journal of Applied Physiology",
+        publication_year=2000,
+        publication_types=("Journal article", "Normative study"),
+        primary_identifier=pmid,
+        source_identifiers=(pmid, doi),
+        metadata_provider="pubmed",
+        retrieval_uri="https://pubmed.ncbi.nlm.nih.gov/11098155/",
+        retrieval_query="PMID 11098155",
+        retrieved_at=source_created_at,
+        metadata_version="pubmed-record-snapshot@2026-09-18",
+        provenance_notes=(
+            "Title, authors, journal, DOI, sample size, age range, and tested measures were checked against the PubMed record.",
+            "The abstract is intentionally not copied into the stored snapshot.",
+            "This release uses the paper to identify the provenance and population of the descriptive norms, not to create an AGAS competency floor.",
+        ),
+    )
+    protocol_claim = EvidenceClaim(
+        id=UUID("91000000-0000-4000-8000-000000000004"),
+        created_at=claim_created_at,
+        claim=(
+            "ACSM's 12th-edition guideline describes countermovement vertical-jump height as a "
+            "field measure of lower-body muscular power and specifies standing reach, no running "
+            "start, a rapid countermovement with arm swing, three attempts, and the best jump height."
+        ),
+        domain="assessment_protocol_and_construct",
+        population=(
+            "Younger apparently healthy adults addressed by the guideline; the accompanying "
+            "reference categories are age- and sex-stratified."
+        ),
+        intervention="Three maximal countermovement vertical jumps from standing using the Box 3.11 procedure.",
+        comparator="Standing reach height is subtracted from the highest jump-reach mark.",
+        outcome="Best vertical displacement in centimeters across three trials.",
+        study_design="Professional guideline and textbook synthesis citing primary reference 172",
+        effect_direction="A larger valid displacement represents better performance on this exact jump test.",
+        uncertainty=(
+            "Jump height is a surrogate for muscular power and is sensitive to measurement setup, "
+            "technique, arm swing, familiarization, and effort."
+        ),
+        limitations=(
+            "The wall-and-marking method does not directly measure force, velocity, or mechanical power.",
+            "Results are specific to the countermovement and arm-swing technique used.",
+            "Self-measured reach and jump marks can introduce error.",
+            "The source's descriptive categories do not by themselves establish a competency floor or training dose.",
+        ),
+        evidence_strength=EvidenceStrength.LOW,
+        athlete_applicability=Applicability.MODERATE,
+        applicability_notes=(
+            "The field test is practical for a recreationally trained adult, but this release "
+            "authorizes only within-person tracking of the exact jump-height observation."
+        ),
+        source_identifiers=(isbn,),
+        source_record_ids=(acsm_source.id,),
+        reviewer="Codex evidence synthesis candidate; authority pending",
+        claim_version="acsm-countermovement-jump-protocol@1.0.0",
+    )
+    norms_claim = EvidenceClaim(
+        id=UUID("91000000-0000-4000-8000-000000000005"),
+        created_at=claim_created_at,
+        claim=(
+            "Payne and colleagues produced age- and sex-stratified Canadian musculoskeletal "
+            "fitness norms, including vertical jump, from 571 participants aged 15 to 69 years."
+        ),
+        domain="assessment_reference_population",
+        population="312 female and 259 male Canadian participants aged 15 to 69 years.",
+        intervention="Musculoskeletal fitness testing that included vertical jump and four other measures.",
+        comparator="Age- and sex-stratified descriptive reference distributions.",
+        outcome="Population reference values for the included musculoskeletal fitness measures.",
+        study_design="Cross-sectional normative study",
+        sample_size=571,
+        effect_direction="Not applicable; this is descriptive reference information.",
+        uncertainty=(
+            "A Canadian sample collected more than two decades ago may not represent the current "
+            "athlete, recreationally trained adults, or occupationally active adults."
+        ),
+        limitations=(
+            "The PubMed abstract does not establish a sport- or occupation-specific competency threshold.",
+            "Age/sex categories describe a reference distribution rather than a required level for safe or effective training.",
+            "This release does not infer sex or apply a normative category to the athlete.",
+        ),
+        evidence_strength=EvidenceStrength.LOW,
+        athlete_applicability=Applicability.LOW,
+        applicability_notes=(
+            "The age range includes mid-thirties adults, but the sample is not established as a "
+            "match for a recreationally trained construction worker."
+        ),
+        source_identifiers=(pmid, doi),
+        source_record_ids=(norms_source.id,),
+        reviewer="Codex evidence synthesis candidate; authority pending",
+        claim_version="payne-canadian-musculoskeletal-norms@1.0.0",
+    )
+    definition = AssessmentDefinition(
+        id=UUID("92000000-0000-4000-8000-000000000003"),
+        created_at=definition_created_at,
+        slug="countermovement_vertical_jump",
+        name="Countermovement vertical jump",
+        domain=CapabilityDomain.EXPLOSIVE_POWER,
+        observation_type="countermovement_vertical_jump_height_cm",
+        intensity=AssessmentIntensity.HIGH,
+        unit_or_scale="centimeters",
+        protocol_version="agas-countermovement-vertical-jump@1.0.0",
+        required_equipment_categories=("vertical_jump_measurement_setup",),
+        blocked_by_health_screening_flags=(
+            "lower_body_or_balance_concern",
+            "controlled_jump_landing_not_confirmed",
+        ),
+    )
+    measurement_setup = Equipment(
+        id=UUID("97000000-0000-4000-8000-000000000002"),
+        created_at=definition_created_at,
+        name="Wall-marked vertical-jump measurement setup",
+        category="vertical_jump_measurement_setup",
+        capabilities={
+            "clear_overhead_space": True,
+            "nonslip_landing_surface": True,
+            "standing_reach_marking": True,
+            "jump_reach_marking": True,
+            "measurement_unit": "centimeters",
+        },
+    )
+    review_id = UUID("93000000-0000-4000-8000-000000000003")
+    evidence_claim_ids = (protocol_claim.id, norms_claim.id)
+    return PreparedAssessmentGovernanceRelease(
+        release_id=UUID("94000000-0000-4000-8000-000000000003"),
+        release_label="Countermovement vertical jump owner-alpha release",
+        prepared_at=prepared_at,
+        sources=(predecessor_source, acsm_source, norms_source),
+        supporting_equipment=(measurement_setup,),
+        claims=(protocol_claim, norms_claim),
+        evidence_reviews=(
+            EvidenceClaimReviewDraft(
+                id=UUID("95000000-0000-4000-8000-000000000004"),
+                evidence_claim_id=protocol_claim.id,
+                sequence_number=1,
+                source_verification_rationale=(
+                    "The construct, setup, countermovement technique, arm swing, score calculation, "
+                    "three attempts, and best-attempt rule were checked against Chapter 3 and Box 3.11 on PDF pages 246-248."
+                ),
+                extraction_rationale=(
+                    "The claim retains the exact test procedure and assessment-specific outcome "
+                    "while excluding the table's categories, a competency floor, and a training prescription."
+                ),
+                evidence_strength_rationale=(
+                    "Low reflects use of a professional guideline synthesis without independent "
+                    "validation of the self-administered wall-marking implementation."
+                ),
+                applicability_rationale=(
+                    "Moderate reflects a practical field measure for a recreationally trained adult, "
+                    "limited to direct within-person jump-height tracking."
+                ),
+                uncertainty=(
+                    "Reach marking, arm swing, countermovement depth, fatigue, familiarization, "
+                    "surface, footwear, and motivation may materially change the score."
+                ),
+                conflict_disclosure=(
+                    "No protocol-specific conflict disclosure was identified in the inspected textbook pages; "
+                    "this is not a claim that every cited primary source had none."
+                ),
+                review_version="acsm-countermovement-jump-evidence-review@1.0.0",
+            ),
+            EvidenceClaimReviewDraft(
+                id=UUID("95000000-0000-4000-8000-000000000005"),
+                evidence_claim_id=norms_claim.id,
+                sequence_number=1,
+                source_verification_rationale=(
+                    "The title, authors, identifiers, sample size, sex counts, age range, tested "
+                    "measures, and normative purpose were checked against PMID 11098155."
+                ),
+                extraction_rationale=(
+                    "The claim records where the descriptive norms came from and their population, "
+                    "but the release intentionally does not activate any category or threshold."
+                ),
+                evidence_strength_rationale=(
+                    "Low reflects one cross-sectional normative sample rather than a validated "
+                    "minimum for this athlete's goals or training decisions."
+                ),
+                applicability_rationale=(
+                    "Low avoids treating a broad historic Canadian reference sample as equivalent "
+                    "to a mid-thirties recreationally trained, physically working adult."
+                ),
+                uncertainty="Sampling, cohort, sex classification, and measurement context limit transfer.",
+                conflict_disclosure="The PubMed record does not display a conflict-of-interest statement.",
+                review_version="payne-canadian-musculoskeletal-norms-review@1.0.0",
+            ),
+        ),
+        definition=definition,
+        protocol_review=AssessmentDefinitionReviewDraft(
+            id=review_id,
+            assessment_definition_id=definition.id,
+            sequence_number=1,
+            protocol_instructions=(
+                "Use a level nonslip landing surface beside a clear wall, with clear overhead space, a removable marking method, and a tape measure fixed or held vertically. Wear the same footwear on later attempts.",
+                "Warm up for 5 to 10 minutes with light aerobic movement, dynamic lower-body movement, and several submaximal practice jumps; rest until breathing is comfortable before recorded trials.",
+                "Stand flat-footed side-on to the wall. Reach as high as possible with the dominant hand while keeping both feet flat, and mark the highest fingertip position as standing reach.",
+                "From a stationary upright start with no approach steps, make a rapid countermovement by flexing the hips and knees while swinging the arms back, then immediately jump as high as possible with an explosive arm swing and full extension.",
+                "At the top of the jump, touch or mark the highest reachable point with the dominant hand, then land on both feet under control. Do not count a trial with an approach step, wall support, an uncontrolled landing, or an uncertain mark.",
+                "Complete three valid trials with enough rest to feel ready for another maximal jump. For each, subtract standing reach from jump reach; record the largest valid difference to the nearest 0.5 centimeter.",
+            ),
+            result_entry_instructions=(
+                "Enter the best valid jump-height difference in centimeters. Do not enter the jump-reach "
+                "height itself, an age/sex category, a power estimate, or a training dose. Do not enter "
+                "a completed result if pain, dizziness, instability, or another safety stop ended the test."
+            ),
+            measurement_schema=AssessmentMeasurementSchema(
+                measurement_type=AssessmentMeasurementType.NUMBER,
+                label="Best countermovement vertical-jump height",
+                minimum=0,
+                step=0.5,
+                measurement_schema_version="countermovement-vertical-jump-height-cm@1.0.0",
+            ),
+            recommended_reassessment_days=28,
+            self_administered=True,
+            evidence_claim_ids=evidence_claim_ids,
+            applicability_notes=(
+                "Owner-alpha use is limited to repeat measurement of the same athlete after current "
+                "readiness screening, a controlled practice jump, and confirmation of the exact setup."
+            ),
+            uncertainty=(
+                "The wall-marking method is inexpensive but less controlled than force-platform or "
+                "validated device measurement. The 28-day interval is a conservative AGAS operating "
+                "choice, not a source-derived biological claim."
+            ),
+            review_version="agas-countermovement-vertical-jump-review@1.0.0",
+        ),
+        estimation_policy=CapabilityEstimationPolicyDraft(
+            id=UUID("96000000-0000-4000-8000-000000000003"),
+            assessment_definition_id=definition.id,
+            assessment_definition_review_id=review_id,
+            sequence_number=1,
+            domain=definition.domain,
+            observation_type=definition.observation_type,
+            unit_or_scale=definition.unit_or_scale,
+            calculation_method="latest-matching-observation",
+            valid_for_days=28,
+            multi_observation_window_days=28,
+            evidence_claim_ids=evidence_claim_ids,
+            applicability_notes=(
+                "Preserve the best direct jump-height difference as a low-confidence, assessment-specific "
+                "explosive-power estimate for within-person tracking only."
+            ),
+            uncertainty=(
+                "No normative conversion, mechanical-power calculation, universal score, competency "
+                "floor, or exercise prescription is authorized."
+            ),
+            rule_version="countermovement-jump-latest-matching-observation@1.0.0",
+        ),
+        release_rationale=(
+            "Add a practical explosive-power measurement while preserving the exact protocol and "
+            "reference-population provenance and refusing to turn descriptive norms into a competency threshold."
+        ),
+        release_uncertainty=(
+            "This owner-alpha release has not received independent domain-expert review. Approval would "
+            "authorize only the exact assessment and narrow estimate, not a training threshold."
+        ),
+    )
+
+
+def _countermovement_vertical_jump_presentation_fields() -> dict[str, object]:
+    return {
+        "candidate_id": UUID("94000000-0000-4000-8000-000000000003"),
+        "slug": "countermovement_vertical_jump",
+        "release_label": "Countermovement vertical jump owner-alpha release",
+        "prepared_at": datetime(2026, 9, 18, 9, 30, tzinfo=UTC),
+        "summary": (
+            "A three-trial wall-marked countermovement jump that creates a repeatable personal "
+            "jump-height baseline without turning an age/sex norm into a fitness grade."
+        ),
+        "measures": "Assessment-specific countermovement vertical-jump height in centimeters.",
+        "does_not_measure": (
+            "Mechanical power, sprint speed, sport performance, injury risk, or medical fitness.",
+            "A universal explosive-power score or a required level for safe or effective training.",
+            "Whether jump training belongs in a workout or what dose should be prescribed.",
+        ),
+        "capability_domain": CapabilityDomain.EXPLOSIVE_POWER,
+        "estimate_scope": "assessment_specific:countermovement_vertical_jump_height_cm",
+        "setup_requirements": (
+            "Level nonslip landing surface beside a clear wall with unobstructed overhead space.",
+            "Removable fingertip marking method and a centimeter tape measure.",
+            "The same wall, surface, footwear, reach arm, marking method, and warm-up on future attempts.",
+        ),
+        "protocol_steps": (
+            "Warm up, practice submaximally, and confirm one comfortable controlled two-foot landing.",
+            "Mark standing reach while flat-footed, side-on to the wall, using the dominant hand.",
+            "From standing with no approach, use a rapid countermovement and arm swing, jump maximally, and mark jump reach.",
+            "Complete three valid controlled trials; subtract standing reach and record the best difference to 0.5 cm.",
+        ),
+        "stop_conditions": (
+            "Do not start when readiness is missing, expired, or does not authorize high-intensity assessment.",
+            "Do not start without a clear nonslip setup or a comfortable controlled practice jump and landing.",
+            "Stop immediately for pain, dizziness, chest discomfort, unusual shortness of breath, instability, or loss of landing control.",
+        ),
+        "operational_choices": (
+            "ACSM Table 3.12 and the Payne reference population are retained as context but no age/sex category is calculated.",
+            "A dedicated measurement-setup equipment category prevents selection where the wall, marking, measuring, and landing setup is unavailable.",
+            "The estimate stores the direct best-of-three height, remains assessment-specific, and is valid for 28 days.",
+            "A single completed test produces low confidence and is intended for within-person comparison only.",
+        ),
+        "unresolved_limitations": (
+            "Self-marking and self-measuring may introduce reach, parallax, and fingertip-mark errors.",
+            "The textbook's cited primary validation literature was not independently appraised for this release.",
+            "The 571-person Canadian norm sample is broad, historic, and not established as a match for this athlete's training or occupation.",
+            "No governed competency floor or training dose currently consumes this estimate.",
+            "No independent domain expert has reviewed this owner-alpha candidate.",
+        ),
+        "evidence": (
+            AssessmentCandidateEvidenceSummary(
+                title="ACSM Guidelines, 12th edition: Box 3.11 and Table 3.12",
+                source_url="https://www.ncbi.nlm.nih.gov/nlmcatalog/137328",
+                population="Younger apparently healthy adults addressed by the guideline; categories are age- and sex-stratified.",
+                finding="The guideline specifies a best-of-three countermovement vertical-jump-height field protocol.",
+                limitations=(
+                    "Jump height is a surrogate rather than a direct mechanical-power measure.",
+                    "The age/sex categories are descriptive context and are not activated by this release.",
+                ),
+                conflict_disclosure="No protocol-specific conflict disclosure was identified on the inspected textbook pages.",
+            ),
+            AssessmentCandidateEvidenceSummary(
+                title="Payne et al. (2000): Canadian musculoskeletal fitness norms",
+                source_url="https://pubmed.ncbi.nlm.nih.gov/11098155/",
+                population="571 Canadian participants, 312 female and 259 male, aged 15 to 69 years.",
+                finding="The study produced age- and sex-stratified descriptive norms for vertical jump and four other measures.",
+                limitations=(
+                    "The sample is not established as recreationally trained or occupationally matched to the current athlete.",
+                    "A reference distribution does not establish an athlete-specific competency threshold.",
+                ),
+                conflict_disclosure="The PubMed record does not display a conflict-of-interest statement.",
             ),
         ),
     }

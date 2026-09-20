@@ -192,6 +192,7 @@ export function AssessmentPanel({
   const [controlledRepetition, setControlledRepetition] = useState<ReadinessAnswer>("unsure");
   const [upperBodyConcern, setUpperBodyConcern] = useState<ReadinessAnswer>("unsure");
   const [controlledPushup, setControlledPushup] = useState<ReadinessAnswer>("unsure");
+  const [controlledJumpLanding, setControlledJumpLanding] = useState<ReadinessAnswer>("unsure");
   const [readinessConfirmed, setReadinessConfirmed] = useState(false);
   const [readinessAction, setReadinessAction] = useState("");
 
@@ -277,6 +278,7 @@ export function AssessmentPanel({
           controlledChairStandWithoutArms: controlledRepetition,
           currentUpperBodyWristOrHandConcern: upperBodyConcern,
           controlledStandardPushup: controlledPushup,
+          controlledTwoFootJumpAndLanding: controlledJumpLanding,
           answersConfirmed: readinessConfirmed,
         }),
       );
@@ -397,12 +399,12 @@ export function AssessmentPanel({
               onChange={setSymptoms}
             />
             <ReadinessSelect
-              label="Has a healthcare professional told you to avoid or limit exercise that would include repeated chair stands or push-ups?"
+              label="Has a healthcare professional told you to avoid or limit exercise that would include repeated chair stands, push-ups, or jumping?"
               value={restriction}
               onChange={setRestriction}
             />
             <ReadinessSelect
-              label="Do you currently have lower-body pain, an injury, or a balance concern that could affect repeated chair stands?"
+              label="Do you currently have lower-body pain, an injury, or a balance concern that could affect repeated chair stands or jumping?"
               value={movementConcern}
               onChange={setMovementConcern}
             />
@@ -421,6 +423,12 @@ export function AssessmentPanel({
               help="This is only a movement pre-check. It is not the maximum-repetition test."
               value={controlledPushup}
               onChange={setControlledPushup}
+            />
+            <ReadinessSelect
+              label="On a clear nonslip surface, can you comfortably perform one low-effort two-foot jump and land under control without pain, instability, or unusual symptoms?"
+              help="This is only a movement pre-check. It is not the maximal jump assessment."
+              value={controlledJumpLanding}
+              onChange={setControlledJumpLanding}
             />
             <label>
               <input

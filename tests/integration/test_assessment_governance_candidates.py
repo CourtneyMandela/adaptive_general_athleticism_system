@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 NOW = datetime(2026, 9, 8, 15, 0, tzinfo=UTC)
 PUSHUP_RATIFIED_AT = datetime(2026, 9, 15, 10, 0, tzinfo=UTC)
+JUMP_RATIFIED_AT = datetime(2026, 9, 20, 10, 0, tzinfo=UTC)
 ACCOUNT_ID = UUID("10000000-0000-0000-0000-000000000001")
 ASSIGNMENT_ID = UUID("20000000-0000-0000-0000-000000000001")
 
@@ -56,7 +57,7 @@ def test_candidate_presents_narrow_meaning_protocol_and_source_limitations(
     projection = list_assessment_governance_candidates(session, projected_at=NOW)
 
     assert projection.projection_version == "assessment-governance-candidates@1.0.0"
-    assert len(projection.items) == 2
+    assert len(projection.items) == 3
     item = next(
         item for item in projection.items if item.candidate.slug == "thirty_second_chair_stand"
     )
@@ -127,6 +128,95 @@ def test_standard_pushup_ratification_persists_textbook_provenance_and_narrow_po
     assert source.retrieval_uri == "https://www.ncbi.nlm.nih.gov/nlmcatalog/137328"
     assert any("Table 3.11" in note for note in source.provenance_notes)
     assert repository.list_competency_floors() == ()
+
+
+def test_countermovement_jump_candidate_keeps_norms_contextual_and_requires_exact_setup(
+    session: Session,
+) -> None:
+    projection = list_assessment_governance_candidates(session, projected_at=JUMP_RATIFIED_AT)
+    item = next(
+        item for item in projection.items if item.candidate.slug == "countermovement_vertical_jump"
+    )
+
+    assert item.status == "available"
+    assert item.candidate.capability_domain.value == "explosive_power"
+    assert item.candidate.estimate_scope == (
+        "assessment_specific:countermovement_vertical_jump_height_cm"
+    )
+    assert any("no age/sex category" in value for value in item.candidate.operational_choices)
+    assert any("competency floor" in value for value in item.candidate.unresolved_limitations)
+    assert len(item.candidate.evidence) == 2
+    assert {source.source_url for source in item.candidate.evidence} == {
+        "https://www.ncbi.nlm.nih.gov/nlmcatalog/137328",
+        "https://pubmed.ncbi.nlm.nih.gov/11098155/",
+    }
+
+
+def test_countermovement_jump_ratification_preserves_source_lineage_and_narrow_policy(
+    session: Session,
+) -> None:
+    candidate_id, command = _command(session, "countermovement_vertical_jump")
+
+    result = ratify_assessment_governance_candidate(
+        session,
+        candidate_id,
+        command,
+        _authority(),
+        ratified_at=JUMP_RATIFIED_AT,
+    )
+    repository = DomainRepository(session)
+    first_snapshot = repository.get_evidence_source(UUID("90000000-0000-4000-8000-000000000003"))
+    jump_snapshot = repository.get_evidence_source(UUID("90000000-0000-4000-8000-000000000004"))
+
+    assert result.assessment.readiness == "ready"
+    assert result.assessment.definition.intensity.value == "high"
+    assert result.assessment.definition.required_equipment_categories == (
+        "vertical_jump_measurement_setup",
+    )
+    assert result.assessment.definition.blocked_by_health_screening_flags == (
+        "lower_body_or_balance_concern",
+        "controlled_jump_landing_not_confirmed",
+    )
+    assert result.assessment.current_review is not None
+    measurement_schema = result.assessment.current_review.measurement_schema
+    assert measurement_schema is not None
+    assert measurement_schema.step == 0.5
+    assert result.assessment.current_estimation_policy is not None
+    assert result.assessment.current_estimation_policy.calculation_method == (
+        "latest-matching-observation"
+    )
+    assert result.created_equipment_ids == (UUID("97000000-0000-4000-8000-000000000002"),)
+    assert first_snapshot is not None
+    assert jump_snapshot is not None
+    assert jump_snapshot.sequence_number == 2
+    assert jump_snapshot.supersedes_source_id == first_snapshot.id
+    assert any("Table 3.12" in note for note in jump_snapshot.provenance_notes)
+    assert repository.list_competency_floors() == ()
+
+
+def test_textbook_snapshot_lineage_allows_pushup_ratification_after_jump(
+    session: Session,
+) -> None:
+    jump_id, jump_command = _command(session, "countermovement_vertical_jump")
+    ratify_assessment_governance_candidate(
+        session,
+        jump_id,
+        jump_command,
+        _authority(),
+        ratified_at=JUMP_RATIFIED_AT,
+    )
+    pushup_id, pushup_command = _command(session, "maximum_consecutive_standard_pushups")
+
+    pushup = ratify_assessment_governance_candidate(
+        session,
+        pushup_id,
+        pushup_command,
+        _authority(),
+        ratified_at=JUMP_RATIFIED_AT + timedelta(minutes=1),
+    )
+
+    assert pushup.assessment.readiness == "ready"
+    assert pushup.created_source_ids == ()
 
 
 def test_exact_candidate_ratification_is_atomic_and_idempotent(session: Session) -> None:

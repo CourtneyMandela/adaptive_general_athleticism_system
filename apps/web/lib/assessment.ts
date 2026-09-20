@@ -136,6 +136,7 @@ export interface AssessmentReadinessInput {
   controlledChairStandWithoutArms: ReadinessAnswer;
   currentUpperBodyWristOrHandConcern: ReadinessAnswer;
   controlledStandardPushup: ReadinessAnswer;
+  controlledTwoFootJumpAndLanding: ReadinessAnswer;
   answersConfirmed: boolean;
 }
 
@@ -151,6 +152,7 @@ export interface AssessmentReadinessReportCommand {
   controlled_chair_stand_without_arms: ReadinessAnswer;
   current_upper_body_wrist_or_hand_concern: ReadinessAnswer;
   controlled_standard_pushup: ReadinessAnswer;
+  controlled_two_foot_jump_and_landing: ReadinessAnswer;
   answers_confirmed: true;
 }
 
@@ -244,6 +246,7 @@ export function buildAssessmentReadinessReportCommand(
     controlled_chair_stand_without_arms: input.controlledChairStandWithoutArms,
     current_upper_body_wrist_or_hand_concern: input.currentUpperBodyWristOrHandConcern,
     controlled_standard_pushup: input.controlledStandardPushup,
+    controlled_two_foot_jump_and_landing: input.controlledTwoFootJumpAndLanding,
     answers_confirmed: true,
   };
 }

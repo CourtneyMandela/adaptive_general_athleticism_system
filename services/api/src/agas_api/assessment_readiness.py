@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from agas_api.identity import AuthenticatedPrincipal
 
-READINESS_RULE_VERSION = "assessment-readiness-screen@1.1.0"
+READINESS_RULE_VERSION = "assessment-readiness-screen@1.2.0"
 SCREENING_PROCESS_REFERENCE = (
     "agas-readiness@1.0.0;ACSM-factors:PMID26473759;application:PMID28557860"
 )
@@ -50,6 +50,7 @@ class SubmitAssessmentReadinessReportCommand(BaseModel):
     controlled_chair_stand_without_arms: Answer
     current_upper_body_wrist_or_hand_concern: Answer | None = None
     controlled_standard_pushup: Answer | None = None
+    controlled_two_foot_jump_and_landing: Answer | None = None
     answers_confirmed: Literal[True]
 
     @field_validator("reported_at")
@@ -206,6 +207,9 @@ class PersistedAssessmentReadinessService:
                     command.current_upper_body_wrist_or_hand_concern
                 ),
                 "controlled_standard_pushup": command.controlled_standard_pushup,
+                "controlled_two_foot_jump_and_landing": (
+                    command.controlled_two_foot_jump_and_landing
+                ),
             },
             source=ObservationSource.USER_REPORT,
             reliability=Confidence.MODERATE,
