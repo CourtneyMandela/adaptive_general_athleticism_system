@@ -70,6 +70,8 @@ from agas_domain.models import (
     InitialPlanningCandidateContext,
     InitialPlanningContextDraft,
     InitialPlanningContextReview,
+    IntroductoryExposureDose,
+    IntroductoryExposureDosePolicy,
     LongRangeStrategy,
     Observation,
     PlannedSession,
@@ -188,6 +190,11 @@ from agas_domain.persistence.models import (
     InitialPlanningContextObservationRecord,
     InitialPlanningContextPrerequisiteRecord,
     InitialPlanningContextReviewRecord,
+    IntroductoryExposureDoseEvidenceRecord,
+    IntroductoryExposureDoseObservationRecord,
+    IntroductoryExposureDosePolicyEvidenceRecord,
+    IntroductoryExposureDosePolicyRecord,
+    IntroductoryExposureDoseRecord,
     LongRangeStrategyRecord,
     ObservationRecord,
     PlannedSessionRecord,
@@ -3688,6 +3695,199 @@ class DomainRepository:
             policy
             for record_id in record_ids
             if (policy := self.get_repetition_dose_policy(record_id)) is not None
+        )
+
+    def add_introductory_exposure_dose_policy(self, policy: IntroductoryExposureDosePolicy) -> None:
+        if self.session.get(AdaptationRecord, policy.adaptation_id) is None:
+            raise DomainIntegrityError("introductory exposure policy adaptation does not exist")
+        if self.session.get(ProgressionPolicyRecord, policy.progression_policy_id) is None:
+            raise DomainIntegrityError(
+                "introductory exposure policy progression policy does not exist"
+            )
+        self._require_ids_exist(
+            EvidenceClaimRecord.id,
+            policy.evidence_claim_ids,
+            "introductory exposure policy evidence claims",
+        )
+        record = IntroductoryExposureDosePolicyRecord(
+            id=policy.id,
+            schema_version=policy.schema_version,
+            created_at=policy.created_at,
+            adaptation_id=policy.adaptation_id,
+            exposure_type=policy.exposure_type.value,
+            target_scope=policy.target_scope,
+            dose_unit=policy.dose_unit,
+            sets=policy.sets,
+            dose_per_set=policy.dose_per_set,
+            maximum_total_dose=policy.maximum_total_dose,
+            rest_seconds=policy.rest_seconds,
+            effort_rpe_minimum=policy.effort_rpe_minimum,
+            effort_rpe_maximum=policy.effort_rpe_maximum,
+            technique_constraints=list(policy.technique_constraints),
+            planned_duration_minutes=policy.planned_duration_minutes,
+            progression_policy_id=policy.progression_policy_id,
+            numeric_value_origin=policy.numeric_value_origin,
+            authority_reference=policy.authority_reference,
+            rationale=policy.rationale,
+            uncertainty=policy.uncertainty,
+            policy_version=policy.policy_version,
+        )
+        record.evidence_links = [
+            IntroductoryExposureDosePolicyEvidenceRecord(
+                policy_id=policy.id,
+                evidence_claim_id=claim_id,
+                position=position,
+            )
+            for position, claim_id in enumerate(policy.evidence_claim_ids)
+        ]
+        self.session.add(record)
+
+    def get_introductory_exposure_dose_policy(
+        self, policy_id: UUID
+    ) -> IntroductoryExposureDosePolicy | None:
+        record = self.session.get(IntroductoryExposureDosePolicyRecord, policy_id)
+        if record is None:
+            return None
+        return IntroductoryExposureDosePolicy(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            adaptation_id=record.adaptation_id,
+            exposure_type=record.exposure_type,
+            target_scope=record.target_scope,
+            dose_unit=record.dose_unit,
+            sets=record.sets,
+            dose_per_set=record.dose_per_set,
+            maximum_total_dose=record.maximum_total_dose,
+            rest_seconds=record.rest_seconds,
+            effort_rpe_minimum=record.effort_rpe_minimum,
+            effort_rpe_maximum=record.effort_rpe_maximum,
+            technique_constraints=tuple(record.technique_constraints),
+            planned_duration_minutes=record.planned_duration_minutes,
+            progression_policy_id=record.progression_policy_id,
+            evidence_claim_ids=tuple(item.evidence_claim_id for item in record.evidence_links),
+            numeric_value_origin=record.numeric_value_origin,
+            authority_reference=record.authority_reference,
+            rationale=record.rationale,
+            uncertainty=record.uncertainty,
+            policy_version=record.policy_version,
+        )
+
+    def add_introductory_exposure_dose(self, dose: IntroductoryExposureDose) -> None:
+        self._require_athlete(dose.athlete_id)
+        need = self.session.get(ExposureNeedRecord, dose.exposure_need_id)
+        policy = self.session.get(IntroductoryExposureDosePolicyRecord, dose.policy_id)
+        if need is None or need.athlete_id != dose.athlete_id:
+            raise DomainIntegrityError(
+                "introductory exposure dose need is missing or belongs elsewhere"
+            )
+        if policy is None:
+            raise DomainIntegrityError("introductory exposure dose policy does not exist")
+        expected_observations = {item.observation_id for item in need.observation_links}
+        if set(dose.source_observation_ids) != expected_observations:
+            raise DomainIntegrityError(
+                "introductory exposure dose must preserve the need's exact observations"
+            )
+        policy_evidence = {item.evidence_claim_id for item in policy.evidence_links}
+        if set(dose.evidence_claim_ids) != policy_evidence:
+            raise DomainIntegrityError(
+                "introductory exposure dose must preserve the policy's exact evidence"
+            )
+        if (
+            need.exposure_type != dose.exposure_type.value
+            or need.target_scope != dose.target_scope
+            or policy.exposure_type != dose.exposure_type.value
+            or policy.target_scope != dose.target_scope
+            or policy.adaptation_id != dose.adaptation_id
+            or policy.dose_unit != dose.dose_unit
+            or policy.sets != dose.sets
+            or policy.dose_per_set != dose.dose_per_set
+            or policy.rest_seconds != dose.rest_seconds
+            or policy.effort_rpe_minimum != dose.effort_rpe_minimum
+            or policy.effort_rpe_maximum != dose.effort_rpe_maximum
+            or tuple(policy.technique_constraints) != dose.technique_constraints
+            or policy.planned_duration_minutes != dose.planned_duration_minutes
+            or policy.numeric_value_origin != dose.numeric_value_origin
+            or policy.authority_reference != dose.authority_reference
+        ):
+            raise DomainIntegrityError("introductory exposure dose differs from its need or policy")
+        record = IntroductoryExposureDoseRecord(
+            id=dose.id,
+            schema_version=dose.schema_version,
+            created_at=dose.created_at,
+            kind=dose.kind,
+            athlete_id=dose.athlete_id,
+            exposure_need_id=dose.exposure_need_id,
+            policy_id=dose.policy_id,
+            adaptation_id=dose.adaptation_id,
+            exposure_type=dose.exposure_type.value,
+            target_scope=dose.target_scope,
+            dose_unit=dose.dose_unit,
+            sets=dose.sets,
+            dose_per_set=dose.dose_per_set,
+            total_dose=dose.total_dose,
+            rest_seconds=dose.rest_seconds,
+            effort_rpe_minimum=dose.effort_rpe_minimum,
+            effort_rpe_maximum=dose.effort_rpe_maximum,
+            technique_constraints=list(dose.technique_constraints),
+            planned_duration_minutes=dose.planned_duration_minutes,
+            numeric_value_origin=dose.numeric_value_origin,
+            authority_reference=dose.authority_reference,
+            rationale=dose.rationale,
+            uncertainty=dose.uncertainty,
+            derived_at=dose.derived_at,
+            rule_version=dose.rule_version,
+        )
+        record.observation_links = [
+            IntroductoryExposureDoseObservationRecord(
+                dose_id=dose.id,
+                observation_id=observation_id,
+                position=position,
+            )
+            for position, observation_id in enumerate(dose.source_observation_ids)
+        ]
+        record.evidence_links = [
+            IntroductoryExposureDoseEvidenceRecord(
+                dose_id=dose.id,
+                evidence_claim_id=claim_id,
+                position=position,
+            )
+            for position, claim_id in enumerate(dose.evidence_claim_ids)
+        ]
+        self.session.add(record)
+
+    def get_introductory_exposure_dose(self, dose_id: UUID) -> IntroductoryExposureDose | None:
+        record = self.session.get(IntroductoryExposureDoseRecord, dose_id)
+        if record is None:
+            return None
+        return IntroductoryExposureDose(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            kind=record.kind,
+            athlete_id=record.athlete_id,
+            exposure_need_id=record.exposure_need_id,
+            policy_id=record.policy_id,
+            adaptation_id=record.adaptation_id,
+            exposure_type=record.exposure_type,
+            target_scope=record.target_scope,
+            dose_unit=record.dose_unit,
+            sets=record.sets,
+            dose_per_set=record.dose_per_set,
+            total_dose=record.total_dose,
+            rest_seconds=record.rest_seconds,
+            effort_rpe_minimum=record.effort_rpe_minimum,
+            effort_rpe_maximum=record.effort_rpe_maximum,
+            technique_constraints=tuple(record.technique_constraints),
+            planned_duration_minutes=record.planned_duration_minutes,
+            source_observation_ids=tuple(item.observation_id for item in record.observation_links),
+            evidence_claim_ids=tuple(item.evidence_claim_id for item in record.evidence_links),
+            numeric_value_origin=record.numeric_value_origin,
+            authority_reference=record.authority_reference,
+            rationale=record.rationale,
+            uncertainty=record.uncertainty,
+            derived_at=record.derived_at,
+            rule_version=record.rule_version,
         )
 
     def add_exposure_definition(self, definition: ExposureDefinition) -> None:

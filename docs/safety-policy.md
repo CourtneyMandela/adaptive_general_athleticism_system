@@ -215,6 +215,13 @@ engineering-authority reference, source observation, uncertainty, and expiry. Co
 medical clearance or a general tissue-capacity judgment. A missing prerequisite identifies work
 the planning system still owes the athlete; it does not authorize an exercise or dose by itself.
 
+When a later introductory dose is prepared, it must come from a versioned
+`IntroductoryExposureDosePolicy` matching the exact exposure type and target scope. The policy must
+state the origin of its numeric values and its authority reference. A current unmet need is
+required; confirmed, unknown, stale, future, or mismatched exposure state fails closed. The derived
+dose remains only a prescription input and cannot bypass exercise resolution, current readiness,
+exposure caps, or the session safety gate.
+
 The current validator derives entries only from actual workout-result observations and applies
 configurable initial, relative, and absolute caps. Rejected targets hold progression; no universal
 “10% rule” or cardiovascular proxy is used.

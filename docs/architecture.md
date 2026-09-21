@@ -250,6 +250,13 @@ validity, versioned derivation rule, uncertainty, and the authority responsible 
 boundary. It may later support an EXPOSE priority, but cannot itself authorize an exercise, dose,
 or session.
 
+`IntroductoryExposureDosePolicy` is distinct from estimate-derived repetition dosing. It can govern
+a fixed, bounded starting dose only for a matching exposure type and target scope, and it records
+whether the exact numeric values came from engineering judgment, professional judgment, or
+scientific evidence. `IntroductoryExposureDose` preserves the exact unmet need, observations,
+policy, adaptation, authority reference, evidence, uncertainty, and rule version used for one
+derived dose. It is still upstream of exercise resolution, scheduling, and session permission.
+
 `CompetencyFloorReview` and `PriorityPolicyReview` keep governance separate from those immutable
 authorities. Each authority has one linear, append-only review history with decision, evidence,
 reviewer, applicability rationale, uncertainty, timestamp, and review version. Sequence and

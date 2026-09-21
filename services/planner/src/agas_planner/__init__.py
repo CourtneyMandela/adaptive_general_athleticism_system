@@ -8,7 +8,13 @@ from agas_planner.assessment import (
     ConservativeCapabilityEstimator,
 )
 from agas_planner.block_planning import BlockPlanner, BlockPlanningError, WeeklyScheduler
-from agas_planner.dose import DerivedRepetitionDose, RepetitionDoseError, RepetitionDosePlanner
+from agas_planner.dose import (
+    DerivedRepetitionDose,
+    IntroductoryExposureDoseError,
+    IntroductoryExposureDosePlanner,
+    RepetitionDoseError,
+    RepetitionDosePlanner,
+)
 from agas_planner.execution import (
     ExecutionRecordingError,
     SessionAdherenceCalculator,
@@ -54,6 +60,8 @@ __all__ = [
     "ExposureEntryCalculator",
     "ExposureNeedDeriver",
     "ExposureProgressionValidator",
+    "IntroductoryExposureDoseError",
+    "IntroductoryExposureDosePlanner",
     "LongRangeStrategyPlanner",
     "PlanningError",
     "PrescriptionProgressionApplicator",

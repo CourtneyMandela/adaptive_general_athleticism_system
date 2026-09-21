@@ -2533,6 +2533,100 @@ class RepetitionDosePolicy(VersionedRecord):
         return self
 
 
+class IntroductoryExposureDosePolicy(VersionedRecord):
+    """Governed fixed starting dose for a scoped, unmet exposure prerequisite."""
+
+    adaptation_id: UUID
+    exposure_type: ExposureType
+    target_scope: NonEmptyText
+    dose_unit: Literal["repetitions", "seconds"]
+    sets: int = Field(ge=1)
+    dose_per_set: float = Field(gt=0)
+    maximum_total_dose: float = Field(gt=0)
+    rest_seconds: int = Field(ge=0)
+    effort_rpe_minimum: float = Field(ge=0, le=10)
+    effort_rpe_maximum: float = Field(ge=0, le=10)
+    technique_constraints: Annotated[tuple[NonEmptyText, ...], Field(min_length=1)]
+    planned_duration_minutes: int = Field(gt=0)
+    progression_policy_id: UUID
+    evidence_claim_ids: tuple[UUID, ...] = ()
+    numeric_value_origin: Literal[
+        "engineering_judgment", "professional_judgment", "scientific_evidence"
+    ]
+    authority_reference: NonEmptyText
+    rationale: NonEmptyText
+    uncertainty: NonEmptyText
+    policy_version: NonEmptyText
+
+    @model_validator(mode="after")
+    def validate_introductory_exposure_policy(self) -> IntroductoryExposureDosePolicy:
+        if self.effort_rpe_maximum < self.effort_rpe_minimum:
+            raise ValueError("RPE maximum cannot be below RPE minimum")
+        if self.sets * self.dose_per_set > self.maximum_total_dose:
+            raise ValueError("configured set dose exceeds the maximum total dose")
+        if len(set(self.technique_constraints)) != len(self.technique_constraints):
+            raise ValueError("technique constraints must not contain duplicates")
+        if len(set(self.evidence_claim_ids)) != len(self.evidence_claim_ids):
+            raise ValueError("evidence_claim_ids must not contain duplicates")
+        if self.numeric_value_origin == "scientific_evidence" and not self.evidence_claim_ids:
+            raise ValueError("scientific numeric origin requires at least one evidence claim")
+        return self
+
+
+class IntroductoryExposureDose(VersionedRecord):
+    """Immutable dose derived from one exposure need and one governed policy."""
+
+    kind: Literal["derived"] = "derived"
+    athlete_id: UUID
+    exposure_need_id: UUID
+    policy_id: UUID
+    adaptation_id: UUID
+    exposure_type: ExposureType
+    target_scope: NonEmptyText
+    dose_unit: Literal["repetitions", "seconds"]
+    sets: int = Field(ge=1)
+    dose_per_set: float = Field(gt=0)
+    total_dose: float = Field(gt=0)
+    rest_seconds: int = Field(ge=0)
+    effort_rpe_minimum: float = Field(ge=0, le=10)
+    effort_rpe_maximum: float = Field(ge=0, le=10)
+    technique_constraints: Annotated[tuple[NonEmptyText, ...], Field(min_length=1)]
+    planned_duration_minutes: int = Field(gt=0)
+    source_observation_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
+    evidence_claim_ids: tuple[UUID, ...] = ()
+    numeric_value_origin: Literal[
+        "engineering_judgment", "professional_judgment", "scientific_evidence"
+    ]
+    authority_reference: NonEmptyText
+    rationale: NonEmptyText
+    uncertainty: NonEmptyText
+    derived_at: datetime
+    rule_version: NonEmptyText
+
+    @field_validator("derived_at")
+    @classmethod
+    def require_aware_exposure_dose_time(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("derived_at must include a timezone")
+        return value
+
+    @model_validator(mode="after")
+    def validate_introductory_exposure_dose(self) -> IntroductoryExposureDose:
+        if self.effort_rpe_maximum < self.effort_rpe_minimum:
+            raise ValueError("RPE maximum cannot be below RPE minimum")
+        if abs(self.total_dose - self.sets * self.dose_per_set) > 1e-9:
+            raise ValueError("total_dose must equal sets multiplied by dose_per_set")
+        for field_name in (
+            "technique_constraints",
+            "source_observation_ids",
+            "evidence_claim_ids",
+        ):
+            values = getattr(self, field_name)
+            if len(set(values)) != len(values):
+                raise ValueError(f"{field_name} must not contain duplicates")
+        return self
+
+
 class ExposureDefinition(VersionedRecord):
     exercise_id: UUID
     exposure_type: ExposureType

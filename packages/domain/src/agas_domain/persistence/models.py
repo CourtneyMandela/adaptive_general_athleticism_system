@@ -2668,6 +2668,151 @@ class RepetitionDosePolicyRecord(VersionedRecordMixin, Base):
     )
 
 
+class IntroductoryExposureDosePolicyRecord(VersionedRecordMixin, Base):
+    __tablename__ = "introductory_exposure_dose_policies"
+    __table_args__ = (
+        CheckConstraint("sets >= 1", name="ck_intro_exposure_policy_sets_positive"),
+        CheckConstraint(
+            "dose_per_set > 0 AND maximum_total_dose > 0",
+            name="ck_intro_exposure_policy_dose_positive",
+        ),
+        CheckConstraint(
+            "sets * dose_per_set <= maximum_total_dose",
+            name="ck_intro_exposure_policy_dose_cap",
+        ),
+        CheckConstraint("rest_seconds >= 0", name="ck_intro_exposure_policy_rest_nonnegative"),
+        CheckConstraint(
+            "effort_rpe_minimum >= 0 AND effort_rpe_maximum <= 10 AND "
+            "effort_rpe_maximum >= effort_rpe_minimum",
+            name="ck_intro_exposure_policy_rpe_bounds",
+        ),
+        CheckConstraint(
+            "planned_duration_minutes > 0",
+            name="ck_intro_exposure_policy_duration_positive",
+        ),
+        CheckConstraint(
+            "dose_unit IN ('repetitions', 'seconds')",
+            name="ck_intro_exposure_policy_dose_unit",
+        ),
+        CheckConstraint(
+            "numeric_value_origin IN ('engineering_judgment', 'professional_judgment', "
+            "'scientific_evidence')",
+            name="ck_intro_exposure_policy_numeric_origin",
+        ),
+    )
+
+    adaptation_id: Mapped[UUID] = mapped_column(
+        ForeignKey("adaptations.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    exposure_type: Mapped[str] = mapped_column(String(60), index=True, nullable=False)
+    target_scope: Mapped[str] = mapped_column(String(200), index=True, nullable=False)
+    dose_unit: Mapped[str] = mapped_column(String(40), nullable=False)
+    sets: Mapped[int] = mapped_column(Integer(), nullable=False)
+    dose_per_set: Mapped[float] = mapped_column(Float(), nullable=False)
+    maximum_total_dose: Mapped[float] = mapped_column(Float(), nullable=False)
+    rest_seconds: Mapped[int] = mapped_column(Integer(), nullable=False)
+    effort_rpe_minimum: Mapped[float] = mapped_column(Float(), nullable=False)
+    effort_rpe_maximum: Mapped[float] = mapped_column(Float(), nullable=False)
+    technique_constraints: Mapped[list[str]] = mapped_column(JsonType, nullable=False)
+    planned_duration_minutes: Mapped[int] = mapped_column(Integer(), nullable=False)
+    progression_policy_id: Mapped[UUID] = mapped_column(
+        ForeignKey("progression_policies.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    numeric_value_origin: Mapped[str] = mapped_column(String(60), nullable=False)
+    authority_reference: Mapped[str] = mapped_column(String(200), nullable=False)
+    rationale: Mapped[str] = mapped_column(Text(), nullable=False)
+    uncertainty: Mapped[str] = mapped_column(Text(), nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(120), nullable=False)
+    evidence_links: Mapped[list[IntroductoryExposureDosePolicyEvidenceRecord]] = relationship(
+        cascade="save-update, merge",
+        lazy="selectin",
+        order_by="IntroductoryExposureDosePolicyEvidenceRecord.position",
+    )
+
+
+class IntroductoryExposureDoseRecord(VersionedRecordMixin, Base):
+    __tablename__ = "introductory_exposure_doses"
+    __table_args__ = (
+        CheckConstraint("kind = 'derived'", name="ck_intro_exposure_dose_derived"),
+        CheckConstraint("sets >= 1", name="ck_intro_exposure_dose_sets_positive"),
+        CheckConstraint(
+            "dose_per_set > 0 AND total_dose > 0",
+            name="ck_intro_exposure_dose_positive",
+        ),
+        CheckConstraint(
+            "ABS(total_dose - sets * dose_per_set) < 0.000000001",
+            name="ck_intro_exposure_dose_total",
+        ),
+        CheckConstraint("rest_seconds >= 0", name="ck_intro_exposure_dose_rest_nonnegative"),
+        CheckConstraint(
+            "effort_rpe_minimum >= 0 AND effort_rpe_maximum <= 10 AND "
+            "effort_rpe_maximum >= effort_rpe_minimum",
+            name="ck_intro_exposure_dose_rpe_bounds",
+        ),
+        CheckConstraint(
+            "planned_duration_minutes > 0",
+            name="ck_intro_exposure_dose_duration_positive",
+        ),
+        CheckConstraint(
+            "dose_unit IN ('repetitions', 'seconds')",
+            name="ck_intro_exposure_dose_unit",
+        ),
+        CheckConstraint(
+            "numeric_value_origin IN ('engineering_judgment', 'professional_judgment', "
+            "'scientific_evidence')",
+            name="ck_intro_exposure_dose_numeric_origin",
+        ),
+        UniqueConstraint(
+            "exposure_need_id",
+            "policy_id",
+            name="uq_intro_exposure_dose_need_policy",
+        ),
+    )
+
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    athlete_id: Mapped[UUID] = mapped_column(
+        ForeignKey("athletes.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    exposure_need_id: Mapped[UUID] = mapped_column(
+        ForeignKey("exposure_needs.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    policy_id: Mapped[UUID] = mapped_column(
+        ForeignKey("introductory_exposure_dose_policies.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=False,
+    )
+    adaptation_id: Mapped[UUID] = mapped_column(
+        ForeignKey("adaptations.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    exposure_type: Mapped[str] = mapped_column(String(60), nullable=False)
+    target_scope: Mapped[str] = mapped_column(String(200), nullable=False)
+    dose_unit: Mapped[str] = mapped_column(String(40), nullable=False)
+    sets: Mapped[int] = mapped_column(Integer(), nullable=False)
+    dose_per_set: Mapped[float] = mapped_column(Float(), nullable=False)
+    total_dose: Mapped[float] = mapped_column(Float(), nullable=False)
+    rest_seconds: Mapped[int] = mapped_column(Integer(), nullable=False)
+    effort_rpe_minimum: Mapped[float] = mapped_column(Float(), nullable=False)
+    effort_rpe_maximum: Mapped[float] = mapped_column(Float(), nullable=False)
+    technique_constraints: Mapped[list[str]] = mapped_column(JsonType, nullable=False)
+    planned_duration_minutes: Mapped[int] = mapped_column(Integer(), nullable=False)
+    numeric_value_origin: Mapped[str] = mapped_column(String(60), nullable=False)
+    authority_reference: Mapped[str] = mapped_column(String(200), nullable=False)
+    rationale: Mapped[str] = mapped_column(Text(), nullable=False)
+    uncertainty: Mapped[str] = mapped_column(Text(), nullable=False)
+    derived_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)
+    rule_version: Mapped[str] = mapped_column(String(160), nullable=False)
+    observation_links: Mapped[list[IntroductoryExposureDoseObservationRecord]] = relationship(
+        cascade="save-update, merge",
+        lazy="selectin",
+        order_by="IntroductoryExposureDoseObservationRecord.position",
+    )
+    evidence_links: Mapped[list[IntroductoryExposureDoseEvidenceRecord]] = relationship(
+        cascade="save-update, merge",
+        lazy="selectin",
+        order_by="IntroductoryExposureDoseEvidenceRecord.position",
+    )
+
+
 class ExposureDefinitionRecord(VersionedRecordMixin, Base):
     __tablename__ = "exposure_definitions"
     exercise_id: Mapped[UUID] = mapped_column(
@@ -2887,6 +3032,64 @@ class RepetitionDosePolicyEvidenceRecord(Base):
 
     repetition_dose_policy_id: Mapped[UUID] = mapped_column(
         ForeignKey("repetition_dose_policies.id", ondelete="RESTRICT"), primary_key=True
+    )
+    evidence_claim_id: Mapped[UUID] = mapped_column(
+        ForeignKey("evidence_claims.id", ondelete="RESTRICT"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer(), nullable=False)
+
+
+class IntroductoryExposureDosePolicyEvidenceRecord(Base):
+    __tablename__ = "introductory_exposure_dose_policy_evidence_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "policy_id",
+            "position",
+            name="uq_intro_exposure_policy_evidence_order",
+        ),
+    )
+
+    policy_id: Mapped[UUID] = mapped_column(
+        ForeignKey("introductory_exposure_dose_policies.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    evidence_claim_id: Mapped[UUID] = mapped_column(
+        ForeignKey("evidence_claims.id", ondelete="RESTRICT"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer(), nullable=False)
+
+
+class IntroductoryExposureDoseObservationRecord(Base):
+    __tablename__ = "introductory_exposure_dose_observations"
+    __table_args__ = (
+        UniqueConstraint(
+            "dose_id",
+            "position",
+            name="uq_intro_exposure_dose_observation_order",
+        ),
+    )
+
+    dose_id: Mapped[UUID] = mapped_column(
+        ForeignKey("introductory_exposure_doses.id", ondelete="RESTRICT"), primary_key=True
+    )
+    observation_id: Mapped[UUID] = mapped_column(
+        ForeignKey("observations.id", ondelete="RESTRICT"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer(), nullable=False)
+
+
+class IntroductoryExposureDoseEvidenceRecord(Base):
+    __tablename__ = "introductory_exposure_dose_evidence_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "dose_id",
+            "position",
+            name="uq_intro_exposure_dose_evidence_order",
+        ),
+    )
+
+    dose_id: Mapped[UUID] = mapped_column(
+        ForeignKey("introductory_exposure_doses.id", ondelete="RESTRICT"), primary_key=True
     )
     evidence_claim_id: Mapped[UUID] = mapped_column(
         ForeignKey("evidence_claims.id", ondelete="RESTRICT"), primary_key=True
@@ -3589,7 +3792,14 @@ for _record_type in (
     SessionAdherenceObservationRecord,
     ProgressionPolicyRecord,
     RepetitionDosePolicyRecord,
+    IntroductoryExposureDosePolicyRecord,
+    IntroductoryExposureDoseRecord,
+    IntroductoryExposureDosePolicyEvidenceRecord,
+    IntroductoryExposureDoseObservationRecord,
+    IntroductoryExposureDoseEvidenceRecord,
     ExposureDefinitionRecord,
+    ExposureNeedRecord,
+    ExposureNeedObservationRecord,
     ExposureEntryRecord,
     ExposureProgressionPolicyRecord,
     ExposureValidationDecisionRecord,
