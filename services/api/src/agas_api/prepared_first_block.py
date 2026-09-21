@@ -405,6 +405,7 @@ class PreparedFirstBlockProjector:
         )
         training_decision = repository.get_decision_record(training.presentation.candidate_id)
         release = training.release
+        dose_policy = release.repetition_dose_policy
         scheduling_review = repository.get_weekly_scheduling_policy_review(
             release.weekly_scheduling_policy_review_id
         )
@@ -427,8 +428,8 @@ class PreparedFirstBlockProjector:
             )
             and repository.get_progression_policy(release.progression_policy.id)
             == release.progression_policy
-            and repository.get_repetition_dose_policy(release.repetition_dose_policy.id)
-            == release.repetition_dose_policy
+            and dose_policy is not None
+            and repository.get_repetition_dose_policy(dose_policy.id) == dose_policy
             and repository.get_session_safety_policy(release.session_safety_policy.id)
             == release.session_safety_policy
         )
@@ -443,7 +444,7 @@ class PreparedFirstBlockProjector:
                     (
                         resource.release.claim.id,
                         *release.progression_policy.evidence_claim_ids,
-                        *release.repetition_dose_policy.evidence_claim_ids,
+                        *(dose_policy.evidence_claim_ids if dose_policy is not None else ()),
                         *release.session_safety_policy.evidence_claim_ids,
                     )
                 )

@@ -275,6 +275,7 @@ class PreparedFirstWeekProjector:
             training_candidate = None
             exact_policy = None
             exact_review = None
+            dose_policy = None
         else:
             try:
                 training_candidate = prepared_training_construction_candidate_for_scope(
@@ -284,6 +285,10 @@ class PreparedFirstWeekProjector:
                     instant, blockers, training_candidate
                 )
                 dose_policy = training_candidate.release.repetition_dose_policy
+                if dose_policy is None:
+                    raise RepetitionDoseError(
+                        "the matching construction candidate has no repetition dose policy"
+                    )
                 dose = RepetitionDosePlanner().derive(
                     adaptation=adaptation,
                     estimate=estimate,
@@ -304,6 +309,7 @@ class PreparedFirstWeekProjector:
             or training_candidate is None
             or exact_policy is None
             or exact_review is None
+            or dose_policy is None
         ):
             return self._blocked(block.id, block.athlete_id, instant, blockers)
 
@@ -500,6 +506,10 @@ class PreparedFirstWeekProjector:
         prepared: PreparedTrainingConstructionCandidate,
     ) -> tuple[WeeklySchedulingPolicy | None, WeeklySchedulingPolicyReview | None]:
         release = prepared.release
+        dose_policy = release.repetition_dose_policy
+        if dose_policy is None:
+            blockers.append("The matching construction release has no repetition dose authority.")
+            return None, None
         decision = self.repository.get_decision_record(prepared.presentation.candidate_id)
         policy = self.repository.get_weekly_scheduling_policy(release.weekly_scheduling_policy.id)
         review = self.repository.get_weekly_scheduling_policy_review(
@@ -512,8 +522,7 @@ class PreparedFirstWeekProjector:
             and policy == release.weekly_scheduling_policy
             and review is not None
             and review.decision is AssessmentReviewDecision.APPROVED
-            and self.repository.get_repetition_dose_policy(release.repetition_dose_policy.id)
-            == release.repetition_dose_policy
+            and self.repository.get_repetition_dose_policy(dose_policy.id) == dose_policy
             and self.repository.get_progression_policy(release.progression_policy.id)
             == release.progression_policy
             and self.repository.get_session_safety_policy(release.session_safety_policy.id)
@@ -524,7 +533,7 @@ class PreparedFirstWeekProjector:
             return None, None
         try:
             EvidenceAuthorityEvaluator(self.session).require_ready(
-                release.repetition_dose_policy.evidence_claim_ids, instant
+                dose_policy.evidence_claim_ids, instant
             )
         except (EvidenceAuthorityEvaluationError, EvidenceAuthorityNotReadyError) as error:
             blockers.append(f"The dose evidence authority is not current: {error}")
@@ -583,12 +592,17 @@ class PreparedFirstWeekProjector:
             raise PreparedFirstWeekValidationError(
                 "the prepared prescription requires complete exercise lineage"
             )
+        dose_policy = training_candidate.release.repetition_dose_policy
+        if dose_policy is None:
+            raise PreparedFirstWeekValidationError(
+                "the matching construction candidate has no repetition dose policy"
+            )
         evidence_ids = tuple(
             dict.fromkeys(
                 (
                     *allocation_input.resource_demand.evidence_claim_ids,
                     *requirement.evidence_claim_ids,
-                    *training_candidate.release.repetition_dose_policy.evidence_claim_ids,
+                    *dose_policy.evidence_claim_ids,
                 )
             )
         )
@@ -815,10 +829,15 @@ def ratify_prepared_first_week(
             estimate.estimate_scope
         )
         release = training_candidate.release
+        dose_policy = release.repetition_dose_policy
+        if dose_policy is None:
+            raise PreparedFirstWeekValidationError(
+                "the matching construction candidate has no repetition dose policy"
+            )
         dose = RepetitionDosePlanner().derive(
             adaptation=adaptation,
             estimate=estimate,
-            policy=release.repetition_dose_policy,
+            policy=dose_policy,
             derived_at=command.prepared_at,
         )
         result = PersistedWeeklyPlanService(session).execute(

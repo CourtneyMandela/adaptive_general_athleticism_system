@@ -3,6 +3,11 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import pytest
+from agas_api.assessment_governance_candidates import (
+    RatifyAssessmentGovernanceCandidateCommand,
+    list_assessment_governance_candidates,
+    ratify_assessment_governance_candidate,
+)
 from agas_api.database import database_session_dependency
 from agas_api.identity import AuthorizedRole, authenticated_principal_dependency
 from agas_api.identity_admin import set_account_role
@@ -32,6 +37,7 @@ from agas_api.resource_governance_candidates import (
 from agas_api.training_construction_candidates import (
     CANDIDATE_ID,
     CANDIDATE_VERSION,
+    JUMP_EXPOSURE_CANDIDATE_ID,
     PUSHUP_CANDIDATE_ID,
     RatifyTrainingConstructionCandidateCommand,
     TrainingConstructionCandidateConflictError,
@@ -45,6 +51,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 NOW = datetime(2026, 9, 11, 12, 0, tzinfo=UTC)
+JUMP_NOW = datetime(2026, 9, 21, 13, 0, tzinfo=UTC)
 
 
 def _authority() -> AuthorizedRole:
@@ -141,6 +148,7 @@ def test_exact_construction_bundle_is_atomic_and_idempotent(session: Session) ->
     assert first.created_session_safety_policy is True
     assert first.decision_record_created is True
     assert second.decision_record_created is False
+    assert first.repetition_dose_policy is not None
     assert first.repetition_dose_policy.target_fraction_of_estimate == 0.5
     assert first.repetition_dose_policy.progression_policy_id == first.progression_policy.id
     assert first.weekly_scheduling_policy_review.decision.value == "approved"
@@ -196,12 +204,122 @@ def test_pushup_construction_bundle_uses_matching_resource_and_scope(session: Se
         ratified_at=datetime(2026, 9, 17, 12, 40, tzinfo=UTC),
     )
 
+    assert result.repetition_dose_policy is not None
     assert result.repetition_dose_policy.estimate_scope == (
         "assessment_specific:maximum_consecutive_standard_pushup_repetitions"
     )
     assert result.repetition_dose_policy.target_fraction_of_estimate == 0.4
     assert result.repetition_dose_policy.maximum_repetitions_per_set == 10
     assert result.repetition_dose_policy.rest_seconds == 120
+
+
+def test_introductory_jump_bundle_is_blocked_until_assessment_evidence_is_reviewed(
+    session: Session,
+) -> None:
+    SeedCatalogImporter(DomainRepository(session)).import_catalog(
+        load_seed_catalog(), imported_at=JUMP_NOW - timedelta(days=1)
+    )
+    session.commit()
+
+    item = next(
+        item
+        for item in list_training_construction_candidates(session, projected_at=JUMP_NOW).items
+        if item.candidate.candidate_id == JUMP_EXPOSURE_CANDIDATE_ID
+    )
+
+    assert item.status == "blocked"
+    assert any("evidence claim" in issue for issue in item.issues)
+
+
+def test_introductory_jump_bundle_persists_typed_engineering_authorities(
+    session: Session,
+) -> None:
+    repository = DomainRepository(session)
+    SeedCatalogImporter(repository).import_catalog(
+        load_seed_catalog(), imported_at=JUMP_NOW - timedelta(days=1)
+    )
+    session.commit()
+    assessment = next(
+        item.candidate
+        for item in list_assessment_governance_candidates(
+            session, projected_at=JUMP_NOW - timedelta(minutes=20)
+        ).items
+        if item.candidate.slug == "countermovement_vertical_jump"
+    )
+    assessment_authority = AuthorizedRole(
+        account_id=UUID("10000000-0000-4000-8000-000000000020"),
+        assignment_id=UUID("20000000-0000-4000-8000-000000000020"),
+        role=AccountRole.ASSESSMENT_REVIEWER,
+        assigned_at=JUMP_NOW - timedelta(days=1),
+    )
+    ratify_assessment_governance_candidate(
+        session,
+        assessment.candidate_id,
+        RatifyAssessmentGovernanceCandidateCommand(
+            candidate_version=assessment.candidate_version,
+            content_digest=assessment.content_digest,
+            approval_attestation=True,
+        ),
+        assessment_authority,
+        ratified_at=JUMP_NOW - timedelta(minutes=15),
+    )
+    candidate = next(
+        item
+        for item in list_training_construction_candidates(session, projected_at=JUMP_NOW).items
+        if item.candidate.candidate_id == JUMP_EXPOSURE_CANDIDATE_ID
+    )
+    authority = AuthorizedRole(
+        account_id=UUID("10000000-0000-4000-8000-000000000021"),
+        assignment_id=UUID("20000000-0000-4000-8000-000000000021"),
+        role=AccountRole.PLANNING_REVIEWER,
+        assigned_at=JUMP_NOW - timedelta(days=1),
+    )
+
+    first = ratify_training_construction_candidate(
+        session,
+        JUMP_EXPOSURE_CANDIDATE_ID,
+        RatifyTrainingConstructionCandidateCommand(
+            candidate_version=candidate.candidate.candidate_version,
+            content_digest=candidate.candidate.content_digest,
+            approval_attestation=True,
+        ),
+        authority,
+        ratified_at=JUMP_NOW,
+    )
+    second = ratify_training_construction_candidate(
+        session,
+        JUMP_EXPOSURE_CANDIDATE_ID,
+        RatifyTrainingConstructionCandidateCommand(
+            candidate_version=candidate.candidate.candidate_version,
+            content_digest=candidate.candidate.content_digest,
+            approval_attestation=True,
+        ),
+        authority,
+        ratified_at=JUMP_NOW + timedelta(minutes=1),
+    )
+
+    assert first.repetition_dose_policy is None
+    assert first.introductory_exposure_dose_policy is not None
+    assert first.introductory_exposure_dose_policy.numeric_value_origin == "engineering_judgment"
+    assert (
+        first.introductory_exposure_dose_policy.sets
+        * first.introductory_exposure_dose_policy.dose_per_set
+        == 6
+    )
+    assert first.introductory_exposure_dose_policy.evidence_claim_ids == ()
+    assert first.exposure_definition is not None
+    assert first.exposure_definition.exercise_id == UUID(
+        "b0000000-0000-4000-8000-000000000012"
+    )
+    assert first.exposure_progression_policy is not None
+    assert first.exposure_progression_policy.maximum_initial_dose == 6
+    assert repository.get_introductory_exposure_dose_policy(
+        first.introductory_exposure_dose_policy.id
+    ) == first.introductory_exposure_dose_policy
+    assert first.created_introductory_exposure_dose_policy is True
+    assert first.created_exposure_definition is True
+    assert first.created_exposure_progression_policy is True
+    assert second.decision_record_created is False
 
 
 def test_stale_digest_persists_none_of_the_construction_bundle(session: Session) -> None:

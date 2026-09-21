@@ -1,0 +1,179 @@
+{
+  "document_schema_version": "training-construction-candidate-document@1.0.0",
+  "candidate_version": "training-construction-candidate@1.0.0",
+  "content_digest": "sha256:74d4610b112ea14f0142b19b1cecf977c2b410665deb5366ad41a654fa9cee19",
+  "presentation": {
+    "candidate_id": "98900000-0000-4000-8000-000000000003",
+    "slug": "owner_alpha_introductory_jump_exposure_authorities",
+    "release_label": "Owner-alpha introductory jump-exposure authorities",
+    "prepared_at": "2026-09-21T12:00:00Z",
+    "summary": "One atomic batch for a deliberately easy jump-and-stick exposure before maximal countermovement-jump assessment, with fixed dose, exposure cap, progression, scheduling, and non-diagnostic readiness modifications.",
+    "authority_basis": {
+      "scientific_support": "The reviewed ACSM claim identifies the countermovement vertical jump as an assessment-specific jumping task. It supports the task definition only; it does not establish this batch's contact count, effort, rest, progression cap, or recovery rules.",
+      "engineering_prior": "The six-contact starting dose, RPE 2-4 range, 90-second rest, 25% relative cap, two-contact absolute cap, and modification mappings are explicit conservative engineering priors. Ratification accepts them provisionally and does not relabel them as scientific findings."
+    },
+    "exact_artifacts": [
+      "One introductory exposure-dose policy for a jumping exposure required by the maximal countermovement-jump assessment.",
+      "One exposure definition binding the existing countermovement-jump exercise ontology record to jumping contacts.",
+      "One exposure-progression cap and one completion-gated progression policy.",
+      "One weekly scheduling policy, approved review, and non-diagnostic session-safety policy."
+    ],
+    "governs": [
+      "Derivation of a fixed 2-set by 3-repetition easy jump-and-stick exposure when the exact jumping exposure need is current and introductory exposure is required.",
+      "A maximum initial total of 6 jump contacts, with 90 seconds rest and target effort RPE 2-4.",
+      "Later progression only after complete, technique-compliant exposure and within both relative and absolute exposure caps."
+    ],
+    "does_not_establish": [
+      "Medical clearance, tissue readiness, injury prediction, pain tolerance, or permission to ignore concerning symptoms.",
+      "That six contacts, RPE 2-4, 90 seconds rest, or either progression cap is an ACSM recommendation or a scientific optimum.",
+      "Readiness for maximal jumping after one exposure; the separate recent-exposure gate remains controlling.",
+      "An athlete-specific session, scheduled week, completed exposure, or permission to train."
+    ],
+    "unresolved_limitations": [
+      "The exact operational constants have not been calibrated against this athlete's response.",
+      "A self-observed controlled landing cannot verify force distribution or all technique errors.",
+      "The existing countermovement-jump ontology record represents the movement; the dose instructions deliberately constrain this introductory use to easy non-maximal repetitions.",
+      "A later planning step must convert the derived introductory dose into a reviewed scheduled session and record the completed exposure."
+    ],
+    "evidence": [
+      {
+        "claim_id": "91200000-0000-4000-8000-000000000004",
+        "title": "ACSM Guidelines, 12th edition: countermovement vertical-jump protocol",
+        "source_url": "https://www.ncbi.nlm.nih.gov/nlmcatalog/137328",
+        "supported_use": "The guideline identifies and specifies the countermovement vertical jump as a lower-body power field assessment, providing an exact target task for the exposure prerequisite.",
+        "unsupported_specifics": "The source does not validate an introductory training dose or this batch's 2 sets, 3 contacts per set, RPE 2-4, 90-second rest, six-contact initial cap, or later progression limits."
+      }
+    ]
+  },
+  "release": {
+    "prepared_at": "2026-09-21T12:00:00Z",
+    "weekly_scheduling_policy": {
+      "id": "98910000-0000-4000-8000-000000000003",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-21T12:00:00Z",
+      "minimum_high_fatigue_recovery_hours": 24,
+      "maximum_sessions_per_day": 1,
+      "maximum_high_fatigue_sessions_per_day": 1,
+      "allow_partial_exercise_resolution": false,
+      "policy_version": "owner-alpha-jump-exposure-scheduling@1.0.0"
+    },
+    "weekly_scheduling_policy_review_id": "98920000-0000-4000-8000-000000000003",
+    "weekly_scheduling_policy_review_content": {
+      "applicability_rationale": "Approve only for the owner-alpha introductory jump-exposure pathway: one session per day, an exact exercise binding, and no automatic same-day repeat. The high-fatigue interval is a forward-compatible guardrail; this introductory exposure is intended to stay low fatigue.",
+      "uncertainty": "The daily cap and 24-hour high-fatigue interval are conservative engineering constraints, not values extracted from the cited assessment source. The recent-exposure gate and current readiness remain separate controlling rules.",
+      "review_version": "owner-alpha-jump-exposure-scheduling-review@1.0.0"
+    },
+    "progression_policy": {
+      "id": "98930000-0000-4000-8000-000000000003",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-21T12:00:00Z",
+      "reference": "owner-alpha-introductory-jump-contact-progression@1.0.0",
+      "minimum_set_completion_ratio": 1.0,
+      "minimum_dose_completion_ratio": 1.0,
+      "maximum_session_rpe": 4.0,
+      "require_technique_constraint": true,
+      "adjustment": {
+        "dimension": "repetitions",
+        "amount": 1.0,
+        "unit": "repetition_per_set",
+        "description": "Add no more than one easy jump contact per set after full compliant completion and exposure-cap validation."
+      },
+      "exposure_type": "jumping",
+      "evidence_claim_ids": [
+        "91200000-0000-4000-8000-000000000004"
+      ],
+      "rationale": "Progress only after every planned contact was completed at RPE 4 or below with the reviewed reset-and-stick constraints and no post-session safety interruption; the separate exposure validator must also approve the proposed total.",
+      "policy_version": "owner-alpha-introductory-jump-contact-progression@1.0.0"
+    },
+    "introductory_exposure_dose_policy": {
+      "id": "98960000-0000-4000-8000-000000000003",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-21T12:00:00Z",
+      "adaptation_id": "a0000000-0000-4000-8000-000000000006",
+      "exposure_type": "jumping",
+      "target_scope": "assessment:countermovement_vertical_jump:maximal",
+      "dose_unit": "repetitions",
+      "sets": 2,
+      "dose_per_set": 3.0,
+      "maximum_total_dose": 6.0,
+      "rest_seconds": 90,
+      "effort_rpe_minimum": 2.0,
+      "effort_rpe_maximum": 4.0,
+      "technique_constraints": [
+        "Perform each repetition as an easy non-maximal vertical jump, then land on both feet under control.",
+        "Pause, regain a stable quiet stance, and deliberately reset before the next repetition; do not rebound continuously.",
+        "Stop the exposure for pain, dizziness, instability, an uncontrolled landing, or inability to keep the effort easy."
+      ],
+      "planned_duration_minutes": 8,
+      "progression_policy_id": "98930000-0000-4000-8000-000000000003",
+      "evidence_claim_ids": [],
+      "numeric_value_origin": "engineering_judgment",
+      "authority_reference": "global-governance-identity-integrity@1.0.0; introductory-exposure-dose-authority@1.0.0",
+      "rationale": "Use the smallest practical multi-set exposure that lets the athlete rehearse separate easy takeoffs and controlled landings while generating an observable response before any maximal assessment attempt.",
+      "uncertainty": "Every numeric value is a provisional engineering prior. The assessment source defines the target task but does not establish this dose or guarantee that completing it makes maximal jumping appropriate.",
+      "policy_version": "owner-alpha-easy-jump-and-stick-introductory-dose@1.0.0"
+    },
+    "exposure_definition": {
+      "id": "98970000-0000-4000-8000-000000000003",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-21T12:00:00Z",
+      "exercise_id": "b0000000-0000-4000-8000-000000000012",
+      "exposure_type": "jumping",
+      "dose_unit": "repetitions",
+      "evidence_claim_ids": [
+        "91200000-0000-4000-8000-000000000004"
+      ],
+      "rationale": "Count each separately reset countermovement-jump repetition as one jumping exposure contact; intensity and technique remain prescription constraints rather than a different exercise identity.",
+      "definition_version": "countermovement-jump-contact-exposure@1.0.0"
+    },
+    "exposure_progression_policy": {
+      "id": "98980000-0000-4000-8000-000000000003",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-21T12:00:00Z",
+      "exposure_type": "jumping",
+      "dose_unit": "repetitions",
+      "lookback_days": 28,
+      "minimum_recent_entries": 1,
+      "maximum_initial_dose": 6.0,
+      "maximum_relative_increase": 0.25,
+      "maximum_absolute_increase": 2.0,
+      "evidence_claim_ids": [
+        "91200000-0000-4000-8000-000000000004"
+      ],
+      "rationale": "Refuse an unbounded first or subsequent increase: the initial exposure is capped at six contacts, and later proposals must stay within both a 25 percent relative increase and two-contact absolute increase over recent completed exposure.",
+      "policy_version": "owner-alpha-jumping-contact-cap@1.0.0"
+    },
+    "session_safety_policy": {
+      "id": "98950000-0000-4000-8000-000000000003",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-21T12:00:00Z",
+      "allowed_modifications": [
+        "reduce_volume",
+        "reduce_intensity",
+        "shorten_session"
+      ],
+      "limited_readiness_modifications": [
+        "reduce_volume",
+        "reduce_intensity"
+      ],
+      "unusual_soreness_modifications": [
+        "reduce_volume",
+        "reduce_intensity"
+      ],
+      "sleep_disruption_modifications": [
+        "reduce_volume",
+        "reduce_intensity"
+      ],
+      "schedule_limitation_modifications": [
+        "shorten_session"
+      ],
+      "evidence_claim_ids": [
+        "91200000-0000-4000-8000-000000000004"
+      ],
+      "rationale": "Permit only conservative reductions for ordinary limited readiness, soreness, sleep disruption, or schedule limitation. Concerning symptoms and failed landing control remain stop conditions governed outside this modification policy.",
+      "policy_version": "owner-alpha-introductory-jump-session-safety@1.0.0"
+    },
+    "release_rationale": "Install the minimum explicit authorities needed to turn a governed missing jumping-exposure prerequisite into a bounded, inspectable introductory dose without inventing an athlete capability score or asking the owner to author technical constants.",
+    "release_uncertainty": "The movement association is evidence-linked, but all exact dose, cap, recovery, progression, and modification values are provisional engineering priors. Ratification creates reusable authorities only; athlete-specific derivation, session review, scheduling, and execution remain separate steps."
+  }
+}
