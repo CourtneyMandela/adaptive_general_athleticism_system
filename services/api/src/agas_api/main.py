@@ -205,6 +205,14 @@ from agas_api.initial_planning_preparation import (
     InitialPlanningPreparationProjectionError,
     InitialPlanningPreparationProjector,
 )
+from agas_api.introductory_exposure import (
+    IntroductoryExposureConflictError,
+    IntroductoryExposureExecutionResult,
+    IntroductoryExposureNotFoundError,
+    IntroductoryExposureValidationError,
+    PersistedIntroductoryExposureService,
+    RecordIntroductoryExposureCommand,
+)
 from agas_api.onboarding import (
     AthleteOnboardingConflictError,
     AthleteOnboardingNotFoundError,
@@ -1693,6 +1701,31 @@ def submit_assessment_readiness_report(
     except AssessmentReadinessConflictError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     except AssessmentReadinessValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.post(
+    "/v1/athletes/{athlete_id}/introductory-exposure-executions",
+    tags=["assessment"],
+    response_model=IntroductoryExposureExecutionResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def record_introductory_exposure_execution(
+    athlete_id: UUID,
+    command: RecordIntroductoryExposureCommand,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authorizer: Annotated[OwnershipAuthorizer, Depends(ownership_authorizer_dependency)],
+) -> IntroductoryExposureExecutionResult:
+    authorizer.require_athlete(athlete_id)
+    try:
+        return PersistedIntroductoryExposureService(session).execute(athlete_id, command)
+    except IntroductoryExposureNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except IntroductoryExposureConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except IntroductoryExposureValidationError as error:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
         ) from error

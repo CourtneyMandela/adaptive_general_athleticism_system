@@ -72,6 +72,7 @@ from agas_domain.models import (
     InitialPlanningContextReview,
     IntroductoryExposureDose,
     IntroductoryExposureDosePolicy,
+    IntroductoryExposureExecution,
     LongRangeStrategy,
     Observation,
     PlannedSession,
@@ -195,6 +196,7 @@ from agas_domain.persistence.models import (
     IntroductoryExposureDosePolicyEvidenceRecord,
     IntroductoryExposureDosePolicyRecord,
     IntroductoryExposureDoseRecord,
+    IntroductoryExposureExecutionRecord,
     LongRangeStrategyRecord,
     ObservationRecord,
     PlannedSessionRecord,
@@ -3888,6 +3890,139 @@ class DomainRepository:
             uncertainty=record.uncertainty,
             derived_at=record.derived_at,
             rule_version=record.rule_version,
+        )
+
+    def get_introductory_exposure_dose_for_need_policy(
+        self, exposure_need_id: UUID, policy_id: UUID
+    ) -> IntroductoryExposureDose | None:
+        dose_id = self.session.scalar(
+            select(IntroductoryExposureDoseRecord.id).where(
+                IntroductoryExposureDoseRecord.exposure_need_id == exposure_need_id,
+                IntroductoryExposureDoseRecord.policy_id == policy_id,
+            )
+        )
+        return self.get_introductory_exposure_dose(dose_id) if dose_id is not None else None
+
+    def add_introductory_exposure_execution(self, execution: IntroductoryExposureExecution) -> None:
+        dose = self.session.get(
+            IntroductoryExposureDoseRecord, execution.introductory_exposure_dose_id
+        )
+        need = self.session.get(ExposureNeedRecord, execution.exposure_need_id)
+        definition = self.session.get(ExposureDefinitionRecord, execution.exposure_definition_id)
+        environment = self.session.get(EnvironmentRecord, execution.environment_id)
+        observation = self.session.get(ObservationRecord, execution.performance_observation_id)
+        if (
+            dose is None
+            or need is None
+            or dose.exposure_need_id != need.id
+            or dose.athlete_id != execution.athlete_id
+            or need.athlete_id != execution.athlete_id
+        ):
+            raise DomainIntegrityError(
+                "introductory exposure execution does not match its athlete, need, or dose"
+            )
+        if (
+            definition is None
+            or definition.exercise_id != execution.exercise_id
+            or definition.exposure_type != dose.exposure_type
+            or definition.dose_unit != execution.dose_unit
+            or execution.dose_unit != dose.dose_unit
+        ):
+            raise DomainIntegrityError(
+                "introductory exposure execution does not match its exposure definition"
+            )
+        if environment is None or environment.athlete_id != execution.athlete_id:
+            raise DomainIntegrityError(
+                "introductory exposure execution environment is missing or belongs elsewhere"
+            )
+        if observation is None or observation.athlete_id != execution.athlete_id:
+            raise DomainIntegrityError(
+                "introductory exposure execution observation is missing or belongs elsewhere"
+            )
+        if execution.qualifies_as_exposure_day and (
+            execution.actual_sets != dose.sets
+            or abs(execution.actual_dose - dose.total_dose) > 1e-9
+            or execution.session_rpe is None
+            or execution.session_rpe > dose.effort_rpe_maximum
+        ):
+            raise DomainIntegrityError(
+                "qualifying introductory exposure must complete the governed dose "
+                "within its RPE cap"
+            )
+        self.session.add(
+            IntroductoryExposureExecutionRecord(
+                id=execution.id,
+                schema_version=execution.schema_version,
+                created_at=execution.created_at,
+                athlete_id=execution.athlete_id,
+                exposure_need_id=execution.exposure_need_id,
+                introductory_exposure_dose_id=execution.introductory_exposure_dose_id,
+                exposure_definition_id=execution.exposure_definition_id,
+                exercise_id=execution.exercise_id,
+                environment_id=execution.environment_id,
+                performance_observation_id=execution.performance_observation_id,
+                status=execution.status,
+                actual_sets=execution.actual_sets,
+                actual_dose=execution.actual_dose,
+                dose_unit=execution.dose_unit,
+                session_rpe=execution.session_rpe,
+                pre_session_ready=execution.pre_session_ready,
+                controlled_technique=execution.controlled_technique,
+                stop_condition_occurred=execution.stop_condition_occurred,
+                qualifies_as_exposure_day=execution.qualifies_as_exposure_day,
+                started_at=execution.started_at,
+                ended_at=execution.ended_at,
+                rule_version=execution.rule_version,
+            )
+        )
+
+    def get_introductory_exposure_execution(
+        self, execution_id: UUID
+    ) -> IntroductoryExposureExecution | None:
+        record = self.session.get(IntroductoryExposureExecutionRecord, execution_id)
+        if record is None:
+            return None
+        return IntroductoryExposureExecution(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            athlete_id=record.athlete_id,
+            exposure_need_id=record.exposure_need_id,
+            introductory_exposure_dose_id=record.introductory_exposure_dose_id,
+            exposure_definition_id=record.exposure_definition_id,
+            exercise_id=record.exercise_id,
+            environment_id=record.environment_id,
+            performance_observation_id=record.performance_observation_id,
+            status=record.status,
+            actual_sets=record.actual_sets,
+            actual_dose=record.actual_dose,
+            dose_unit=record.dose_unit,
+            session_rpe=record.session_rpe,
+            pre_session_ready=record.pre_session_ready,
+            controlled_technique=record.controlled_technique,
+            stop_condition_occurred=record.stop_condition_occurred,
+            qualifies_as_exposure_day=record.qualifies_as_exposure_day,
+            started_at=record.started_at,
+            ended_at=record.ended_at,
+            rule_version=record.rule_version,
+        )
+
+    def list_introductory_exposure_executions(
+        self, athlete_id: UUID
+    ) -> tuple[IntroductoryExposureExecution, ...]:
+        execution_ids = self.session.scalars(
+            select(IntroductoryExposureExecutionRecord.id)
+            .where(IntroductoryExposureExecutionRecord.athlete_id == athlete_id)
+            .order_by(
+                IntroductoryExposureExecutionRecord.ended_at,
+                IntroductoryExposureExecutionRecord.created_at,
+                IntroductoryExposureExecutionRecord.id,
+            )
+        ).all()
+        return tuple(
+            execution
+            for execution_id in execution_ids
+            if (execution := self.get_introductory_exposure_execution(execution_id)) is not None
         )
 
     def add_exposure_definition(self, definition: ExposureDefinition) -> None:

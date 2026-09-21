@@ -5,11 +5,13 @@ import {
   buildAssessmentReadinessReportCommand,
   buildAssessmentResultCommand,
   buildAssessmentRunCommand,
+  buildIntroductoryExposureExecutionCommand,
   fetchAssessmentWorkflow,
   submitAssessmentCapabilityEstimate,
   submitAssessmentReadinessReport,
   submitAssessmentRun,
   submitAssessmentResult,
+  submitIntroductoryExposureExecution,
   type AssessmentDecisionProjection,
 } from "./assessment";
 
@@ -185,6 +187,62 @@ describe("assessment workflow client", () => {
       "complete",
     );
     expect(() => buildAssessmentResultCommand(categorical, "other", "high")).toThrow("allowed");
+  });
+
+  it("builds and posts an exact introductory exposure execution", async () => {
+    const command = buildIntroductoryExposureExecutionCommand(
+      {
+        exposureNeedId: "00000000-0000-4000-8000-000000000009",
+        environmentId,
+        startedAt: new Date("2026-09-21T18:00:00Z"),
+        endedAt: new Date("2026-09-21T18:08:00Z"),
+        actualSets: 2,
+        actualContacts: 6,
+        sessionRpe: 3,
+        preSessionReady: true,
+        controlledLandings: true,
+        stopConditionOccurred: false,
+        answersConfirmed: true,
+        reliability: "moderate",
+      },
+      "00000000-0000-4000-8000-000000000010",
+    );
+    expect(command).toMatchObject({
+      actual_sets: 2,
+      actual_contacts: 6,
+      session_rpe: 3,
+      answers_confirmed: true,
+      provenance: { ingestion_method: "introductory-exposure-form" },
+    });
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ next_action: "Wait until another day." }), { status: 201 }),
+    );
+    await submitIntroductoryExposureExecution(
+      "http://localhost:8000",
+      athleteId,
+      command,
+      fetcher,
+    );
+    expect(fetcher.mock.calls[0]?.[0]).toBe(
+      `http://localhost:8000/v1/athletes/${athleteId}/introductory-exposure-executions`,
+    );
+  });
+
+  it("refuses to label an uncontrolled landing without a stop condition", () => {
+    expect(() => buildIntroductoryExposureExecutionCommand({
+      exposureNeedId: "00000000-0000-4000-8000-000000000009",
+      environmentId,
+      startedAt: new Date("2026-09-21T18:00:00Z"),
+      endedAt: new Date("2026-09-21T18:08:00Z"),
+      actualSets: 1,
+      actualContacts: 2,
+      sessionRpe: 4,
+      preSessionReady: true,
+      controlledLandings: false,
+      stopConditionOccurred: false,
+      answersConfirmed: true,
+      reliability: "moderate",
+    })).toThrow("stop condition");
   });
 
   it("loads the owned workflow with a development bearer", async () => {

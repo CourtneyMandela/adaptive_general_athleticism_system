@@ -2627,6 +2627,61 @@ class IntroductoryExposureDose(VersionedRecord):
         return self
 
 
+class IntroductoryExposureExecution(VersionedRecord):
+    """Immutable record of one performed introductory-exposure session.
+
+    This is intentionally independent of a capability-deficit training block.  It records
+    assessment preparation without implying that the athlete has a deficient capability.
+    """
+
+    athlete_id: UUID
+    exposure_need_id: UUID
+    introductory_exposure_dose_id: UUID
+    exposure_definition_id: UUID
+    exercise_id: UUID
+    environment_id: UUID
+    performance_observation_id: UUID
+    status: Literal["completed", "partial", "stopped_safety"]
+    actual_sets: int = Field(ge=0)
+    actual_dose: float = Field(ge=0)
+    dose_unit: Literal["repetitions", "seconds"]
+    session_rpe: float | None = Field(default=None, ge=0, le=10)
+    pre_session_ready: bool
+    controlled_technique: bool
+    stop_condition_occurred: bool
+    qualifies_as_exposure_day: bool
+    started_at: datetime
+    ended_at: datetime
+    rule_version: NonEmptyText
+
+    @field_validator("started_at", "ended_at")
+    @classmethod
+    def require_aware_introductory_execution_time(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("introductory exposure execution times must include a timezone")
+        return value
+
+    @model_validator(mode="after")
+    def validate_introductory_execution(self) -> IntroductoryExposureExecution:
+        if self.ended_at < self.started_at:
+            raise ValueError("ended_at cannot precede started_at")
+        safely_completed = (
+            self.status == "completed"
+            and self.pre_session_ready
+            and self.controlled_technique
+            and not self.stop_condition_occurred
+        )
+        if self.qualifies_as_exposure_day != safely_completed:
+            raise ValueError(
+                "qualifying exposure day must exactly match a safely completed execution"
+            )
+        if self.status == "stopped_safety" and not self.stop_condition_occurred:
+            raise ValueError("a safety-stopped execution must record a stop condition")
+        if self.status == "completed" and self.actual_dose <= 0:
+            raise ValueError("a completed exposure must record performed dose")
+        return self
+
+
 class ExposureDefinition(VersionedRecord):
     exercise_id: UUID
     exposure_type: ExposureType

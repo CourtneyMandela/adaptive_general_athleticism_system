@@ -146,6 +146,12 @@ export interface AssessmentWorkflowProjection {
     authority_reference: string;
     uncertainty: string;
   } | null;
+  introductory_jump_history?: {
+    qualifying_days: number;
+    required_days: number;
+    last_execution_at: string | null;
+    session_recorded_today: boolean;
+  } | null;
   environments: Array<{ environment_id: string; name: string }>;
   latest_run: {
     run_id: string;
@@ -237,6 +243,38 @@ export interface AssessmentResultCommand {
   provenance: ProvenanceInput;
 }
 
+export interface IntroductoryExposureExecutionInput {
+  exposureNeedId: string;
+  environmentId: string;
+  startedAt: Date;
+  endedAt: Date;
+  actualSets: number;
+  actualContacts: number;
+  sessionRpe: number | null;
+  preSessionReady: boolean;
+  controlledLandings: boolean;
+  stopConditionOccurred: boolean;
+  answersConfirmed: boolean;
+  reliability: Confidence;
+}
+
+export interface IntroductoryExposureExecutionCommand {
+  execution_id: string;
+  exposure_need_id: string;
+  environment_id: string;
+  started_at: string;
+  ended_at: string;
+  actual_sets: number;
+  actual_contacts: number;
+  session_rpe: number | null;
+  pre_session_ready: boolean;
+  controlled_landings: boolean;
+  stop_condition_occurred: boolean;
+  answers_confirmed: true;
+  reliability: Confidence;
+  provenance: ProvenanceInput;
+}
+
 export const assessmentProvenance: ProvenanceInput = {
   recorded_by: "unverified-athlete-user",
   source_system: "agas-web",
@@ -247,6 +285,12 @@ export const assessmentResultProvenance: ProvenanceInput = {
   recorded_by: "unverified-athlete-user",
   source_system: "agas-web",
   ingestion_method: "assessment-result-form",
+};
+
+export const introductoryExposureProvenance: ProvenanceInput = {
+  recorded_by: "unverified-athlete-user",
+  source_system: "agas-web",
+  ingestion_method: "introductory-exposure-form",
 };
 
 export class AssessmentRequestError extends Error {
@@ -385,6 +429,55 @@ export function buildAssessmentResultCommand(
   };
 }
 
+export function buildIntroductoryExposureExecutionCommand(
+  input: IntroductoryExposureExecutionInput,
+  executionId: string = crypto.randomUUID(),
+): IntroductoryExposureExecutionCommand {
+  if (!isUuid(executionId) || !isUuid(input.exposureNeedId) || !isUuid(input.environmentId)) {
+    throw new Error("The exposure record, need, or environment identity is invalid.");
+  }
+  if (!input.answersConfirmed) {
+    throw new Error("Confirm that the exposure record is accurate.");
+  }
+  if (!Number.isFinite(input.startedAt.valueOf()) || !Number.isFinite(input.endedAt.valueOf())) {
+    throw new Error("The exposure session time is invalid.");
+  }
+  if (input.endedAt < input.startedAt) {
+    throw new Error("The exposure cannot end before it starts.");
+  }
+  if (!Number.isInteger(input.actualSets) || input.actualSets < 0) {
+    throw new Error("Actual sets must be a whole, non-negative number.");
+  }
+  if (!Number.isInteger(input.actualContacts) || input.actualContacts < 0) {
+    throw new Error("Actual contacts must be a whole, non-negative number.");
+  }
+  if (
+    input.sessionRpe !== null &&
+    (!Number.isFinite(input.sessionRpe) || input.sessionRpe < 0 || input.sessionRpe > 10)
+  ) {
+    throw new Error("Session RPE must be between 0 and 10.");
+  }
+  if (!input.controlledLandings && !input.stopConditionOccurred) {
+    throw new Error("An uncontrolled landing must be recorded as a stop condition.");
+  }
+  return {
+    execution_id: executionId,
+    exposure_need_id: input.exposureNeedId,
+    environment_id: input.environmentId,
+    started_at: input.startedAt.toISOString(),
+    ended_at: input.endedAt.toISOString(),
+    actual_sets: input.actualSets,
+    actual_contacts: input.actualContacts,
+    session_rpe: input.sessionRpe,
+    pre_session_ready: input.preSessionReady,
+    controlled_landings: input.controlledLandings,
+    stop_condition_occurred: input.stopConditionOccurred,
+    answers_confirmed: true,
+    reliability: input.reliability,
+    provenance: introductoryExposureProvenance,
+  };
+}
+
 async function responseDetail(response: Response, fallback: string): Promise<string> {
   try {
     const body = (await response.json()) as { detail?: unknown };
@@ -458,6 +551,32 @@ export async function submitAssessmentRun(
   if (!response.ok) {
     throw new AssessmentRequestError(
       await responseDetail(response, "Unable to create assessment selection."),
+      response.status,
+    );
+  }
+  return response.json();
+}
+
+export async function submitIntroductoryExposureExecution(
+  apiBaseUrl: string,
+  athleteId: string,
+  command: IntroductoryExposureExecutionCommand,
+  fetcher: typeof fetch = fetch,
+): Promise<unknown> {
+  const response = await fetcher(
+    `${apiBaseUrl.replace(/\/$/, "")}/v1/athletes/${athleteId}/introductory-exposure-executions`,
+    {
+      method: "POST",
+      headers: authorizedHeaders({
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      }),
+      body: JSON.stringify(command),
+    },
+  );
+  if (!response.ok) {
+    throw new AssessmentRequestError(
+      await responseDetail(response, "Unable to record the introductory exposure."),
       response.status,
     );
   }

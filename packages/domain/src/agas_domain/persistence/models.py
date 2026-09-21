@@ -2813,6 +2813,85 @@ class IntroductoryExposureDoseRecord(VersionedRecordMixin, Base):
     )
 
 
+class IntroductoryExposureExecutionRecord(VersionedRecordMixin, Base):
+    __tablename__ = "introductory_exposure_executions"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('completed', 'partial', 'stopped_safety')",
+            name="ck_intro_exposure_execution_status",
+        ),
+        CheckConstraint(
+            "actual_sets >= 0 AND actual_dose >= 0",
+            name="ck_intro_exposure_execution_actuals_nonnegative",
+        ),
+        CheckConstraint(
+            "session_rpe IS NULL OR (session_rpe >= 0 AND session_rpe <= 10)",
+            name="ck_intro_exposure_execution_rpe_bounds",
+        ),
+        CheckConstraint(
+            "dose_unit IN ('repetitions', 'seconds')",
+            name="ck_intro_exposure_execution_dose_unit",
+        ),
+        CheckConstraint(
+            "ended_at >= started_at",
+            name="ck_intro_exposure_execution_time_order",
+        ),
+        CheckConstraint(
+            "qualifies_as_exposure_day = (status = 'completed' AND pre_session_ready "
+            "AND controlled_technique AND NOT stop_condition_occurred)",
+            name="ck_intro_exposure_execution_qualification",
+        ),
+        CheckConstraint(
+            "status != 'stopped_safety' OR stop_condition_occurred",
+            name="ck_intro_exposure_execution_safety_stop",
+        ),
+        CheckConstraint(
+            "status != 'completed' OR (actual_dose > 0 AND session_rpe IS NOT NULL)",
+            name="ck_intro_exposure_execution_completed_actuals",
+        ),
+        UniqueConstraint(
+            "performance_observation_id",
+            name="uq_intro_exposure_execution_observation",
+        ),
+    )
+
+    athlete_id: Mapped[UUID] = mapped_column(
+        ForeignKey("athletes.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    exposure_need_id: Mapped[UUID] = mapped_column(
+        ForeignKey("exposure_needs.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    introductory_exposure_dose_id: Mapped[UUID] = mapped_column(
+        ForeignKey("introductory_exposure_doses.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=False,
+    )
+    exposure_definition_id: Mapped[UUID] = mapped_column(
+        ForeignKey("exposure_definitions.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    exercise_id: Mapped[UUID] = mapped_column(
+        ForeignKey("exercises.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    environment_id: Mapped[UUID] = mapped_column(
+        ForeignKey("environments.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    performance_observation_id: Mapped[UUID] = mapped_column(
+        ForeignKey("observations.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    status: Mapped[str] = mapped_column(String(40), nullable=False)
+    actual_sets: Mapped[int] = mapped_column(Integer(), nullable=False)
+    actual_dose: Mapped[float] = mapped_column(Float(), nullable=False)
+    dose_unit: Mapped[str] = mapped_column(String(40), nullable=False)
+    session_rpe: Mapped[float | None] = mapped_column(Float(), nullable=True)
+    pre_session_ready: Mapped[bool] = mapped_column(Boolean(), nullable=False)
+    controlled_technique: Mapped[bool] = mapped_column(Boolean(), nullable=False)
+    stop_condition_occurred: Mapped[bool] = mapped_column(Boolean(), nullable=False)
+    qualifies_as_exposure_day: Mapped[bool] = mapped_column(Boolean(), index=True, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)
+    ended_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)
+    rule_version: Mapped[str] = mapped_column(String(160), nullable=False)
+
+
 class ExposureDefinitionRecord(VersionedRecordMixin, Base):
     __tablename__ = "exposure_definitions"
     exercise_id: Mapped[UUID] = mapped_column(
@@ -3794,6 +3873,7 @@ for _record_type in (
     RepetitionDosePolicyRecord,
     IntroductoryExposureDosePolicyRecord,
     IntroductoryExposureDoseRecord,
+    IntroductoryExposureExecutionRecord,
     IntroductoryExposureDosePolicyEvidenceRecord,
     IntroductoryExposureDoseObservationRecord,
     IntroductoryExposureDoseEvidenceRecord,

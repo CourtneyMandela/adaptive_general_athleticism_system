@@ -128,6 +128,15 @@ class IntroductoryExposureDoseProjection(BaseModel):
     uncertainty: str
 
 
+class IntroductoryExposureHistoryProjection(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    qualifying_days: int
+    required_days: int
+    last_execution_at: datetime | None
+    session_recorded_today: bool
+
+
 class AssessmentResultProjection(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -219,6 +228,7 @@ class AssessmentWorkflowProjection(BaseModel):
     eligibility: AssessmentEligibilityProjection | None
     jump_exposure_need: AssessmentExposureNeedProjection | None
     introductory_jump_dose: IntroductoryExposureDoseProjection | None
+    introductory_jump_history: IntroductoryExposureHistoryProjection | None
     environments: tuple[AssessmentEnvironmentProjection, ...]
     latest_run: AssessmentRunProjection | None
 
@@ -245,6 +255,9 @@ def get_assessment_workflow_projection(
     jump_exposure_need = exposure_needs[0] if exposure_needs else None
     introductory_jump_dose = _introductory_jump_dose_projection(
         repository, jump_exposure_need, instant
+    )
+    introductory_jump_history = _introductory_jump_history_projection(
+        repository, athlete_id, jump_exposure_need, instant
     )
     reviewed_definitions = tuple(
         (definition, review)
@@ -555,6 +568,7 @@ def get_assessment_workflow_projection(
             else None
         ),
         introductory_jump_dose=introductory_jump_dose,
+        introductory_jump_history=introductory_jump_history,
         environments=tuple(
             AssessmentEnvironmentProjection(environment_id=item.id, name=item.name)
             for item in environments
@@ -616,4 +630,34 @@ def _introductory_jump_dose_projection(
         numeric_value_origin=policy.numeric_value_origin,
         authority_reference=policy.authority_reference,
         uncertainty=policy.uncertainty,
+    )
+
+
+def _introductory_jump_history_projection(
+    repository: DomainRepository,
+    athlete_id: UUID,
+    need: ExposureNeed | None,
+    instant: datetime,
+) -> IntroductoryExposureHistoryProjection | None:
+    if need is None:
+        return None
+    executions = tuple(
+        item
+        for item in repository.list_introductory_exposure_executions(athlete_id)
+        if item.ended_at <= instant
+        and item.ended_at >= instant - timedelta(days=need.lookback_days)
+        and (
+            (source_need := repository.get_exposure_need(item.exposure_need_id)) is not None
+            and source_need.exposure_type is need.exposure_type
+            and source_need.target_scope == need.target_scope
+        )
+    )
+    qualifying_days = {
+        item.ended_at.date() for item in executions if item.qualifies_as_exposure_day
+    }
+    return IntroductoryExposureHistoryProjection(
+        qualifying_days=len(qualifying_days),
+        required_days=need.minimum_exposure_days,
+        last_execution_at=max((item.ended_at for item in executions), default=None),
+        session_recorded_today=any(item.started_at.date() == instant.date() for item in executions),
     )

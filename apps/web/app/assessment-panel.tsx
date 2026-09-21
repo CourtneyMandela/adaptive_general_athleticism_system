@@ -6,11 +6,13 @@ import {
   buildAssessmentResultCommand,
   buildAssessmentReadinessReportCommand,
   buildAssessmentRunCommand,
+  buildIntroductoryExposureExecutionCommand,
   fetchAssessmentWorkflow,
   submitAssessmentCapabilityEstimate,
   submitAssessmentReadinessReport,
   submitAssessmentResult,
   submitAssessmentRun,
+  submitIntroductoryExposureExecution,
   type AssessmentDecisionProjection,
   type AssessmentWorkflowProjection,
   type ReadinessAnswer,
@@ -196,6 +198,15 @@ export function AssessmentPanel({
   const [recentJumpExposure, setRecentJumpExposure] = useState<ReadinessAnswer>("unsure");
   const [readinessConfirmed, setReadinessConfirmed] = useState(false);
   const [readinessAction, setReadinessAction] = useState("");
+  const [exposureStartedAt, setExposureStartedAt] = useState<Date | null>(null);
+  const [exposurePreReady, setExposurePreReady] = useState(false);
+  const [exposureSets, setExposureSets] = useState("2");
+  const [exposureContacts, setExposureContacts] = useState("6");
+  const [exposureRpe, setExposureRpe] = useState("");
+  const [controlledLandings, setControlledLandings] = useState(false);
+  const [stopCondition, setStopCondition] = useState(false);
+  const [exposureConfirmed, setExposureConfirmed] = useState(false);
+  const [exposureAction, setExposureAction] = useState("");
 
   async function load() {
     setState("loading");
@@ -308,6 +319,49 @@ export function AssessmentPanel({
     }
   }
 
+  async function recordIntroductoryExposure(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!workflow?.jump_exposure_need || !exposureStartedAt) {
+      setMessage("Start the exposure timer before recording the session.");
+      return;
+    }
+    setState("saving");
+    setMessage("");
+    setExposureAction("");
+    try {
+      const result = await submitIntroductoryExposureExecution(
+        apiBaseUrl,
+        athleteId,
+        buildIntroductoryExposureExecutionCommand({
+          exposureNeedId: workflow.jump_exposure_need.exposure_need_id,
+          environmentId,
+          startedAt: exposureStartedAt,
+          endedAt: new Date(),
+          actualSets: Number(exposureSets),
+          actualContacts: Number(exposureContacts),
+          sessionRpe: exposureRpe ? Number(exposureRpe) : null,
+          preSessionReady: exposurePreReady,
+          controlledLandings,
+          stopConditionOccurred: stopCondition,
+          answersConfirmed: exposureConfirmed,
+          reliability: "moderate",
+        }),
+      ) as { next_action?: string };
+      setExposureAction(result.next_action ?? "Exposure record saved.");
+      setExposureStartedAt(null);
+      setExposurePreReady(false);
+      setExposureConfirmed(false);
+      setControlledLandings(false);
+      setStopCondition(false);
+      setExposureRpe("");
+      await load();
+      await onChanged();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to record the exposure.");
+      setState("error");
+    }
+  }
+
   return (
     <section className="assessment-panel" aria-labelledby="assessment-title">
       <header className="assessment-panel__heading">
@@ -373,7 +427,7 @@ export function AssessmentPanel({
         <aside className="review-boundary">
           {workflow.introductory_jump_dose ? (
             <>
-              <strong>Your introductory jump dose is governed and ready for scheduling.</strong>
+              <strong>Your introductory jump dose is ready to perform and log.</strong>
               <span>
                 {workflow.introductory_jump_dose.exercise_name}: {workflow.introductory_jump_dose.sets}
                 {" × "}{workflow.introductory_jump_dose.repetitions_per_set} easy, separately reset
@@ -384,8 +438,133 @@ export function AssessmentPanel({
               </span>
               <span>
                 This is a provisional engineering starting dose, not clearance for maximal jumping.
-                AGAS still needs to place it into a reviewed session before you perform it.
+                It counts only when you complete the exact easy dose with controlled landings at or
+                below the RPE cap. You need {workflow.introductory_jump_history?.required_days ?? 2}
+                {" "}qualifying days; {workflow.introductory_jump_history?.qualifying_days ?? 0}
+                {" "}are currently logged.
               </span>
+              <form className="assessment-form" onSubmit={recordIntroductoryExposure}>
+                <label>
+                  Training environment
+                  <select
+                    required
+                    value={environmentId}
+                    onChange={(event) => setEnvironmentId(event.target.value)}
+                  >
+                    {workflow.environments.map((environment) => (
+                      <option key={environment.environment_id} value={environment.environment_id}>
+                        {environment.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={exposurePreReady}
+                    onChange={(event) => setExposurePreReady(event.target.checked)}
+                  />
+                  Right now I have no pain, dizziness, instability, unusual symptoms, or other
+                  reason to avoid these easy jumps, and my readiness answers are still current.
+                </label>
+                {!exposureStartedAt ? (
+                  <button
+                    type="button"
+                    disabled={
+                      !exposurePreReady ||
+                      !environmentId ||
+                      workflow.introductory_jump_history?.session_recorded_today
+                    }
+                    onClick={() => {
+                      setExposureSets(String(workflow.introductory_jump_dose?.sets ?? 2));
+                      setExposureContacts(
+                        String(workflow.introductory_jump_dose?.total_contacts ?? 6),
+                      );
+                      setExposureStartedAt(new Date());
+                    }}
+                  >
+                    {workflow.introductory_jump_history?.session_recorded_today
+                      ? "One session already recorded today"
+                      : "Start this exposure"}
+                  </button>
+                ) : (
+                  <>
+                    <ol className="protocol-steps">
+                      {workflow.introductory_jump_dose.technique_constraints.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ol>
+                    <p className="form-help">
+                      Started {exposureStartedAt.toLocaleTimeString()}. Complete 3 easy contacts,
+                      rest 90 seconds, then complete 3 more. Stop immediately if any listed stop
+                      condition occurs.
+                    </p>
+                    <label>
+                      Sets actually completed
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        required
+                        value={exposureSets}
+                        onChange={(event) => setExposureSets(event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Jump contacts actually completed
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        required
+                        value={exposureContacts}
+                        onChange={(event) => setExposureContacts(event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Overall effort (RPE 0–10)
+                      <input
+                        type="number"
+                        min="0"
+                        max="10"
+                        step="0.5"
+                        required
+                        value={exposureRpe}
+                        onChange={(event) => setExposureRpe(event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={controlledLandings}
+                        onChange={(event) => setControlledLandings(event.target.checked)}
+                      />
+                      Every completed landing was controlled and separately reset.
+                    </label>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={stopCondition}
+                        onChange={(event) => setStopCondition(event.target.checked)}
+                      />
+                      A stop condition occurred (pain, dizziness, instability, uncontrolled
+                      landing, unusual symptoms, or inability to keep the effort easy).
+                    </label>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={exposureConfirmed}
+                        onChange={(event) => setExposureConfirmed(event.target.checked)}
+                      />
+                      This record accurately describes what I performed. I understand a partial
+                      or safety-stopped session is preserved but does not count as a qualifying day.
+                    </label>
+                    <button type="submit" disabled={state === "saving"}>
+                      {state === "saving" ? "Saving…" : "Finish and save exposure"}
+                    </button>
+                  </>
+                )}
+              </form>
             </>
           ) : (
             <>
@@ -398,6 +577,7 @@ export function AssessmentPanel({
           )}
         </aside>
       ) : null}
+      {exposureAction ? <p className="form-success" role="status">{exposureAction}</p> : null}
       {readinessAction ? <p className="form-success" role="status">{readinessAction}</p> : null}
 
       {workflow && workflow.approved_self_administered_protocol_count > 0 && [
