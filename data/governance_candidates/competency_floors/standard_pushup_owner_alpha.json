@@ -1,7 +1,7 @@
 {
   "document_schema_version": "competency-floor-candidate-document@1.0.0",
   "candidate_version": "competency-floor-candidate@1.1.0",
-  "content_digest": "sha256:7a0d51a3f47adb4146cb8ebd198d8a65ab76b947ff7c4bfb0ea9302841fbc675",
+  "content_digest": "sha256:a9b28f8a4c6139481c63c00cc9992ca378c9431b6f1242afb8f41cff0b917f7e",
   "accepted_historical_content_digests": [],
   "presentation": {
     "candidate_id": "98400000-0000-4000-8000-000000000003",
@@ -57,7 +57,7 @@
     "release_label": "Owner-alpha provisional standard-push-up floor",
     "prepared_at": "2026-09-15T18:00:00Z",
     "source": {
-      "id": "90000000-0000-4000-8000-000000000003",
+      "id": "90200000-0000-4000-8000-000000000003",
       "schema_version": "1.0.0",
       "created_at": "2026-09-15T09:00:00Z",
       "title": "ACSM's Guidelines for Exercise Testing and Prescription",
@@ -130,7 +130,7 @@
         }
       ],
       "source_record_ids": [
-        "90000000-0000-4000-8000-000000000003"
+        "90200000-0000-4000-8000-000000000003"
       ],
       "reviewer": "Codex floor-support evidence synthesis candidate; authority pending",
       "claim_version": "acsm-standard-pushup-floor-support@1.0.0"

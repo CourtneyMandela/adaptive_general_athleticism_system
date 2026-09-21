@@ -34,10 +34,8 @@ from agas_domain import (
     CapabilityDomain,
     ComparisonDirection,
 )
-from agas_domain.persistence.models import DecisionRecordRecord
 from agas_domain.persistence.repository import DomainRepository
 from fastapi.testclient import TestClient
-from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 NOW = datetime(2026, 9, 15, 19, 0, tzinfo=UTC)
@@ -206,7 +204,7 @@ def test_pushup_floor_reuses_assessment_source_without_sharing_claim_review_iden
         ratified_at=NOW,
     )
 
-    assert assessment_result.created_source_ids == (UUID("90000000-0000-4000-8000-000000000003"),)
+    assert assessment_result.created_source_ids == (UUID("90200000-0000-4000-8000-000000000003"),)
     assert floor_result.created_source is False
     assert floor_result.created_claim is True
     assert floor_result.created_evidence_review is True
@@ -237,43 +235,12 @@ def test_exact_batch_ratification_is_atomic_idempotent_and_audited(session: Sess
     } == {f"{item.candidate_id}={item.content_digest}" for item in batch.candidates}
 
 
-def test_historical_canonicalization_digest_remains_readable_and_idempotent(
-    session: Session,
-) -> None:
-    candidate_id, command = _command(session)
-    ratify_competency_floor_candidate(session, candidate_id, command, _authority(), ratified_at=NOW)
+def test_reidentified_candidate_does_not_accept_pre_collision_digest(session: Session) -> None:
+    candidate_id, _ = _command(session)
     prepared = _candidate_registry()[candidate_id]
-    historical_digest = prepared.accepted_historical_content_digests[0]
-    record = session.get(DecisionRecordRecord, candidate_id)
-    assert record is not None
-    historical_evidence = [
-        f"candidate_content_digest:{historical_digest}"
-        if value.startswith("candidate_content_digest:")
-        else value
-        for value in record.evidence
-    ]
-    # Simulate the row already present before the canonicalization fix. Core SQL deliberately
-    # bypasses the ORM's append-only guard; production code never rewrites decision history.
-    session.execute(
-        update(DecisionRecordRecord)
-        .where(DecisionRecordRecord.id == candidate_id)
-        .values(evidence=historical_evidence)
-    )
-    session.commit()
-    session.expire_all()
 
-    projection = list_competency_floor_candidates(session, projected_at=NOW + timedelta(minutes=1))
-    repeated = ratify_competency_floor_candidate(
-        session,
-        candidate_id,
-        command,
-        _authority(),
-        ratified_at=NOW + timedelta(minutes=1),
-    )
-
-    assert projection.items[0].status == "ratified"
-    assert repeated.candidate_content_digest == historical_digest
-    assert repeated.decision_record_created is False
+    assert prepared.accepted_historical_content_digests == ()
+    assert candidate_id == UUID("98310000-0000-4000-8000-000000000001")
 
 
 def test_batch_rolls_back_every_new_candidate_when_one_conflicts(

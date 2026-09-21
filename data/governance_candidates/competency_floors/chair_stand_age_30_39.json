@@ -1,12 +1,10 @@
 {
   "document_schema_version": "competency-floor-candidate-document@1.0.0",
   "candidate_version": "competency-floor-candidate@1.1.0",
-  "content_digest": "sha256:9a95e6dc37e3cd9143b451557f2a4fcb61dd729bd2d4a70691f7e3f07e06866f",
-  "accepted_historical_content_digests": [
-    "sha256:d3236e46452bf9e8028de860f106d089968dccbb9ec2a6b97c6eeccbf3304311"
-  ],
+  "content_digest": "sha256:6315b6bba929a16c6fc1a6ab031b5ef5fc17394f5869e2d4c1ee78c8167e2caa",
+  "accepted_historical_content_digests": [],
   "presentation": {
-    "candidate_id": "98400000-0000-4000-8000-000000000002",
+    "candidate_id": "98310000-0000-4000-8000-000000000001",
     "slug": "chair_stand_age_30_39_lower_reference_floor",
     "release_label": "Age 30-39 chair-stand lower-reference floor",
     "prepared_at": "2026-09-09T00:10:00Z",
@@ -55,11 +53,11 @@
     ]
   },
   "release": {
-    "release_id": "98400000-0000-4000-8000-000000000002",
+    "release_id": "98310000-0000-4000-8000-000000000001",
     "release_label": "Age 30-39 chair-stand lower-reference floor",
     "prepared_at": "2026-09-09T00:10:00Z",
     "source": {
-      "id": "90000000-0000-4000-8000-000000000004",
+      "id": "90200000-0000-4000-8000-000000000004",
       "schema_version": "1.0.0",
       "created_at": "2026-09-09T00:00:00Z",
       "title": "Reference values for sit-to-stand tests in Colombian adults: a multicenter cross-sectional study",
@@ -110,7 +108,7 @@
       "supersedes_source_id": null
     },
     "claim": {
-      "id": "91000000-0000-4000-8000-000000000004",
+      "id": "91200000-0000-4000-8000-000000000006",
       "schema_version": "1.0.0",
       "created_at": "2026-09-09T00:05:00Z",
       "claim": "In the study's Colombian 30-to-39-year age group, the empirical 2.5th percentile for completed 30-second sit-to-stand repetitions was 11 for women (n=29) and 11 for men (n=31).",
@@ -148,12 +146,12 @@
         }
       ],
       "source_record_ids": [
-        "90000000-0000-4000-8000-000000000004"
+        "90200000-0000-4000-8000-000000000004"
       ],
       "reviewer": "Codex evidence synthesis candidate; authority pending",
       "claim_version": "colombian-chair-stand-age-30-39-p025@1.0.0"
     },
-    "evidence_review_id": "91100000-0000-4000-8000-000000000004",
+    "evidence_review_id": "91300000-0000-4000-8000-000000000004",
     "evidence_review_content": {
       "source_verification_rationale": "PubMed identifiers and the open full text were checked; Table 2 reports 11 repetitions at p2.5 for both 30-to-39-year sex strata.",
       "extraction_rationale": "The claim preserves the subgroup sizes, empirical percentile, test duration, and observed value without converting it into a health or causal claim.",
@@ -178,7 +176,7 @@
       "applicability_notes": "Apply only to a current estimate produced from the matching governed AGAS 30-second chair-stand protocol. Use solely to prioritize further development or maintenance review; never to clear exercise or diagnose impairment.",
       "uncertainty": "This is an engineering interpretation of a population lower reference boundary as a deliberately low, replaceable screening floor. It is not a validated universal minimum useful competency, and it should be superseded when more applicable evidence or personal longitudinal calibration is available.",
       "evidence_claim_ids": [
-        "91000000-0000-4000-8000-000000000004"
+        "91200000-0000-4000-8000-000000000006"
       ],
       "floor_version": "owner-alpha-chair-stand-age-30-39-lower-reference@1.0.0"
     },

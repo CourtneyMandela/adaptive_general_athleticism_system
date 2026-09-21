@@ -111,7 +111,7 @@ def test_standard_pushup_ratification_persists_textbook_provenance_and_narrow_po
         ratified_at=PUSHUP_RATIFIED_AT,
     )
     repository = DomainRepository(session)
-    source = repository.get_evidence_source(UUID("90000000-0000-4000-8000-000000000003"))
+    source = repository.get_evidence_source(UUID("90200000-0000-4000-8000-000000000003"))
 
     assert result.assessment.readiness == "ready"
     assert result.assessment.definition.intensity.value == "high"
@@ -165,7 +165,7 @@ def test_countermovement_jump_ratification_preserves_source_lineage_and_narrow_p
         ratified_at=JUMP_RATIFIED_AT,
     )
     repository = DomainRepository(session)
-    first_snapshot = repository.get_evidence_source(UUID("90000000-0000-4000-8000-000000000003"))
+    first_snapshot = repository.get_evidence_source(UUID("90200000-0000-4000-8000-000000000003"))
     jump_snapshot = repository.get_evidence_source(UUID("90000000-0000-4000-8000-000000000004"))
 
     assert result.assessment.readiness == "ready"

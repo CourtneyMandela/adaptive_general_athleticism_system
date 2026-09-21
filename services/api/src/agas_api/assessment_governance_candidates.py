@@ -681,7 +681,7 @@ def _standard_pushup_release() -> PreparedAssessmentGovernanceRelease:
 
     isbn = EvidenceSourceIdentifier(scheme="isbn", value="9781975219246")
     source = EvidenceSource(
-        id=UUID("90000000-0000-4000-8000-000000000003"),
+        id=UUID("90200000-0000-4000-8000-000000000003"),
         created_at=source_created_at,
         title="ACSM's Guidelines for Exercise Testing and Prescription",
         authors=(
@@ -708,7 +708,7 @@ def _standard_pushup_release() -> PreparedAssessmentGovernanceRelease:
         ),
     )
     claim = EvidenceClaim(
-        id=UUID("91000000-0000-4000-8000-000000000003"),
+        id=UUID("91200000-0000-4000-8000-000000000003"),
         created_at=claim_created_at,
         claim=(
             "ACSM's 12th-edition guideline describes the maximum number of consecutive push-ups "
@@ -1011,7 +1011,7 @@ def _countermovement_vertical_jump_release() -> PreparedAssessmentGovernanceRele
         ),
     )
     protocol_claim = EvidenceClaim(
-        id=UUID("91000000-0000-4000-8000-000000000004"),
+        id=UUID("91200000-0000-4000-8000-000000000004"),
         created_at=claim_created_at,
         claim=(
             "ACSM's 12th-edition guideline describes countermovement vertical-jump height as a "
@@ -1050,7 +1050,7 @@ def _countermovement_vertical_jump_release() -> PreparedAssessmentGovernanceRele
         claim_version="acsm-countermovement-jump-protocol@1.0.0",
     )
     norms_claim = EvidenceClaim(
-        id=UUID("91000000-0000-4000-8000-000000000005"),
+        id=UUID("91200000-0000-4000-8000-000000000005"),
         created_at=claim_created_at,
         claim=(
             "Payne and colleagues produced age- and sex-stratified Canadian musculoskeletal "
