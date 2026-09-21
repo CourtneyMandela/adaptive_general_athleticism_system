@@ -130,6 +130,22 @@ export interface AssessmentWorkflowProjection {
     active: boolean;
     rule_version: string;
   } | null;
+  introductory_jump_dose?: {
+    policy_id: string;
+    exercise_id: string;
+    exercise_name: string;
+    sets: number;
+    repetitions_per_set: number;
+    total_contacts: number;
+    rest_seconds: number;
+    effort_rpe_minimum: number;
+    effort_rpe_maximum: number;
+    technique_constraints: string[];
+    planned_duration_minutes: number;
+    numeric_value_origin: "engineering_judgment" | "professional_judgment" | "scientific_evidence";
+    authority_reference: string;
+    uncertainty: string;
+  } | null;
   environments: Array<{ environment_id: string; name: string }>;
   latest_run: {
     run_id: string;

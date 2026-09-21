@@ -371,11 +371,31 @@ export function AssessmentPanel({
       ) : null}
       {workflow?.jump_exposure_need?.status === "introductory_exposure_needed" ? (
         <aside className="review-boundary">
-          <strong>AGAS owes you an introductory jump-and-landing path.</strong>
-          <span>
-            The maximal jump test stays excluded. This is an exposure prerequisite—not a low
-            fitness score—and it will require a separately governed exercise and dose before use.
-          </span>
+          {workflow.introductory_jump_dose ? (
+            <>
+              <strong>Your introductory jump dose is governed and ready for scheduling.</strong>
+              <span>
+                {workflow.introductory_jump_dose.exercise_name}: {workflow.introductory_jump_dose.sets}
+                {" × "}{workflow.introductory_jump_dose.repetitions_per_set} easy, separately reset
+                repetitions ({workflow.introductory_jump_dose.total_contacts} contacts total), with
+                {" "}{workflow.introductory_jump_dose.rest_seconds} seconds rest. Keep effort at RPE
+                {" "}{workflow.introductory_jump_dose.effort_rpe_minimum}–
+                {workflow.introductory_jump_dose.effort_rpe_maximum}.
+              </span>
+              <span>
+                This is a provisional engineering starting dose, not clearance for maximal jumping.
+                AGAS still needs to place it into a reviewed session before you perform it.
+              </span>
+            </>
+          ) : (
+            <>
+              <strong>AGAS owes you an introductory jump-and-landing path.</strong>
+              <span>
+                The maximal jump test stays excluded. This is an exposure prerequisite—not a low
+                fitness score—and its reviewed exercise and dose authority are not available yet.
+              </span>
+            </>
+          )}
         </aside>
       ) : null}
       {readinessAction ? <p className="form-success" role="status">{readinessAction}</p> : null}

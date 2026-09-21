@@ -12,6 +12,7 @@ from agas_domain import (
     AssessmentReviewDecision,
     CapabilityDomain,
     Confidence,
+    ExposureNeed,
     ExposureNeedStatus,
     ExposureType,
 )
@@ -25,6 +26,9 @@ from agas_api.assessment_readiness import (
     owner_readiness_rule_is_current,
 )
 from agas_api.assessment_schedule import resolve_assessment_reassessment_schedule
+from agas_api.training_construction_candidates import (
+    prepared_training_construction_candidate_for_scope,
+)
 
 AssessmentWorkflowStatus = Literal[
     "eligibility_required",
@@ -103,6 +107,25 @@ class AssessmentExposureNeedProjection(BaseModel):
     valid_until: datetime | None
     active: bool
     rule_version: str
+
+
+class IntroductoryExposureDoseProjection(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    policy_id: UUID
+    exercise_id: UUID
+    exercise_name: str
+    sets: int
+    repetitions_per_set: int
+    total_contacts: int
+    rest_seconds: int
+    effort_rpe_minimum: float
+    effort_rpe_maximum: float
+    technique_constraints: tuple[str, ...]
+    planned_duration_minutes: int
+    numeric_value_origin: str
+    authority_reference: str
+    uncertainty: str
 
 
 class AssessmentResultProjection(BaseModel):
@@ -195,6 +218,7 @@ class AssessmentWorkflowProjection(BaseModel):
     reassessment_rule_version: str
     eligibility: AssessmentEligibilityProjection | None
     jump_exposure_need: AssessmentExposureNeedProjection | None
+    introductory_jump_dose: IntroductoryExposureDoseProjection | None
     environments: tuple[AssessmentEnvironmentProjection, ...]
     latest_run: AssessmentRunProjection | None
 
@@ -219,6 +243,9 @@ def get_assessment_workflow_projection(
         target_scope=JUMP_EXPOSURE_TARGET_SCOPE,
     )
     jump_exposure_need = exposure_needs[0] if exposure_needs else None
+    introductory_jump_dose = _introductory_jump_dose_projection(
+        repository, jump_exposure_need, instant
+    )
     reviewed_definitions = tuple(
         (definition, review)
         for definition, review in list_evidence_ready_assessment_definitions(repository)
@@ -527,9 +554,66 @@ def get_assessment_workflow_projection(
             if jump_exposure_need
             else None
         ),
+        introductory_jump_dose=introductory_jump_dose,
         environments=tuple(
             AssessmentEnvironmentProjection(environment_id=item.id, name=item.name)
             for item in environments
         ),
         latest_run=run_projection,
+    )
+
+
+def _introductory_jump_dose_projection(
+    repository: DomainRepository,
+    need: ExposureNeed | None,
+    instant: datetime,
+) -> IntroductoryExposureDoseProjection | None:
+    if need is None:
+        return None
+    if (
+        need.status is not ExposureNeedStatus.INTRODUCTORY_EXPOSURE_NEEDED
+        or need.identified_at > instant
+        or (need.valid_until is not None and need.valid_until <= instant)
+    ):
+        return None
+    try:
+        prepared = prepared_training_construction_candidate_for_scope(need.target_scope)
+    except KeyError:
+        return None
+    release = prepared.release
+    policy = release.introductory_exposure_dose_policy
+    definition = release.exposure_definition
+    decision = repository.get_decision_record(prepared.presentation.candidate_id)
+    if (
+        policy is None
+        or definition is None
+        or decision is None
+        or f"candidate_content_digest:{prepared.presentation.content_digest}"
+        not in decision.evidence
+        or repository.get_introductory_exposure_dose_policy(policy.id) != policy
+        or repository.get_exposure_definition(definition.id) != definition
+    ):
+        return None
+    exercise = repository.get_exercise(definition.exercise_id)
+    if exercise is None:
+        return None
+    repetitions = int(policy.dose_per_set)
+    total = int(policy.sets * policy.dose_per_set)
+    if repetitions != policy.dose_per_set or total != policy.sets * policy.dose_per_set:
+        return None
+    return IntroductoryExposureDoseProjection(
+        policy_id=policy.id,
+        exercise_id=exercise.id,
+        exercise_name=exercise.name,
+        sets=policy.sets,
+        repetitions_per_set=repetitions,
+        total_contacts=total,
+        rest_seconds=policy.rest_seconds,
+        effort_rpe_minimum=policy.effort_rpe_minimum,
+        effort_rpe_maximum=policy.effort_rpe_maximum,
+        technique_constraints=policy.technique_constraints,
+        planned_duration_minutes=policy.planned_duration_minutes,
+        numeric_value_origin=policy.numeric_value_origin,
+        authority_reference=policy.authority_reference,
+        uncertainty=policy.uncertainty,
     )
