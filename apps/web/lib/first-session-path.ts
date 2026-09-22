@@ -12,6 +12,15 @@ export interface FirstSessionAssessmentState {
   can_start_run: boolean;
   approved_self_administered_protocol_count: number;
   eligibility: { outcome: string } | null;
+  jump_exposure_need?: {
+    status: "unknown" | "introductory_exposure_needed" | "recent_exposure_confirmed";
+    active: boolean;
+  } | null;
+  introductory_jump_history?: {
+    qualifying_days: number;
+    required_days: number;
+    session_recorded_today: boolean;
+  } | null;
   latest_run: {
     decisions: Array<{
       decision: string;
@@ -124,6 +133,12 @@ export function buildFirstSessionPath(
   const preparedAssessmentConflict = (assessmentReview?.conflict_candidate_count ?? 0) > 0;
   const eligibilityReady = assessment.eligibility?.outcome === "selection_allowed";
   const needsEnvironmentAction = assessmentNeedsEnvironmentAction(assessment);
+  const introductoryExposureNeeded = assessment.jump_exposure_need?.active === true
+    && assessment.jump_exposure_need.status === "introductory_exposure_needed";
+  const introductoryExposureRecordedToday = introductoryExposureNeeded
+    && assessment.introductory_jump_history?.session_recorded_today === true;
+  const qualifyingExposureDays = assessment.introductory_jump_history?.qualifying_days ?? 0;
+  const requiredExposureDays = assessment.introductory_jump_history?.required_days ?? 2;
   const hasEstimate = planning.current_capability_estimate_count > 0;
   const preparedPlanningAvailable = (planningReview?.available_candidate_count ?? 0) > 0;
   const preparedPlanningConflict = (planningReview?.conflict_candidate_count ?? 0) > 0;
@@ -159,6 +174,15 @@ export function buildFirstSessionPath(
         assessment.status === "environment_required"
           ? "The assessment needs a persisted training environment. Complete the environment information below before selection."
           : "The selected assessment needs equipment that is not currently reported available. Update the environment below, then rerun selection.",
+    };
+  } else if (introductoryExposureNeeded) {
+    assessmentStep = {
+      id: "assessment",
+      title: "Introductory jump exposure",
+      state: introductoryExposureRecordedToday ? "waiting" : "your_action",
+      detail: introductoryExposureRecordedToday
+        ? `Exposure day ${qualifyingExposureDays} of ${requiredExposureDays} is recorded. The next qualifying exposure must happen on a different calendar day; return tomorrow or later.`
+        : `Complete the governed low-intensity jump exposure below. You have ${qualifyingExposureDays} of ${requiredExposureDays} qualifying exposure days.`,
     };
   } else if (assessmentNeedsAthleteAction(assessment)) {
     assessmentStep = {
@@ -276,7 +300,14 @@ export function buildFirstSessionPath(
     } else if (userAction?.id === "assessment" || userAction?.id === "estimate") {
       nextAction = {
         href: "#assessment-title",
-        label: "Continue the assessment step",
+        label: introductoryExposureNeeded
+          ? `Complete exposure day ${Math.min(qualifyingExposureDays + 1, requiredExposureDays)}`
+          : "Continue the assessment step",
+      };
+    } else if (introductoryExposureRecordedToday) {
+      nextAction = {
+        href: "#assessment-title",
+        label: "Review your exposure progress",
       };
     } else if (planStep.state === "your_action" || planStep.state === "system_action") {
       nextAction = planning.status === "planning_authorities_required"
@@ -303,11 +334,15 @@ export function buildFirstSessionPath(
   }
   const heading = hasScheduledWeek
     ? "Your training week is ready."
+    : introductoryExposureRecordedToday
+      ? "Today’s exposure is recorded."
     : userAction
       ? "You have one clear next step."
       : "Your profile is saved; AGAS still owes you the training path.";
   const message = hasScheduledWeek
     ? "Open the scheduled session below when you are ready to train."
+    : introductoryExposureRecordedToday
+      ? assessmentStep.detail
     : userAction
       ? userAction.detail
       : "There is no additional onboarding form you need to find right now. Reviewed assessment, safety, and planning content must be completed before AGAS can responsibly prescribe your first session.";

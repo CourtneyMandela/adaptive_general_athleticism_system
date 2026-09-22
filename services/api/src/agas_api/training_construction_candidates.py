@@ -238,7 +238,11 @@ def prepared_training_construction_candidate() -> PreparedTrainingConstructionCa
 def prepared_training_construction_candidates() -> tuple[
     PreparedTrainingConstructionCandidate, ...
 ]:
-    return (_prepared_candidate(), _prepared_pushup_candidate(), _prepared_jump_exposure_candidate())
+    return (
+        _prepared_candidate(),
+        _prepared_pushup_candidate(),
+        _prepared_jump_exposure_candidate(),
+    )
 
 
 def prepared_training_construction_candidate_for_scope(

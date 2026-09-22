@@ -130,6 +130,72 @@ describe("first-session path", () => {
     expect(result.next_action?.href).toBe("#assessment-title");
   });
 
+  it("makes the governed introductory exposure the athlete's next concrete step", () => {
+    const result = buildFirstSessionPath(
+      assessment({
+        status: "ready_to_start",
+        can_start_run: true,
+        approved_self_administered_protocol_count: 2,
+        eligibility: { outcome: "selection_allowed" },
+        jump_exposure_need: {
+          status: "introductory_exposure_needed",
+          active: true,
+        },
+        introductory_jump_history: {
+          qualifying_days: 0,
+          required_days: 2,
+          session_recorded_today: false,
+        },
+      }),
+      planning(),
+      false,
+    );
+
+    expect(result.heading).toBe("You have one clear next step.");
+    expect(result.steps.find((step) => step.id === "assessment")).toMatchObject({
+      title: "Introductory jump exposure",
+      state: "your_action",
+      detail: expect.stringContaining("0 of 2 qualifying exposure days"),
+    });
+    expect(result.next_action).toEqual({
+      href: "#assessment-title",
+      label: "Complete exposure day 1",
+    });
+  });
+
+  it("explains the different-day wait after today's introductory exposure", () => {
+    const result = buildFirstSessionPath(
+      assessment({
+        status: "ready_to_start",
+        can_start_run: true,
+        approved_self_administered_protocol_count: 2,
+        eligibility: { outcome: "selection_allowed" },
+        jump_exposure_need: {
+          status: "introductory_exposure_needed",
+          active: true,
+        },
+        introductory_jump_history: {
+          qualifying_days: 1,
+          required_days: 2,
+          session_recorded_today: true,
+        },
+      }),
+      planning(),
+      false,
+    );
+
+    expect(result.heading).toBe("Today’s exposure is recorded.");
+    expect(result.message).toContain("return tomorrow or later");
+    expect(result.steps.find((step) => step.id === "assessment")).toMatchObject({
+      title: "Introductory jump exposure",
+      state: "waiting",
+    });
+    expect(result.next_action).toEqual({
+      href: "#assessment-title",
+      label: "Review your exposure progress",
+    });
+  });
+
   it("routes a missing assessment-equipment deferral to the environment report", () => {
     const result = buildFirstSessionPath(
       assessment({

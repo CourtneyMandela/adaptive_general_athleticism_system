@@ -21,9 +21,7 @@ def test_prepared_governance_records_never_reuse_an_identity_for_different_conte
 
     for assessment_candidate in assessments().values():
         owner = f"assessment:{assessment_candidate.presentation.slug}"
-        records[("decision_record", assessment_candidate.release.release_id)].append(
-            (owner, owner)
-        )
+        records[("decision_record", assessment_candidate.release.release_id)].append((owner, owner))
         for source in assessment_candidate.release.sources:
             records[("evidence_source", source.id)].append((owner, source))
         for claim in assessment_candidate.release.claims:
@@ -78,8 +76,7 @@ def test_prepared_governance_records_never_reuse_an_identity_for_different_conte
         first_value = uses[0][1]
         if any(value != first_value for _, value in uses[1:]):
             conflicts.append(
-                f"{record_type} {record_id} is assigned to "
-                + ", ".join(owner for owner, _ in uses)
+                f"{record_type} {record_id} is assigned to " + ", ".join(owner for owner, _ in uses)
             )
 
     assert conflicts == [], "conflicting governance identities:\n" + "\n".join(conflicts)
@@ -105,7 +102,5 @@ def test_prepared_evidence_review_identities_are_globally_unique() -> None:
             f"resource:{resource_candidate.presentation.release_label}"
         )
 
-    duplicates = {
-        str(review_id): owners for review_id, owners in uses.items() if len(owners) > 1
-    }
+    duplicates = {str(review_id): owners for review_id, owners in uses.items() if len(owners) > 1}
     assert duplicates == {}

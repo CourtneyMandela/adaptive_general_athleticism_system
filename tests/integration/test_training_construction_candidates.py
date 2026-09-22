@@ -308,14 +308,13 @@ def test_introductory_jump_bundle_persists_typed_engineering_authorities(
     )
     assert first.introductory_exposure_dose_policy.evidence_claim_ids == ()
     assert first.exposure_definition is not None
-    assert first.exposure_definition.exercise_id == UUID(
-        "b0000000-0000-4000-8000-000000000012"
-    )
+    assert first.exposure_definition.exercise_id == UUID("b0000000-0000-4000-8000-000000000012")
     assert first.exposure_progression_policy is not None
     assert first.exposure_progression_policy.maximum_initial_dose == 6
-    assert repository.get_introductory_exposure_dose_policy(
-        first.introductory_exposure_dose_policy.id
-    ) == first.introductory_exposure_dose_policy
+    assert (
+        repository.get_introductory_exposure_dose_policy(first.introductory_exposure_dose_policy.id)
+        == first.introductory_exposure_dose_policy
+    )
     assert first.created_introductory_exposure_dose_policy is True
     assert first.created_exposure_definition is True
     assert first.created_exposure_progression_policy is True
