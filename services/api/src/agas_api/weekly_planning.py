@@ -15,6 +15,7 @@ from agas_domain import (
     CostLevel,
     DecisionRecord,
     EffortRpeTarget,
+    ExerciseExecutionGuidance,
     HeartRateZoneTarget,
     PaceTarget,
     RelativeLoadTarget,
@@ -61,6 +62,7 @@ class SessionPrescriptionDraft(BaseModel):
     substitution_class: NonEmptyText
     planned_duration_minutes: int = Field(gt=0)
     fatigue_cost: CostLevel
+    execution_guidance: ExerciseExecutionGuidance | None = None
     source_observation_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
     evidence_claim_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
     rule_version: NonEmptyText
@@ -363,6 +365,7 @@ class PersistedWeeklyPlanService:
                     substitution_class=prescription_draft.substitution_class,
                     planned_duration_minutes=prescription_draft.planned_duration_minutes,
                     fatigue_cost=prescription_draft.fatigue_cost,
+                    execution_guidance=prescription_draft.execution_guidance,
                     source_observation_ids=prescription_draft.source_observation_ids,
                     evidence_claim_ids=prescription_draft.evidence_claim_ids,
                     prescribed_at=command.prepared_at,

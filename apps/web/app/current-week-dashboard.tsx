@@ -112,6 +112,51 @@ function SessionCard({
               <p>
                 {prescription.intensity_targets.join(" · ")} · {prescription.rest_seconds}s rest
               </p>
+              {prescription.execution_guidance ? (
+                <details className="execution-guidance">
+                  <summary>How to perform this</summary>
+                  <section>
+                    <h4>Set up</h4>
+                    <ol>
+                      {prescription.execution_guidance.setup_instructions.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ol>
+                  </section>
+                  <section>
+                    <h4>Perform</h4>
+                    <ol>
+                      {prescription.execution_guidance.execution_instructions.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ol>
+                  </section>
+                  <section>
+                    <h4>Technique cues</h4>
+                    <ul>
+                      {prescription.execution_guidance.technique_cues.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  </section>
+                  <section className="execution-guidance__stop">
+                    <h4>Stop conditions</h4>
+                    <ul>
+                      {prescription.execution_guidance.stop_conditions.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  </section>
+                  <p className="execution-guidance__provenance">
+                    {prescription.execution_guidance.authority}{" "}
+                    {prescription.execution_guidance.uncertainty}
+                  </p>
+                </details>
+              ) : (
+                <p className="guidance-missing">
+                  Reviewed step-by-step execution guidance is not attached to this prescription.
+                </p>
+              )}
               {prescription.adherence ? (
                 <p className="completion-line">
                   {prescription.adherence.performed_sets}/{prescription.adherence.prescribed_sets}{" "}

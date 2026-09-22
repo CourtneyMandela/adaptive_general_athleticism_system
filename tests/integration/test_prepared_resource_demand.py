@@ -799,6 +799,18 @@ def test_pushup_maintain_path_builds_an_exact_no_equipment_first_week(
     assert result.result.session_templates[0].name == "First standard push-up session"
     assert result.result.prescriptions[0].repetitions_per_set == 6
     assert "MAINTAIN allocation" in result.result.prescriptions[0].reason_for_inclusion
+    guidance = result.result.prescriptions[0].execution_guidance
+    assert guidance is not None
+    assert guidance.guidance_version == "owner-alpha-standard-pushup-execution-guidance@1.0.0"
+    assert guidance.setup_instructions
+    assert guidance.execution_instructions
+    assert guidance.technique_cues
+    assert guidance.stop_conditions
+    persisted = DomainRepository(session).get_session_prescription(
+        result.result.prescriptions[0].id
+    )
+    assert persisted is not None
+    assert persisted.execution_guidance == guidance
 
 
 def test_prepared_first_week_ratification_is_idempotent_and_observes_availability(

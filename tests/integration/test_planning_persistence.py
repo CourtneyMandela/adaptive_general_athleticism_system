@@ -134,6 +134,7 @@ from agas_domain import (
     EvidenceSourceIdentifier,
     EvidenceStrength,
     Exercise,
+    ExerciseExecutionGuidance,
     ExerciseResolution,
     ExerciseResolverPolicy,
     ExposureDefinition,
@@ -1552,6 +1553,15 @@ def build_and_persist_weekly_chain(
         substitution_class="fixture_resolution_candidates",
         planned_duration_minutes=30,
         fatigue_cost=CostLevel.MODERATE,
+        execution_guidance=ExerciseExecutionGuidance(
+            guidance_version="fixture-guidance@1.0.0",
+            setup_instructions=("Prepare the fixture setup.",),
+            execution_instructions=("Perform the fixture movement.",),
+            technique_cues=("Maintain the fixture technique.",),
+            stop_conditions=("Stop at the fixture stop condition.",),
+            authority="Synthetic persistence test authority.",
+            uncertainty="Synthetic guidance used only to test lossless persistence.",
+        ),
         source_observation_ids=strategy.source_observation_ids,
         evidence_claim_ids=strategy.evidence_claim_ids,
         prescribed_at=NOW,
@@ -2061,6 +2071,7 @@ def test_current_week_projection_exposes_schedule_and_persisted_completion(
     assert first_prescription.adaptation_name == "Maximum strength"
     assert first_prescription.intensity_targets == ("RPE 6-8",)
     assert first_prescription.reason_for_inclusion == prescription.reason_for_inclusion
+    assert first_prescription.execution_guidance == prescription.execution_guidance
     assert first_prescription.progression_action.status == "awaiting_execution"
     assert scheduled.week.review.status == "awaiting_sessions"
     assert scheduled.week.review.recorded_sessions == 0
@@ -3132,6 +3143,7 @@ def test_weekly_roll_forward_carries_progression_revision_with_immutable_lineage
     assert progression_response.status_code == 201
     assert prescription.repetitions_per_set is not None
     assert revised.repetitions_per_set == prescription.repetitions_per_set + 1
+    assert revised.execution_guidance == prescription.execution_guidance
     assert client_lineage_response.status_code == 422
     assert confirmation_response.status_code == 201
     assert duplicate_confirmation_response.status_code == 409
@@ -3717,6 +3729,7 @@ def test_reviewed_environment_revision_flows_into_next_week_without_rewriting_hi
     assert revised.exercise_resolution_id == full_resolution.id
     assert revised.exercise_id == full_travel_exercise.id
     assert revised.adaptation_id == source_prescription.adaptation_id
+    assert revised.execution_guidance is None
     assert travel_report.id in revised.source_observation_ids
     assert revised.sets == 4
     assert revised.repetitions_per_set == 6

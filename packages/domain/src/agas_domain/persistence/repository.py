@@ -2330,6 +2330,11 @@ class DomainRepository:
             substitution_class=prescription.substitution_class,
             planned_duration_minutes=prescription.planned_duration_minutes,
             fatigue_cost=prescription.fatigue_cost.value,
+            execution_guidance=(
+                prescription.execution_guidance.model_dump(mode="json")
+                if prescription.execution_guidance is not None
+                else None
+            ),
             prescribed_at=prescription.prescribed_at,
             rule_version=prescription.rule_version,
         )
@@ -2389,6 +2394,7 @@ class DomainRepository:
             substitution_class=record.substitution_class,
             planned_duration_minutes=record.planned_duration_minutes,
             fatigue_cost=record.fatigue_cost,
+            execution_guidance=record.execution_guidance,
             source_observation_ids=tuple(item.observation_id for item in record.observation_links),
             evidence_claim_ids=tuple(item.evidence_claim_id for item in record.evidence_links),
             prescribed_at=record.prescribed_at,

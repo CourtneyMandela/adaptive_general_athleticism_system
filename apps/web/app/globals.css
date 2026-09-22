@@ -557,6 +557,19 @@ button { cursor: pointer; }
 .exercise-copy details { margin-top: .65rem; color: var(--muted); font-size: .84rem; }
 .exercise-copy summary { color: var(--accent); cursor: pointer; font-weight: 750; }
 .exercise-copy details p { margin-bottom: 0; line-height: 1.5; }
+.exercise-copy .execution-guidance {
+  padding: .75rem;
+  border: 1px solid var(--line);
+  border-radius: .7rem;
+  background: #f8faf6;
+}
+.execution-guidance section { margin-top: .75rem; }
+.execution-guidance h4 { margin: 0; color: var(--ink); font-size: .82rem; }
+.execution-guidance ol, .execution-guidance ul { margin: .35rem 0 0; padding-left: 1.2rem; }
+.execution-guidance li { margin-top: .3rem; line-height: 1.45; }
+.execution-guidance__stop { padding: .65rem; border-radius: .55rem; background: #f8ece8; }
+.execution-guidance__provenance { padding-top: .65rem; border-top: 1px solid var(--line); font-size: .75rem; }
+.guidance-missing { color: #765c13 !important; }
 .completion-line { color: var(--accent) !important; font-weight: 750; }
 .session-result, .session-pending { padding: .85rem 1.15rem; background: #f3f5f0; }
 .session-result { color: var(--muted); font-size: .82rem; font-weight: 700; }

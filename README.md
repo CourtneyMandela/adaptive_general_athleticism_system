@@ -47,6 +47,9 @@ exact next governed planning boundary: initial strategy, training dose, first bl
 scheduling. Accepted Week 1 records return to that athlete and exact calendar week, and the live
 session screen records the persisted prescription one set at a time. Missing prerequisites remain
 visible as system work; navigation does not bypass review or manufacture a workout.
+For prescriptions with reviewed execution content, the session card also shows the exact
+versioned setup, performance steps, technique cues, stop conditions, authority, and uncertainty;
+missing guidance stays visibly missing rather than being generated from an exercise name.
 
 ## Architecture at a glance
 

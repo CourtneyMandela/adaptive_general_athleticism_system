@@ -1824,6 +1824,31 @@ IntensityTarget = Annotated[
 ]
 
 
+class ExerciseExecutionGuidance(DomainModel):
+    """Versioned, non-prescriptive instructions snapshotted onto a prescription."""
+
+    guidance_version: NonEmptyText
+    setup_instructions: Annotated[tuple[NonEmptyText, ...], Field(min_length=1)]
+    execution_instructions: Annotated[tuple[NonEmptyText, ...], Field(min_length=1)]
+    technique_cues: Annotated[tuple[NonEmptyText, ...], Field(min_length=1)]
+    stop_conditions: Annotated[tuple[NonEmptyText, ...], Field(min_length=1)]
+    authority: NonEmptyText
+    uncertainty: NonEmptyText
+
+    @model_validator(mode="after")
+    def validate_guidance(self) -> ExerciseExecutionGuidance:
+        for field_name in (
+            "setup_instructions",
+            "execution_instructions",
+            "technique_cues",
+            "stop_conditions",
+        ):
+            values = getattr(self, field_name)
+            if len(set(values)) != len(values):
+                raise ValueError(f"{field_name} must not contain duplicates")
+        return self
+
+
 class SessionPrescription(VersionedRecord):
     athlete_id: UUID
     block_plan_id: UUID
@@ -1841,6 +1866,7 @@ class SessionPrescription(VersionedRecord):
     substitution_class: NonEmptyText
     planned_duration_minutes: int = Field(gt=0)
     fatigue_cost: CostLevel
+    execution_guidance: ExerciseExecutionGuidance | None = None
     source_observation_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
     evidence_claim_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
     prescribed_at: datetime

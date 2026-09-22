@@ -37,6 +37,7 @@ const prescription: PrescriptionProjection = {
   duration_seconds: null,
   intensity_targets: ["RPE 6-8"],
   rest_seconds: 120,
+  execution_guidance: null,
   adherence: null,
   progression: null,
   progression_action: {

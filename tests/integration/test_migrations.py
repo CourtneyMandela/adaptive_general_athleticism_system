@@ -25,9 +25,10 @@ def test_baseline_migration_matches_current_metadata(
         expected_tables = set(Base.metadata.tables)
         actual_tables = set(inspector.get_table_names())
         assert actual_tables == expected_tables | {"alembic_version"}
-        assert "intensity_targets" in {
+        prescription_columns = {
             column["name"] for column in inspector.get_columns("session_prescriptions")
         }
+        assert {"intensity_targets", "execution_guidance"}.issubset(prescription_columns)
         assert "session_template_id" in {
             column["name"] for column in inspector.get_columns("planned_sessions")
         }

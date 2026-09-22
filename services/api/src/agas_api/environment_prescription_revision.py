@@ -28,6 +28,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from agas_api.current_week import CurrentWeekProjectionError, CurrentWeekProjector
+from agas_api.exercise_execution_guidance import execution_guidance_for
 
 NonEmptyText = Annotated[str, Field(min_length=1)]
 PrescriptionIntensityTarget = Annotated[
@@ -358,6 +359,7 @@ class PersistedEnvironmentPrescriptionRevisionService:
                 substitution_class=draft.substitution_class,
                 planned_duration_minutes=draft.planned_duration_minutes,
                 fatigue_cost=draft.fatigue_cost,
+                execution_guidance=execution_guidance_for(resolution.selected_exercise_id),
                 source_observation_ids=self._ordered_union(
                     predecessor.source_observation_ids,
                     requirement.source_observation_ids,

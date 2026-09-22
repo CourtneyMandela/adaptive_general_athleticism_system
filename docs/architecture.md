@@ -396,6 +396,14 @@ types distinguish absolute load, relative load, bodyweight, effort RPE, repetiti
 heart-rate zone, pace, and technique constraints. Prescriptions remain independently versioned so
 one item can progress without rewriting a completed session.
 
+When reviewed execution guidance exists for the selected exercise, the prescription also snapshots
+its version, setup, performance steps, technique cues, stop conditions, authority, and uncertainty.
+The current-week projection renders that exact snapshot on the phone. Guidance is deliberately
+optional: an unknown exercise remains visibly without step-by-step instructions instead of receiving
+text inferred from its name. A progression revision retains the snapshot; an environment-driven
+exercise replacement resolves guidance for the replacement and never copies instructions from the
+superseded exercise.
+
 A versioned `SessionTemplate` is the workout container. It gives ordered prescription items a
 section, owns an explicit weekly frequency, and declares duration and maximum item fatigue. V1
 accepts templates as governed input and validates that their aggregate frequencies exactly match

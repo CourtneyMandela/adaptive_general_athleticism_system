@@ -8,6 +8,7 @@ from agas_domain import (
     AbsoluteLoadTarget,
     BodyweightTarget,
     EffortRpeTarget,
+    ExerciseExecutionGuidance,
     HeartRateZoneTarget,
     PaceTarget,
     PlannedSession,
@@ -118,6 +119,7 @@ class PrescriptionProjection(BaseModel):
     duration_seconds: int | None
     intensity_targets: tuple[str, ...]
     rest_seconds: int
+    execution_guidance: ExerciseExecutionGuidance | None
     adherence: AdherenceProjection | None
     progression: ProgressionProjection | None
     progression_action: ProgressionActionProjection
@@ -599,6 +601,7 @@ class CurrentWeekProjector:
                         self._intensity_label(target) for target in prescription.intensity_targets
                     ),
                     rest_seconds=prescription.rest_seconds,
+                    execution_guidance=prescription.execution_guidance,
                     adherence=(
                         AdherenceProjection(
                             adherence_id=adherence.id,

@@ -58,6 +58,15 @@ export interface PrescriptionProjection {
   duration_seconds: number | null;
   intensity_targets: string[];
   rest_seconds: number;
+  execution_guidance: {
+    guidance_version: string;
+    setup_instructions: string[];
+    execution_instructions: string[];
+    technique_cues: string[];
+    stop_conditions: string[];
+    authority: string;
+    uncertainty: string;
+  } | null;
   adherence: AdherenceProjection | null;
   progression: ProgressionProjection | null;
   progression_action: ProgressionActionProjection;

@@ -36,6 +36,7 @@ from agas_api.evidence_governance import (
     EvidenceAuthorityEvaluator,
     EvidenceAuthorityNotReadyError,
 )
+from agas_api.exercise_execution_guidance import execution_guidance_for
 from agas_api.first_week_preparation import (
     FirstWeekAllocationInput,
     FirstWeekPreparationNotFoundError,
@@ -60,7 +61,7 @@ from agas_api.weekly_planning import (
     WeeklyPlanUseCaseError,
 )
 
-CANDIDATE_VERSION = "prepared-first-week@1.1.0"
+CANDIDATE_VERSION = "prepared-first-week@1.2.0"
 CANDIDATE_NAMESPACE = UUID("37728da6-7ebf-499d-b821-7d72da044ac7")
 MAXIMUM_CANDIDATE_AGE = timedelta(minutes=30)
 NonEmptyText = Annotated[str, Field(min_length=1)]
@@ -109,7 +110,7 @@ class PreparedFirstWeekIdentities(BaseModel):
 class PreparedFirstWeekCandidate(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    candidate_version: Literal["prepared-first-week@1.1.0"]
+    candidate_version: Literal["prepared-first-week@1.2.0"]
     candidate_id: UUID
     content_digest: Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
     prepared_at: datetime
@@ -152,7 +153,7 @@ class PreparedFirstWeekProjection(BaseModel):
 class RatifyPreparedFirstWeekCommand(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    candidate_version: Literal["prepared-first-week@1.1.0"]
+    candidate_version: Literal["prepared-first-week@1.2.0"]
     content_digest: Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
     prepared_at: datetime
     windows: Annotated[tuple[AvailabilityWindowDraft, ...], Field(min_length=1)]
@@ -634,9 +635,10 @@ class PreparedFirstWeekProjector:
             substitution_class="exact_full_resolution_only",
             planned_duration_minutes=dose.planned_duration_minutes,
             fatigue_cost=exercise.fatigue_cost,
+            execution_guidance=execution_guidance_for(exercise.id),
             source_observation_ids=observation_ids,
             evidence_claim_ids=evidence_ids,
-            rule_version=(f"prepared-first-week-prescription@1.0.0;dose={dose.rule_version}"),
+            rule_version=(f"prepared-first-week-prescription@1.1.0;dose={dose.rule_version}"),
         )
         template = SessionTemplateDraft(
             name=f"First {exercise.name.casefold()} session",

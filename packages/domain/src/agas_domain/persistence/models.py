@@ -1980,6 +1980,7 @@ class SessionPrescriptionRecord(VersionedRecordMixin, Base):
     substitution_class: Mapped[str] = mapped_column(String(160), nullable=False)
     planned_duration_minutes: Mapped[int] = mapped_column(Integer(), nullable=False)
     fatigue_cost: Mapped[str] = mapped_column(String(40), nullable=False)
+    execution_guidance: Mapped[dict[str, Any] | None] = mapped_column(JsonType, nullable=True)
     prescribed_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True, nullable=False)
     rule_version: Mapped[str] = mapped_column(String(160), nullable=False)
 
