@@ -725,6 +725,7 @@ def test_prepared_first_week_derives_dose_and_schedules_only_reported_times(
 
 def test_pushup_maintain_path_builds_an_exact_no_equipment_first_week(
     session: Session,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     scope = "assessment_specific:maximum_consecutive_standard_pushup_repetitions"
     strategy, authority = _persist_ready_first_block(
@@ -783,6 +784,26 @@ def test_pushup_maintain_path_builds_an_exact_no_equipment_first_week(
     assert candidate.repetitions_per_set == 6
     assert candidate.rest_seconds == 120
     assert candidate.planned_duration_minutes == 6
+    assert candidate.execution_guidance is not None
+    assert (
+        candidate.execution_guidance.guidance_version
+        == "owner-alpha-standard-pushup-execution-guidance@1.0.0"
+    )
+    with monkeypatch.context() as context:
+        context.setattr(
+            "agas_api.prepared_first_week.execution_guidance_for",
+            lambda _exercise_id: candidate.execution_guidance.model_copy(
+                update={"guidance_version": "owner-alpha-standard-pushup-execution-guidance@1.0.1"}
+            ),
+        )
+        changed_guidance_projection = PreparedFirstWeekProjector(session).project(
+            block.id,
+            PrepareFirstWeekCommand(windows=windows),
+            authority,
+            projected_at,
+        )
+    assert changed_guidance_projection.candidate is not None
+    assert changed_guidance_projection.candidate.content_digest != candidate.content_digest
     result = ratify_prepared_first_week(
         session,
         block.id,

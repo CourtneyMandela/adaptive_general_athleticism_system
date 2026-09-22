@@ -16,6 +16,7 @@ from agas_domain import (
     CapabilityEstimate,
     Confidence,
     EffortRpeTarget,
+    ExerciseExecutionGuidance,
     Observation,
     ObservationSource,
     Provenance,
@@ -127,6 +128,7 @@ class PreparedFirstWeekCandidate(BaseModel):
     effort_rpe_range: NonEmptyText
     planned_duration_minutes: int
     technique_constraints: tuple[NonEmptyText, ...]
+    execution_guidance: ExerciseExecutionGuidance | None
     dose_calculation: NonEmptyText
     provenance_summary: NonEmptyText
     uncertainty: NonEmptyText
@@ -147,7 +149,7 @@ class PreparedFirstWeekProjection(BaseModel):
     message: NonEmptyText
     candidate: PreparedFirstWeekCandidate | None = None
     blockers: tuple[str, ...] = ()
-    projection_version: str = "prepared-first-week-projection@1.1.0"
+    projection_version: str = "prepared-first-week-projection@1.2.0"
 
 
 class RatifyPreparedFirstWeekCommand(BaseModel):
@@ -176,7 +178,7 @@ class PreparedFirstWeekRatificationResult(BaseModel):
     availability_observation: Observation
     safety_policy_assignment: AthleteSafetyPolicyAssignment
     result: WeeklyPlanCreationResult
-    ratification_version: str = "prepared-first-week-ratification@1.1.0"
+    ratification_version: str = "prepared-first-week-ratification@1.2.0"
 
 
 class PreparedFirstWeekConflictError(RuntimeError):
@@ -350,6 +352,7 @@ class PreparedFirstWeekProjector:
             rule_version="prepared-first-week-safety-assignment@1.0.0",
         )
 
+        execution_guidance = execution_guidance_for(exercise.id)
         stable_content = {
             "candidate_version": CANDIDATE_VERSION,
             "block": block.model_dump(mode="json"),
@@ -357,6 +360,11 @@ class PreparedFirstWeekProjector:
             "capability_estimate": estimate.model_dump(mode="json"),
             "dose_policy": dose_policy.model_dump(mode="json"),
             "derived_dose": dose.model_dump(mode="json", exclude={"derived_at"}),
+            "execution_guidance": (
+                execution_guidance.model_dump(mode="json")
+                if execution_guidance is not None
+                else None
+            ),
             "weekly_scheduling_policy": exact_policy.model_dump(mode="json"),
             "weekly_scheduling_policy_review": exact_review.model_dump(mode="json"),
             "safety_policy_assignment": safety_assignment.model_dump(mode="json"),
@@ -402,6 +410,7 @@ class PreparedFirstWeekProjector:
             authority=authority,
             content_digest=content_digest,
             training_candidate=training_candidate,
+            execution_guidance=execution_guidance,
         )
         try:
             preview = PersistedWeeklyPlanService(self.session).preview(
@@ -467,6 +476,7 @@ class PreparedFirstWeekProjector:
             effort_rpe_range=f"{dose.effort_rpe_minimum:g}-{dose.effort_rpe_maximum:g}",
             planned_duration_minutes=dose.planned_duration_minutes,
             technique_constraints=dose.technique_constraints,
+            execution_guidance=execution_guidance,
             dose_calculation=(
                 f"Derived from capability estimate {estimate.id} using {dose.calculation_method} "
                 f"under dose policy {dose.repetition_dose_policy_id}."
@@ -586,6 +596,7 @@ class PreparedFirstWeekProjector:
         authority: AuthorizedRole,
         content_digest: str,
         training_candidate: PreparedTrainingConstructionCandidate,
+        execution_guidance: ExerciseExecutionGuidance | None,
     ) -> CreateWeeklyPlanCommand:
         requirement = allocation_input.stimulus_requirement
         exercise = allocation_input.selected_exercise
@@ -635,7 +646,7 @@ class PreparedFirstWeekProjector:
             substitution_class="exact_full_resolution_only",
             planned_duration_minutes=dose.planned_duration_minutes,
             fatigue_cost=exercise.fatigue_cost,
-            execution_guidance=execution_guidance_for(exercise.id),
+            execution_guidance=execution_guidance,
             source_observation_ids=observation_ids,
             evidence_claim_ids=evidence_ids,
             rule_version=(f"prepared-first-week-prescription@1.1.0;dose={dose.rule_version}"),
@@ -857,6 +868,7 @@ def ratify_prepared_first_week(
                 authority=authority,
                 content_digest=candidate.content_digest,
                 training_candidate=training_candidate,
+                execution_guidance=candidate.execution_guidance,
             ),
             identities=candidate.identities.service_identities(),
         )

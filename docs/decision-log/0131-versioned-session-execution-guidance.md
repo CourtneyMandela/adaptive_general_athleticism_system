@@ -22,6 +22,8 @@ movement standard from the approved push-up assessment protocol and the ratified
 construction authority. The athlete PWA renders the stored snapshot under **How to perform this**.
 Because guidance now participates in the reviewed first-week payload and content digest, that
 candidate advances to `prepared-first-week@1.2.0` and its prescription rule to version `1.1.0`.
+The first-week review screen exposes the full snapshot before ratification; the digest therefore
+cannot attest to guidance that the reviewer could not inspect.
 
 ## Why
 

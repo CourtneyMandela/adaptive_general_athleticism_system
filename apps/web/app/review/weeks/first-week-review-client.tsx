@@ -349,6 +349,42 @@ function PreparedFirstWeekPanel({ projection }: { projection: FirstWeekPreparati
             <p>{visibleCandidate.provenance_summary}</p>
             <p><strong>Uncertainty:</strong> {visibleCandidate.uncertainty}</p>
           </details>
+          {visibleCandidate.execution_guidance ? (
+            <details>
+              <summary>Exact athlete-facing execution guidance</summary>
+              <h3>Set up</h3>
+              <ol>
+                {visibleCandidate.execution_guidance.setup_instructions.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ol>
+              <h3>Perform</h3>
+              <ol>
+                {visibleCandidate.execution_guidance.execution_instructions.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ol>
+              <h3>Technique cues</h3>
+              <ul>
+                {visibleCandidate.execution_guidance.technique_cues.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+              <h3>Stop conditions</h3>
+              <ul>
+                {visibleCandidate.execution_guidance.stop_conditions.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+              <p><strong>Authority:</strong> {visibleCandidate.execution_guidance.authority}</p>
+              <p><strong>Uncertainty:</strong> {visibleCandidate.execution_guidance.uncertainty}</p>
+              <p><code>{visibleCandidate.execution_guidance.guidance_version}</code></p>
+            </details>
+          ) : (
+            <p className="form-error">
+              This candidate has no reviewed athlete-facing execution guidance.
+            </p>
+          )}
           <aside className="review-boundary">
             <strong>Scheduling is not safety clearance.</strong>
             <span>{visibleCandidate.safety_boundary}</span>
@@ -366,8 +402,9 @@ function PreparedFirstWeekPanel({ projection }: { projection: FirstWeekPreparati
               onChange={(event) => setConfirmed(event.target.checked)}
             />
             <span>
-              These are times I am actually available. I reviewed the exact dose and understand
-              that each session still requires its phone safety check.
+              These are times I am actually available. I reviewed the exact dose and the
+              execution-guidance status, and understand that each session still requires its
+              phone safety check.
             </span>
           </label>
           <button

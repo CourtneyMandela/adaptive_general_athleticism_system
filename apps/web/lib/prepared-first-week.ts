@@ -11,7 +11,7 @@ export interface PreparedAvailabilityWindow {
 }
 
 export interface PreparedFirstWeekCandidate {
-  candidate_version: "prepared-first-week@1.1.0";
+  candidate_version: "prepared-first-week@1.2.0";
   candidate_id: string;
   content_digest: string;
   prepared_at: string;
@@ -28,6 +28,15 @@ export interface PreparedFirstWeekCandidate {
   effort_rpe_range: string;
   planned_duration_minutes: number;
   technique_constraints: string[];
+  execution_guidance: {
+    guidance_version: string;
+    setup_instructions: string[];
+    execution_instructions: string[];
+    technique_cues: string[];
+    stop_conditions: string[];
+    authority: string;
+    uncertainty: string;
+  } | null;
   dose_calculation: string;
   provenance_summary: string;
   uncertainty: string;
