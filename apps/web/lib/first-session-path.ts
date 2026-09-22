@@ -21,6 +21,7 @@ export interface FirstSessionAssessmentState {
     required_days: number;
     session_recorded_today: boolean;
   } | null;
+  introductory_jump_dose?: unknown | null;
   latest_run: {
     decisions: Array<{
       decision: string;
@@ -50,6 +51,11 @@ export interface FirstSessionAssessmentReviewState {
 export interface FirstSessionPlanningReviewState {
   available_candidate_count: number;
   blocked_candidate_count: number;
+  conflict_candidate_count: number;
+}
+
+export interface FirstSessionExposureReviewState {
+  available_candidate_count: number;
   conflict_candidate_count: number;
 }
 
@@ -127,6 +133,7 @@ export function buildFirstSessionPath(
   assessmentReview?: FirstSessionAssessmentReviewState,
   planningReview?: FirstSessionPlanningReviewState,
   planningQueueItem?: PlanningReviewQueueItem,
+  exposureReview?: FirstSessionExposureReviewState,
 ): FirstSessionPath {
   const assessmentContentReady = assessment.approved_self_administered_protocol_count > 0;
   const preparedAssessmentAvailable = (assessmentReview?.available_candidate_count ?? 0) > 0;
@@ -137,6 +144,9 @@ export function buildFirstSessionPath(
     && assessment.jump_exposure_need.status === "introductory_exposure_needed";
   const introductoryExposureRecordedToday = introductoryExposureNeeded
     && assessment.introductory_jump_history?.session_recorded_today === true;
+  const introductoryExposureDoseReady = assessment.introductory_jump_dose != null;
+  const preparedExposureAuthorityAvailable = (exposureReview?.available_candidate_count ?? 0) > 0;
+  const preparedExposureAuthorityConflict = (exposureReview?.conflict_candidate_count ?? 0) > 0;
   const qualifyingExposureDays = assessment.introductory_jump_history?.qualifying_days ?? 0;
   const requiredExposureDays = assessment.introductory_jump_history?.required_days ?? 2;
   const hasEstimate = planning.current_capability_estimate_count > 0;
@@ -174,6 +184,17 @@ export function buildFirstSessionPath(
         assessment.status === "environment_required"
           ? "The assessment needs a persisted training environment. Complete the environment information below before selection."
           : "The selected assessment needs equipment that is not currently reported available. Update the environment below, then rerun selection.",
+    };
+  } else if (introductoryExposureNeeded && !introductoryExposureDoseReady) {
+    assessmentStep = {
+      id: "assessment",
+      title: "Reviewed introductory exposure",
+      state: preparedExposureAuthorityAvailable ? "your_action" : "system_action",
+      detail: preparedExposureAuthorityAvailable
+        ? "AGAS has prepared the exact low-intensity jump dose and safety limits. Review that authority bundle before it can become your training instruction."
+        : preparedExposureAuthorityConflict
+          ? "The prepared introductory-exposure authority conflicts with immutable governance history. AGAS must resolve that conflict before asking you to jump."
+          : "A reviewed introductory-exposure dose and safety authority are required before AGAS can ask you to perform the jump exposure.",
     };
   } else if (introductoryExposureNeeded) {
     assessmentStep = {
@@ -292,6 +313,15 @@ export function buildFirstSessionPath(
             ? "Inspect the assessment conflict"
             : "Inspect assessment governance",
       };
+    } else if (introductoryExposureNeeded && !introductoryExposureDoseReady) {
+      nextAction = {
+        href: athleteReviewHref("/review/planning-authorities", athleteId),
+        label: preparedExposureAuthorityAvailable
+          ? "Review the introductory exposure"
+          : preparedExposureAuthorityConflict
+            ? "Inspect the exposure-authority conflict"
+            : "Inspect exposure governance",
+      };
     } else if (userAction?.id === "assessment" && needsEnvironmentAction) {
       nextAction = {
         href: "#environment-title",
@@ -341,6 +371,8 @@ export function buildFirstSessionPath(
       : "Your profile is saved; AGAS still owes you the training path.";
   const message = hasScheduledWeek
     ? "Open the scheduled session below when you are ready to train."
+    : introductoryExposureNeeded && !introductoryExposureDoseReady
+      ? assessmentStep.detail
     : introductoryExposureRecordedToday
       ? assessmentStep.detail
     : userAction

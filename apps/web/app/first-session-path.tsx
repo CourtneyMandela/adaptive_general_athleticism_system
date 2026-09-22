@@ -60,6 +60,26 @@ export function FirstSessionPath({
 
       let planningReview;
       let planningQueueItem;
+      let exposureReview;
+      if (
+        assessment.jump_exposure_need?.active
+        && assessment.jump_exposure_need.status === "introductory_exposure_needed"
+        && !assessment.introductory_jump_dose
+      ) {
+        const exposureResult = await Promise.allSettled([
+          fetchTrainingConstructionCandidates(apiBaseUrl),
+        ]);
+        const exposureCandidates = exposureResult[0];
+        if (exposureCandidates?.status === "fulfilled") {
+          const items = exposureCandidates.value.items.filter(
+            (item) => item.candidate.slug === "owner_alpha_introductory_jump_exposure_authorities",
+          );
+          exposureReview = {
+            available_candidate_count: items.filter((item) => item.status === "available").length,
+            conflict_candidate_count: items.filter((item) => item.status === "conflict").length,
+          };
+        }
+      }
       if (
         planning.current_capability_estimate_count > 0
         && planning.status === "planning_authorities_required"
@@ -97,6 +117,7 @@ export function FirstSessionPath({
         assessmentReview,
         planningReview,
         planningQueueItem,
+        exposureReview,
       );
     }
 

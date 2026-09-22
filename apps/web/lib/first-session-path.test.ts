@@ -146,6 +146,7 @@ describe("first-session path", () => {
           required_days: 2,
           session_recorded_today: false,
         },
+        introductory_jump_dose: {},
       }),
       planning(),
       false,
@@ -179,6 +180,7 @@ describe("first-session path", () => {
           required_days: 2,
           session_recorded_today: true,
         },
+        introductory_jump_dose: {},
       }),
       planning(),
       false,
@@ -193,6 +195,44 @@ describe("first-session path", () => {
     expect(result.next_action).toEqual({
       href: "#assessment-title",
       label: "Review your exposure progress",
+    });
+  });
+
+  it("routes a prepared introductory-exposure authority to explicit review", () => {
+    const result = buildFirstSessionPath(
+      assessment({
+        status: "ready_to_start",
+        can_start_run: true,
+        approved_self_administered_protocol_count: 2,
+        eligibility: { outcome: "selection_allowed" },
+        jump_exposure_need: {
+          status: "introductory_exposure_needed",
+          active: true,
+        },
+        introductory_jump_history: {
+          qualifying_days: 0,
+          required_days: 2,
+          session_recorded_today: false,
+        },
+        introductory_jump_dose: null,
+      }),
+      planning(),
+      false,
+      athleteId,
+      undefined,
+      undefined,
+      undefined,
+      { available_candidate_count: 1, conflict_candidate_count: 0 },
+    );
+
+    expect(result.steps.find((step) => step.id === "assessment")).toMatchObject({
+      title: "Reviewed introductory exposure",
+      state: "your_action",
+    });
+    expect(result.message).toContain("prepared the exact low-intensity jump dose");
+    expect(result.next_action).toEqual({
+      href: `/review/planning-authorities?athleteId=${athleteId}`,
+      label: "Review the introductory exposure",
     });
   });
 
