@@ -441,6 +441,8 @@ prescribed set identity, and allows a reload to resume the draft only when the s
 and prescription signature still match. No partial browser draft reaches PostgreSQL or becomes an
 observation. Explicit final submission sends the full set history through the same execution
 validator and atomic observation/execution/adherence transaction as every other client.
+An optional between-set countdown reads the prescription's exact rest seconds but remains transient
+device presentation state; starting or completing the clock is not recorded as performed rest.
 
 ### Progression and exposure
 

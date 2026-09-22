@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import {
   buildProgressionEvaluationCommand,
@@ -14,6 +14,7 @@ import {
   type PlannedSessionProjection,
   type PrescriptionLogDraft,
 } from "@/lib/current-week";
+import { formatRestTime, remainingRestSeconds } from "@/lib/rest-timer";
 
 const confidenceOptions: Array<{ value: Confidence; label: string }> = [
   { value: "moderate", label: "Moderate confidence" },
@@ -30,6 +31,47 @@ function localDateTime(value: string): string {
 
 function parseOptionalRpe(value: string): number | null {
   return value === "" ? null : Number(value);
+}
+
+function RestTimer({ restSeconds, enabled }: { restSeconds: number; enabled: boolean }) {
+  const [deadline, setDeadline] = useState<number | null>(null);
+  const [remaining, setRemaining] = useState(restSeconds);
+
+  useEffect(() => {
+    if (deadline === null) return;
+    const update = () => {
+      const next = remainingRestSeconds(deadline, Date.now());
+      setRemaining(next);
+      if (next === 0) setDeadline(null);
+    };
+    update();
+    const interval = window.setInterval(update, 250);
+    return () => window.clearInterval(interval);
+  }, [deadline]);
+
+  function start() {
+    setRemaining(restSeconds);
+    setDeadline(Date.now() + restSeconds * 1000);
+  }
+
+  function cancel() {
+    setDeadline(null);
+    setRemaining(restSeconds);
+  }
+
+  const running = deadline !== null;
+  const complete = !running && remaining === 0;
+  return (
+    <div className={`rest-timer${complete ? " rest-timer--complete" : ""}`}>
+      <span aria-live="polite">
+        {running ? `Rest ${formatRestTime(remaining)}` : complete ? "Rest complete" : `Rest ${formatRestTime(restSeconds)}`}
+      </span>
+      <button type="button" disabled={!enabled || restSeconds === 0} onClick={start}>
+        {running || complete ? "Restart" : "Start rest"}
+      </button>
+      {running ? <button type="button" className="text-button" onClick={cancel}>Cancel</button> : null}
+    </div>
+  );
 }
 
 type WorkoutPhase = "ready" | "active" | "review";
@@ -459,6 +501,12 @@ export function WorkoutLogForm({
                             <option value="false">Not met</option>
                           </select>
                         </label>
+                        {setDraft.setIndex < prescription.sets ? (
+                          <RestTimer
+                            restSeconds={prescription.rest_seconds}
+                            enabled={setDraft.performed && workout.phase === "active"}
+                          />
+                        ) : null}
                       </section>
                     ))}
                   </div>

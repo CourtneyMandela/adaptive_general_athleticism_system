@@ -896,8 +896,9 @@ receive the backend's deterministic safety result, and run the authorized sessio
 The live view records completion, actual dose, effort, and technique separately for every set;
 captures start/end time, session effort, and notes; and retains an unfinished draft only in that
 browser until final submission. Reloading the page does not turn the draft into athlete history:
-the user must resume, review, and explicitly save it. The screen then collects a short post-session
-recovery report and displays persisted
+the user must resume, review, and explicitly save it. A tap-to-start between-set countdown uses the
+exact prescribed rest interval but remains local presentation state rather than a claim about
+performed rest. The screen then collects a short post-session recovery report and displays persisted
 progression outcomes per exercise. When an exact unique non-exposure load or repetition policy is
 resolved from the prescription's versioned rule reference, the athlete can ask the deterministic
 backend to evaluate progression without submitting that policy identity. It refreshes from the
