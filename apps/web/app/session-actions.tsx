@@ -33,9 +33,17 @@ function parseOptionalRpe(value: string): number | null {
   return value === "" ? null : Number(value);
 }
 
-function RestTimer({ restSeconds, enabled }: { restSeconds: number; enabled: boolean }) {
-  const [deadline, setDeadline] = useState<number | null>(null);
-  const [remaining, setRemaining] = useState(restSeconds);
+interface RestRequest {
+  id: string;
+  seconds: number;
+  label: string;
+}
+
+function RestTimer({ request, onCancel }: { request: RestRequest; onCancel: () => void }) {
+  const [deadline, setDeadline] = useState<number | null>(
+    () => Date.now() + request.seconds * 1000,
+  );
+  const [remaining, setRemaining] = useState(request.seconds);
 
   useEffect(() => {
     if (deadline === null) return;
@@ -50,13 +58,14 @@ function RestTimer({ restSeconds, enabled }: { restSeconds: number; enabled: boo
   }, [deadline]);
 
   function start() {
-    setRemaining(restSeconds);
-    setDeadline(Date.now() + restSeconds * 1000);
+    setRemaining(request.seconds);
+    setDeadline(Date.now() + request.seconds * 1000);
   }
 
   function cancel() {
     setDeadline(null);
-    setRemaining(restSeconds);
+    setRemaining(request.seconds);
+    onCancel();
   }
 
   const running = deadline !== null;
@@ -64,12 +73,13 @@ function RestTimer({ restSeconds, enabled }: { restSeconds: number; enabled: boo
   return (
     <div className={`rest-timer${complete ? " rest-timer--complete" : ""}`}>
       <span aria-live="polite">
-        {running ? `Rest ${formatRestTime(remaining)}` : complete ? "Rest complete" : `Rest ${formatRestTime(restSeconds)}`}
+        {running ? `Rest ${formatRestTime(remaining)}` : "Rest complete"}
       </span>
-      <button type="button" disabled={!enabled || restSeconds === 0} onClick={start}>
-        {running || complete ? "Restart" : "Start rest"}
+      <small>{request.label}</small>
+      <button type="button" onClick={start}>Restart</button>
+      <button type="button" className="text-button" onClick={cancel}>
+        {running ? "Cancel" : "Dismiss"}
       </button>
-      {running ? <button type="button" className="text-button" onClick={cancel}>Cancel</button> : null}
     </div>
   );
 }
@@ -259,6 +269,7 @@ export function WorkoutLogForm({
   const [workout, setWorkout] = useState<WorkoutLogState>(() => blankWorkoutLog(session));
   const [state, setState] = useState<"idle" | "saving" | "error">("idle");
   const [message, setMessage] = useState("");
+  const [restRequest, setRestRequest] = useState<RestRequest | null>(null);
   const allNotStarted = workout.drafts.every((draft) =>
     draft.sets.every((setDraft) => !setDraft.performed),
   );
@@ -279,6 +290,7 @@ export function WorkoutLogForm({
   }
 
   function startWorkout() {
+    setRestRequest(null);
     persist({
       ...blankWorkoutLog(session),
       phase: "active",
@@ -348,6 +360,7 @@ export function WorkoutLogForm({
   }
 
   function finishWorkout() {
+    setRestRequest(null);
     updateWorkout((current) => ({
       ...current,
       phase: "review",
@@ -359,6 +372,7 @@ export function WorkoutLogForm({
   }
 
   function recordNotStarted() {
+    setRestRequest(null);
     persist({ ...blankWorkoutLog(session), phase: "review" });
   }
 
@@ -417,6 +431,13 @@ export function WorkoutLogForm({
             Check a set only after performing it. The prescribed dose is prefilled, but the saved
             record must reflect what actually happened.
           </p>
+          {restRequest ? (
+            <RestTimer
+              key={restRequest.id}
+              request={restRequest}
+              onCancel={() => setRestRequest(null)}
+            />
+          ) : null}
           <div className="execution-items">
             {session.prescriptions.map((prescription, index) => {
               const draft = workout.drafts[index];
@@ -502,10 +523,22 @@ export function WorkoutLogForm({
                           </select>
                         </label>
                         {setDraft.setIndex < prescription.sets ? (
-                          <RestTimer
-                            restSeconds={prescription.rest_seconds}
-                            enabled={setDraft.performed && workout.phase === "active"}
-                          />
+                          <button
+                            type="button"
+                            className="rest-start"
+                            disabled={
+                              !setDraft.performed
+                              || workout.phase !== "active"
+                              || prescription.rest_seconds === 0
+                            }
+                            onClick={() => setRestRequest({
+                              id: `${prescription.prescription_id}:${setDraft.setIndex}:${Date.now()}`,
+                              seconds: prescription.rest_seconds,
+                              label: `${prescription.exercise_name} · after set ${setDraft.setIndex}`,
+                            })}
+                          >
+                            Start {formatRestTime(prescription.rest_seconds)} rest
+                          </button>
                         ) : null}
                       </section>
                     ))}
