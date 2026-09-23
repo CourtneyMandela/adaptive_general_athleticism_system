@@ -31,6 +31,39 @@ Do not fill an architectural gap by inventing a generic fitness feature.
 
 If the blueprint leaves a question unresolved, implement the smallest replaceable assumption necessary, document it, and preserve uncertainty.
 
+## Repository Map and Development Commands
+
+The current repository is a modular monorepo:
+
+- `apps/web`: Next.js/TypeScript PWA and browser-facing tests.
+- `services/api`: FastAPI transport and application use cases.
+- `services/planner`: deterministic planning and progression logic.
+- `services/evidence`: evidence-source retrieval and parsing boundaries.
+- `packages/domain`: domain models and PostgreSQL persistence.
+- `packages/safety`: deterministic safety rules.
+- `packages/evaluation`: counterfactual and anti-sludge evaluation.
+- `packages/seed_data` and `data`: validated catalogs, synthetic fixtures, and governance data.
+- `tests`: Python unit, integration, counterfactual, and anti-sludge tests.
+- `migrations`: Alembic migrations.
+
+Use `README.md` for full setup and deployment details. The standard validation commands are:
+
+```text
+pytest
+ruff check .
+ruff format --check .
+mypy packages/domain/src packages/evaluation/src packages/safety/src packages/seed_data/src services/api/src services/evidence/src services/planner/src tests
+pnpm --filter @agas/web test
+pnpm --filter @agas/web test:e2e
+pnpm --filter @agas/web lint
+pnpm --filter @agas/web typecheck
+python -m build
+pnpm --filter @agas/web build
+```
+
+Run only the checks relevant to a bounded change while iterating, then run the proportional full
+validation before handoff. Do not claim a check passed unless it was actually run.
+
 ---
 
 # Core Product Invariant
