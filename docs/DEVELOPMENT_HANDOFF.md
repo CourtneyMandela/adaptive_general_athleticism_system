@@ -40,8 +40,8 @@ append-only history, and owner review fail closed.
 - Committed implementation and workflow baseline:
   `19b08006a83ab612ed47a3156ea93e70c99f80e2`
 - `origin/main`: `f41516830f61d1c5f6d40b376fdc42b289a8de6f`
-- Local branch state: the baseline commit plus this final handoff commit are expected to leave
-  `main` two commits ahead of `origin/main`; nothing has been pushed.
+- Local branch state: `main` is ahead of `origin/main`; inspect Git for the exact current count and
+  revision rather than relying on a copied number. Nothing has been pushed.
 - Worktree expectation at conversation boundary: clean.
 - Decisions `0133` through `0151` and their associated implementation are tracked in the baseline
   commit above.
@@ -100,87 +100,93 @@ details in tickets.
 
 ## Active ticket
 
-### AGAS-0002 — Verify hosted owner-alpha readiness
+### AGAS-0002 — Align remote and hosted revision
 
 - Status: `ACTIVE`
-- Type: deployment and read-only live-state verification
+- Type: source-control and deployment alignment
 
 #### Objective
 
-Confirm that the exact committed AGAS baseline is deployed, establish an owner-authenticated browser
-session, and inspect `/review/readiness` against the hosted database. Record the exact candidate,
-ratification, athlete, current-week, and reviewer-queue state without automatically changing it.
+Move the exact local ticket-workflow baseline to the configured GitHub remote after explicit owner
+confirmation, allow the existing CI/deployment gates to process it, and confirm which revision the
+hosted owner alpha serves. Do not inspect or change athlete/governance state in this ticket.
 
 #### Why this is next
 
-Source, tests, public API health, and database connectivity do not prove that the hosted owner has
-the intended ratifications or a current persisted week. The repository now has a stable local
-baseline, so the next uncertainty is operational rather than architectural.
+The local repository contains the preserved decisions and implementation, but `origin/main` still
+points to the older handoff commit. Authenticated readiness inspection would be misleading until
+the remote and hosted application are known to serve the intended source revision.
 
 #### In scope
 
-- inspect Git status and confirm the local baseline and whether it has been pushed/deployed;
-- follow `docs/deployment.md` and existing provider gates without changing plans or adding payment;
-- use the owner-controlled Auth0 sign-in flow; request interactive owner action when credentials or
-  consent are required rather than automating or exposing them;
-- inspect the authenticated `/review/readiness` route and its underlying read-only projections;
-- record exact deployed revision when observable, prepared candidate IDs/digests and ratification
-  states, owned-athlete visibility, current-week identity/state, safety assignment state, and the
-  current planning-review boundary;
-- distinguish unavailable, unauthorized, missing, conflicting, and genuinely absent state;
-- update this handoff with evidence and define the next bounded ticket from observed state.
+- inspect Git status, local history, remote tracking state, and the exact commits pending push;
+- confirm the worktree is clean and no unexpected commit or rewritten history is present;
+- obtain explicit owner confirmation before pushing local `main` to `origin/main`;
+- push only the reviewed fast-forward commits after confirmation;
+- observe the existing GitHub CI and configured deployment gates without bypassing failures;
+- identify the revision served by the hosted API/PWA when the providers expose that evidence;
+- record success, failure, or inability to prove revision alignment distinctly;
+- update this handoff, complete this ticket, and promote `AGAS-0003` without starting it.
 
 #### Out of scope
 
-- automatic candidate ratification or approval;
-- manufacturing an athlete, plan, week, or readiness state to make the screen look complete;
-- bypassing Auth0 or handling owner credentials outside the provider flow;
+- owner sign-in or authenticated `/review/readiness` inspection;
+- candidate ratification, athlete writes, or training-state changes;
 - changing provider plans, adding payment details, or moving to paid infrastructure;
+- force-pushing, rebasing published history, or bypassing a failing CI/deployment gate;
 - product code changes unless a separately approved follow-up ticket is created;
-- treating deployment success, HTTP health, or database connectivity as live-data readiness.
+- treating deployment success as proof of authenticated live-data readiness.
 
 #### Authoritative references
 
 - `AGENTS.md`
 - `docs/deployment.md`
 - `docs/decision-log/0086-no-card-single-user-alpha-hosting.md`
-- `docs/decision-log/0108-allowlisted-owner-alpha-operator-access.md`
-- `docs/decision-log/0144-owner-alpha-live-readiness-audit.md`
-- `apps/web/app/review/readiness/`
-- current Git state and the actual hosted UI/API responses
+- `docs/decision-log/0088-render-alpha-deploy-trigger.md`
+- `.github/workflows/ci.yml`
+- current local and remote Git state and provider deployment evidence
 
 #### Acceptance criteria
 
-- The exact source revision serving the owner alpha is confirmed, or inability to confirm it is
-  recorded precisely.
-- Owner authentication succeeds through the normal provider flow, or the exact owner-action blocker
-  is recorded without exposing credentials.
-- `/review/readiness` is inspected while authenticated.
-- Candidate, ratification, athlete, week, safety-assignment, and reviewer-boundary results are
-  recorded as observed facts with failures kept distinct from empty state.
-- No candidate is ratified and no athlete/training state is written merely to satisfy this ticket.
-- This handoff is updated and the next ticket reflects the observed live blocker or next product gap.
+- The worktree begins and ends clean.
+- The owner explicitly authorizes any push before it occurs.
+- `origin/main` contains the intended fast-forward local commits, or the exact blocker is recorded.
+- Required CI checks pass, or each failure remains visible and is not bypassed.
+- The hosted revision is confirmed when provider evidence permits; inability to prove it is not
+  mislabeled as success.
+- No authenticated athlete/governance inspection or live-data write occurs.
+- This handoff is updated and `AGAS-0003` becomes active but unstarted.
 
 #### Validation
 
-- capture Git revision and deployment evidence available from the configured providers;
-- verify authenticated navigation to `/review/readiness`;
-- compare visible state with the route's fail-closed semantics from decision `0144`;
-- perform no write-based validation unless a new owner-approved ticket explicitly authorizes it.
+- capture local HEAD, `origin/main`, ahead/behind counts, and clean status before pushing;
+- verify the push is a fast-forward update;
+- inspect required CI results and configured deployment status;
+- record the exact hosted revision when it is observable.
 
 #### Blockers or owner decisions
 
-Interactive Auth0 sign-in may require the owner. If the local checkpoint has not reached the remote
-or hosting providers, pushing or deploying is a consequential operation: report the exact state and
-obtain owner confirmation before performing it unless the owner explicitly starts this ticket with
-deployment authorization.
+Pushing changes and triggering deployment are consequential external operations. Starting this
+ticket does not itself authorize the push: obtain one explicit owner confirmation after reporting
+the exact commits and fast-forward target.
 
 ## Ordered queue
 
-### AGAS-0003 — Reconcile descriptive documentation
+### AGAS-0003 — Perform authenticated owner-readiness audit
+
+- Status: `READY`
+- Depends on: `AGAS-0002`
+- Objective: sign in through the owner-controlled Auth0 flow and inspect the read-only
+  `/review/readiness` route against the hosted database.
+- Boundaries: do not automatically ratify candidates, manufacture athlete/training state, bypass
+  Auth0, expose credentials, or infer readiness from health/connectivity alone.
+- Expected output: exact candidate, ratification, athlete, week, safety-assignment, and reviewer-
+  boundary facts, with failures kept distinct from genuinely empty state.
+
+### AGAS-0004 — Reconcile descriptive documentation
 
 - Status: `QUEUED`
-- Depends on: `AGAS-0001` and the observed result of `AGAS-0002`
+- Depends on: `AGAS-0003`
 - Objective: bring `docs/architecture.md` and the stale package/service boundary READMEs through
   the committed decisions without changing product behavior or policy.
 - Boundaries: do not rewrite the blueprint, policies, or historical decision records; keep the
