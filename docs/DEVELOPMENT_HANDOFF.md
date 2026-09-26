@@ -113,82 +113,120 @@ details in tickets.
 
 ## Active ticket
 
-### AGAS-0004 — Reconcile descriptive documentation
+### AGAS-0004 — Restore hosted API alignment and expose the aerobic candidate chain
 
 - Status: `ACTIVE`
-- Type: documentation-only implemented-state reconciliation
+- Type: deployment-blocking regression repair and authenticated hosted verification
 
 #### Objective
 
-Bring `docs/architecture.md` and stale package/service boundary READMEs through the committed
-decisions and implemented repository shape without changing product behavior, policy, scientific
-authority, or ticket workflow.
+Repair the known production-shaped browser/API/PostgreSQL CI regression without weakening its
+authentication assertion, obtain owner authorization before pushing the exact reviewed range, let
+the normal required-check deployment path advance Render, and verify that the hosted authenticated
+readiness inventory exposes the committed aerobic assessment, floor, resource, and construction
+candidates. Preserve exact revision uncertainty wherever a provider does not expose a SHA.
 
 #### Why this is next
 
-The authenticated owner-readiness audit established the actual hosted-state boundary. Descriptive
-architecture and package/service READMEs still lag the committed decisions and implementation,
-making fresh-context navigation less reliable even though the authoritative blueprint, policies,
-decision history, and handoff are current.
+The owner-facing aerobic slice is implemented, committed, locally validated, pushed to
+`origin/main`, and present in the Vercel build, but the live readiness audit did not expose its
+candidates. Required CI run `36233115399` failed only because the real-stack sign-in locator became
+ambiguous, so Render was not proven to advance to the pushed implementation. Until that gate and
+hosted mismatch are resolved, the application cannot reliably progress from the aerobic source
+slice toward a live owner assessment and first training week.
 
 #### In scope
 
-- compare `docs/architecture.md` with the implemented boundaries represented by decisions `0133`
-  through `0151` and the current repository map;
-- inspect package/service READMEs and update only stale descriptions of implemented responsibilities,
-  workflows, or validation entry points;
-- preserve the explicit separation among observation, estimate, evidence, planning, prescription,
-  performance, safety, and user-facing explanation;
-- keep deployment and live-state facts in this handoff or `docs/deployment.md`, not in descriptive
-  package READMEs;
-- update this handoff with exact files changed, validation, and the next bounded ticket or owner
-  decision.
+- inspect the failing real-stack job and the current sign-in DOM before changing the locator;
+- make the smallest test-only or UI-semantic correction that uniquely identifies the intended
+  sign-in control while retaining the existing authentication contract;
+- add or preserve regression coverage for the duplicate-link condition;
+- run the relevant frontend and production-shaped real-stack checks, plus proportional static
+  validation for changed files;
+- commit the bounded repair locally, report the exact range, and request owner authorization before
+  any push;
+- after an authorized push, observe the complete required CI run and the normal Render deployment
+  path without bypassing a failed check or manually forcing deployment;
+- authenticate through the normal stable-origin Auth0 flow and verify that `/review/readiness`
+  exposes the exact committed aerobic assessment, competency-floor, resource, and training-
+  construction candidates;
+- update this handoff with exact Git, CI, Vercel, Render, and live candidate evidence, keeping
+  unavailable, stale, unauthorized, absent, and conflicting states distinct.
 
 #### Out of scope
 
-- changes to `docs/MASTER_BLUEPRINT.md`, `docs/safety-policy.md`, or `docs/evidence-policy.md`;
-- rewriting or amending historical decision records;
-- product code, migration, governed-data, test-behavior, deployment, or provider changes;
-- turning the root `README.md` into a second status ledger or duplicating the volatile hosted-state
-  facts recorded here;
-- repairing the known real-stack CI failure or changing the authenticated hosted state.
+- changing aerobic assessment, floor, resource, dose, progression, safety, or planning behavior;
+- ratifying any candidate or manufacturing an athlete, estimate, plan, week, or safety assignment;
+- weakening, skipping, quarantining, or bypassing the required real-stack check;
+- force-pushing, rewriting history, or pushing without explicit owner authorization for the exact
+  range;
+- manually deploying around the repository's required-check policy;
+- changing provider plans, adding payment details, or creating paid infrastructure;
+- descriptive architecture or package/service README reconciliation.
 
 #### Authoritative references
 
 - `AGENTS.md`
-- `docs/MASTER_BLUEPRINT.md`
-- `docs/architecture.md`
-- `docs/decision-log/0133-in-week-prescription-progression-handoff.md` through
-  `docs/decision-log/0151-controlled-assessment-attempt-reasons.md`
-- repository package/service READMEs and the code paths they describe
-- this handoff's current product and hosted-state boundaries
+- `docs/deployment.md`
+- `docs/decision-log/0143-browser-api-postgresql-smoke.md`
+- `docs/decision-log/0144-owner-alpha-live-readiness-audit.md`
+- `docs/decision-log/0146-owner-reviewable-aerobic-base-slice.md`
+- `docs/decision-log/0147-guided-aerobic-review-and-persisted-duration-ceiling.md`
+- `apps/web/e2e/real-stack.spec.ts`
+- `apps/web/e2e/real-stack-global-setup.ts`
+- `apps/web/app/review/readiness/`
+- current Git, GitHub Actions, Vercel, Render, Auth0, and authenticated readiness evidence
 
 #### Acceptance criteria
 
-- Descriptive architecture matches the committed implementation without inventing future behavior.
-- Every changed package/service README is verified against its current code boundary and does not
-  duplicate the handoff, blueprint, policy files, or decision log.
-- Stable authorities remain untouched and no product behavior changes.
-- Documentation links and formatting checks pass for the changed scope.
-- The worktree ends clean and this handoff records the completion state and next bounded ticket or
-  exact owner decision.
+- The ambiguous sign-in locator is replaced by a unique, behavior-preserving assertion and the
+  regression remains sensitive to a genuinely missing or incorrect sign-in control.
+- Relevant local frontend checks pass, including the production-shaped browser/API/PostgreSQL lane
+  when its dedicated database prerequisites are available; otherwise the exact external blocker is
+  recorded before any push request.
+- No push occurs until the owner approves the exact reviewed commit range.
+- After an authorized push, every required GitHub CI job passes; a failure remains a failure and is
+  not bypassed.
+- Render advances through its normal required-check path, or the exact provider-side blocker is
+  recorded without claiming alignment.
+- The authenticated live readiness inventory exposes all four aerobic authority links: the
+  12-minute walk/run assessment, provisional 12-minute walk/run floor, aerobic-base resource
+  authority, and aerobic-base duration construction authority, with exact IDs, digests, and
+  statuses recorded.
+- Vercel and Render revisions are described only to the precision actually proven.
+- No candidate, athlete, estimate, plan, week, safety assignment, or training record is written.
+- The worktree ends clean and this handoff defines the next product-critical ticket toward a live
+  aerobic assessment and first executable week.
 
 #### Validation
 
-- inspect every changed statement against the referenced implementation or accepted decision;
-- run `git diff --check`;
-- run proportional documentation/link checks already present in the repository, if any;
-- confirm Git status and that only ticket-scoped documentation changed.
+- reproduce or inspect CI run `36233115399` and its failing real-stack step;
+- run the focused real-stack Playwright specification against its PostgreSQL-backed stack;
+- run the relevant Vitest/Playwright, ESLint, and TypeScript checks for changed frontend scope;
+- run `git diff --check` and inspect the exact staged range before commit and push authorization;
+- after push, verify every required GitHub Actions job and the provider deployment evidence;
+- verify authenticated stable-origin navigation to `/review/readiness` and record the exact aerobic
+  candidate projections without performing writes.
 
 #### Blockers or owner decisions
 
-None known. If documentation and implementation materially disagree in a way that requires a new
-product or policy decision, stop and record the discrepancy rather than silently selecting a new
-behavior.
+An owner decision is required before pushing the exact reviewed commit range. Auth0, GitHub,
+Vercel, or Render may require interactive owner authentication. The production-shaped local lane
+requires its dedicated PostgreSQL test database. Do not replace any of those boundaries with a
+weaker check or a manual deployment bypass.
 
 ## Ordered queue
 
-No owner-approved ticket follows AGAS-0004 yet.
+### AGAS-0005 — Reconcile descriptive documentation
+
+- Status: `QUEUED`
+- Depends on: `AGAS-0004`
+- Objective: bring `docs/architecture.md` and stale package/service boundary READMEs through the
+  committed decisions without changing product behavior or policy.
+- Priority boundary: documentation reconciliation remains deferred while it does not block the
+  owner path to a live aerobic assessment, first executable week, and logged adaptive session. At
+  AGAS-0004 completion, define the next product-critical ticket ahead of this one unless the
+  documentation discrepancy itself blocks that path.
 
 ## Recently completed tickets
 
@@ -317,7 +355,7 @@ When this file reports a stable checkpoint, use:
 
 ```text
 Read AGENTS.md and docs/DEVELOPMENT_HANDOFF.md in full. Inspect Git status before changing
-anything. Work only Active ticket AGAS-0004 — Reconcile descriptive documentation. Follow its
-referenced authorities and acceptance criteria, update the handoff before stopping, and do not
-begin another ticket.
+anything. Work only Active ticket AGAS-0004 — Restore hosted API alignment and expose the aerobic
+candidate chain. Follow its referenced authorities and acceptance criteria, update the handoff
+before stopping, and do not begin another ticket.
 ```
