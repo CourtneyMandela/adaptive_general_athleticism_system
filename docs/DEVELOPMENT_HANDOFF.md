@@ -39,9 +39,11 @@ append-only history, and owner review fail closed.
 - Branch: `main`
 - Committed implementation and workflow baseline:
   `19b08006a83ab612ed47a3156ea93e70c99f80e2`
-- `origin/main`: `f41516830f61d1c5f6d40b376fdc42b289a8de6f`
-- Local branch state: `main` is ahead of `origin/main`; inspect Git for the exact current count and
-  revision rather than relying on a copied number. Nothing has been pushed.
+- Pushed ticket-workflow baseline: `6e8dbaf03490644f1e244ba62c024b6cb8a2fcd2`
+- `origin/main`: `6e8dbaf03490644f1e244ba62c024b6cb8a2fcd2`
+- Local branch state: after the documentation-only AGAS-0002 completion commit, `main` is expected
+  to be one commit ahead of `origin/main`. That completion commit has not been authorized or pushed;
+  inspect Git for its exact revision.
 - Worktree expectation at conversation boundary: clean.
 - Decisions `0133` through `0151` and their associated implementation are tracked in the baseline
   commit above.
@@ -67,6 +69,15 @@ The current product implementation, before the ticket-workflow-only documentatio
 
 The production-shaped real-stack Playwright lane exists and is mandatory in CI, but it was not
 rerun in the last local validation pass because it requires its dedicated PostgreSQL test database.
+GitHub CI run `36233115399` exercised it against pushed commit
+`6e8dbaf03490644f1e244ba62c024b6cb8a2fcd2` on 2026-09-26:
+
+- Backend: passed;
+- Frontend: passed, including 18 Playwright browser tests;
+- Deployment containers: passed;
+- Browser + API + PostgreSQL: failed because `apps/web/e2e/real-stack.spec.ts:9` used an ambiguous
+  `getByRole("link", { name: "Sign in securely" })` locator after the page exposed two matching
+  links. The failure remains visible and was not rerun, bypassed, or repaired in AGAS-0002.
 
 ## Current product state
 
@@ -79,11 +90,11 @@ rerun in the last local validation pass because it requires its dedicated Postgr
 | Phone execution | Current-week display, deterministic safety check, reviewed instructions, set logging, local draft recovery, rest timer, submission, and immutable performance history exist. |
 | Progression | The next unperformed occurrence consumes the latest eligible prescription descendant; completed sessions retain their executed dose and weekly roll-forward consumes the final leaf. |
 | Closed loop | Persisted regressions cover two training cycles, reassessment, block review, successor planning, maintenance, and a third strategy dependent on the second-cycle response. |
-| Hosted owner alpha | Vercel, Render, Neon, and Auth0 foundations exist. Public API health was observed on 2026-09-25, but current authenticated athlete, ratification, and week state remain unverified. |
+| Hosted owner alpha | Vercel Production records commit `6e8dbaf03490644f1e244ba62c024b6cb8a2fcd2` as successfully deployed. The Render API is healthy and ready, but the failed required CI gate prevented proof that it advanced to that commit; its exact served SHA remains unexposed. Current authenticated athlete, ratification, and week state remain unverified. |
 
 ## Recent decision index
 
-The detailed record is the decision log. The current uncommitted slice is:
+The detailed record is the decision log. The latest committed slice is:
 
 - `0133`–`0134`: in-week immutable progression handoff and PostgreSQL API golden path;
 - `0135`–`0144`: fixed repetition dose, owner-reviewable jump development and maintenance,
@@ -100,88 +111,84 @@ details in tickets.
 
 ## Active ticket
 
-### AGAS-0002 — Align remote and hosted revision
+### AGAS-0003 — Perform authenticated owner-readiness audit
 
 - Status: `ACTIVE`
-- Type: source-control and deployment alignment
+- Type: deployment and read-only live-state verification
 
 #### Objective
 
-Move the exact local ticket-workflow baseline to the configured GitHub remote after explicit owner
-confirmation, allow the existing CI/deployment gates to process it, and confirm which revision the
-hosted owner alpha serves. Do not inspect or change athlete/governance state in this ticket.
+Use the owner-controlled Auth0 flow to inspect the read-only `/review/readiness` route against the
+hosted database. Record the exact candidate, ratification, athlete, current-week,
+safety-assignment, and reviewer-boundary facts without automatically changing them, while keeping
+the known hosted-revision uncertainty explicit.
 
 #### Why this is next
 
-The local repository contains the preserved decisions and implementation, but `origin/main` still
-points to the older handoff commit. Authenticated readiness inspection would be misleading until
-the remote and hosted application are known to serve the intended source revision.
+The source baseline now exists on `origin/main`, and Vercel records the exact PWA commit. Public API
+health and database readiness still do not prove authenticated live-data readiness. Render did not
+expose its exact served SHA after the required real-stack CI job failed, so the audit must not imply
+that the PWA and API are revision-aligned.
 
 #### In scope
 
-- inspect Git status, local history, remote tracking state, and the exact commits pending push;
-- confirm the worktree is clean and no unexpected commit or rewritten history is present;
-- obtain explicit owner confirmation before pushing local `main` to `origin/main`;
-- push only the reviewed fast-forward commits after confirmation;
-- observe the existing GitHub CI and configured deployment gates without bypassing failures;
-- identify the revision served by the hosted API/PWA when the providers expose that evidence;
-- record success, failure, or inability to prove revision alignment distinctly;
-- update this handoff, complete this ticket, and promote `AGAS-0003` without starting it.
+- inspect Git status and preserve the exact pushed/local/deployed revision caveat;
+- use the normal owner-controlled Auth0 sign-in flow, requesting interactive owner action when
+  credentials, MFA, or consent are required rather than automating or exposing them;
+- inspect `/review/readiness` and its underlying read-only projections;
+- record exact prepared candidate IDs and digests, ratification states, owned-athlete visibility,
+  current-week identity/state, safety-assignment state, and the planning-review boundary;
+- distinguish unavailable, unauthorized, missing, conflicting, stale-revision, and genuinely
+  absent state;
+- update this handoff with observed evidence and define the next bounded ticket.
 
 #### Out of scope
 
-- owner sign-in or authenticated `/review/readiness` inspection;
-- candidate ratification, athlete writes, or training-state changes;
+- automatic candidate ratification or approval;
+- manufacturing an athlete, plan, week, or readiness state to make the screen look complete;
+- bypassing Auth0 or handling owner credentials outside the provider flow;
 - changing provider plans, adding payment details, or moving to paid infrastructure;
-- force-pushing, rebasing published history, or bypassing a failing CI/deployment gate;
 - product code changes unless a separately approved follow-up ticket is created;
-- treating deployment success as proof of authenticated live-data readiness.
+- treating deployment success, HTTP health, or database connectivity as live-data readiness;
+- repairing or bypassing the known real-stack CI failure inside this audit ticket.
 
 #### Authoritative references
 
 - `AGENTS.md`
 - `docs/deployment.md`
 - `docs/decision-log/0086-no-card-single-user-alpha-hosting.md`
-- `docs/decision-log/0088-render-alpha-deploy-trigger.md`
-- `.github/workflows/ci.yml`
-- current local and remote Git state and provider deployment evidence
+- `docs/decision-log/0108-allowlisted-owner-alpha-operator-access.md`
+- `docs/decision-log/0144-owner-alpha-live-readiness-audit.md`
+- `apps/web/app/review/readiness/`
+- current Git/deployment evidence and actual hosted UI/API responses
 
 #### Acceptance criteria
 
-- The worktree begins and ends clean.
-- The owner explicitly authorizes any push before it occurs.
-- `origin/main` contains the intended fast-forward local commits, or the exact blocker is recorded.
-- Required CI checks pass, or each failure remains visible and is not bypassed.
-- The hosted revision is confirmed when provider evidence permits; inability to prove it is not
-  mislabeled as success.
-- No authenticated athlete/governance inspection or live-data write occurs.
-- This handoff is updated and `AGAS-0003` becomes active but unstarted.
+- The exact source revision serving each observable hosted surface is recorded, and the Render SHA
+  uncertainty is not mislabeled as alignment.
+- Owner authentication succeeds through the normal provider flow, or the exact owner-action
+  blocker is recorded without exposing credentials.
+- `/review/readiness` is inspected while authenticated.
+- Candidate, ratification, athlete, week, safety-assignment, and reviewer-boundary results are
+  recorded as observed facts with failures kept distinct from empty state.
+- No candidate is ratified and no athlete/training state is written merely to satisfy this ticket.
+- The worktree ends clean and this handoff defines the next bounded ticket.
 
 #### Validation
 
-- capture local HEAD, `origin/main`, ahead/behind counts, and clean status before pushing;
-- verify the push is a fast-forward update;
-- inspect required CI results and configured deployment status;
-- record the exact hosted revision when it is observable.
+- capture current local, remote, Vercel, and observable Render revision evidence;
+- verify authenticated navigation to `/review/readiness`;
+- compare visible state with the route's fail-closed semantics from decision `0144`;
+- perform no write-based validation unless a new owner-approved ticket explicitly authorizes it.
 
 #### Blockers or owner decisions
 
-Pushing changes and triggering deployment are consequential external operations. Starting this
-ticket does not itself authorize the push: obtain one explicit owner confirmation after reporting
-the exact commits and fast-forward target.
+Interactive Auth0 sign-in may require the owner. The PWA is proven at `6e8dbaf03490644f1e244ba62c024b6cb8a2fcd2`,
+but the Render API's exact served revision is not exposed and CI run `36233115399` failed. Record
+that limitation in every readiness interpretation; do not repair code or trigger deployment from
+this ticket.
 
 ## Ordered queue
-
-### AGAS-0003 — Perform authenticated owner-readiness audit
-
-- Status: `READY`
-- Depends on: `AGAS-0002`
-- Objective: sign in through the owner-controlled Auth0 flow and inspect the read-only
-  `/review/readiness` route against the hosted database.
-- Boundaries: do not automatically ratify candidates, manufacture athlete/training state, bypass
-  Auth0, expose credentials, or infer readiness from health/connectivity alone.
-- Expected output: exact candidate, ratification, athlete, week, safety-assignment, and reviewer-
-  boundary facts, with failures kept distinct from genuinely empty state.
 
 ### AGAS-0004 — Reconcile descriptive documentation
 
@@ -193,6 +200,27 @@ the exact commits and fast-forward target.
   root README operational rather than turning it into another status ledger.
 
 ## Recently completed tickets
+
+### AGAS-0002 — Align remote and hosted revision
+
+- Status: `COMPLETE`
+- Completed: 2026-09-26
+- Reviewed fast-forward: `f41516830f61d1c5f6d40b376fdc42b289a8de6f` to
+  `6e8dbaf03490644f1e244ba62c024b6cb8a2fcd2`, containing commits `19b08006`, `9a5e8124`, and
+  `6e8dbaf0` in that order.
+- Authorization and push: the owner explicitly authorized the reported range; `git push origin
+  main:main` succeeded without force or history rewrite, and `git ls-remote` confirmed the target.
+- CI: run `36233115399` failed only in `Browser + API + PostgreSQL`; Backend, Frontend, and
+  Deployment containers passed. The failure was preserved and not bypassed.
+- Vercel: GitHub deployment `6677204808` and status `18871521222` record a successful Production
+  deployment for exact SHA `6e8dbaf03490644f1e244ba62c024b6cb8a2fcd2` at
+  `https://adaptive-general-athleticism-system-miil6x8b3-courtneymandela.vercel.app`.
+- Render: `https://agas-api-staging.onrender.com/health` returned API version `0.1.0` and `/ready`
+  returned ready, both with HTTP 200. Those endpoints expose no commit SHA. Because the Blueprint
+  requires passing checks and CI failed, the target SHA is not claimed as deployed to Render; the
+  exact API revision remains unproven.
+- Safety boundary: no Auth0 sign-in, authenticated athlete/governance inspection, ratification, or
+  live-data write occurred.
 
 ### AGAS-0001 — Establish the committed fresh-context baseline
 
@@ -213,6 +241,10 @@ the exact commits and fast-forward target.
 - The longitudinal assessment projection is intentionally unpaginated for the bounded owner alpha.
 - Live hosted ratifications, athlete history, and current-week state have not been authenticated and
   inspected in this repository session.
+- Required CI currently fails in the real-stack browser lane because one sign-in locator is
+  ambiguous; do not bypass the check or assume Render advanced past its prior accepted revision.
+- Vercel is proven at `6e8dbaf03490644f1e244ba62c024b6cb8a2fcd2`; the exact Render API SHA is
+  unproven, so hosted surfaces must not be described as revision-aligned.
 - Provider free-tier behavior and availability can change; `docs/deployment.md` remains the
   deployment runbook, but live dashboards are the source for current provider state.
 
