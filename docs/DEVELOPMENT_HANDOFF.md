@@ -37,15 +37,17 @@ append-only history, and owner review fail closed.
 - Working directory:
   `C:\Users\Courtney\Documents\Codex\2026-08-19\i\work\adaptive_general_athleticism_system`
 - Branch: `main`
-- Committed HEAD: `f41516830f61d1c5f6d40b376fdc42b289a8de6f`
+- Committed implementation and workflow baseline:
+  `19b08006a83ab612ed47a3156ea93e70c99f80e2`
 - `origin/main`: `f41516830f61d1c5f6d40b376fdc42b289a8de6f`
-- Worktree: intentionally dirty. At the workflow transition, it contained 71 tracked change
-  entries and 49 untracked entries.
-- Decisions `0133` through `0151` and their associated implementation are present but not yet
-  committed.
+- Local branch state: the baseline commit plus this final handoff commit are expected to leave
+  `main` two commits ahead of `origin/main`; nothing has been pushed.
+- Worktree expectation at conversation boundary: clean.
+- Decisions `0133` through `0151` and their associated implementation are tracked in the baseline
+  commit above.
 
-Do not reset, check out, stash, clean, delete, or partially discard this worktree. The active
-ticket exists to preserve it as a reviewable committed baseline.
+If actual Git state differs, stop and reconcile it before starting the active ticket. Do not reset,
+check out, stash, clean, delete, or partially discard unexpected work.
 
 ## Last verified validation
 
@@ -98,84 +100,82 @@ details in tickets.
 
 ## Active ticket
 
-### AGAS-0001 — Establish the committed fresh-context baseline
+### AGAS-0002 — Verify hosted owner-alpha readiness
 
 - Status: `ACTIVE`
-- Type: repository continuity; no product behavior change
+- Type: deployment and read-only live-state verification
 
 #### Objective
 
-Preserve the complete intentional working tree—including decisions `0133`–`0151`, their code,
-migrations, tests, data, and the ticket-workflow documentation—as a reviewable local Git baseline
-from which fresh Codex conversations can work safely.
+Confirm that the exact committed AGAS baseline is deployed, establish an owner-authenticated browser
+session, and inspect `/review/readiness` against the hosted database. Record the exact candidate,
+ratification, athlete, current-week, and reviewer-queue state without automatically changing it.
 
 #### Why this is next
 
-The committed branch stops before nineteen material decisions. A fresh conversation could mistake
-Git history for current product state or accidentally discard untracked institutional knowledge.
-No new product work should start until the repository has an exact committed checkpoint.
+Source, tests, public API health, and database connectivity do not prove that the hosted owner has
+the intended ratifications or a current persisted week. The repository now has a stable local
+baseline, so the next uncertainty is operational rather than architectural.
 
 #### In scope
 
-- inspect every changed and untracked path;
-- verify that no secret, local environment file, generated build output, or transient test output
-  would enter the checkpoint;
-- confirm decisions `0133`–`0151` correspond to the included implementation and tests;
-- run final documentation/diff checks, relying on the recorded full validation only if product code
-  has not changed since that pass;
-- create one or more local commits that preserve the intentional worktree;
-- update this handoff with the resulting commit SHA and exact clean-worktree state;
-- mark this ticket complete and promote `AGAS-0002` without starting it.
+- inspect Git status and confirm the local baseline and whether it has been pushed/deployed;
+- follow `docs/deployment.md` and existing provider gates without changing plans or adding payment;
+- use the owner-controlled Auth0 sign-in flow; request interactive owner action when credentials or
+  consent are required rather than automating or exposing them;
+- inspect the authenticated `/review/readiness` route and its underlying read-only projections;
+- record exact deployed revision when observable, prepared candidate IDs/digests and ratification
+  states, owned-athlete visibility, current-week identity/state, safety assignment state, and the
+  current planning-review boundary;
+- distinguish unavailable, unauthorized, missing, conflicting, and genuinely absent state;
+- update this handoff with evidence and define the next bounded ticket from observed state.
 
 #### Out of scope
 
-- new product features or refactors;
-- changing scientific, safety, planning, or governance behavior;
-- owner ratification;
-- deployment or live-data writes;
-- pushing commits to a remote;
-- rewriting or normalizing earlier decision records.
+- automatic candidate ratification or approval;
+- manufacturing an athlete, plan, week, or readiness state to make the screen look complete;
+- bypassing Auth0 or handling owner credentials outside the provider flow;
+- changing provider plans, adding payment details, or moving to paid infrastructure;
+- product code changes unless a separately approved follow-up ticket is created;
+- treating deployment success, HTTP health, or database connectivity as live-data readiness.
 
 #### Authoritative references
 
 - `AGENTS.md`
-- `docs/MASTER_BLUEPRINT.md`
-- `docs/decision-log/0133-in-week-prescription-progression-handoff.md` through
-  `docs/decision-log/0151-controlled-assessment-attempt-reasons.md`
-- the `Last verified validation` section above
-- current `git status`, `git diff`, and untracked-file inventory
+- `docs/deployment.md`
+- `docs/decision-log/0086-no-card-single-user-alpha-hosting.md`
+- `docs/decision-log/0108-allowlisted-owner-alpha-operator-access.md`
+- `docs/decision-log/0144-owner-alpha-live-readiness-audit.md`
+- `apps/web/app/review/readiness/`
+- current Git state and the actual hosted UI/API responses
 
 #### Acceptance criteria
 
-- Every intended source, migration, test, data, policy, decision, and workflow document is tracked.
-- No secret or ignored/generated artifact is included.
-- Local commit history preserves the current implementation and ticket workflow.
-- This handoff names the exact new baseline commit and reports a clean worktree.
-- `AGAS-0002` is active but unstarted.
-- Nothing is pushed, deployed, or ratified.
+- The exact source revision serving the owner alpha is confirmed, or inability to confirm it is
+  recorded precisely.
+- Owner authentication succeeds through the normal provider flow, or the exact owner-action blocker
+  is recorded without exposing credentials.
+- `/review/readiness` is inspected while authenticated.
+- Candidate, ratification, athlete, week, safety-assignment, and reviewer-boundary results are
+  recorded as observed facts with failures kept distinct from empty state.
+- No candidate is ratified and no athlete/training state is written merely to satisfy this ticket.
+- This handoff is updated and the next ticket reflects the observed live blocker or next product gap.
 
 #### Validation
 
-- inspect `git status --short` and the complete staged path list;
-- run `git diff --check` before committing;
-- verify the resulting commit contents and clean worktree;
-- rerun product checks only if product code changes after the validation recorded above.
+- capture Git revision and deployment evidence available from the configured providers;
+- verify authenticated navigation to `/review/readiness`;
+- compare visible state with the route's fail-closed semantics from decision `0144`;
+- perform no write-based validation unless a new owner-approved ticket explicitly authorizes it.
 
 #### Blockers or owner decisions
 
-None. The owner authorized the transition to the ticket-based fresh-context workflow. The ticket
-authorizes local checkpoint commits only; it does not authorize pushing or deployment.
+Interactive Auth0 sign-in may require the owner. If the local checkpoint has not reached the remote
+or hosting providers, pushing or deploying is a consequential operation: report the exact state and
+obtain owner confirmation before performing it unless the owner explicitly starts this ticket with
+deployment authorization.
 
 ## Ordered queue
-
-### AGAS-0002 — Verify hosted owner-alpha readiness
-
-- Status: `READY`
-- Objective: deploy the committed source if necessary, sign in as the owner, and inspect the
-  read-only `/review/readiness` route against the hosted database.
-- Boundaries: do not automatically ratify candidates, manufacture a current week, bypass Auth0,
-  or infer readiness from source, CI, health, or connectivity alone.
-- Expected output: exact observed hosted state, blockers, and the next bounded ticket.
 
 ### AGAS-0003 — Reconcile descriptive documentation
 
@@ -185,6 +185,20 @@ authorizes local checkpoint commits only; it does not authorize pushing or deplo
   the committed decisions without changing product behavior or policy.
 - Boundaries: do not rewrite the blueprint, policies, or historical decision records; keep the
   root README operational rather than turning it into another status ledger.
+
+## Recently completed tickets
+
+### AGAS-0001 — Establish the committed fresh-context baseline
+
+- Status: `COMPLETE`
+- Completed: 2026-09-26
+- Baseline commit: `19b08006a83ab612ed47a3156ea93e70c99f80e2`
+- Result: all intentional implementation, migrations, governed data, tests, policies, decisions
+  `0133`–`0151`, and ticket-workflow instructions were reviewed and committed locally.
+- Safety checks: 120 staged paths; no ignored/generated artifacts, binary files, suspicious secret
+  filenames, private-key markers, or credential-like assignments; `git diff --cached --check`
+  passed; Alembic had the single head `6b7c8d9e0f1a`.
+- Remote/deployment: not pushed and not deployed by this ticket.
 
 ## Known risks and limitations
 
