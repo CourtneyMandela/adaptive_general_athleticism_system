@@ -14,13 +14,18 @@ from uuid import UUID
 from agas_domain import (
     AccountRole,
     AssessmentReviewDecision,
+    BlockReviewPolicy,
+    ComparisonDirection,
     DecisionRecord,
     ExposureDefinition,
     ExposureProgressionPolicy,
+    FixedDurationDosePolicy,
+    FixedRepetitionDosePolicy,
     IntroductoryExposureDosePolicy,
     ProgressionPolicy,
     RepetitionDosePolicy,
     SessionSafetyPolicy,
+    TrainingPriorityState,
     WeeklySchedulingPolicy,
     WeeklySchedulingPolicyReview,
 )
@@ -44,11 +49,19 @@ CANDIDATE_VERSION = "training-construction-candidate@1.0.0"
 CANDIDATE_ID = UUID("98900000-0000-4000-8000-000000000001")
 PUSHUP_CANDIDATE_ID = UUID("98900000-0000-4000-8000-000000000002")
 JUMP_EXPOSURE_CANDIDATE_ID = UUID("98900000-0000-4000-8000-000000000003")
+JUMP_TRAINING_CANDIDATE_ID = UUID("98900000-0000-4000-8000-000000000004")
+JUMP_MAINTENANCE_CANDIDATE_ID = UUID("98900000-0000-4000-8000-000000000005")
+AEROBIC_CANDIDATE_ID = UUID("98900000-0000-4000-8000-000000000006")
 EVIDENCE_CLAIM_ID = UUID("91000000-0000-4000-8000-000000000005")
 PUSHUP_EVIDENCE_CLAIM_ID = UUID("91000000-0000-4000-8000-000000000007")
 JUMP_EVIDENCE_CLAIM_ID = UUID("91200000-0000-4000-8000-000000000004")
+JUMP_TRAINING_EVIDENCE_CLAIM_ID = UUID("91410000-0000-4000-8000-000000000001")
+JUMP_MAINTENANCE_EVIDENCE_CLAIM_ID = UUID("91410000-0000-4000-8000-000000000002")
+AEROBIC_EVIDENCE_CLAIM_ID = UUID("91920000-0000-4000-8000-000000000001")
 MUSCULAR_ENDURANCE_ADAPTATION_ID = UUID("a0000000-0000-4000-8000-000000000004")
 LANDING_ADAPTATION_ID = UUID("a0000000-0000-4000-8000-000000000006")
+EXPLOSIVE_POWER_ADAPTATION_ID = UUID("a0000000-0000-4000-8000-000000000003")
+AEROBIC_ADAPTATION_ID = UUID("a0000000-0000-4000-8000-000000000002")
 NonEmptyText = Annotated[str, Field(min_length=1)]
 
 
@@ -67,6 +80,30 @@ class TrainingConstructionEvidenceSummary(BaseModel):
     source_url: NonEmptyText
     supported_use: NonEmptyText
     unsupported_specifics: NonEmptyText
+
+
+class PreparedResponseEvaluationAuthority(BaseModel):
+    """Digest-locked metric interpretation reviewed with a construction release."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    id: UUID
+    adaptation_id: UUID
+    estimate_scope: NonEmptyText
+    unit_or_scale: NonEmptyText
+    comparison_direction: ComparisonDirection
+    minimum_meaningful_change: float = Field(ge=0)
+    numeric_value_origin: Literal["engineering_judgment"]
+    evidence_claim_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
+    rationale: NonEmptyText
+    uncertainty: NonEmptyText
+    authority_version: NonEmptyText
+
+    @model_validator(mode="after")
+    def require_unique_evidence(self) -> PreparedResponseEvaluationAuthority:
+        if len(set(self.evidence_claim_ids)) != len(self.evidence_claim_ids):
+            raise ValueError("response-evaluation evidence claims must not contain duplicates")
+        return self
 
 
 class TrainingConstructionCandidate(BaseModel):
@@ -96,9 +133,13 @@ class PreparedTrainingConstructionRelease(BaseModel):
     weekly_scheduling_policy_review_content: dict[str, str]
     progression_policy: ProgressionPolicy
     repetition_dose_policy: RepetitionDosePolicy | None = None
+    fixed_repetition_dose_policy: FixedRepetitionDosePolicy | None = None
+    fixed_duration_dose_policy: FixedDurationDosePolicy | None = None
     introductory_exposure_dose_policy: IntroductoryExposureDosePolicy | None = None
     exposure_definition: ExposureDefinition | None = None
     exposure_progression_policy: ExposureProgressionPolicy | None = None
+    block_review_policy: BlockReviewPolicy | None = None
+    response_evaluation_authority: PreparedResponseEvaluationAuthority | None = None
     session_safety_policy: SessionSafetyPolicy
     release_rationale: NonEmptyText
     release_uncertainty: NonEmptyText
@@ -127,6 +168,8 @@ class TrainingConstructionCandidateDocument(BaseModel):
             policy
             for policy in (
                 release.repetition_dose_policy,
+                release.fixed_repetition_dose_policy,
+                release.fixed_duration_dose_policy,
                 release.introductory_exposure_dose_policy,
             )
             if policy is not None
@@ -150,6 +193,16 @@ class TrainingConstructionCandidateDocument(BaseModel):
                 if release.exposure_progression_policy is not None
                 else ()
             ),
+            *(
+                release.block_review_policy.evidence_claim_ids
+                if release.block_review_policy is not None
+                else ()
+            ),
+            *(
+                release.response_evaluation_authority.evidence_claim_ids
+                if release.response_evaluation_authority is not None
+                else ()
+            ),
         )
         presentation_claim_ids = tuple(item.claim_id for item in presentation.evidence)
         if len(presentation_claim_ids) != 1 or set(authority_evidence) != set(
@@ -163,6 +216,20 @@ class TrainingConstructionCandidateDocument(BaseModel):
         }
         if set(release.weekly_scheduling_policy_review_content) != required_review_keys:
             raise ValueError("weekly scheduling review content has an unexpected shape")
+        if (release.block_review_policy is None) != (release.response_evaluation_authority is None):
+            raise ValueError(
+                "block-review policy and response-evaluation authority must be bundled together"
+            )
+        if release.response_evaluation_authority is not None:
+            if release.response_evaluation_authority.adaptation_id != dose_policy.adaptation_id:
+                raise ValueError("response-evaluation authority must match the dose adaptation")
+            if not isinstance(
+                dose_policy,
+                (RepetitionDosePolicy, FixedRepetitionDosePolicy, FixedDurationDosePolicy),
+            ):
+                raise ValueError("response-evaluation authority requires a capability-based dose")
+            if release.response_evaluation_authority.estimate_scope != dose_policy.estimate_scope:
+                raise ValueError("response-evaluation authority must match the dose estimate scope")
         return self
 
 
@@ -190,6 +257,15 @@ class TrainingConstructionCandidateProjection(BaseModel):
     projection_version: str = "training-construction-candidates@1.0.0"
 
 
+class OperationalResponseEvaluationAuthority(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    candidate_id: UUID
+    candidate_content_digest: str
+    block_review_policy: BlockReviewPolicy
+    authority: PreparedResponseEvaluationAuthority
+
+
 class RatifyTrainingConstructionCandidateCommand(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -207,18 +283,25 @@ class TrainingConstructionRatificationResult(BaseModel):
     created_weekly_scheduling_policy_review: bool
     created_progression_policy: bool
     created_repetition_dose_policy: bool
+    created_fixed_repetition_dose_policy: bool
+    created_fixed_duration_dose_policy: bool
     created_introductory_exposure_dose_policy: bool
     created_exposure_definition: bool
     created_exposure_progression_policy: bool
+    created_block_review_policy: bool
     created_session_safety_policy: bool
     decision_record_created: bool
     weekly_scheduling_policy: WeeklySchedulingPolicy
     weekly_scheduling_policy_review: WeeklySchedulingPolicyReview
     progression_policy: ProgressionPolicy
     repetition_dose_policy: RepetitionDosePolicy | None
+    fixed_repetition_dose_policy: FixedRepetitionDosePolicy | None
+    fixed_duration_dose_policy: FixedDurationDosePolicy | None
     introductory_exposure_dose_policy: IntroductoryExposureDosePolicy | None
     exposure_definition: ExposureDefinition | None
     exposure_progression_policy: ExposureProgressionPolicy | None
+    block_review_policy: BlockReviewPolicy | None
+    response_evaluation_authority: PreparedResponseEvaluationAuthority | None
     session_safety_policy: SessionSafetyPolicy
     ratification_version: str = "training-construction-ratification@1.0.0"
 
@@ -242,16 +325,81 @@ def prepared_training_construction_candidates() -> tuple[
         _prepared_candidate(),
         _prepared_pushup_candidate(),
         _prepared_jump_exposure_candidate(),
+        _prepared_jump_training_candidate(),
+        _prepared_jump_maintenance_candidate(),
+        _prepared_aerobic_candidate(),
     )
 
 
 def prepared_training_construction_candidate_for_scope(
     estimate_scope: str,
+    priority_state: TrainingPriorityState | None = None,
 ) -> PreparedTrainingConstructionCandidate:
-    for prepared in prepared_training_construction_candidates():
-        if _release_scope(prepared.release) == estimate_scope:
-            return prepared
+    matches = tuple(
+        prepared
+        for prepared in prepared_training_construction_candidates()
+        if _release_scope(prepared.release) == estimate_scope
+    )
+    if priority_state is not None:
+        state_matches = tuple(
+            prepared
+            for prepared in matches
+            if _release_priority_state(prepared.release) in (None, priority_state)
+        )
+        if len(state_matches) == 1:
+            return state_matches[0]
+    if len(matches) == 1:
+        return matches[0]
+    develop_matches = tuple(
+        prepared
+        for prepared in matches
+        if _release_priority_state(prepared.release) is TrainingPriorityState.DEVELOP
+    )
+    if priority_state is None and len(develop_matches) == 1:
+        return develop_matches[0]
     raise KeyError(f"no training-construction candidate is registered for {estimate_scope}")
+
+
+def list_operational_response_evaluation_authorities(
+    session: Session,
+) -> tuple[OperationalResponseEvaluationAuthority, ...]:
+    """Return only exact response authorities whose digest-locked release was ratified."""
+
+    repository = DomainRepository(session)
+    authorities: list[OperationalResponseEvaluationAuthority] = []
+    for prepared in prepared_training_construction_candidates():
+        release = prepared.release
+        if release.block_review_policy is None or release.response_evaluation_authority is None:
+            continue
+        decision = repository.get_decision_record(prepared.presentation.candidate_id)
+        if decision is None or (
+            f"candidate_content_digest:{prepared.presentation.content_digest}"
+            not in decision.evidence
+        ):
+            continue
+        _existing_result(repository, prepared, decision)
+        authorities.append(
+            OperationalResponseEvaluationAuthority(
+                candidate_id=prepared.presentation.candidate_id,
+                candidate_content_digest=prepared.presentation.content_digest,
+                block_review_policy=release.block_review_policy,
+                authority=release.response_evaluation_authority,
+            )
+        )
+    return tuple(authorities)
+
+
+def get_operational_response_evaluation_authority(
+    session: Session, authority_id: UUID
+) -> OperationalResponseEvaluationAuthority | None:
+    return next(
+        (
+            item
+            for item in list_operational_response_evaluation_authorities(session)
+            if item.authority.id == authority_id
+        ),
+        None,
+    )
 
 
 def list_training_construction_candidates(
@@ -386,6 +534,16 @@ def ratify_training_construction_candidate(
                 else ()
             ),
             *(
+                (f"fixed_repetition_dose_policy_id:{release.fixed_repetition_dose_policy.id}",)
+                if release.fixed_repetition_dose_policy is not None
+                else ()
+            ),
+            *(
+                (f"fixed_duration_dose_policy_id:{release.fixed_duration_dose_policy.id}",)
+                if release.fixed_duration_dose_policy is not None
+                else ()
+            ),
+            *(
                 (
                     "introductory_exposure_dose_policy_id:"
                     f"{release.introductory_exposure_dose_policy.id}",
@@ -401,6 +559,20 @@ def ratify_training_construction_candidate(
             *(
                 (f"exposure_progression_policy_id:{release.exposure_progression_policy.id}",)
                 if release.exposure_progression_policy is not None
+                else ()
+            ),
+            *(
+                (f"block_review_policy_id:{release.block_review_policy.id}",)
+                if release.block_review_policy is not None
+                else ()
+            ),
+            *(
+                (
+                    f"response_evaluation_authority_id:{release.response_evaluation_authority.id}",
+                    "response_evaluation_authority_version:"
+                    f"{release.response_evaluation_authority.authority_version}",
+                )
+                if release.response_evaluation_authority is not None
                 else ()
             ),
             f"session_safety_policy_id:{release.session_safety_policy.id}",
@@ -423,6 +595,18 @@ def ratify_training_construction_candidate(
             getter=repository.get_repetition_dose_policy,
             adder=repository.add_repetition_dose_policy,
         )
+        created_fixed_repetition_dose = _ensure_optional_exact(
+            label="fixed repetition dose policy",
+            expected=release.fixed_repetition_dose_policy,
+            getter=repository.get_fixed_repetition_dose_policy,
+            adder=repository.add_fixed_repetition_dose_policy,
+        )
+        created_fixed_duration_dose = _ensure_optional_exact(
+            label="fixed duration dose policy",
+            expected=release.fixed_duration_dose_policy,
+            getter=repository.get_fixed_duration_dose_policy,
+            adder=repository.add_fixed_duration_dose_policy,
+        )
         created_introductory_dose = _ensure_optional_exact(
             label="introductory exposure dose policy",
             expected=release.introductory_exposure_dose_policy,
@@ -440,6 +624,12 @@ def ratify_training_construction_candidate(
             expected=release.exposure_progression_policy,
             getter=repository.get_exposure_progression_policy,
             adder=repository.add_exposure_progression_policy,
+        )
+        created_block_review = _ensure_optional_exact(
+            label="block review policy",
+            expected=release.block_review_policy,
+            getter=repository.get_block_review_policy,
+            adder=repository.add_block_review_policy,
         )
         created_scheduling = _ensure_exact(
             label="weekly scheduling policy",
@@ -488,18 +678,25 @@ def ratify_training_construction_candidate(
         created_weekly_scheduling_policy_review=created_scheduling_review,
         created_progression_policy=created_progression,
         created_repetition_dose_policy=created_repetition_dose,
+        created_fixed_repetition_dose_policy=created_fixed_repetition_dose,
+        created_fixed_duration_dose_policy=created_fixed_duration_dose,
         created_introductory_exposure_dose_policy=created_introductory_dose,
         created_exposure_definition=created_exposure_definition,
         created_exposure_progression_policy=created_exposure_progression,
+        created_block_review_policy=created_block_review,
         created_session_safety_policy=created_safety,
         decision_record_created=created_decision,
         weekly_scheduling_policy=release.weekly_scheduling_policy,
         weekly_scheduling_policy_review=scheduling_review,
         progression_policy=release.progression_policy,
         repetition_dose_policy=release.repetition_dose_policy,
+        fixed_repetition_dose_policy=release.fixed_repetition_dose_policy,
+        fixed_duration_dose_policy=release.fixed_duration_dose_policy,
         introductory_exposure_dose_policy=release.introductory_exposure_dose_policy,
         exposure_definition=release.exposure_definition,
         exposure_progression_policy=release.exposure_progression_policy,
+        block_review_policy=release.block_review_policy,
+        response_evaluation_authority=release.response_evaluation_authority,
         session_safety_policy=release.session_safety_policy,
     )
 
@@ -513,9 +710,20 @@ def _prerequisite_issues(
     release = prepared.release
     evidence_claim_ids = _release_evidence_claim_ids(release)
     issues: list[str] = []
-    if release.repetition_dose_policy is not None:
-        scope = release.repetition_dose_policy.estimate_scope
-        resource = prepared_resource_governance_candidate_for_scope(scope)
+    if (
+        release.repetition_dose_policy is not None
+        or release.fixed_repetition_dose_policy is not None
+        or release.fixed_duration_dose_policy is not None
+    ):
+        dose_policy = _release_dose_policy(release)
+        assert isinstance(
+            dose_policy,
+            (RepetitionDosePolicy, FixedRepetitionDosePolicy, FixedDurationDosePolicy),
+        )
+        scope = dose_policy.estimate_scope
+        resource = prepared_resource_governance_candidate_for_scope(
+            scope, _release_priority_state(release)
+        )
         resource_decision = repository.get_decision_record(resource.presentation.candidate_id)
         if resource_decision is None or (
             f"candidate_content_digest:{resource.presentation.content_digest}"
@@ -572,6 +780,36 @@ def _prepared_jump_exposure_candidate() -> PreparedTrainingConstructionCandidate
         expected_candidate_id=JUMP_EXPOSURE_CANDIDATE_ID,
         expected_evidence_claim_id=JUMP_EVIDENCE_CLAIM_ID,
         expected_adaptation_id=LANDING_ADAPTATION_ID,
+    )
+
+
+@lru_cache
+def _prepared_jump_training_candidate() -> PreparedTrainingConstructionCandidate:
+    return _load_candidate(
+        "owner_alpha_jump_training.json",
+        expected_candidate_id=JUMP_TRAINING_CANDIDATE_ID,
+        expected_evidence_claim_id=JUMP_TRAINING_EVIDENCE_CLAIM_ID,
+        expected_adaptation_id=EXPLOSIVE_POWER_ADAPTATION_ID,
+    )
+
+
+@lru_cache
+def _prepared_jump_maintenance_candidate() -> PreparedTrainingConstructionCandidate:
+    return _load_candidate(
+        "owner_alpha_jump_maintenance.json",
+        expected_candidate_id=JUMP_MAINTENANCE_CANDIDATE_ID,
+        expected_evidence_claim_id=JUMP_MAINTENANCE_EVIDENCE_CLAIM_ID,
+        expected_adaptation_id=EXPLOSIVE_POWER_ADAPTATION_ID,
+    )
+
+
+@lru_cache
+def _prepared_aerobic_candidate() -> PreparedTrainingConstructionCandidate:
+    return _load_candidate(
+        "owner_alpha_aerobic_base.json",
+        expected_candidate_id=AEROBIC_CANDIDATE_ID,
+        expected_evidence_claim_id=AEROBIC_EVIDENCE_CLAIM_ID,
+        expected_adaptation_id=AEROBIC_ADAPTATION_ID,
     )
 
 
@@ -689,9 +927,18 @@ def _ensure_optional_exact[Record: VersionedRecord](
 
 def _release_dose_policy(
     release: PreparedTrainingConstructionRelease,
-) -> RepetitionDosePolicy | IntroductoryExposureDosePolicy:
+) -> (
+    RepetitionDosePolicy
+    | FixedRepetitionDosePolicy
+    | FixedDurationDosePolicy
+    | IntroductoryExposureDosePolicy
+):
     if release.repetition_dose_policy is not None:
         return release.repetition_dose_policy
+    if release.fixed_repetition_dose_policy is not None:
+        return release.fixed_repetition_dose_policy
+    if release.fixed_duration_dose_policy is not None:
+        return release.fixed_duration_dose_policy
     if release.introductory_exposure_dose_policy is not None:
         return release.introductory_exposure_dose_policy
     raise TrainingConstructionCandidateValidationError("release has no dose policy")
@@ -699,9 +946,23 @@ def _release_dose_policy(
 
 def _release_scope(release: PreparedTrainingConstructionRelease) -> str:
     dose_policy = _release_dose_policy(release)
-    if isinstance(dose_policy, RepetitionDosePolicy):
+    if isinstance(
+        dose_policy,
+        (RepetitionDosePolicy, FixedRepetitionDosePolicy, FixedDurationDosePolicy),
+    ):
         return dose_policy.estimate_scope
     return dose_policy.target_scope
+
+
+def _release_priority_state(
+    release: PreparedTrainingConstructionRelease,
+) -> TrainingPriorityState | None:
+    dose_policy = _release_dose_policy(release)
+    return (
+        dose_policy.priority_state
+        if isinstance(dose_policy, (FixedRepetitionDosePolicy, FixedDurationDosePolicy))
+        else None
+    )
 
 
 def _release_evidence_claim_ids(
@@ -719,6 +980,16 @@ def _release_evidence_claim_ids(
         *(
             release.exposure_progression_policy.evidence_claim_ids
             if release.exposure_progression_policy is not None
+            else ()
+        ),
+        *(
+            release.block_review_policy.evidence_claim_ids
+            if release.block_review_policy is not None
+            else ()
+        ),
+        *(
+            release.response_evaluation_authority.evidence_claim_ids
+            if release.response_evaluation_authority is not None
             else ()
         ),
     )
@@ -773,6 +1044,16 @@ def _existing_result(
             else None
         ),
         (
+            repository.get_fixed_repetition_dose_policy(release.fixed_repetition_dose_policy.id)
+            if release.fixed_repetition_dose_policy is not None
+            else None
+        ),
+        (
+            repository.get_fixed_duration_dose_policy(release.fixed_duration_dose_policy.id)
+            if release.fixed_duration_dose_policy is not None
+            else None
+        ),
+        (
             repository.get_introductory_exposure_dose_policy(
                 release.introductory_exposure_dose_policy.id
             )
@@ -789,15 +1070,23 @@ def _existing_result(
             if release.exposure_progression_policy is not None
             else None
         ),
+        (
+            repository.get_block_review_policy(release.block_review_policy.id)
+            if release.block_review_policy is not None
+            else None
+        ),
         repository.get_session_safety_policy(release.session_safety_policy.id),
     )
     expected = (
         release.weekly_scheduling_policy,
         release.progression_policy,
         release.repetition_dose_policy,
+        release.fixed_repetition_dose_policy,
+        release.fixed_duration_dose_policy,
         release.introductory_exposure_dose_policy,
         release.exposure_definition,
         release.exposure_progression_policy,
+        release.block_review_policy,
         release.session_safety_policy,
     )
     if records != expected:
@@ -811,18 +1100,25 @@ def _existing_result(
         created_weekly_scheduling_policy_review=False,
         created_progression_policy=False,
         created_repetition_dose_policy=False,
+        created_fixed_repetition_dose_policy=False,
+        created_fixed_duration_dose_policy=False,
         created_introductory_exposure_dose_policy=False,
         created_exposure_definition=False,
         created_exposure_progression_policy=False,
+        created_block_review_policy=False,
         created_session_safety_policy=False,
         decision_record_created=False,
         weekly_scheduling_policy=release.weekly_scheduling_policy,
         weekly_scheduling_policy_review=scheduling_review,
         progression_policy=release.progression_policy,
         repetition_dose_policy=release.repetition_dose_policy,
+        fixed_repetition_dose_policy=release.fixed_repetition_dose_policy,
+        fixed_duration_dose_policy=release.fixed_duration_dose_policy,
         introductory_exposure_dose_policy=release.introductory_exposure_dose_policy,
         exposure_definition=release.exposure_definition,
         exposure_progression_policy=release.exposure_progression_policy,
+        block_review_policy=release.block_review_policy,
+        response_evaluation_authority=release.response_evaluation_authority,
         session_safety_policy=release.session_safety_policy,
     )
 

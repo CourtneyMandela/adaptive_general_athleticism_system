@@ -1,11 +1,12 @@
 import { authorizedHeaders, reviewerDevelopmentAccessToken } from "./identity";
 import type { BlockPlanCreationResult, PlanningStatus, PriorityState } from "./block-review";
+import type { PreparedStrategyCycleLineage } from "./prepared-resource-demand";
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const digestPattern = /^sha256:[0-9a-f]{64}$/;
 
 export interface PreparedFirstBlockCandidate {
-  candidate_version: "prepared-first-block@1.0.0";
+  candidate_version: "prepared-first-block@1.0.0" | "prepared-first-block@1.1.0";
   candidate_id: string;
   content_digest: string;
   prepared_at: string;
@@ -30,6 +31,7 @@ export interface PreparedFirstBlockCandidate {
   applicability_rationale: string;
   uncertainty: string;
   safety_boundary: string;
+  strategy_cycle: PreparedStrategyCycleLineage;
   identities: {
     block_plan_id: string;
     resource_allocation_ids: string[];

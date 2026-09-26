@@ -33,6 +33,14 @@ contract, unit mismatches, and duplicates without retaining partial observations
 do not replace server enforcement. The result is historical reported evidence, not a safety
 decision, diagnosis, medical clearance, or capability estimate.
 
+An incomplete assessment is recorded separately from a result and cannot contain a partial
+measurement. Its controlled reason may identify only a setup or equipment issue, a measurement or
+route issue, unclear instructions, an external interruption, a voluntary non-safety stop, another
+unspecified non-safety reason, or occurrence of a listed stop condition. The listed-stop reason is
+required exactly for a safety-stopped attempt. No reason records symptom narrative, severity,
+urgency, diagnosis, or medical clearance. A safety-stopped attempt closes the current selection
+and requires a fresh readiness report and selection run; ordinary incompletion remains retryable.
+
 Capability interpretation remains a separate action and requires a current evidence-linked policy
 for the exact current protocol review. It cannot admit manual same-type observations, accept a
 browser-supplied formula, or reinterpret a withdrawn protocol. Its output remains a bounded,

@@ -2,10 +2,13 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
+import agas_api.assessment_attempt as assessment_attempt_module
 import agas_api.assessment_estimation as assessment_estimation_module
 import agas_api.assessment_performance as assessment_performance_module
 import agas_api.assessment_selection as assessment_selection_module
+import agas_api.assessment_workflow as assessment_workflow_module
 import pytest
+from agas_api.assessment_attempt import AssessmentAttemptResult
 from agas_api.assessment_eligibility_admin import record_assessment_eligibility_review
 from agas_api.assessment_performance import AssessmentPerformanceResult
 from agas_api.assessment_readiness import (
@@ -50,6 +53,7 @@ from agas_domain import (
     Provenance,
 )
 from agas_domain.persistence.models import (
+    AssessmentAttemptRecord,
     AssessmentPerformanceRecord,
     AssessmentSelectionRecord,
     AssessmentSelectionRunRecord,
@@ -725,8 +729,234 @@ def result_body(
         "measurement": measurement,
         "unit": unit,
         "reliability": "moderate",
+        "protocol_completed": True,
+        "stop_condition_occurred": False,
         "provenance": provenance().model_dump(mode="json"),
     }
+
+
+def attempt_body(
+    *,
+    status: str = "incomplete",
+    reason: str | None = None,
+    attempted_at: datetime = NOW + timedelta(minutes=10),
+) -> dict[str, Any]:
+    return {
+        "attempted_at": attempted_at.isoformat(),
+        "status": status,
+        "reason": reason
+        or ("listed_stop_condition" if status == "safety_stopped" else "external_interruption"),
+        "protocol_completed": False,
+        "stop_condition_occurred": status == "safety_stopped",
+        "reliability": "moderate",
+        "provenance": provenance().model_dump(mode="json"),
+    }
+
+
+def test_incomplete_attempts_append_without_becoming_results_or_estimates(
+    session: Session, monkeypatch: MonkeyPatch
+) -> None:
+    athlete, run_result = create_run(session)
+    selected = run_result.decisions[0].selection
+    monkeypatch.setattr(assessment_attempt_module, "_utc_now", lambda: NOW + timedelta(hours=1))
+    monkeypatch.setattr(assessment_performance_module, "_utc_now", lambda: NOW + timedelta(hours=1))
+    base = f"/v1/athletes/{athlete.id}/assessment-runs/{run_result.run.id}/selections/{selected.id}"
+    app.dependency_overrides[database_session_dependency] = lambda: session
+    try:
+        client = TestClient(app)
+        incomplete_response = client.post(f"{base}/attempts", json=attempt_body())
+        safety_response = client.post(
+            f"{base}/attempts", json=attempt_body(status="safety_stopped")
+        )
+        inconsistent = attempt_body(status="safety_stopped")
+        inconsistent["stop_condition_occurred"] = False
+        inconsistent_response = client.post(f"{base}/attempts", json=inconsistent)
+        mismatched_reason_response = client.post(
+            f"{base}/attempts",
+            json=attempt_body(status="incomplete", reason="listed_stop_condition"),
+        )
+        legacy_reason_response = client.post(
+            f"{base}/attempts", json=attempt_body(reason="legacy_unspecified")
+        )
+        safety = AssessmentAttemptResult.model_validate(safety_response.json())
+        estimate_response = client.post(
+            f"/v1/athletes/{athlete.id}/assessment-performances/{safety.attempt.id}"
+            "/capability-estimate"
+        )
+        workflow_response = client.get(
+            f"/v1/athletes/{athlete.id}/assessment-workflow",
+            params={"at": (NOW + timedelta(minutes=20)).isoformat()},
+        )
+        completed_response = client.post(f"{base}/result", json=result_body())
+        attempt_after_safety_stop = client.post(f"{base}/attempts", json=attempt_body())
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert incomplete_response.status_code == 201
+    assert safety_response.status_code == 201
+    incomplete = AssessmentAttemptResult.model_validate(incomplete_response.json())
+    assert incomplete.attempt.status.value == "incomplete"
+    assert incomplete.attempt.reason.value == "external_interruption"
+    assert incomplete.eligible_for_capability_estimation is False
+    assert incomplete.attempt_observation.source is ObservationSource.USER_REPORT
+    assert incomplete.attempt_observation.measurement == {
+        "status": "incomplete",
+        "reason": "external_interruption",
+        "protocol_completed": False,
+        "stop_condition_occurred": False,
+        "eligible_for_capability_estimation": False,
+    }
+    assert safety.attempt.status.value == "safety_stopped"
+    assert safety.attempt.reason.value == "listed_stop_condition"
+    assert safety.attempt_observation.measurement == {
+        "status": "safety_stopped",
+        "reason": "listed_stop_condition",
+        "protocol_completed": False,
+        "stop_condition_occurred": True,
+        "eligible_for_capability_estimation": False,
+    }
+    assert inconsistent_response.status_code == 422
+    assert "status must match" in inconsistent_response.text
+    assert mismatched_reason_response.status_code == 422
+    assert "reason must match" in mismatched_reason_response.text
+    assert legacy_reason_response.status_code == 422
+    assert "reserved for migrated" in legacy_reason_response.text
+    assert estimate_response.status_code == 404
+    workflow = AssessmentWorkflowProjection.model_validate(workflow_response.json())
+    assert workflow.latest_run is not None
+    projected = workflow.latest_run.decisions[0]
+    assert projected.result_status == "safety_review_required"
+    assert workflow.status == "run_blocked"
+    assert workflow.can_record_results is False
+    assert {item.status.value for item in projected.attempts} == {
+        "safety_stopped",
+        "incomplete",
+    }
+    assert {item.reason.value for item in projected.attempts} == {
+        "external_interruption",
+        "listed_stop_condition",
+    }
+    assert all(not item.eligible_for_capability_estimation for item in projected.attempts)
+    assert completed_response.status_code == 409
+    assert "new readiness review" in completed_response.text
+    assert attempt_after_safety_stop.status_code == 409
+    assert session.scalar(select(func.count()).select_from(AssessmentAttemptRecord)) == 2
+    assert session.scalar(select(func.count()).select_from(AssessmentPerformanceRecord)) == 0
+    attempt_record = session.get(AssessmentAttemptRecord, safety.attempt.id)
+    assert attempt_record is not None
+    attempt_record.status = "incomplete"
+    with pytest.raises(ImmutableHistoricalRecordError):
+        session.commit()
+    session.rollback()
+
+
+def test_non_safety_incomplete_attempt_remains_retryable_until_completion(
+    session: Session, monkeypatch: MonkeyPatch
+) -> None:
+    athlete, run_result = create_run(session)
+    selected = run_result.decisions[0].selection
+    monkeypatch.setattr(assessment_attempt_module, "_utc_now", lambda: NOW + timedelta(hours=1))
+    monkeypatch.setattr(assessment_performance_module, "_utc_now", lambda: NOW + timedelta(hours=1))
+    base = f"/v1/athletes/{athlete.id}/assessment-runs/{run_result.run.id}/selections/{selected.id}"
+    app.dependency_overrides[database_session_dependency] = lambda: session
+    try:
+        client = TestClient(app)
+        incomplete_response = client.post(f"{base}/attempts", json=attempt_body())
+        completed_response = client.post(f"{base}/result", json=result_body())
+        attempt_after_completion = client.post(f"{base}/attempts", json=attempt_body())
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert incomplete_response.status_code == 201
+    assert completed_response.status_code == 201
+    assert attempt_after_completion.status_code == 409
+    assert session.scalar(select(func.count()).select_from(AssessmentAttemptRecord)) == 1
+    assert session.scalar(select(func.count()).select_from(AssessmentPerformanceRecord)) == 1
+
+
+def test_workflow_preserves_distinct_attempt_and_result_history_across_runs(
+    session: Session, monkeypatch: MonkeyPatch
+) -> None:
+    athlete, environment, _eligibility = setup_run_state(
+        session,
+        include_deferred_definition=False,
+        eligibility_valid_for_days=60,
+    )
+    app.dependency_overrides[database_session_dependency] = lambda: session
+    try:
+        client = TestClient(app)
+        first_run_response = client.post(
+            f"/v1/athletes/{athlete.id}/assessment-runs",
+            json=request_body(environment),
+        )
+        first_run = AssessmentSelectionRunResult.model_validate(first_run_response.json())
+        first_selection = first_run.decisions[0].selection
+        first_base = (
+            f"/v1/athletes/{athlete.id}/assessment-runs/{first_run.run.id}"
+            f"/selections/{first_selection.id}"
+        )
+        monkeypatch.setattr(assessment_attempt_module, "_utc_now", lambda: NOW + timedelta(hours=1))
+        monkeypatch.setattr(
+            assessment_performance_module, "_utc_now", lambda: NOW + timedelta(hours=1)
+        )
+        incomplete_response = client.post(f"{first_base}/attempts", json=attempt_body())
+        result_response = client.post(f"{first_base}/result", json=result_body())
+
+        due_at = NOW + timedelta(minutes=10, days=28)
+        monkeypatch.setattr(
+            assessment_selection_module, "_utc_now", lambda: due_at + timedelta(hours=1)
+        )
+        second_run_response = client.post(
+            f"/v1/athletes/{athlete.id}/assessment-runs",
+            json=request_body(environment, evaluated_at=due_at),
+        )
+        second_run = AssessmentSelectionRunResult.model_validate(second_run_response.json())
+        second_selection = second_run.decisions[0].selection
+        second_base = (
+            f"/v1/athletes/{athlete.id}/assessment-runs/{second_run.run.id}"
+            f"/selections/{second_selection.id}"
+        )
+        safety_at = due_at + timedelta(minutes=10)
+        monkeypatch.setattr(
+            assessment_attempt_module, "_utc_now", lambda: safety_at + timedelta(hours=1)
+        )
+        safety_response = client.post(
+            f"{second_base}/attempts",
+            json=attempt_body(status="safety_stopped", attempted_at=safety_at),
+        )
+        history_response = client.get(
+            f"/v1/athletes/{athlete.id}/assessment-workflow",
+            params={"at": (safety_at + timedelta(minutes=1)).isoformat()},
+        )
+    finally:
+        app.dependency_overrides.pop(database_session_dependency, None)
+
+    assert first_run_response.status_code == 201
+    assert incomplete_response.status_code == 201
+    assert result_response.status_code == 201
+    assert second_run_response.status_code == 201
+    assert safety_response.status_code == 201
+    assert history_response.status_code == 200
+    workflow = AssessmentWorkflowProjection.model_validate(history_response.json())
+    assert workflow.history_projection_version == "assessment-history-projection@1.0.0"
+    assert tuple(run.run_id for run in workflow.history_runs) == (
+        second_run.run.id,
+        first_run.run.id,
+    )
+    latest_history = workflow.history_runs[0].selections[0]
+    assert tuple(attempt.status.value for attempt in latest_history.attempts) == ("safety_stopped",)
+    assert latest_history.attempts[0].reason.value == "listed_stop_condition"
+    assert latest_history.completed_result is None
+    assert latest_history.attempts[0].eligible_for_capability_estimation is False
+    earlier_history = workflow.history_runs[1].selections[0]
+    assert tuple(attempt.status.value for attempt in earlier_history.attempts) == ("incomplete",)
+    assert earlier_history.attempts[0].reason.value == "external_interruption"
+    assert earlier_history.completed_result is not None
+    assert earlier_history.completed_result.measurement == 42.5
+    assert earlier_history.completed_result.protocol_completion_attested is True
+    assert earlier_history.completed_result.no_stop_condition_attested is True
+    assert earlier_history.completed_result.eligible_for_capability_estimation is True
+    assert earlier_history.completed_result.capability_estimates == ()
 
 
 def test_selected_assessment_records_one_direct_result_without_creating_an_estimate(
@@ -759,6 +989,8 @@ def test_selected_assessment_records_one_direct_result_without_creating_an_estim
     assert result.result_observation.context["assessment_selection_run_id"] == str(
         run_result.run.id
     )
+    assert result.result_observation.context["protocol_completed"] is True
+    assert result.result_observation.context["stop_condition_occurred"] is False
     repository = DomainRepository(session)
     assert repository.get_assessment_performance(result.performance.id) == result.performance
     assert repository.list_assessment_performances(athlete.id) == (result.performance,)
@@ -847,6 +1079,7 @@ def test_reviewed_policy_creates_one_traceable_capability_estimate(
     athlete, run_result = create_run(session)
     selected = run_result.decisions[0].selection
     monkeypatch.setattr(assessment_performance_module, "_utc_now", lambda: NOW + timedelta(hours=1))
+    monkeypatch.setattr(assessment_workflow_module, "_utc_now", lambda: NOW + timedelta(hours=1))
     result_path = (
         f"/v1/athletes/{athlete.id}/assessment-runs/{run_result.run.id}"
         f"/selections/{selected.id}/result"
@@ -941,6 +1174,28 @@ def test_reviewed_policy_creates_one_traceable_capability_estimate(
     assert completed_result["capability_estimate_status"] == "completed"
     assert completed_result["capability_estimate"]["estimate"] == 42.5
     assert completed_result["capability_estimate"]["policy_id"] == str(policy.id)
+    completed_history = completed.json()["history_runs"][0]["selections"][0]["completed_result"]
+    assert completed_history["measurement"] == 42.5
+    assert completed_history["eligible_for_capability_estimation"] is True
+    assert completed_history["protocol_completion_attested"] is True
+    assert completed_history["no_stop_condition_attested"] is True
+    assert completed_history["capability_estimates"] == [
+        {
+            "estimate_id": first.json()["estimate"]["id"],
+            "kind": "derived",
+            "estimate": 42.5,
+            "unit_or_scale": first.json()["estimate"]["unit_or_scale"],
+            "estimate_scope": first.json()["estimate"]["estimate_scope"],
+            "confidence": "low",
+            "calculation_method": "latest-matching-observation",
+            "source_observation_ids": [str(performance.result_observation_id)],
+            "estimated_at": first.json()["estimate"]["estimated_at"],
+            "valid_until": first.json()["estimate"]["valid_until"],
+            "valid_as_of": True,
+            "rule_version": "latest-matching-observation@1.0.0",
+            "policy_id": str(policy.id),
+        }
+    ]
 
     policy_record = session.get(CapabilityEstimationPolicyRecord, policy.id)
     assert policy_record is not None
@@ -1088,6 +1343,12 @@ def test_deferred_assessment_and_wrong_units_fail_without_result_history(
         invalid_step_response = client.post(
             f"{base}/{selected.id}/result", json=result_body(measurement=42.3)
         )
+        incomplete_body = result_body()
+        incomplete_body["protocol_completed"] = False
+        incomplete_response = client.post(f"{base}/{selected.id}/result", json=incomplete_body)
+        stopped_body = result_body()
+        stopped_body["stop_condition_occurred"] = True
+        stopped_response = client.post(f"{base}/{selected.id}/result", json=stopped_body)
     finally:
         app.dependency_overrides.pop(database_session_dependency, None)
 
@@ -1097,6 +1358,10 @@ def test_deferred_assessment_and_wrong_units_fail_without_result_history(
     assert missing_measurement_response.status_code == 422
     assert above_maximum_response.status_code == 422
     assert invalid_step_response.status_code == 422
+    assert incomplete_response.status_code == 422
+    assert "exact reviewed protocol was completed" in incomplete_response.text
+    assert stopped_response.status_code == 422
+    assert "safety-stopped assessment" in stopped_response.text
     assert session.scalar(select(func.count()).select_from(AssessmentPerformanceRecord)) == 0
     assert session.scalar(select(func.count()).select_from(ObservationRecord)) == 2
 

@@ -329,10 +329,33 @@ function PreparedFirstWeekPanel({ projection }: { projection: FirstWeekPreparati
         <>
           <dl className="review-metadata">
             <div><dt>Exercise</dt><dd>{visibleCandidate.exercise_name}</dd></div>
-            <div><dt>Dose</dt><dd>{visibleCandidate.sets} sets × {visibleCandidate.repetitions_per_set} reps</dd></div>
+            <div>
+              <dt>Dose</dt>
+              <dd>
+                {visibleCandidate.sets} sets × {visibleCandidate.repetitions_per_set !== null
+                  ? `${visibleCandidate.repetitions_per_set} reps`
+                  : `${visibleCandidate.duration_seconds_per_set} seconds`}
+              </dd>
+            </div>
             <div><dt>Effort</dt><dd>RPE {visibleCandidate.effort_rpe_range}</dd></div>
             <div><dt>Rest</dt><dd>{visibleCandidate.rest_seconds} seconds</dd></div>
+            <div><dt>Priority</dt><dd>{label(visibleCandidate.priority_state)}</dd></div>
+            <div><dt>Strategy cycle</dt><dd>{label(visibleCandidate.strategy_cycle.cycle)}</dd></div>
+            {visibleCandidate.previous_priority_state ? (
+              <div><dt>Prior priority</dt><dd>{label(visibleCandidate.previous_priority_state)}</dd></div>
+            ) : null}
           </dl>
+          {visibleCandidate.strategy_cycle.cycle === "successor" ? (
+            <aside className="review-boundary">
+              <strong>This week belongs to the reviewed successor block.</strong>
+              <span>
+                Predecessor block {visibleCandidate.strategy_cycle.predecessor_block_plan_id}; review{" "}
+                {visibleCandidate.strategy_cycle.triggering_block_review_id} changed the priority from{" "}
+                {label(visibleCandidate.previous_priority_state ?? "unknown")} to{" "}
+                {label(visibleCandidate.priority_state)}.
+              </span>
+            </aside>
+          ) : null}
           <div className="block-allocation-grid">
             {visibleCandidate.sessions.map((session, index) => (
               <article className="block-allocation" key={session.starts_at}>
@@ -348,6 +371,11 @@ function PreparedFirstWeekPanel({ projection }: { projection: FirstWeekPreparati
             <p>{visibleCandidate.dose_calculation}</p>
             <p>{visibleCandidate.provenance_summary}</p>
             <p><strong>Uncertainty:</strong> {visibleCandidate.uncertainty}</p>
+            <p>
+              <strong>Construction authority:</strong>{" "}
+              <code>{visibleCandidate.training_construction_candidate_id}</code>
+            </p>
+            <p><code>{visibleCandidate.training_construction_content_digest}</code></p>
           </details>
           {visibleCandidate.execution_guidance ? (
             <details>

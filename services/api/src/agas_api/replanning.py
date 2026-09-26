@@ -19,7 +19,7 @@ from agas_domain import (
 )
 from agas_domain.persistence.repository import DomainIntegrityError, DomainRepository
 from agas_planner import ClosedLoopReplanner, ClosedLoopReplanningError
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -34,6 +34,11 @@ class PostBlockReplanningCommand(BaseModel):
     review_after_days: int = Field(ge=1)
     reviewed_by: Annotated[str, Field(min_length=1)]
     review_authority_assignment_id: UUID | None = None
+    source_initial_planning_context_draft_id: UUID | None = None
+    source_initial_planning_context_review_id: UUID | None = None
+    prepared_successor_context_digest: Annotated[
+        str | None, Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    ] = None
     applicability_rationale: Annotated[str, Field(min_length=1)]
     uncertainty: Annotated[str, Field(min_length=1)]
 
@@ -51,6 +56,19 @@ class PostBlockReplanningCommand(BaseModel):
         if not normalized:
             raise ValueError("operator review metadata must not be blank")
         return normalized
+
+    @model_validator(mode="after")
+    def require_complete_prepared_context_binding(self) -> PostBlockReplanningCommand:
+        values = (
+            self.source_initial_planning_context_draft_id,
+            self.source_initial_planning_context_review_id,
+            self.prepared_successor_context_digest,
+        )
+        if any(item is not None for item in values) and not all(
+            item is not None for item in values
+        ):
+            raise ValueError("prepared successor context provenance must be supplied together")
+        return self
 
 
 class PostBlockReplanningResult(ClosedLoopReplanningResult):
@@ -125,6 +143,7 @@ class PersistedReplanningService:
         priority_policy = self.repository.get_priority_policy(previous_strategy.priority_policy_id)
         if priority_policy is None:
             raise ReplanningNotFoundError("priority policy does not exist")
+        self._validate_prepared_successor_context(block_review_id, command)
 
         responses = self._load_records(
             review.training_response_ids,
@@ -177,6 +196,37 @@ class PersistedReplanningService:
                 replanning=replanning,
             ),
         )
+
+    def _validate_prepared_successor_context(
+        self, block_review_id: UUID, command: PostBlockReplanningCommand
+    ) -> None:
+        if command.prepared_successor_context_digest is None:
+            return
+        from agas_api.post_block_preparation import ReplanningPreparationProjector
+
+        projection = ReplanningPreparationProjector(self.session).project(
+            block_review_id, projected_at=command.generated_at
+        )
+        prepared = projection.prepared_successor_context
+        if prepared is None:
+            raise ReplanningValidationError(
+                "the prepared successor context is unavailable; refresh or use explicit "
+                "manual review"
+            )
+        if (
+            prepared.source_initial_planning_context_draft_id
+            != command.source_initial_planning_context_draft_id
+            or prepared.source_initial_planning_context_review_id
+            != command.source_initial_planning_context_review_id
+            or prepared.content_digest != command.prepared_successor_context_digest
+            or prepared.candidate_contexts != command.candidate_contexts
+            or prepared.review_after_days != command.review_after_days
+            or prepared.applicability_rationale != command.applicability_rationale
+            or prepared.uncertainty != command.uncertainty
+        ):
+            raise ReplanningValidationError(
+                "replanning command does not match the exact current prepared successor context"
+            )
 
     def _validate_review_authority(self, command: PostBlockReplanningCommand) -> None:
         assignment_id = command.review_authority_assignment_id
@@ -252,6 +302,17 @@ class PersistedReplanningService:
         ]
         if command.review_authority_assignment_id is not None:
             values.append(f"account_role_assignment:{command.review_authority_assignment_id}")
+        if command.source_initial_planning_context_draft_id is not None:
+            values.extend(
+                (
+                    "source_initial_planning_context_draft:"
+                    f"{command.source_initial_planning_context_draft_id}",
+                    "source_initial_planning_context_review:"
+                    f"{command.source_initial_planning_context_review_id}",
+                    "prepared_successor_context_digest:"
+                    f"{command.prepared_successor_context_digest}",
+                )
+            )
         return DecisionRecord(
             decision=(
                 f"Create successor strategy {replanning.strategy.id} from block review "

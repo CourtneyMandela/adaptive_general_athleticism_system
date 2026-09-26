@@ -219,6 +219,48 @@ def progression_policy(exposure_type: ExposureType | None = None) -> Progression
     )
 
 
+def duration_chain() -> tuple[SessionPrescription, SessionExecution, SessionAdherence]:
+    prescription, execution, adherence = chain()
+    duration_prescription = prescription.model_copy(
+        update={
+            "sets": 1,
+            "repetitions_per_set": None,
+            "duration_seconds": 600,
+            "planned_duration_minutes": 12,
+        }
+    )
+    item = execution.items[0].model_copy(
+        update={
+            "prescription_id": duration_prescription.id,
+            "performances": (
+                execution.items[0]
+                .performances[0]
+                .model_copy(
+                    update={
+                        "actual_repetitions": None,
+                        "actual_duration_seconds": 600,
+                        "effort_rpe": 5,
+                    }
+                ),
+            ),
+            "item_rpe": 5,
+        }
+    )
+    duration_execution = execution.model_copy(update={"items": (item,), "session_rpe": 5})
+    duration_adherence = adherence.model_copy(
+        update={
+            "prescription_id": duration_prescription.id,
+            "prescribed_sets": 1,
+            "performed_sets": 1,
+            "target_completed_sets": 1,
+            "prescribed_dose_total": 600,
+            "actual_dose_total": 600,
+            "dose_unit": "seconds",
+        }
+    )
+    return duration_prescription, duration_execution, duration_adherence
+
+
 def test_completed_session_progresses_but_post_session_escalation_requires_review() -> None:
     prescription, execution, adherence = chain()
     policy = progression_policy()
@@ -258,6 +300,97 @@ def test_completed_session_progresses_but_post_session_escalation_requires_revie
     assert reviewed.outcome is ProgressionOutcome.REVIEW_REQUIRED
     assert reviewed.adjustment is None
     assert safety_observation_id in reviewed.source_observation_ids
+
+
+def test_duration_progression_advances_within_ceiling_and_holds_at_ceiling() -> None:
+    prescription, execution, adherence = duration_chain()
+    policy = ProgressionPolicy(
+        reference=prescription.progression_rule_reference,
+        minimum_set_completion_ratio=1,
+        minimum_dose_completion_ratio=1,
+        maximum_session_rpe=6,
+        adjustment=PrescriptionAdjustment(
+            dimension=ProgressionDimension.DURATION,
+            amount=60,
+            unit="seconds_per_set",
+            description="Add one minute within the reviewed ceiling.",
+        ),
+        maximum_prescription_value=720,
+        maximum_prescription_value_unit="seconds_per_set",
+        evidence_claim_ids=(uuid4(),),
+        rationale="Synthetic bounded-duration fixture.",
+        policy_version="fixture-bounded-duration@1.0.0",
+    )
+    engine = ProgressionEngine()
+
+    progressed = engine.decide(
+        prescription=prescription,
+        execution=execution,
+        adherence=adherence,
+        policy=policy,
+        decided_at=NOW + timedelta(minutes=35),
+    )
+    revised = PrescriptionProgressionApplicator().apply(
+        prescription=prescription,
+        decision=progressed,
+        policy=policy,
+        prescribed_at=NOW + timedelta(days=1),
+        planned_duration_minutes=12,
+    )
+
+    assert progressed.outcome is ProgressionOutcome.PROGRESS
+    assert revised.duration_seconds == 660
+
+    capped_prescription = prescription.model_copy(update={"duration_seconds": 720})
+    capped_item = execution.items[0].model_copy(update={"prescription_id": capped_prescription.id})
+    capped_execution = execution.model_copy(update={"items": (capped_item,)})
+    capped_adherence = adherence.model_copy(update={"prescription_id": capped_prescription.id})
+    held = engine.decide(
+        prescription=capped_prescription,
+        execution=capped_execution,
+        adherence=capped_adherence,
+        policy=policy,
+        decided_at=NOW + timedelta(minutes=35),
+    )
+
+    assert held.outcome is ProgressionOutcome.HOLD
+    assert held.adjustment is None
+    assert "configured ceiling" in held.rationale[0]
+
+
+def test_duration_progression_cannot_exceed_session_envelope() -> None:
+    prescription, execution, adherence = duration_chain()
+    policy = ProgressionPolicy(
+        reference=prescription.progression_rule_reference,
+        minimum_set_completion_ratio=1,
+        minimum_dose_completion_ratio=1,
+        maximum_session_rpe=6,
+        adjustment=PrescriptionAdjustment(
+            dimension=ProgressionDimension.DURATION,
+            amount=180,
+            unit="seconds_per_set",
+            description="Synthetic oversized increase.",
+        ),
+        evidence_claim_ids=(uuid4(),),
+        rationale="Synthetic session-envelope fixture.",
+        policy_version="fixture-duration-envelope@1.0.0",
+    )
+    decision = ProgressionEngine().decide(
+        prescription=prescription,
+        execution=execution,
+        adherence=adherence,
+        policy=policy,
+        decided_at=NOW + timedelta(minutes=35),
+    )
+
+    with pytest.raises(ProgressionError, match="planned session envelope"):
+        PrescriptionProgressionApplicator().apply(
+            prescription=prescription,
+            decision=decision,
+            policy=policy,
+            prescribed_at=NOW + timedelta(days=1),
+            planned_duration_minutes=12,
+        )
 
 
 def test_exposure_ledger_rejects_unearned_jump_and_blocks_progression() -> None:

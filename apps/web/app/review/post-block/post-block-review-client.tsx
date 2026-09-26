@@ -27,6 +27,9 @@ const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 type BooleanSelection = "" | "true" | "false";
 
 interface ResponseEditor {
+  responseEvaluationAuthorityId: string;
+  authorityVersion: string;
+  authorityRationale: string;
   adaptationId: string;
   prescriptionIds: string[];
   baselineEstimateId: string;
@@ -167,6 +170,9 @@ function requiredBoolean(value: BooleanSelection, field: string): boolean {
 
 function emptyResponse(): ResponseEditor {
   return {
+    responseEvaluationAuthorityId: "",
+    authorityVersion: "",
+    authorityRationale: "",
     adaptationId: "",
     prescriptionIds: [],
     baselineEstimateId: "",
@@ -176,6 +182,48 @@ function emptyResponse(): ResponseEditor {
     contextualFactors: "",
     comparisonDirection: "",
     minimumMeaningfulChange: "",
+  };
+}
+
+function candidateEditor(context: ReplanningCandidateContext): CandidateEditor {
+  return {
+    adaptationId: context.adaptation_id,
+    estimateId: context.capability_estimate_id,
+    floorId: context.competency_floor_id,
+    generalRelevance: String(context.general_relevance),
+    goalRelevance: String(context.goal_relevance),
+    prerequisiteValue: String(context.prerequisite_value),
+    expectedTrainability: String(context.expected_trainability),
+    transferValue: String(context.transfer_value),
+    fatigueCost: String(context.fatigue_cost),
+    timeCost: String(context.time_cost),
+    interferenceCost: String(context.interference_cost),
+    safeToTrain: String(context.safe_to_train) as BooleanSelection,
+    introductoryExposureNeeded: String(context.introductory_exposure_needed) as BooleanSelection,
+    prerequisitesMet: String(context.prerequisites_met) as BooleanSelection,
+    cultivateComparativeAdvantage: String(context.cultivate_comparative_advantage) as BooleanSelection,
+    prerequisiteAdaptationIds: context.prerequisite_adaptation_ids.join("\n"),
+    sourceObservationIds: [...context.source_observation_ids],
+    evidenceClaimIds: [...context.evidence_claim_ids],
+  };
+}
+
+function preparedResponse(
+  item: BlockReviewPreparationProjection["prepared_response_interpretations"][number],
+): ResponseEditor {
+  return {
+    responseEvaluationAuthorityId: item.response_evaluation_authority_id,
+    authorityVersion: item.authority_version,
+    authorityRationale: item.rationale,
+    adaptationId: item.adaptation_id,
+    prescriptionIds: item.prescription_ids,
+    baselineEstimateId: item.baseline_capability_estimate_id,
+    followupEstimateId: item.followup_capability_estimate_id,
+    interventionSummary: item.intervention_summary,
+    measurementUncertainty: item.measurement_uncertainty,
+    contextualFactors: item.contextual_factors.join("\n"),
+    comparisonDirection: item.comparison_direction,
+    minimumMeaningfulChange: String(item.minimum_meaningful_change),
   };
 }
 
@@ -288,9 +336,27 @@ function BlockPreparation({ projection }: { projection: BlockReviewPreparationPr
           ))}
         </div>
       </details>
+      {projection.prepared_response_interpretations.length ? (
+        <section className="post-block-prepared-authorities">
+          <h3>Prepared response authority</h3>
+          {projection.prepared_response_interpretations.map((item) => (
+            <article key={item.response_evaluation_authority_id}>
+              <strong>{item.minimum_meaningful_change} cm · {label(item.comparison_direction)}</strong>
+              <span>{item.numeric_value_origin} · {item.authority_version}</span>
+              <p>{item.rationale}</p>
+              <code>{item.response_evaluation_authority_id}</code>
+            </article>
+          ))}
+        </section>
+      ) : null}
+      {projection.prepared_response_issues.length ? (
+        <ul className="post-block-issues">
+          {projection.prepared_response_issues.map((issue) => <li key={issue}>{issue}</li>)}
+        </ul>
+      ) : null}
       <p className="form-help">
-        Preparation reports eligible history only. It does not group prescriptions, choose a
-        meaningful-change threshold, or interpret causality.
+        Preparation reports eligible history and may bind an exact ratified response authority. It
+        never infers causality; a reviewer must still confirm the complete history and interpretation.
       </p>
     </section>
   );
@@ -348,8 +414,17 @@ function BlockReviewForm({
   projection: BlockReviewPreparationProjection;
   onCreated: (result: BlockReviewCreationResult) => void;
 }) {
-  const [responses, setResponses] = useState<ResponseEditor[]>([emptyResponse()]);
-  const [policyId, setPolicyId] = useState("");
+  const [responses, setResponses] = useState<ResponseEditor[]>(() => (
+    projection.prepared_response_interpretations.length
+      ? projection.prepared_response_interpretations.map(preparedResponse)
+      : [emptyResponse()]
+  ));
+  const [policyId, setPolicyId] = useState(() => {
+    const ids = new Set(
+      projection.prepared_response_interpretations.map((item) => item.block_review_policy_id),
+    );
+    return ids.size === 1 ? [...ids][0] : "";
+  });
   const [applicability, setApplicability] = useState("");
   const [uncertainty, setUncertainty] = useState("");
   const [confirmed, setConfirmed] = useState(false);
@@ -360,7 +435,28 @@ function BlockReviewForm({
 
   function update(index: number, patch: Partial<ResponseEditor>) {
     setResponses((current) => current.map((item, itemIndex) => (
-      itemIndex === index ? { ...item, ...patch } : item
+      itemIndex === index
+        ? {
+            ...item,
+            ...patch,
+            ...(
+              item.responseEvaluationAuthorityId
+              && [
+                "adaptationId",
+                "baselineEstimateId",
+                "followupEstimateId",
+                "comparisonDirection",
+                "minimumMeaningfulChange",
+              ].some((field) => field in patch)
+                ? {
+                    responseEvaluationAuthorityId: "",
+                    authorityVersion: "",
+                    authorityRationale: "",
+                  }
+                : {}
+            ),
+          }
+        : item
     )));
   }
 
@@ -402,6 +498,9 @@ function BlockReviewForm({
               response.minimumMeaningfulChange,
               `Response ${index + 1} meaningful change`,
             ),
+            ...(response.responseEvaluationAuthorityId
+              ? { response_evaluation_authority_id: response.responseEvaluationAuthorityId }
+              : {}),
           };
         }),
         responses_calculated_at: instant,
@@ -449,6 +548,14 @@ function BlockReviewForm({
         {responses.map((response, index) => (
           <fieldset key={index} className="post-block-response-editor">
             <legend>Response interpretation {index + 1}</legend>
+            {response.responseEvaluationAuthorityId ? (
+              <aside className="post-block-prepared-authority">
+                <strong>Prepared from ratified authority</strong>
+                <span>{response.authorityVersion}</span>
+                <p>{response.authorityRationale}</p>
+                <code>{response.responseEvaluationAuthorityId}</code>
+              </aside>
+            ) : null}
             <div className="post-block-field-grid">
               <label>
                 Adaptation
@@ -555,6 +662,18 @@ function ReplanningPreparation({ projection }: { projection: ReplanningPreparati
         <span className={`status-badge status-badge--${projection.status}`}>{label(projection.status)}</span>
       </header>
       {projection.issues.length ? <ul className="post-block-issues">{projection.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul> : null}
+      {projection.prepared_successor_context ? (
+        <article className="prepared-response-authority">
+          <strong>Exact approved context carried forward</strong>
+          <p>{projection.prepared_successor_context.transformation_summary}</p>
+          <span>Digest {projection.prepared_successor_context.content_digest}</span>
+        </article>
+      ) : null}
+      {projection.prepared_successor_issues.length ? (
+        <ul className="post-block-issues">
+          {projection.prepared_successor_issues.map((issue) => <li key={issue}>{issue}</li>)}
+        </ul>
+      ) : null}
       <div className="post-block-option-grid">
         {projection.adaptation_options.map((option) => (
           <article key={option.adaptation.id}>
@@ -606,17 +725,29 @@ function ReplanningForm({
   projection: ReplanningPreparationProjection;
   onCreated: (result: PostBlockReplanningResult) => void;
 }) {
+  const prepared = projection.prepared_successor_context;
   const [candidates, setCandidates] = useState<CandidateEditor[]>(
-    () => projection.adaptation_options.map((option) => emptyCandidate(option.adaptation.id)),
+    () => prepared
+      ? projection.adaptation_options.map((option) => {
+        const context = prepared.candidate_contexts.find(
+          (item) => item.adaptation_id === option.adaptation.id,
+        );
+        return context ? candidateEditor(context) : emptyCandidate(option.adaptation.id);
+      })
+      : projection.adaptation_options.map((option) => emptyCandidate(option.adaptation.id)),
   );
-  const [reviewAfterDays, setReviewAfterDays] = useState("");
-  const [applicability, setApplicability] = useState("");
-  const [uncertainty, setUncertainty] = useState("");
+  const [reviewAfterDays, setReviewAfterDays] = useState(
+    prepared ? String(prepared.review_after_days) : "",
+  );
+  const [applicability, setApplicability] = useState(prepared?.applicability_rationale ?? "");
+  const [uncertainty, setUncertainty] = useState(prepared?.uncertainty ?? "");
+  const [preparedBinding, setPreparedBinding] = useState(Boolean(prepared));
   const [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
 
   function update(index: number, patch: Partial<CandidateEditor>) {
+    setPreparedBinding(false);
     setCandidates((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item));
   }
 
@@ -655,6 +786,11 @@ function ReplanningForm({
         candidate_contexts: contexts,
         generated_at: new Date().toISOString(),
         review_after_days: requiredNumber(reviewAfterDays, "Review interval"),
+        ...(prepared && preparedBinding ? {
+          source_initial_planning_context_draft_id: prepared.source_initial_planning_context_draft_id,
+          source_initial_planning_context_review_id: prepared.source_initial_planning_context_review_id,
+          prepared_successor_context_digest: prepared.content_digest,
+        } : {}),
         applicability_rationale: applicability,
         uncertainty,
       };
@@ -672,7 +808,7 @@ function ReplanningForm({
         <div>
           <p className="eyebrow">Explicit successor contexts</p>
           <h2>Re-evaluate every prior adaptation</h2>
-          <p>Scores are reviewed inputs, not suggested values. All eight components and four state flags begin unset.</p>
+          <p>{prepared ? "The exact approved source context is prefilled; the reviewed response changes only its governed estimate." : "Scores are reviewed inputs, not suggested values. All eight components and four state flags begin unset."}</p>
         </div>
         <span className="status-badge">{candidates.length} candidate(s)</span>
       </header>
@@ -737,15 +873,15 @@ function ReplanningForm({
         })}
       </div>
       <div className="post-block-field-grid">
-        <label>Review again after (days)<input type="number" min="1" step="1" value={reviewAfterDays} onChange={(event) => setReviewAfterDays(event.target.value)} required /></label>
+        <label>Review again after (days)<input type="number" min="1" step="1" value={reviewAfterDays} onChange={(event) => { setPreparedBinding(false); setReviewAfterDays(event.target.value); }} required /></label>
       </div>
       <section className="post-block-review-rationale">
-        <label>Applicability rationale<textarea rows={4} value={applicability} onChange={(event) => setApplicability(event.target.value)} required /></label>
-        <label>Known uncertainty<textarea rows={4} value={uncertainty} onChange={(event) => setUncertainty(event.target.value)} required /></label>
+        <label>Applicability rationale<textarea rows={4} value={applicability} onChange={(event) => { setPreparedBinding(false); setApplicability(event.target.value); }} required /></label>
+        <label>Known uncertainty<textarea rows={4} value={uncertainty} onChange={(event) => { setPreparedBinding(false); setUncertainty(event.target.value); }} required /></label>
       </section>
       <label className="review-confirmation-line"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span>I reviewed every estimate, floor, score, prerequisite, safety flag, provenance choice, applicability statement, and uncertainty.</span></label>
       <button className="primary-button" disabled={!confirmed || busy}>{busy ? "Appending immutable successor…" : "Create successor strategy"}</button>
-      <p className="form-help">The server rebuilds needs and scores the successor using the persisted policy. It preserves the prior strategy and review chain.</p>
+      <p className="form-help">{preparedBinding ? "The server will verify this exact prepared digest before rebuilding needs and scores. Explicit confirmation is still required." : "Manual expert path: the server rebuilds needs and scores using the persisted policy and preserves the prior strategy and review chain."}</p>
       {message ? <p className="form-error" role="alert">{message}</p> : null}
     </form>
   );

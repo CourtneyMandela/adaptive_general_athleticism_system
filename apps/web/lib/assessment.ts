@@ -21,7 +21,8 @@ export type AssessmentResultStatus =
   | "ready"
   | "not_selected"
   | "protocol_unavailable"
-  | "eligibility_unavailable";
+  | "eligibility_unavailable"
+  | "safety_review_required";
 
 export type AssessmentCapabilityEstimateStatus =
   | "completed"
@@ -50,6 +51,17 @@ export interface AssessmentDecisionProjection {
   evidence_claim_ids: string[];
   review_version: string;
   result_status: AssessmentResultStatus;
+  attempts: Array<{
+    attempt_id: string;
+    attempt_observation_id: string;
+    status: "incomplete" | "safety_stopped";
+    reason: AssessmentAttemptReason;
+    attempted_at: string;
+    reliability: Confidence;
+    provenance: Record<string, unknown>;
+    rule_version: string;
+    eligible_for_capability_estimation: false;
+  }>;
   result: {
     performance_id: string;
     result_observation_id: string;
@@ -91,6 +103,68 @@ export interface AssessmentMeasurementSchema {
   step: number | null;
   allowed_values: string[];
   measurement_schema_version: string;
+}
+
+export interface AssessmentHistoryEstimateProjection {
+  estimate_id: string;
+  kind: "derived";
+  estimate: unknown;
+  unit_or_scale: string;
+  estimate_scope: string;
+  confidence: Confidence;
+  calculation_method: string;
+  source_observation_ids: string[];
+  estimated_at: string;
+  valid_until: string | null;
+  valid_as_of: boolean;
+  rule_version: string;
+  policy_id: string;
+}
+
+export interface AssessmentHistoryResultProjection {
+  performance_id: string;
+  result_observation_id: string;
+  performed_at: string;
+  measurement: unknown;
+  unit: string | null;
+  reliability: Confidence;
+  provenance: Record<string, unknown>;
+  rule_version: string;
+  protocol_completion_attested: boolean;
+  no_stop_condition_attested: boolean;
+  eligible_for_capability_estimation: true;
+  capability_estimates: AssessmentHistoryEstimateProjection[];
+}
+
+export interface AssessmentHistorySelectionProjection {
+  selection_id: string;
+  decision: "selected" | "deferred" | "excluded";
+  reason_codes: string[];
+  rationale: string[];
+  source_observation_ids: string[];
+  evaluated_at: string;
+  rule_version: string;
+  assessment_definition_id: string;
+  assessment_definition_review_id: string | null;
+  assessment_eligibility_review_id: string | null;
+  name: string;
+  domain: string;
+  unit_or_scale: string;
+  protocol_version: string;
+  review_version: string | null;
+  attempts: AssessmentDecisionProjection["attempts"];
+  completed_result: AssessmentHistoryResultProjection | null;
+}
+
+export interface AssessmentHistoryRunProjection {
+  run_id: string;
+  assessment_eligibility_review_id: string;
+  environment_id: string;
+  environment_name: string;
+  context_observation_id: string;
+  evaluated_at: string;
+  rule_version: string;
+  selections: AssessmentHistorySelectionProjection[];
 }
 
 export interface AssessmentWorkflowProjection {
@@ -161,6 +235,8 @@ export interface AssessmentWorkflowProjection {
     rule_version: string;
     decisions: AssessmentDecisionProjection[];
   } | null;
+  history_projection_version: "assessment-history-projection@1.0.0";
+  history_runs: AssessmentHistoryRunProjection[];
 }
 
 export type ReadinessAnswer = "no" | "yes" | "unsure";
@@ -240,6 +316,34 @@ export interface AssessmentResultCommand {
   measurement: number | string;
   unit: string;
   reliability: Confidence;
+  protocol_completed: true;
+  stop_condition_occurred: false;
+  provenance: ProvenanceInput;
+}
+
+export interface AssessmentProtocolCompletionInput {
+  protocolCompleted: boolean;
+  stopConditionOccurred: boolean;
+}
+
+export type AssessmentAttemptStatus = "incomplete" | "safety_stopped";
+export type AssessmentAttemptReason =
+  | "setup_or_equipment_issue"
+  | "measurement_or_route_issue"
+  | "instructions_unclear"
+  | "external_interruption"
+  | "voluntary_non_safety_stop"
+  | "other_non_safety_reason"
+  | "listed_stop_condition"
+  | "legacy_unspecified";
+
+export interface AssessmentAttemptCommand {
+  attempted_at: string;
+  status: AssessmentAttemptStatus;
+  reason: Exclude<AssessmentAttemptReason, "legacy_unspecified">;
+  protocol_completed: false;
+  stop_condition_occurred: boolean;
+  reliability: Confidence;
   provenance: ProvenanceInput;
 }
 
@@ -285,6 +389,12 @@ export const assessmentResultProvenance: ProvenanceInput = {
   recorded_by: "unverified-athlete-user",
   source_system: "agas-web",
   ingestion_method: "assessment-result-form",
+};
+
+export const assessmentAttemptProvenance: ProvenanceInput = {
+  recorded_by: "unverified-athlete-user",
+  source_system: "agas-web",
+  ingestion_method: "assessment-attempt-form",
 };
 
 export const introductoryExposureProvenance: ProvenanceInput = {
@@ -384,6 +494,7 @@ export function buildAssessmentResultCommand(
   decision: AssessmentDecisionProjection,
   rawValue: string,
   reliability: Confidence,
+  completion: AssessmentProtocolCompletionInput,
   performedAt: Date = new Date(),
 ): AssessmentResultCommand {
   const schema = decision.measurement_schema;
@@ -392,6 +503,12 @@ export function buildAssessmentResultCommand(
   }
   if (!Number.isFinite(performedAt.valueOf())) {
     throw new Error("The performance time is invalid.");
+  }
+  if (completion.stopConditionOccurred) {
+    throw new Error("A safety-stopped assessment cannot be recorded as completed.");
+  }
+  if (!completion.protocolCompleted) {
+    throw new Error("Confirm that you completed the exact reviewed protocol.");
   }
   let measurement: number | string;
   if (schema.measurement_type === "category") {
@@ -425,7 +542,33 @@ export function buildAssessmentResultCommand(
     measurement,
     unit: decision.unit_or_scale,
     reliability,
+    protocol_completed: true,
+    stop_condition_occurred: false,
     provenance: assessmentResultProvenance,
+  };
+}
+
+export function buildAssessmentAttemptCommand(
+  status: AssessmentAttemptStatus,
+  reason: Exclude<AssessmentAttemptReason, "legacy_unspecified">,
+  reliability: Confidence,
+  attemptedAt: Date = new Date(),
+): AssessmentAttemptCommand {
+  if (!Number.isFinite(attemptedAt.valueOf())) {
+    throw new Error("The attempt time is invalid.");
+  }
+  const listedStop = reason === "listed_stop_condition";
+  if (listedStop !== (status === "safety_stopped")) {
+    throw new Error("The attempt reason must match whether a listed stop condition occurred.");
+  }
+  return {
+    attempted_at: attemptedAt.toISOString(),
+    status,
+    reason,
+    protocol_completed: false,
+    stop_condition_occurred: status === "safety_stopped",
+    reliability,
+    provenance: assessmentAttemptProvenance,
   };
 }
 
@@ -606,6 +749,35 @@ export async function submitAssessmentResult(
   if (!response.ok) {
     throw new AssessmentRequestError(
       await responseDetail(response, "Unable to record the assessment result."),
+      response.status,
+    );
+  }
+  return response.json();
+}
+
+export async function submitAssessmentAttempt(
+  apiBaseUrl: string,
+  athleteId: string,
+  runId: string,
+  selectionId: string,
+  command: AssessmentAttemptCommand,
+  fetcher: typeof fetch = fetch,
+): Promise<unknown> {
+  const response = await fetcher(
+    `${apiBaseUrl.replace(/\/$/, "")}/v1/athletes/${athleteId}/assessment-runs/${runId}` +
+      `/selections/${selectionId}/attempts`,
+    {
+      method: "POST",
+      headers: authorizedHeaders({
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      }),
+      body: JSON.stringify(command),
+    },
+  );
+  if (!response.ok) {
+    throw new AssessmentRequestError(
+      await responseDetail(response, "Unable to record the assessment attempt."),
       response.status,
     );
   }

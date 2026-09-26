@@ -8,12 +8,15 @@ from typing import Annotated, Literal
 from uuid import UUID, uuid5
 
 from agas_domain import (
+    Adaptation,
+    AdaptationPriority,
     AssessmentReviewDecision,
     AthleteSafetyPolicyAssignment,
     BlockPlan,
     BlockPlanStatus,
     BodyweightTarget,
     CapabilityEstimate,
+    CapabilityNeed,
     Confidence,
     EffortRpeTarget,
     ExerciseExecutionGuidance,
@@ -23,12 +26,23 @@ from agas_domain import (
     ResolutionStatus,
     SessionSection,
     TechniqueTarget,
+    TrainingPriorityState,
     WeeklyPlanStatus,
     WeeklySchedulingPolicy,
     WeeklySchedulingPolicyReview,
 )
 from agas_domain.persistence.repository import DomainRepository
-from agas_planner import DerivedRepetitionDose, RepetitionDoseError, RepetitionDosePlanner
+from agas_planner import (
+    DerivedFixedDurationDose,
+    DerivedFixedRepetitionDose,
+    DerivedRepetitionDose,
+    FixedDurationDoseError,
+    FixedDurationDosePlanner,
+    FixedRepetitionDoseError,
+    FixedRepetitionDosePlanner,
+    RepetitionDoseError,
+    RepetitionDosePlanner,
+)
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy.orm import Session
 
@@ -45,6 +59,12 @@ from agas_api.first_week_preparation import (
     FirstWeekPreparationProjector,
 )
 from agas_api.identity import AuthorizedRole
+from agas_api.prepared_strategy_cycle import (
+    PreparedStrategyCycleError,
+    PreparedStrategyCycleLineage,
+    prior_state_for_adaptation,
+    resolve_strategy_cycle_lineage,
+)
 from agas_api.training_construction_candidates import (
     PreparedTrainingConstructionCandidate,
     prepared_training_construction_candidate_for_scope,
@@ -63,9 +83,11 @@ from agas_api.weekly_planning import (
 )
 
 CANDIDATE_VERSION = "prepared-first-week@1.2.0"
+SUCCESSOR_CANDIDATE_VERSION = "prepared-first-week@1.3.0"
 CANDIDATE_NAMESPACE = UUID("37728da6-7ebf-499d-b821-7d72da044ac7")
 MAXIMUM_CANDIDATE_AGE = timedelta(minutes=30)
 NonEmptyText = Annotated[str, Field(min_length=1)]
+type PreparedDose = DerivedRepetitionDose | DerivedFixedRepetitionDose | DerivedFixedDurationDose
 
 
 class PrepareFirstWeekCommand(BaseModel):
@@ -111,19 +133,25 @@ class PreparedFirstWeekIdentities(BaseModel):
 class PreparedFirstWeekCandidate(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    candidate_version: Literal["prepared-first-week@1.2.0"]
+    candidate_version: Literal["prepared-first-week@1.2.0", "prepared-first-week@1.3.0"]
     candidate_id: UUID
     content_digest: Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
     prepared_at: datetime
     status: Literal["available", "accepted"]
     athlete_id: UUID
     block_id: UUID
+    priority_state: TrainingPriorityState
+    previous_priority_state: TrainingPriorityState | None = None
+    strategy_cycle: PreparedStrategyCycleLineage
+    training_construction_candidate_id: UUID
+    training_construction_content_digest: str
     week_start: str
     exercise_name: NonEmptyText
     environment_name: NonEmptyText
     sessions: tuple[dict[str, str], ...]
     sets: int
-    repetitions_per_set: int
+    repetitions_per_set: int | None = None
+    duration_seconds_per_set: int | None = None
     rest_seconds: int
     effort_rpe_range: NonEmptyText
     planned_duration_minutes: int
@@ -138,6 +166,12 @@ class PreparedFirstWeekCandidate(BaseModel):
     identities: PreparedFirstWeekIdentities
     accepted_result: WeeklyPlanCreationResult | None = None
 
+    @model_validator(mode="after")
+    def require_one_dose_measure(self) -> PreparedFirstWeekCandidate:
+        if (self.repetitions_per_set is None) == (self.duration_seconds_per_set is None):
+            raise ValueError("prepared first week requires exactly one repetition or duration dose")
+        return self
+
 
 class PreparedFirstWeekProjection(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -149,13 +183,13 @@ class PreparedFirstWeekProjection(BaseModel):
     message: NonEmptyText
     candidate: PreparedFirstWeekCandidate | None = None
     blockers: tuple[str, ...] = ()
-    projection_version: str = "prepared-first-week-projection@1.2.0"
+    projection_version: str = "prepared-first-week-projection@1.3.0"
 
 
 class RatifyPreparedFirstWeekCommand(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    candidate_version: Literal["prepared-first-week@1.2.0"]
+    candidate_version: Literal["prepared-first-week@1.2.0", "prepared-first-week@1.3.0"]
     content_digest: Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
     prepared_at: datetime
     windows: Annotated[tuple[AvailabilityWindowDraft, ...], Field(min_length=1)]
@@ -178,7 +212,7 @@ class PreparedFirstWeekRatificationResult(BaseModel):
     availability_observation: Observation
     safety_policy_assignment: AthleteSafetyPolicyAssignment
     result: WeeklyPlanCreationResult
-    ratification_version: str = "prepared-first-week-ratification@1.2.0"
+    ratification_version: str = "prepared-first-week-ratification@1.3.0"
 
 
 class PreparedFirstWeekConflictError(RuntimeError):
@@ -257,6 +291,15 @@ class PreparedFirstWeekProjector:
         strategy = self.repository.get_long_range_strategy(block.long_range_strategy_id)
         if strategy is None:
             raise FirstWeekPreparationProjectionError("the block strategy does not exist")
+        try:
+            strategy_cycle = resolve_strategy_cycle_lineage(self.repository, strategy)
+        except PreparedStrategyCycleError as error:
+            return self._blocked(block.id, block.athlete_id, instant, [str(error)])
+        candidate_version = (
+            SUCCESSOR_CANDIDATE_VERSION
+            if strategy_cycle.cycle == "successor"
+            else CANDIDATE_VERSION
+        )
         priority = next(
             (item for item in strategy.priorities if item.id == allocation.adaptation_priority_id),
             None,
@@ -282,23 +325,31 @@ class PreparedFirstWeekProjector:
         else:
             try:
                 training_candidate = prepared_training_construction_candidate_for_scope(
-                    estimate.estimate_scope
+                    estimate.estimate_scope,
+                    priority.state if priority is not None else None,
                 )
                 exact_policy, exact_review = self._construction_authority(
                     instant, blockers, training_candidate
                 )
-                dose_policy = training_candidate.release.repetition_dose_policy
-                if dose_policy is None:
-                    raise RepetitionDoseError(
-                        "the matching construction candidate has no repetition dose policy"
-                    )
-                dose = RepetitionDosePlanner().derive(
+                dose_policy = (
+                    training_candidate.release.repetition_dose_policy
+                    or training_candidate.release.fixed_repetition_dose_policy
+                    or training_candidate.release.fixed_duration_dose_policy
+                )
+                dose = self._derive_dose(
                     adaptation=adaptation,
+                    priority=priority,
+                    need=need,
                     estimate=estimate,
-                    policy=dose_policy,
+                    training_candidate=training_candidate,
                     derived_at=instant,
                 )
-            except (KeyError, RepetitionDoseError) as error:
+            except (
+                KeyError,
+                RepetitionDoseError,
+                FixedRepetitionDoseError,
+                FixedDurationDoseError,
+            ) as error:
                 blockers.append(f"The governed starting dose cannot be derived: {error}")
                 dose = None
                 training_candidate = None
@@ -317,48 +368,64 @@ class PreparedFirstWeekProjector:
             return self._blocked(block.id, block.athlete_id, instant, blockers)
 
         release = training_candidate.release
-        expected_assignment_id = uuid5(
-            CANDIDATE_NAMESPACE,
-            f"safety-assignment:{block.athlete_id}:{release.session_safety_policy.id}:"
-            f"{authority.assignment_id}",
-        )
         current_assignment = self.repository.get_current_athlete_safety_policy_assignment(
             block.athlete_id
         )
-        if (
-            current_assignment is not None
-            and current_assignment.safety_policy_id != release.session_safety_policy.id
-        ):
-            return self._blocked(
-                block.id,
-                block.athlete_id,
-                instant,
-                [
-                    "A different athlete safety-policy assignment already exists; review it before preparing Week 1."
-                ],
-            )
-        safety_assignment = current_assignment or AthleteSafetyPolicyAssignment(
-            id=expected_assignment_id,
-            created_at=instant,
-            athlete_id=block.athlete_id,
-            safety_policy_id=release.session_safety_policy.id,
-            sequence_number=1,
-            assigned_at=instant,
-            assigned_by=f"account:{authority.account_id}",
-            applicability_rationale=(
-                "Assign the exact ratified owner-alpha non-diagnostic readiness policy to this "
-                "athlete before the first scheduled session."
+        expected_assignment_id = uuid5(
+            CANDIDATE_NAMESPACE,
+            f"safety-assignment:{block.athlete_id}:{release.session_safety_policy.id}:"
+            f"{authority.assignment_id}"
+            + (
+                f":supersedes:{current_assignment.id}"
+                if current_assignment is not None
+                and current_assignment.safety_policy_id != release.session_safety_policy.id
+                else ""
             ),
-            rule_version="prepared-first-week-safety-assignment@1.0.0",
+        )
+        safety_assignment = (
+            current_assignment
+            if current_assignment is not None
+            and current_assignment.safety_policy_id == release.session_safety_policy.id
+            else AthleteSafetyPolicyAssignment(
+                id=expected_assignment_id,
+                created_at=instant,
+                athlete_id=block.athlete_id,
+                safety_policy_id=release.session_safety_policy.id,
+                sequence_number=(
+                    current_assignment.sequence_number + 1 if current_assignment else 1
+                ),
+                supersedes_assignment_id=(current_assignment.id if current_assignment else None),
+                assigned_at=instant,
+                assigned_by=f"account:{authority.account_id}",
+                applicability_rationale=(
+                    (
+                        "Assign the exact ratified owner-alpha non-diagnostic readiness policy to "
+                        "this athlete before the first scheduled session."
+                    )
+                    if candidate_version == CANDIDATE_VERSION
+                    else (
+                        "Assign the exact ratified owner-alpha non-diagnostic readiness policy to "
+                        "this athlete before the scheduled successor-cycle session."
+                    )
+                ),
+                rule_version=(
+                    "prepared-first-week-safety-assignment@1.0.0"
+                    if candidate_version == CANDIDATE_VERSION
+                    else "prepared-first-week-safety-assignment@1.1.0"
+                ),
+            )
         )
 
         execution_guidance = execution_guidance_for(exercise.id)
         stable_content = {
-            "candidate_version": CANDIDATE_VERSION,
+            "candidate_version": candidate_version,
             "block": block.model_dump(mode="json"),
             "allocation_input": allocation_input.model_dump(mode="json"),
             "capability_estimate": estimate.model_dump(mode="json"),
-            "dose_policy": dose_policy.model_dump(mode="json"),
+            "dose_policy": dose_policy.model_dump(
+                mode="json",
+                exclude={"priority_state"} if candidate_version == CANDIDATE_VERSION else None,
+            ),
             "derived_dose": dose.model_dump(mode="json", exclude={"derived_at"}),
             "execution_guidance": (
                 execution_guidance.model_dump(mode="json")
@@ -374,6 +441,8 @@ class PreparedFirstWeekProjector:
             "training_construction_candidate_id": str(training_candidate.presentation.candidate_id),
             "training_construction_digest": training_candidate.presentation.content_digest,
         }
+        if candidate_version == SUCCESSOR_CANDIDATE_VERSION:
+            stable_content["strategy_cycle"] = strategy_cycle.model_dump(mode="json")
         canonical = json.dumps(stable_content, sort_keys=True, separators=(",", ":"))
         content_digest = f"sha256:{hashlib.sha256(canonical.encode()).hexdigest()}"
         candidate_id = uuid5(CANDIDATE_NAMESPACE, content_digest)
@@ -395,7 +464,13 @@ class PreparedFirstWeekProjector:
             decision_record_id=uuid5(candidate_id, "decision-record"),
         )
         availability_observation = self._availability_observation(
-            block.athlete_id, block.starts_on.isoformat(), command, instant, authority, identities
+            block.athlete_id,
+            block.starts_on.isoformat(),
+            command,
+            instant,
+            authority,
+            identities,
+            candidate_version,
         )
         weekly_command = self._weekly_command(
             block=block,
@@ -411,6 +486,7 @@ class PreparedFirstWeekProjector:
             content_digest=content_digest,
             training_candidate=training_candidate,
             execution_guidance=execution_guidance,
+            candidate_version=candidate_version,
         )
         try:
             preview = PersistedWeeklyPlanService(self.session).preview(
@@ -453,13 +529,20 @@ class PreparedFirstWeekProjector:
             )
 
         candidate = PreparedFirstWeekCandidate(
-            candidate_version=CANDIDATE_VERSION,
+            candidate_version=candidate_version,
             candidate_id=candidate_id,
             content_digest=content_digest,
             prepared_at=instant,
             status="accepted" if existing_result is not None else "available",
             athlete_id=block.athlete_id,
             block_id=block.id,
+            priority_state=allocation.priority_state,
+            previous_priority_state=prior_state_for_adaptation(
+                strategy_cycle, allocation.adaptation_id
+            ),
+            strategy_cycle=strategy_cycle,
+            training_construction_candidate_id=training_candidate.presentation.candidate_id,
+            training_construction_content_digest=training_candidate.presentation.content_digest,
             week_start=block.starts_on.isoformat(),
             exercise_name=exercise.name,
             environment_name=environment.name,
@@ -471,7 +554,14 @@ class PreparedFirstWeekProjector:
                 for item in preview.weekly_plan.sessions
             ),
             sets=dose.sets,
-            repetitions_per_set=dose.repetitions_per_set,
+            repetitions_per_set=(
+                None if isinstance(dose, DerivedFixedDurationDose) else dose.repetitions_per_set
+            ),
+            duration_seconds_per_set=(
+                dose.duration_seconds_per_set
+                if isinstance(dose, DerivedFixedDurationDose)
+                else None
+            ),
             rest_seconds=dose.rest_seconds,
             effort_rpe_range=f"{dose.effort_rpe_minimum:g}-{dose.effort_rpe_maximum:g}",
             planned_duration_minutes=dose.planned_duration_minutes,
@@ -479,7 +569,7 @@ class PreparedFirstWeekProjector:
             execution_guidance=execution_guidance,
             dose_calculation=(
                 f"Derived from capability estimate {estimate.id} using {dose.calculation_method} "
-                f"under dose policy {dose.repetition_dose_policy_id}."
+                f"under dose policy {self._dose_policy_id(dose)}."
             ),
             provenance_summary=(
                 "The prescription comes from the block's exact adaptation and exercise resolution; "
@@ -492,7 +582,7 @@ class PreparedFirstWeekProjector:
             ),
             safety_policy_assignment=safety_assignment,
             safety_assignment_status=(
-                "already_assigned" if current_assignment is not None else "will_assign"
+                "already_assigned" if current_assignment == safety_assignment else "will_assign"
             ),
             identities=identities,
             accepted_result=existing_result,
@@ -503,9 +593,9 @@ class PreparedFirstWeekProjector:
             projected_at=instant,
             status="accepted" if existing_result is not None else "available",
             message=(
-                "The exact first week is already stored with immutable provenance."
+                "The exact strategy-cycle week is already stored with immutable provenance."
                 if existing_result is not None
-                else "Review the derived dose and scheduled times before recording Week 1."
+                else "Review the derived dose and scheduled times before recording this block's first week."
             ),
             candidate=candidate,
         )
@@ -517,9 +607,13 @@ class PreparedFirstWeekProjector:
         prepared: PreparedTrainingConstructionCandidate,
     ) -> tuple[WeeklySchedulingPolicy | None, WeeklySchedulingPolicyReview | None]:
         release = prepared.release
-        dose_policy = release.repetition_dose_policy
+        dose_policy = (
+            release.repetition_dose_policy
+            or release.fixed_repetition_dose_policy
+            or release.fixed_duration_dose_policy
+        )
         if dose_policy is None:
-            blockers.append("The matching construction release has no repetition dose authority.")
+            blockers.append("The matching construction release has no ordinary dose authority.")
             return None, None
         decision = self.repository.get_decision_record(prepared.presentation.candidate_id)
         policy = self.repository.get_weekly_scheduling_policy(release.weekly_scheduling_policy.id)
@@ -533,7 +627,22 @@ class PreparedFirstWeekProjector:
             and policy == release.weekly_scheduling_policy
             and review is not None
             and review.decision is AssessmentReviewDecision.APPROVED
-            and self.repository.get_repetition_dose_policy(dose_policy.id) == dose_policy
+            and (
+                (
+                    release.repetition_dose_policy is not None
+                    and self.repository.get_repetition_dose_policy(dose_policy.id) == dose_policy
+                )
+                or (
+                    release.fixed_repetition_dose_policy is not None
+                    and self.repository.get_fixed_repetition_dose_policy(dose_policy.id)
+                    == dose_policy
+                )
+                or (
+                    release.fixed_duration_dose_policy is not None
+                    and self.repository.get_fixed_duration_dose_policy(dose_policy.id)
+                    == dose_policy
+                )
+            )
             and self.repository.get_progression_policy(release.progression_policy.id)
             == release.progression_policy
             and self.repository.get_session_safety_policy(release.session_safety_policy.id)
@@ -552,6 +661,62 @@ class PreparedFirstWeekProjector:
         return policy, review
 
     @staticmethod
+    def _derive_dose(
+        *,
+        adaptation: Adaptation,
+        priority: AdaptationPriority | None,
+        need: CapabilityNeed | None,
+        estimate: CapabilityEstimate,
+        training_candidate: PreparedTrainingConstructionCandidate,
+        derived_at: datetime,
+    ) -> PreparedDose:
+        release = training_candidate.release
+        if release.repetition_dose_policy is not None:
+            return RepetitionDosePlanner().derive(
+                adaptation=adaptation,
+                estimate=estimate,
+                policy=release.repetition_dose_policy,
+                derived_at=derived_at,
+            )
+        if release.fixed_repetition_dose_policy is not None:
+            if priority is None or need is None:
+                raise FixedRepetitionDoseError(
+                    "fixed starting dose requires exact priority and capability-need lineage"
+                )
+            return FixedRepetitionDosePlanner().derive(
+                adaptation=adaptation,
+                priority=priority,
+                need=need,
+                estimate=estimate,
+                policy=release.fixed_repetition_dose_policy,
+                derived_at=derived_at,
+            )
+        if release.fixed_duration_dose_policy is not None:
+            if priority is None or need is None:
+                raise FixedDurationDoseError(
+                    "fixed duration requires exact priority and capability-need lineage"
+                )
+            return FixedDurationDosePlanner().derive(
+                adaptation=adaptation,
+                priority=priority,
+                need=need,
+                estimate=estimate,
+                policy=release.fixed_duration_dose_policy,
+                derived_at=derived_at,
+            )
+        raise RepetitionDoseError(
+            "the matching construction candidate has no ordinary repetition dose policy"
+        )
+
+    @staticmethod
+    def _dose_policy_id(dose: PreparedDose) -> UUID:
+        if isinstance(dose, DerivedFixedDurationDose):
+            return dose.fixed_duration_dose_policy_id
+        if isinstance(dose, DerivedFixedRepetitionDose):
+            return dose.fixed_repetition_dose_policy_id
+        return dose.repetition_dose_policy_id
+
+    @staticmethod
     def _availability_observation(
         athlete_id: UUID,
         week_start: str,
@@ -559,6 +724,7 @@ class PreparedFirstWeekProjector:
         instant: datetime,
         authority: AuthorizedRole,
         identities: PreparedFirstWeekIdentities,
+        candidate_version: str,
     ) -> Observation:
         return Observation(
             id=identities.availability_observation_id,
@@ -573,7 +739,7 @@ class PreparedFirstWeekProjector:
             unit=None,
             source=ObservationSource.USER_REPORT,
             reliability=Confidence.UNKNOWN,
-            context={"report_scope": "first_week", "candidate_version": CANDIDATE_VERSION},
+            context={"report_scope": "first_week", "candidate_version": candidate_version},
             provenance=Provenance(
                 recorded_by=f"account:{authority.account_id}",
                 source_system="agas-owner-pwa",
@@ -587,7 +753,7 @@ class PreparedFirstWeekProjector:
         block: BlockPlan,
         allocation_input: FirstWeekAllocationInput,
         estimate: CapabilityEstimate,
-        dose: DerivedRepetitionDose,
+        dose: PreparedDose,
         scheduling_policy_id: UUID,
         scheduling_policy_review_id: UUID,
         windows: tuple[AvailabilityWindowDraft, ...],
@@ -597,6 +763,7 @@ class PreparedFirstWeekProjector:
         content_digest: str,
         training_candidate: PreparedTrainingConstructionCandidate,
         execution_guidance: ExerciseExecutionGuidance | None,
+        candidate_version: str,
     ) -> CreateWeeklyPlanCommand:
         requirement = allocation_input.stimulus_requirement
         exercise = allocation_input.selected_exercise
@@ -604,10 +771,14 @@ class PreparedFirstWeekProjector:
             raise PreparedFirstWeekValidationError(
                 "the prepared prescription requires complete exercise lineage"
             )
-        dose_policy = training_candidate.release.repetition_dose_policy
+        dose_policy = (
+            training_candidate.release.repetition_dose_policy
+            or training_candidate.release.fixed_repetition_dose_policy
+            or training_candidate.release.fixed_duration_dose_policy
+        )
         if dose_policy is None:
             raise PreparedFirstWeekValidationError(
-                "the matching construction candidate has no repetition dose policy"
+                "the matching construction candidate has no ordinary dose policy"
             )
         evidence_ids = tuple(
             dict.fromkeys(
@@ -631,11 +802,17 @@ class PreparedFirstWeekProjector:
             reason_for_inclusion=(
                 "Deliver the block's sole "
                 f"{allocation_input.allocation.priority_state.value.upper()} allocation through "
-                "its exact FULL exercise resolution using the ratified assessment-calibrated "
-                "starting-dose policy."
+                "its exact FULL exercise resolution using the ratified starting-dose policy."
             ),
             sets=dose.sets,
-            repetitions_per_set=dose.repetitions_per_set,
+            repetitions_per_set=(
+                None if isinstance(dose, DerivedFixedDurationDose) else dose.repetitions_per_set
+            ),
+            duration_seconds=(
+                dose.duration_seconds_per_set
+                if isinstance(dose, DerivedFixedDurationDose)
+                else None
+            ),
             intensity_targets=(
                 BodyweightTarget(),
                 EffortRpeTarget(minimum=dose.effort_rpe_minimum, maximum=dose.effort_rpe_maximum),
@@ -649,7 +826,11 @@ class PreparedFirstWeekProjector:
             execution_guidance=execution_guidance,
             source_observation_ids=observation_ids,
             evidence_claim_ids=evidence_ids,
-            rule_version=(f"prepared-first-week-prescription@1.1.0;dose={dose.rule_version}"),
+            rule_version=(
+                f"prepared-first-week-prescription@"
+                f"{'1.2.0' if candidate_version == SUCCESSOR_CANDIDATE_VERSION else '1.1.0'};"
+                f"dose={dose.rule_version}"
+            ),
         )
         template = SessionTemplateDraft(
             name=f"First {exercise.name.casefold()} session",
@@ -805,6 +986,7 @@ def ratify_prepared_first_week(
         command.prepared_at,
         authority,
         candidate.identities,
+        candidate.candidate_version,
     )
     try:
         repository.add_observation(observation)
@@ -812,8 +994,20 @@ def ratify_prepared_first_week(
             candidate.athlete_id
         )
         if current_assignment is None:
+            if candidate.safety_policy_assignment.supersedes_assignment_id is not None:
+                raise PreparedFirstWeekConflictError(
+                    "athlete safety-policy assignment changed after candidate preparation"
+                )
             repository.add_athlete_safety_policy_assignment(candidate.safety_policy_assignment)
-        elif current_assignment != candidate.safety_policy_assignment:
+        elif current_assignment == candidate.safety_policy_assignment:
+            pass
+        elif (
+            candidate.safety_policy_assignment.supersedes_assignment_id == current_assignment.id
+            and candidate.safety_policy_assignment.sequence_number
+            == current_assignment.sequence_number + 1
+        ):
+            repository.add_athlete_safety_policy_assignment(candidate.safety_policy_assignment)
+        else:
             raise PreparedFirstWeekConflictError(
                 "athlete safety-policy assignment changed after candidate preparation"
             )
@@ -839,18 +1033,16 @@ def ratify_prepared_first_week(
         if estimate is None or adaptation is None:
             raise PreparedFirstWeekValidationError("the dose inputs are unavailable")
         training_candidate = prepared_training_construction_candidate_for_scope(
-            estimate.estimate_scope
+            estimate.estimate_scope,
+            priority.state,
         )
         release = training_candidate.release
-        dose_policy = release.repetition_dose_policy
-        if dose_policy is None:
-            raise PreparedFirstWeekValidationError(
-                "the matching construction candidate has no repetition dose policy"
-            )
-        dose = RepetitionDosePlanner().derive(
+        dose = PreparedFirstWeekProjector._derive_dose(
             adaptation=adaptation,
+            priority=priority,
+            need=need,
             estimate=estimate,
-            policy=dose_policy,
+            training_candidate=training_candidate,
             derived_at=command.prepared_at,
         )
         result = PersistedWeeklyPlanService(session).execute(
@@ -869,6 +1061,7 @@ def ratify_prepared_first_week(
                 content_digest=candidate.content_digest,
                 training_candidate=training_candidate,
                 execution_guidance=candidate.execution_guidance,
+                candidate_version=candidate.candidate_version,
             ),
             identities=candidate.identities.service_identities(),
         )

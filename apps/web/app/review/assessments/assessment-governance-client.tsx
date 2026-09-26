@@ -140,6 +140,7 @@ export function AssessmentGovernanceClient({ athleteId }: { athleteId?: string }
           </p>
         </div>
         <nav className="review-route-links" aria-label="Reviewer routes">
+          <Link href="/review/readiness" className="text-link">Live readiness</Link>
           <Link href="/review/evidence" className="text-link">Evidence governance</Link>
           <Link href={athleteReviewHref("/review/planning-authorities", athleteId)} className="text-link">Planning authorities</Link>
           <Link href={athleteReviewHref("/review/queue", athleteId)} className="text-link">Planning queue</Link>

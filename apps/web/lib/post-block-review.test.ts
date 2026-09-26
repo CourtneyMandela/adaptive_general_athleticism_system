@@ -21,6 +21,9 @@ const prescriptionId = "55555555-5555-4555-8555-555555555555";
 const baselineId = "66666666-6666-4666-8666-666666666666";
 const followupId = "77777777-7777-4777-8777-777777777777";
 const floorId = "88888888-8888-4888-8888-888888888888";
+const responseAuthorityId = "99999999-9999-4999-8999-999999999999";
+const contextDraftId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const contextReviewId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 
 const reviewRequest: OperatorBlockReviewRequest = {
   block_review_policy_id: policyId,
@@ -34,6 +37,7 @@ const reviewRequest: OperatorBlockReviewRequest = {
     contextual_factors: ["travel week"],
     comparison_direction: "higher_is_better",
     minimum_meaningful_change: 5,
+    response_evaluation_authority_id: responseAuthorityId,
   }],
   responses_calculated_at: "2026-08-30T12:00:00Z",
   reviewed_at: "2026-08-30T12:01:00Z",
@@ -64,6 +68,9 @@ const replanningRequest: OperatorReplanningRequest = {
   }],
   generated_at: "2026-08-30T12:02:00Z",
   review_after_days: 42,
+  source_initial_planning_context_draft_id: contextDraftId,
+  source_initial_planning_context_review_id: contextReviewId,
+  prepared_successor_context_digest: `sha256:${"a".repeat(64)}`,
   applicability_rationale: "Revise priorities from the reviewed response.",
   uncertainty: "Future response remains uncertain.",
 };
@@ -129,6 +136,13 @@ describe("post-block reviewer client", () => {
       ...reviewRequest,
       reviewed_at: "2026-08-30T11:59:00Z",
     })).toThrow("cannot predate");
+    expect(() => validateBlockReviewRequest({
+      ...reviewRequest,
+      response_drafts: [{
+        ...reviewRequest.response_drafts[0],
+        response_evaluation_authority_id: "not-a-uuid",
+      }],
+    })).toThrow("response-evaluation authority must be a UUID");
   });
 
   it("rejects incomplete or invalid successor-strategy contexts", () => {
@@ -147,6 +161,14 @@ describe("post-block reviewer client", () => {
       ...replanningRequest,
       review_after_days: 0,
     })).toThrow("positive integer");
+    expect(() => validateReplanningRequest({
+      ...replanningRequest,
+      source_initial_planning_context_review_id: undefined,
+    })).toThrow("must be supplied together");
+    expect(() => validateReplanningRequest({
+      ...replanningRequest,
+      prepared_successor_context_digest: "sha256:bad",
+    })).toThrow("digest is invalid");
   });
 
   it("preserves backend validation detail", async () => {

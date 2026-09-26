@@ -550,13 +550,14 @@ function PreparedResourceDemandPanel({
   if (!candidate) return null;
   const accepted = candidate.accepted_result;
   if (accepted) return <ResourceDemandReceipt result={accepted} strategyId={strategyId} />;
+  const successor = candidate.strategy_cycle.cycle === "successor";
 
   return (
     <section className="review-preparation prepared-resource-panel">
       <header>
         <div>
           <p className="eyebrow">System-prepared next step</p>
-          <h2>Reserve the first governed training resource.</h2>
+          <h2>{successor ? "Reserve the reviewed successor resource." : "Reserve the first governed training resource."}</h2>
           <p>{projection.message}</p>
         </div>
         <span className="status-badge">Exact full match</span>
@@ -573,12 +574,26 @@ function PreparedResourceDemandPanel({
       ) : null}
       <div className="resource-candidate-summary">
         <div><span>Adaptation</span><strong>{candidate.adaptation_name}</strong></div>
+        <div><span>Current priority</span><strong>{label(candidate.priority_state)}</strong></div>
+        {candidate.previous_priority_state ? (
+          <div><span>Prior priority</span><strong>{label(candidate.previous_priority_state)}</strong></div>
+        ) : null}
         <div><span>Resolved exercise</span><strong>{candidate.exercise_name}</strong></div>
         <div><span>Environment</span><strong>{candidate.environment_name}</strong></div>
         <div><span>Weekly reservation</span><strong>{candidate.minimum_weekly_minutes} min</strong></div>
         <div><span>Frequency</span><strong>{candidate.sessions_per_week} slots/week</strong></div>
         <div><span>Per slot</span><strong>{candidate.per_session_scheduling_minutes} min reserved</strong></div>
       </div>
+      {successor ? (
+        <div className="review-boundary">
+          <strong>Bound to the completed cycle.</strong>
+          <span>
+            Prior block {candidate.strategy_cycle.predecessor_block_plan_id} ended{" "}
+            {candidate.strategy_cycle.predecessor_block_ends_on}; review{" "}
+            {candidate.strategy_cycle.triggering_block_review_id} produced this successor strategy.
+          </span>
+        </div>
+      ) : null}
       <div className="review-boundary">
         <strong>This is not the workout dose.</strong>
         <span>{candidate.dose_boundary}</span>

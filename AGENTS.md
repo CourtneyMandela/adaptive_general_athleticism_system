@@ -844,6 +844,74 @@ For each bounded implementation task:
 
 Do not silently broaden task scope.
 
+## Ticket-based fresh-context workflow
+
+`docs/DEVELOPMENT_HANDOFF.md` is the single repository-local ledger for current development state
+and tickets. Do not create a competing backlog, roadmap, task list, or ticket directory unless a
+later explicit decision changes this workflow.
+
+The documentation roles are:
+
+- `docs/MASTER_BLUEPRINT.md`: stable product specification and product invariants;
+- `docs/safety-policy.md` and `docs/evidence-policy.md`: normative safety and evidence policy;
+- `docs/decision-log/`: append-only material decision history;
+- `docs/architecture.md`: descriptive implemented architecture;
+- `README.md` and `docs/deployment.md`: development and deployment operation;
+- `docs/DEVELOPMENT_HANDOFF.md`: volatile repository state, the active ticket, the ordered queue,
+  validation evidence, and blockers.
+
+Tickets track work. Decision records track material architectural, training-model, safety,
+evidence, or governance decisions. Do not use a ticket as a substitute for a required decision
+record, and do not create a decision record merely because a ticket exists.
+
+### Starting a fresh conversation
+
+Before changing anything:
+
+1. Read this file and `docs/DEVELOPMENT_HANDOFF.md` in full.
+2. Inspect Git status and confirm that the handoff describes the actual branch and worktree.
+3. Work only the ticket under `Active ticket`.
+4. Read the blueprint sections, policies, decisions, code, and tests referenced by that ticket.
+5. If there is no active ticket, or the handoff and repository disagree materially, stop and ask
+   the owner instead of selecting work from the backlog.
+
+An active ticket must state its objective, why it is next, in-scope and out-of-scope work,
+authoritative references, acceptance criteria, validation, and blockers or owner decisions. Treat
+those fields as the scope boundary. New information may refine implementation inside that boundary;
+it does not authorize starting an adjacent ticket.
+
+### Completing or pausing a ticket
+
+Before ending a ticket conversation:
+
+1. Run validation proportional to the change and report only checks actually run.
+2. Update `docs/DEVELOPMENT_HANDOFF.md` with the ticket status, exact repository state, validation,
+   remaining risks, and any new decision records.
+3. If the ordered queue already contains an owner-approved next ticket, it may be promoted to
+   `Active ticket`, but it must not be started in the same conversation.
+4. If work is blocked or must pause mid-ticket, record an exact resumable checkpoint: completed
+   work, files changed, checks run, failure or blocker, and the next safe action.
+5. Never rely on conversation history as the only record of unfinished work.
+
+Recommend a fresh conversation when a ticket is complete and the handoff is current, or when work
+is blocked at a stable resumable checkpoint. Do not recommend a break in the middle of an
+unrecorded change.
+
+Every final response must include one of these explicit context-boundary statements:
+
+- `Context boundary: GOOD BREAK` when the handoff contains everything needed for a fresh chat;
+- `Context boundary: CONTINUE CURRENT CHAT` when the active ticket is still in progress and the
+  current conversation remains the safer place to continue.
+
+For a good break, include a copy/paste prompt naming the next active ticket. Use this default and
+add only ticket-specific warnings that are necessary:
+
+```text
+Read AGENTS.md and docs/DEVELOPMENT_HANDOFF.md in full. Inspect Git status before changing
+anything. Work only the Active ticket in the handoff, follow its referenced authorities and
+acceptance criteria, update the handoff before stopping, and do not begin another ticket.
+```
+
 ---
 
 # When Requirements Conflict

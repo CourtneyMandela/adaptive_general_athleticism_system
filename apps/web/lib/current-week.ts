@@ -22,11 +22,21 @@ export interface AdherenceProjection {
   dose_completion_ratio: number;
 }
 
+export interface ExposureProgressionProjection {
+  exposure_type: string;
+  completed_dose: number;
+  dose_unit: string;
+  proposed_dose: number;
+  maximum_allowed_dose: number;
+  outcome: string;
+}
+
 export interface ProgressionProjection {
   decision_id: string;
   outcome: string;
   adjustment_description: string | null;
   decided_at: string;
+  exposure: ExposureProgressionProjection | null;
 }
 
 export interface ProgressionActionProjection {
@@ -367,6 +377,16 @@ export function progressionOutcomeLabel(outcome: string): string {
     review_required: "Review required",
   };
   return labels[outcome] ?? "Decision recorded";
+}
+
+export function exposureProgressionSummary(
+  exposure: ExposureProgressionProjection,
+): string {
+  const unit = exposure.exposure_type === "jumping" && exposure.dose_unit === "repetitions"
+    ? "jump contacts"
+    : exposure.dose_unit;
+  return `${exposure.completed_dose} ${unit} recorded · proposed next dose `
+    + `${exposure.proposed_dose} · reviewed cap ${exposure.maximum_allowed_dose}`;
 }
 
 export async function fetchCurrentWeek(

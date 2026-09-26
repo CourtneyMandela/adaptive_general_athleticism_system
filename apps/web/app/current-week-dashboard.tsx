@@ -8,6 +8,7 @@ import {
 } from "@/lib/athlete-directory";
 import {
   fetchCurrentWeek,
+  exposureProgressionSummary,
   formatDose,
   isIsoDate,
   isUuid,
@@ -211,12 +212,19 @@ function SessionCard({
                   <li key={prescription.prescription_id}>
                     <strong>{prescription.exercise_name}</strong>
                     {prescription.progression ? (
-                      <span>
-                        {progressionOutcomeLabel(prescription.progression.outcome)}
-                        {prescription.progression.adjustment_description
-                          ? ` — ${prescription.progression.adjustment_description}`
-                          : ""}
-                      </span>
+                      <>
+                        <span>
+                          {progressionOutcomeLabel(prescription.progression.outcome)}
+                          {prescription.progression.adjustment_description
+                            ? ` — ${prescription.progression.adjustment_description}`
+                            : ""}
+                        </span>
+                        {prescription.progression.exposure ? (
+                          <span className="progression-exposure">
+                            {exposureProgressionSummary(prescription.progression.exposure)}
+                          </span>
+                        ) : null}
+                      </>
                     ) : (
                       <>
                         <span>{prescription.progression_action.reason}</span>

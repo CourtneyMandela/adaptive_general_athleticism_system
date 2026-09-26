@@ -5,6 +5,7 @@ from typing import Annotated
 from uuid import UUID
 
 from agas_domain import (
+    AssessmentAttemptStatus,
     AssessmentDecision,
     AssessmentEligibilityOutcome,
     AssessmentPerformance,
@@ -15,7 +16,7 @@ from agas_domain import (
 )
 from agas_domain.persistence.repository import DomainIntegrityError, DomainRepository
 from agas_planner import AssessmentError, AssessmentResultRecorder
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -33,6 +34,8 @@ class RecordAssessmentPerformanceCommand(BaseModel):
     measurement: JsonValue
     unit: NonEmptyText
     reliability: Confidence
+    protocol_completed: bool
+    stop_condition_occurred: bool
     provenance: Provenance
 
     @field_validator("performed_at")
@@ -48,6 +51,19 @@ class RecordAssessmentPerformanceCommand(BaseModel):
         if value is None:
             raise ValueError("measurement must contain a reported result")
         return value
+
+    @model_validator(mode="after")
+    def require_completed_uninterrupted_protocol(self) -> RecordAssessmentPerformanceCommand:
+        if self.stop_condition_occurred:
+            raise ValueError(
+                "a safety-stopped assessment cannot be recorded as a completed performance"
+            )
+        if not self.protocol_completed:
+            raise ValueError(
+                "recording a result requires confirmation that the exact reviewed "
+                "protocol was completed"
+            )
+        return self
 
 
 class AssessmentPerformanceResult(BaseModel):
@@ -76,7 +92,7 @@ class AssessmentPerformanceValidationError(AssessmentPerformanceError):
 class PersistedAssessmentPerformanceService:
     """Record one selected self-administered assessment as a direct observation."""
 
-    rule_version = "assessment-performance-recording@1.0.0"
+    rule_version = "assessment-performance-recording@1.1.0"
 
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -126,6 +142,13 @@ class PersistedAssessmentPerformanceService:
         if selection.decision is not AssessmentDecision.SELECTED:
             raise AssessmentPerformanceConflictError(
                 "only an assessment selected by the run can record a result"
+            )
+        if any(
+            attempt.status is AssessmentAttemptStatus.SAFETY_STOPPED
+            for attempt in self.repository.list_assessment_attempts_for_selection(selection.id)
+        ):
+            raise AssessmentPerformanceConflictError(
+                "a safety-stopped attempt requires a new readiness review and assessment selection"
             )
         if command.performed_at < selection.evaluated_at:
             raise AssessmentPerformanceValidationError(
@@ -185,6 +208,8 @@ class PersistedAssessmentPerformanceService:
                 "assessment_selection_id": str(selection.id),
                 "assessment_definition_review_id": str(review.id),
                 "assessment_eligibility_review_id": str(eligibility.id),
+                "protocol_completed": command.protocol_completed,
+                "stop_condition_occurred": command.stop_condition_occurred,
                 "recording_rule_version": self.rule_version,
             },
             provenance=command.provenance,

@@ -51,6 +51,25 @@ export interface ReviewPrescription {
   rule_version: string;
 }
 
+export interface PreparedResponseInterpretation {
+  response_evaluation_authority_id: string;
+  authority_version: string;
+  authority_candidate_id: string;
+  authority_candidate_content_digest: string;
+  block_review_policy_id: string;
+  adaptation_id: string;
+  prescription_ids: string[];
+  baseline_capability_estimate_id: string;
+  followup_capability_estimate_id: string;
+  intervention_summary: string;
+  measurement_uncertainty: string;
+  contextual_factors: string[];
+  comparison_direction: ComparisonDirection;
+  minimum_meaningful_change: number;
+  numeric_value_origin: string;
+  rationale: string;
+}
+
 export interface BlockReviewPreparationProjection {
   block: {
     id: string;
@@ -88,6 +107,8 @@ export interface BlockReviewPreparationProjection {
     rationale: string;
     policy_version: string;
   }>;
+  prepared_response_interpretations: PreparedResponseInterpretation[];
+  prepared_response_issues: string[];
   existing_review: BlockReviewRecord | null;
   source_observations: ReviewObservation[];
   evidence_claims: ReviewEvidenceClaim[];
@@ -104,6 +125,7 @@ export interface TrainingResponseDraft {
   contextual_factors: string[];
   comparison_direction: ComparisonDirection;
   minimum_meaningful_change: number;
+  response_evaluation_authority_id?: string;
 }
 
 export interface OperatorBlockReviewRequest {
@@ -213,6 +235,17 @@ export interface ReplanningCandidateContext {
   evidence_claim_ids: string[];
 }
 
+export interface PreparedSuccessorPlanningContext {
+  source_initial_planning_context_draft_id: string;
+  source_initial_planning_context_review_id: string;
+  candidate_contexts: ReplanningCandidateContext[];
+  review_after_days: number;
+  applicability_rationale: string;
+  uncertainty: string;
+  content_digest: string;
+  transformation_summary: string;
+}
+
 export interface ReplanningPreparationProjection {
   block_review: BlockReviewRecord;
   completed_block: BlockReviewPreparationProjection["block"];
@@ -254,6 +287,8 @@ export interface ReplanningPreparationProjection {
       floor_version: string;
     }>;
   }>;
+  prepared_successor_context: PreparedSuccessorPlanningContext | null;
+  prepared_successor_issues: string[];
   existing_successor_strategy: PostBlockReplanningResult["strategy"] | null;
   source_observations: ReviewObservation[];
   evidence_claims: ReviewEvidenceClaim[];
@@ -264,6 +299,9 @@ export interface OperatorReplanningRequest {
   candidate_contexts: ReplanningCandidateContext[];
   generated_at: string;
   review_after_days: number;
+  source_initial_planning_context_draft_id?: string;
+  source_initial_planning_context_review_id?: string;
+  prepared_successor_context_digest?: string;
   applicability_rationale: string;
   uncertainty: string;
 }
@@ -387,6 +425,12 @@ export function validateBlockReviewRequest(request: OperatorBlockReviewRequest):
     if (!Number.isFinite(draft.minimum_meaningful_change) || draft.minimum_meaningful_change < 0) {
       throw new PostBlockReviewError(`${label} meaningful change must be non-negative.`);
     }
+    if (draft.response_evaluation_authority_id) {
+      assertUuid(
+        draft.response_evaluation_authority_id,
+        `${label} response-evaluation authority`,
+      );
+    }
   });
   if (new Set(adaptationIds).size !== adaptationIds.length) {
     throw new PostBlockReviewError("Response adaptations must not contain duplicates.");
@@ -438,6 +482,27 @@ export function validateReplanningRequest(request: OperatorReplanningRequest): v
   assertTimestamp(request.generated_at, "Strategy generation time");
   if (!Number.isInteger(request.review_after_days) || request.review_after_days <= 0) {
     throw new PostBlockReviewError("Review interval must be a positive integer.");
+  }
+  const preparedBinding = [
+    request.source_initial_planning_context_draft_id,
+    request.source_initial_planning_context_review_id,
+    request.prepared_successor_context_digest,
+  ];
+  if (preparedBinding.some(Boolean) && !preparedBinding.every(Boolean)) {
+    throw new PostBlockReviewError("Prepared successor provenance must be supplied together.");
+  }
+  if (request.source_initial_planning_context_draft_id) {
+    assertUuid(
+      request.source_initial_planning_context_draft_id,
+      "Source planning-context draft",
+    );
+    assertUuid(
+      request.source_initial_planning_context_review_id ?? "",
+      "Source planning-context review",
+    );
+    if (!/^sha256:[0-9a-f]{64}$/.test(request.prepared_successor_context_digest ?? "")) {
+      throw new PostBlockReviewError("Prepared successor context digest is invalid.");
+    }
   }
   assertNonBlank(request.applicability_rationale, "Applicability rationale");
   assertNonBlank(request.uncertainty, "Uncertainty");

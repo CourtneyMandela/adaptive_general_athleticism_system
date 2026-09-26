@@ -10,7 +10,7 @@ import {
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-export function TrainingConstructionGovernanceClient() {
+export function TrainingConstructionGovernanceClient({ onRatified }: { onRatified?: () => void }) {
   const [projection, setProjection] = useState<TrainingConstructionCandidateProjection | null>(null);
   const [confirmed, setConfirmed] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
@@ -54,6 +54,7 @@ export function TrainingConstructionGovernanceClient() {
       setProjection(await fetchTrainingConstructionCandidates(apiBaseUrl));
       setConfirmed((current) => ({ ...current, [candidateId]: false }));
       setMessage("The exact dose, scheduling, progression, and readiness authorities were saved atomically.");
+      onRatified?.();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to approve construction authorities.");
     } finally {
@@ -80,7 +81,11 @@ export function TrainingConstructionGovernanceClient() {
       {projection?.items.map((item) => {
         const candidate = item.candidate;
         return (
-          <article className="assessment-candidate" key={candidate.candidate_id}>
+          <article
+            className="assessment-candidate"
+            id={`authority-${candidate.slug}`}
+            key={candidate.candidate_id}
+          >
             <header>
               <div>
                 <p className="eyebrow">Exact four-authority bundle · owner alpha</p>

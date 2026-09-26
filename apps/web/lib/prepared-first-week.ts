@@ -1,5 +1,7 @@
 import { authorizedHeaders, reviewerDevelopmentAccessToken } from "./identity";
 import type { WeeklyPlanCreationResult } from "./first-week-review";
+import type { PriorityState } from "./block-review";
+import type { PreparedStrategyCycleLineage } from "./prepared-resource-demand";
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const digestPattern = /^sha256:[0-9a-f]{64}$/;
@@ -11,19 +13,25 @@ export interface PreparedAvailabilityWindow {
 }
 
 export interface PreparedFirstWeekCandidate {
-  candidate_version: "prepared-first-week@1.2.0";
+  candidate_version: "prepared-first-week@1.2.0" | "prepared-first-week@1.3.0";
   candidate_id: string;
   content_digest: string;
   prepared_at: string;
   status: "available" | "accepted";
   athlete_id: string;
   block_id: string;
+  priority_state: PriorityState;
+  previous_priority_state: PriorityState | null;
+  strategy_cycle: PreparedStrategyCycleLineage;
+  training_construction_candidate_id: string;
+  training_construction_content_digest: string;
   week_start: string;
   exercise_name: string;
   environment_name: string;
   sessions: Array<{ starts_at: string; ends_at: string }>;
   sets: number;
-  repetitions_per_set: number;
+  repetitions_per_set: number | null;
+  duration_seconds_per_set: number | null;
   rest_seconds: number;
   effort_rpe_range: string;
   planned_duration_minutes: number;

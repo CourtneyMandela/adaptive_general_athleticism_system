@@ -106,7 +106,7 @@ function PreparedFirstBlockPanel({ strategyId }: { strategyId: string }) {
       setProjection(await fetchPreparedFirstBlock(apiBaseUrl, strategyId, date));
     } catch (error) {
       setProjection(null);
-      setMessage(error instanceof Error ? error.message : "Unable to prepare the first block.");
+      setMessage(error instanceof Error ? error.message : "Unable to prepare the strategy block.");
     } finally {
       setBusy(false);
     }
@@ -121,7 +121,7 @@ function PreparedFirstBlockPanel({ strategyId }: { strategyId: string }) {
       .catch((error: unknown) => {
         if (active) {
           setProjection(null);
-          setMessage(error instanceof Error ? error.message : "Unable to prepare the first block.");
+          setMessage(error instanceof Error ? error.message : "Unable to prepare the strategy block.");
         }
       });
     return () => {
@@ -143,8 +143,8 @@ function PreparedFirstBlockPanel({ strategyId }: { strategyId: string }) {
         ...projection,
         status: "accepted",
         message: result.created
-          ? "The first block was recorded with immutable provenance."
-          : "This exact first block was already recorded.",
+          ? "The strategy block was recorded with immutable provenance."
+          : "This exact strategy block was already recorded.",
         candidate: {
           ...projection.candidate,
           status: "accepted",
@@ -161,12 +161,13 @@ function PreparedFirstBlockPanel({ strategyId }: { strategyId: string }) {
   if (projection?.candidate?.accepted_result) {
     return <BlockReceipt result={projection.candidate.accepted_result} />;
   }
+  const successor = projection?.candidate?.strategy_cycle.cycle === "successor";
 
   return (
     <section className="governed-context" aria-labelledby="prepared-first-block-title">
       <header>
         <div>
-          <p className="eyebrow">Prepared first block</p>
+          <p className="eyebrow">{successor ? "Prepared successor block" : "Prepared first block"}</p>
           <h2 id="prepared-first-block-title">Let AGAS assemble the governed envelope</h2>
           <p>
             Choose when Week 1 begins. The server selects the exact ratified demands, policy,
@@ -205,6 +206,16 @@ function PreparedFirstBlockPanel({ strategyId }: { strategyId: string }) {
             <div><dt>Weekly envelope</dt><dd>{projection.candidate.weekly_budget_minutes} minutes</dd></div>
             <div><dt>Expected result</dt><dd>{label(projection.candidate.expected_status)}</dd></div>
           </dl>
+          {successor ? (
+            <aside className="review-boundary">
+              <strong>Bound to the completed predecessor.</strong>
+              <span>
+                Block {projection.candidate.strategy_cycle.predecessor_block_plan_id} ended{" "}
+                {projection.candidate.strategy_cycle.predecessor_block_ends_on}; review{" "}
+                {projection.candidate.strategy_cycle.triggering_block_review_id} produced this strategy.
+              </span>
+            </aside>
+          ) : null}
           <div className="block-allocation-grid">
             {projection.candidate.expected_allocations.map((allocation) => (
               <article className="block-allocation" key={allocation.adaptation_id}>
@@ -244,7 +255,7 @@ function PreparedFirstBlockPanel({ strategyId }: { strategyId: string }) {
             disabled={!confirmed || busy}
             onClick={() => void accept()}
           >
-            {busy ? "Recording exact block…" : "Accept and record first block"}
+            {busy ? "Recording exact block…" : successor ? "Accept and record successor block" : "Accept and record first block"}
           </button>
         </>
       ) : null}

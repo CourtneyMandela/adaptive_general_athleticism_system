@@ -83,6 +83,17 @@ class AdherenceProjection(BaseModel):
     dose_completion_ratio: float
 
 
+class ExposureProgressionProjection(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    exposure_type: str
+    completed_dose: float
+    dose_unit: str
+    proposed_dose: float
+    maximum_allowed_dose: float
+    outcome: str
+
+
 class ProgressionProjection(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -90,6 +101,7 @@ class ProgressionProjection(BaseModel):
     outcome: str
     adjustment_description: str | None
     decided_at: datetime
+    exposure: ExposureProgressionProjection | None = None
 
 
 class ProgressionActionProjection(BaseModel):
@@ -554,11 +566,32 @@ class CurrentWeekProjector:
             execution.athlete_id != plan.athlete_id or execution.weekly_plan_id != plan.id
         ):
             raise CurrentWeekConflictError("execution belongs to another weekly plan")
+        if execution is not None and len(execution.items) != len(template.items):
+            raise CurrentWeekConflictError(
+                "session execution does not match its template structure"
+            )
         prescriptions = []
-        for template_item in template.items:
-            prescription = self.repository.get_session_prescription(template_item.prescription_id)
+        for item_index, template_item in enumerate(template.items):
+            if execution is None:
+                prescription = self.repository.get_latest_session_prescription_revision(
+                    template_item.prescription_id
+                )
+            else:
+                executed_item = execution.items[item_index]
+                if not self.repository.session_prescription_descends_from(
+                    executed_item.prescription_id,
+                    template_item.prescription_id,
+                ):
+                    raise CurrentWeekConflictError(
+                        "session execution does not follow its template prescription lineage"
+                    )
+                prescription = self.repository.get_session_prescription(
+                    executed_item.prescription_id
+                )
             if prescription is None:
-                raise CurrentWeekConflictError("session template references a missing prescription")
+                raise CurrentWeekConflictError(
+                    "session template references a missing prescription lineage"
+                )
             if (
                 prescription.athlete_id != plan.athlete_id
                 or prescription.block_plan_id != plan.block_plan_id
@@ -584,6 +617,44 @@ class CurrentWeekProjector:
                 if execution is not None
                 else None
             )
+            exposure_progression = None
+            if (
+                execution is not None
+                and progression is not None
+                and progression.exposure_validation_decision_id is not None
+            ):
+                validation = self.repository.get_exposure_validation_decision(
+                    progression.exposure_validation_decision_id
+                )
+                if validation is None:
+                    raise CurrentWeekConflictError(
+                        "progression references a missing exposure validation"
+                    )
+                exposure_entry = next(
+                    (
+                        entry
+                        for entry in self.repository.list_exposure_entries_for_athlete(
+                            plan.athlete_id,
+                            validation.exposure_type.value,
+                        )
+                        if entry.id in validation.source_exposure_entry_ids
+                        and entry.session_execution_id == execution.id
+                        and entry.prescription_id == prescription.id
+                    ),
+                    None,
+                )
+                if exposure_entry is None:
+                    raise CurrentWeekConflictError(
+                        "exposure validation does not retain the completed session exposure"
+                    )
+                exposure_progression = ExposureProgressionProjection(
+                    exposure_type=validation.exposure_type.value,
+                    completed_dose=exposure_entry.dose_value,
+                    dose_unit=exposure_entry.dose_unit,
+                    proposed_dose=validation.proposed_dose,
+                    maximum_allowed_dose=validation.maximum_allowed_dose,
+                    outcome=validation.outcome.value,
+                )
             prescriptions.append(
                 PrescriptionProjection(
                     order_index=template_item.order_index,
@@ -626,6 +697,7 @@ class CurrentWeekProjector:
                                 else None
                             ),
                             decided_at=progression.decided_at,
+                            exposure=exposure_progression,
                         )
                         if progression is not None
                         else None
@@ -757,11 +829,61 @@ class CurrentWeekProjector:
             "adjustment_description": policy.adjustment.description,
         }
         if policy.exposure_type is not None:
+            if (
+                dimension is not ProgressionDimension.REPETITIONS
+                or not policy.adjustment.amount.is_integer()
+                or prescription.repetitions_per_set is None
+            ):
+                return ProgressionActionProjection(
+                    status="manual_configuration_required",
+                    reason=(
+                        f"{policy.exposure_type.value} progression lacks a supported typed "
+                        "repetition target"
+                    ),
+                    **common,
+                )
+            definitions = tuple(
+                definition
+                for definition in self.repository.list_exposure_definitions_for_exercise(
+                    prescription.exercise_id,
+                    policy.exposure_type.value,
+                )
+                if definition.evidence_claim_ids == policy.evidence_claim_ids
+            )
+            if len(definitions) != 1:
+                qualifier = "no" if not definitions else "multiple"
+                return ProgressionActionProjection(
+                    status="manual_configuration_required",
+                    reason=(
+                        f"{qualifier} reviewed exposure definitions match this exercise and "
+                        "exposure type"
+                    ),
+                    **common,
+                )
+            exposure_policies = tuple(
+                exposure_policy
+                for exposure_policy in self.repository.list_exposure_progression_policies(
+                    policy.exposure_type.value,
+                    definitions[0].dose_unit,
+                )
+                if exposure_policy.evidence_claim_ids == policy.evidence_claim_ids
+            )
+            if len(exposure_policies) != 1:
+                qualifier = "no" if not exposure_policies else "multiple"
+                return ProgressionActionProjection(
+                    status="manual_configuration_required",
+                    reason=(
+                        f"{qualifier} reviewed exposure progression policies match the "
+                        "resolved exposure definition"
+                    ),
+                    **common,
+                )
             return ProgressionActionProjection(
-                status="manual_configuration_required",
+                status="ready",
+                progression_policy_id=policy.id,
                 reason=(
-                    f"{policy.exposure_type.value} progression requires an explicit reviewed "
-                    "exposure target and policy"
+                    "the server resolved one progression policy, exercise exposure definition, "
+                    "and exposure cap from reviewed immutable authority"
                 ),
                 **common,
             )

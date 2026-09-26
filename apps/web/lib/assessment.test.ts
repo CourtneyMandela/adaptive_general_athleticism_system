@@ -2,12 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   AssessmentRequestError,
+  buildAssessmentAttemptCommand,
   buildAssessmentReadinessReportCommand,
   buildAssessmentResultCommand,
   buildAssessmentRunCommand,
   buildIntroductoryExposureExecutionCommand,
   fetchAssessmentWorkflow,
   submitAssessmentCapabilityEstimate,
+  submitAssessmentAttempt,
   submitAssessmentReadinessReport,
   submitAssessmentRun,
   submitAssessmentResult,
@@ -17,6 +19,7 @@ import {
 
 const athleteId = "00000000-0000-4000-8000-000000000001";
 const environmentId = "00000000-0000-4000-8000-000000000002";
+const completedProtocol = { protocolCompleted: true, stopConditionOccurred: false };
 const decision: AssessmentDecisionProjection = {
   selection_id: "00000000-0000-4000-8000-000000000003",
   decision: "selected",
@@ -45,6 +48,7 @@ const decision: AssessmentDecisionProjection = {
   evidence_claim_ids: ["00000000-0000-4000-8000-000000000006"],
   review_version: "fixture-review@1.0.0",
   result_status: "ready",
+  attempts: [],
   result: null,
 };
 
@@ -156,6 +160,7 @@ describe("assessment workflow client", () => {
         decision,
         "7.5",
         "moderate",
+        completedProtocol,
         new Date("2026-08-27T12:30:00Z"),
       ),
     ).toEqual({
@@ -163,14 +168,18 @@ describe("assessment workflow client", () => {
       measurement: 7.5,
       unit: "fixture_unit",
       reliability: "moderate",
+      protocol_completed: true,
+      stop_condition_occurred: false,
       provenance: {
         recorded_by: "unverified-athlete-user",
         source_system: "agas-web",
         ingestion_method: "assessment-result-form",
       },
     });
-    expect(() => buildAssessmentResultCommand(decision, "7.3", "low")).toThrow("increments");
-    expect(() => buildAssessmentResultCommand(decision, "11", "low")).toThrow("at most");
+    expect(() => buildAssessmentResultCommand(decision, "7.3", "low", completedProtocol))
+      .toThrow("increments");
+    expect(() => buildAssessmentResultCommand(decision, "11", "low", completedProtocol))
+      .toThrow("at most");
     const categorical = {
       ...decision,
       measurement_schema: {
@@ -183,10 +192,80 @@ describe("assessment workflow client", () => {
         measurement_schema_version: "fixture-category@1.0.0",
       },
     };
-    expect(buildAssessmentResultCommand(categorical, "complete", "high").measurement).toBe(
-      "complete",
+    expect(
+      buildAssessmentResultCommand(categorical, "complete", "high", completedProtocol).measurement,
+    ).toBe("complete");
+    expect(() => buildAssessmentResultCommand(categorical, "other", "high", completedProtocol))
+      .toThrow("allowed");
+    expect(() => buildAssessmentResultCommand(
+      decision,
+      "5",
+      "moderate",
+      { protocolCompleted: false, stopConditionOccurred: false },
+    )).toThrow("exact reviewed protocol");
+    expect(() => buildAssessmentResultCommand(
+      decision,
+      "5",
+      "moderate",
+      { protocolCompleted: true, stopConditionOccurred: true },
+    )).toThrow("safety-stopped");
+  });
+
+  it("builds and posts incomplete attempts without a result measurement", async () => {
+    const attemptedAt = new Date("2026-08-27T12:20:00Z");
+    const incomplete = buildAssessmentAttemptCommand(
+      "incomplete",
+      "external_interruption",
+      "moderate",
+      attemptedAt,
     );
-    expect(() => buildAssessmentResultCommand(categorical, "other", "high")).toThrow("allowed");
+    const stopped = buildAssessmentAttemptCommand(
+      "safety_stopped",
+      "listed_stop_condition",
+      "low",
+      attemptedAt,
+    );
+    expect(incomplete).toEqual({
+      attempted_at: "2026-08-27T12:20:00.000Z",
+      status: "incomplete",
+      reason: "external_interruption",
+      protocol_completed: false,
+      stop_condition_occurred: false,
+      reliability: "moderate",
+      provenance: {
+        recorded_by: "unverified-athlete-user",
+        source_system: "agas-web",
+        ingestion_method: "assessment-attempt-form",
+      },
+    });
+    expect(stopped.stop_condition_occurred).toBe(true);
+    expect(() => buildAssessmentAttemptCommand(
+      "incomplete",
+      "listed_stop_condition",
+      "moderate",
+      attemptedAt,
+    )).toThrow("reason must match");
+    expect(incomplete).not.toHaveProperty("measurement");
+
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ eligible_for_capability_estimation: false }), { status: 201 }),
+    );
+    await submitAssessmentAttempt(
+      "http://localhost:8000",
+      athleteId,
+      environmentId,
+      decision.selection_id,
+      stopped,
+      fetcher,
+    );
+    expect(fetcher.mock.calls[0]?.[0]).toBe(
+      `http://localhost:8000/v1/athletes/${athleteId}/assessment-runs/${environmentId}` +
+        `/selections/${decision.selection_id}/attempts`,
+    );
+    expect(fetcher.mock.calls[0]?.[1]).toMatchObject({
+      method: "POST",
+      body: JSON.stringify(stopped),
+    });
   });
 
   it("builds and posts an exact introductory exposure execution", async () => {
@@ -261,6 +340,8 @@ describe("assessment workflow client", () => {
       eligibility: null,
       environments: [],
       latest_run: null,
+      history_projection_version: "assessment-history-projection@1.0.0",
+      history_runs: [],
     };
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(JSON.stringify(projection), { status: 200 }),
@@ -317,6 +398,7 @@ describe("assessment workflow client", () => {
       decision,
       "5",
       "moderate",
+      completedProtocol,
       new Date("2026-08-27T12:30:00Z"),
     );
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(

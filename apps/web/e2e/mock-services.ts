@@ -6,11 +6,15 @@ import { exportJWK, generateKeyPair, SignJWT } from "jose";
 export const mockOidcIssuer = "http://127.0.0.1:3998/";
 export const mockOidcClientId = "agas-e2e-client";
 export const mockOidcClientSecret = "e2e-secret";
-export const mockAccessToken = "agas-e2e-access-token";
+export const mockAccessToken = "dev.e2e-athlete-owner";
 
-const redirectUri = "http://127.0.0.1:3100/auth/callback";
-const privateApiOrigin = "http://127.0.0.1:3999";
 const maximumRequestBytes = 16_384;
+
+type MockServiceOptions = Readonly<{
+  includePrivateApi?: boolean;
+  redirectUri?: string;
+  resourceOrigin?: string;
+}>;
 
 type AuthorizationCode = Readonly<{
   challenge: string;
@@ -62,7 +66,12 @@ function close(server: Server): Promise<void> {
   });
 }
 
-export async function startMockServices(): Promise<{ close: () => Promise<void> }> {
+export async function startMockServices(
+  options: MockServiceOptions = {},
+): Promise<{ close: () => Promise<void> }> {
+  const includePrivateApi = options.includePrivateApi ?? true;
+  const redirectUri = options.redirectUri ?? "http://127.0.0.1:3100/auth/callback";
+  const privateApiOrigin = options.resourceOrigin ?? "http://127.0.0.1:3999";
   const { privateKey, publicKey } = await generateKeyPair("RS256");
   const publicJwk = {
     ...(await exportJWK(publicKey)),
@@ -183,15 +192,19 @@ export async function startMockServices(): Promise<{ close: () => Promise<void> 
 
   try {
     await listen(oidc, 3998);
-    await listen(privateApi, 3999);
+    if (includePrivateApi) await listen(privateApi, 3999);
   } catch (error) {
-    await Promise.allSettled([close(oidc), close(privateApi)]);
+    await Promise.allSettled(
+      [oidc, privateApi].filter((server) => server.listening).map(close),
+    );
     throw error;
   }
 
   return {
     close: async () => {
-      await Promise.all([close(oidc), close(privateApi)]);
+      await Promise.all(
+        [oidc, privateApi].filter((server) => server.listening).map(close),
+      );
     },
   };
 }

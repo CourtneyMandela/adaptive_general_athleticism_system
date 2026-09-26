@@ -4,6 +4,11 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from uuid import UUID, uuid4
 
+import agas_api.block_review_application as block_review_application_module
+import agas_api.post_block_preparation as post_block_preparation_module
+import agas_api.prepared_first_block as prepared_first_block_module
+import agas_api.prepared_first_week as prepared_first_week_module
+import agas_api.prepared_resource_demand as prepared_resource_demand_module
 import pytest
 from agas_api.block_creation import (
     BlockCreationNotFoundError,
@@ -17,6 +22,7 @@ from agas_api.block_review_application import (
     BlockReviewValidationError,
     CreateBlockReviewCommand,
     PersistedBlockReviewService,
+    TrainingResponseDraft,
 )
 from agas_api.current_week import CurrentWeekProjection, CurrentWeekProjector
 from agas_api.database import database_session_dependency
@@ -27,6 +33,7 @@ from agas_api.environment_prescription_revision import (
     EnvironmentPrescriptionRevisionValidationError,
     PersistedEnvironmentPrescriptionRevisionService,
 )
+from agas_api.evidence_governance import EvidenceAuthorityEvaluator
 from agas_api.exercise_reresolution import (
     ExerciseReResolutionNotFoundError,
     ExerciseReResolutionResult,
@@ -61,8 +68,26 @@ from agas_api.post_block_preparation import (
     BlockReviewPreparationProjector,
     ReplanningPreparationProjector,
 )
+from agas_api.prepared_first_block import (
+    PreparedFirstBlockProjector,
+    RatifyPreparedFirstBlockCommand,
+    ratify_prepared_first_block,
+)
+from agas_api.prepared_first_week import (
+    PreparedFirstWeekProjector,
+    PrepareFirstWeekCommand,
+    RatifyPreparedFirstWeekCommand,
+    ratify_prepared_first_week,
+)
+from agas_api.prepared_resource_demand import (
+    PreparedResourceDemandProjector,
+    RatifyPreparedResourceDemandCommand,
+    ratify_prepared_resource_demand,
+)
 from agas_api.progression_application import (
+    AutomaticProgressionDecisionCommand,
     CreateProgressionDecisionCommand,
+    ExposureProgressionDraft,
     PersistedProgressionService,
     ProgressionConflictError,
     ProgressionCreationResult,
@@ -74,6 +99,10 @@ from agas_api.replanning import (
     ReplanningConflictError,
     ReplanningValidationError,
 )
+from agas_api.resource_governance_candidates import (
+    JUMP_MAINTENANCE_CANDIDATE_ID as JUMP_MAINTENANCE_RESOURCE_CANDIDATE_ID,
+)
+from agas_api.resource_governance_candidates import prepared_resource_governance_candidate
 from agas_api.resource_preparation import (
     ActiveResourceDemandCommand,
     DeferredResourceDemandCommand,
@@ -82,8 +111,17 @@ from agas_api.resource_preparation import (
     ResourcePreparationValidationError,
 )
 from agas_api.session_recording import (
+    CreateSessionExecutionCommand,
+    CreateSessionSafetyDecisionCommand,
+    PersistedSessionExecutionService,
+    PersistedSessionSafetyService,
     SessionExecutionCreationResult,
     SessionSafetyCreationResult,
+)
+from agas_api.training_construction_candidates import (
+    OperationalResponseEvaluationAuthority,
+    PreparedResponseEvaluationAuthority,
+    prepared_training_construction_candidate,
 )
 from agas_api.weekly_availability_confirmation import (
     ConfirmWeeklyAvailabilityCommand,
@@ -91,6 +129,7 @@ from agas_api.weekly_availability_confirmation import (
     WeeklyAvailabilityConfirmationResult,
 )
 from agas_api.weekly_planning import (
+    AvailabilityWindowDraft,
     CreateWeeklyPlanCommand,
     PersistedWeeklyPlanService,
     WeeklyPlanCreationIdentities,
@@ -124,10 +163,13 @@ from agas_domain import (
     CapabilityEstimate,
     ComparisonDirection,
     CompetencyFloor,
+    CompetencyFloorReview,
     Confidence,
     CostLevel,
+    DecisionRecord,
     EffortRpeTarget,
     Environment,
+    EnvironmentSnapshot,
     Equipment,
     EquipmentAvailability,
     EvidenceClaim,
@@ -141,7 +183,11 @@ from agas_domain import (
     ExposureProgressionPolicy,
     ExposureTarget,
     ExposureType,
+    FixedRepetitionDosePolicy,
     ImpactLevel,
+    InitialPlanningCandidateContext,
+    InitialPlanningContextDraft,
+    InitialPlanningContextReview,
     Loadability,
     LongRangeStrategy,
     Observation,
@@ -149,6 +195,7 @@ from agas_domain import (
     PrescriptionAdjustment,
     PrescriptionModification,
     PriorityPolicy,
+    PriorityPolicyReview,
     ProgressionDimension,
     ProgressionOutcome,
     ProgressionPolicy,
@@ -1476,6 +1523,7 @@ def build_and_persist_weekly_chain(
     *,
     availability_window_count: int = 2,
     allow_partial_reresolution: bool = True,
+    duration_seconds: int | None = None,
 ) -> tuple[
     DomainRepository,
     LongRangeStrategy,
@@ -1501,6 +1549,7 @@ def build_and_persist_weekly_chain(
         exercise,
     ) = build_and_persist_resolution_chain(session)
     priority = strategy.priorities[0]
+    weekly_minutes = 24 if duration_seconds is not None else 60
     demand = AdaptationResourceDemand(
         long_range_strategy_id=strategy.id,
         adaptation_priority_id=priority.id,
@@ -1508,8 +1557,8 @@ def build_and_persist_weekly_chain(
         priority_state=priority.state,
         stimulus_requirement_id=requirement.id,
         exercise_resolution_id=resolution.id,
-        minimum_weekly_minutes=60,
-        target_weekly_minutes=60,
+        minimum_weekly_minutes=weekly_minutes,
+        target_weekly_minutes=weekly_minutes,
         sessions_per_week=2,
         source_observation_ids=strategy.source_observation_ids,
         evidence_claim_ids=strategy.evidence_claim_ids,
@@ -1528,7 +1577,7 @@ def build_and_persist_weekly_chain(
         demands=(demand,),
         resolutions=(resolution,),
         policy=allocation_policy,
-        weekly_budget_minutes=60,
+        weekly_budget_minutes=weekly_minutes,
         starts_on=date(2026, 8, 24),
         duration_weeks=4,
         constraints=("Synthetic fixture constraint",),
@@ -1545,13 +1594,14 @@ def build_and_persist_weekly_chain(
         exercise_id=exercise.id,
         adaptation_id=priority.adaptation_id,
         reason_for_inclusion="Synthetic persistence prescription.",
-        sets=3,
-        repetitions_per_set=5,
+        sets=1 if duration_seconds is not None else 3,
+        repetitions_per_set=None if duration_seconds is not None else 5,
+        duration_seconds=duration_seconds,
         intensity_targets=(EffortRpeTarget(minimum=6, maximum=8),),
         rest_seconds=120,
         progression_rule_reference="fixture:no-automatic-progression@1.0.0",
         substitution_class="fixture_resolution_candidates",
-        planned_duration_minutes=30,
+        planned_duration_minutes=12 if duration_seconds is not None else 30,
         fatigue_cost=CostLevel.MODERATE,
         execution_guidance=ExerciseExecutionGuidance(
             guidance_version="fixture-guidance@1.0.0",
@@ -1683,8 +1733,8 @@ def test_planning_status_projects_created_and_ambiguous_first_week(session: Sess
         _,
         _,
         _,
-        _,
-        _,
+        _weekly_availability,
+        _scheduling_policy,
         weekly_plan,
     ) = build_and_persist_weekly_chain(session)
 
@@ -1763,8 +1813,10 @@ def build_and_persist_execution_for_planned_session(
     prescription: SessionPrescription,
     safety_policy: SessionSafetyPolicy,
     provenance: Provenance,
+    effort_rpe: float = 7,
 ) -> tuple[SessionExecution, SessionAdherence]:
     planned = weekly_plan.sessions[planned_session_index]
+    assert planned.session_template_id == session_template.id
     pre_check = SessionSafetyCheckInput(
         athlete_id=athlete_id,
         weekly_plan_id=weekly_plan.id,
@@ -1786,10 +1838,7 @@ def build_and_persist_execution_for_planned_session(
     session.flush()
     repository.add_session_safety_decision(safety_decision)
     session.flush()
-    execution_input = SessionExecutionInput(
-        athlete_id=athlete_id,
-        weekly_plan_id=weekly_plan.id,
-        planned_session_id=planned.id,
+    execution_command = CreateSessionExecutionCommand(
         pre_session_safety_decision_id=safety_decision.id,
         status=SessionExecutionStatus.COMPLETED,
         started_at=planned.starts_at,
@@ -1804,40 +1853,28 @@ def build_and_persist_execution_for_planned_session(
                         performed=True,
                         target_completed=True,
                         actual_repetitions=prescription.repetitions_per_set,
-                        effort_rpe=7,
+                        actual_duration_seconds=prescription.duration_seconds,
+                        effort_rpe=effort_rpe,
                         technique_constraint_met=True,
                     )
                     for index in range(1, prescription.sets + 1)
                 ),
-                item_rpe=7,
+                item_rpe=effort_rpe,
             ),
         ),
-        session_rpe=7,
+        session_rpe=effort_rpe,
         logged_at=planned.ends_at + timedelta(minutes=1),
+        adherence_calculated_at=planned.ends_at + timedelta(minutes=2),
         reliability=Confidence.HIGH,
         provenance=provenance,
     )
-    performance_observation, execution = SessionExecutionRecorder().record(
-        execution_input=execution_input,
-        weekly_plan=weekly_plan,
-        planned_session=planned,
-        session_template=session_template,
-        prescriptions=(prescription,),
-        pre_session_decision=safety_decision,
+    result = PersistedSessionExecutionService(session).execute(
+        weekly_plan.id,
+        planned.id,
+        execution_command,
     )
-    repository.add_observation(performance_observation)
-    session.flush()
-    repository.add_session_execution(execution)
-    session.flush()
-    adherence = SessionAdherenceCalculator().calculate(
-        execution=execution,
-        planned_session=planned,
-        prescription=prescription,
-        calculated_at=execution.logged_at + timedelta(minutes=1),
-    )
-    repository.add_session_adherence(adherence)
-    session.commit()
-    return execution, adherence
+    assert len(result.adherence) == 1
+    return result.execution, result.adherence[0]
 
 
 def persist_remaining_weekly_plans(
@@ -1934,6 +1971,120 @@ def persist_post_session_safety(
     return decision
 
 
+def test_persisted_duration_progression_reaches_ceiling_then_holds(session: Session) -> None:
+    (
+        repository,
+        strategy,
+        _,
+        resolution,
+        _,
+        _,
+        block,
+        initial_prescription,
+        session_template,
+        first_availability,
+        scheduling_policy,
+        first_week,
+    ) = build_and_persist_weekly_chain(session, duration_seconds=600)
+    later_weeks = persist_remaining_weekly_plans(
+        session,
+        repository,
+        strategy=strategy,
+        block=block,
+        prescription=initial_prescription,
+        session_template=session_template,
+        resolution=resolution,
+        first_availability=first_availability,
+        scheduling_policy=scheduling_policy,
+    )
+    provenance = Provenance(
+        recorded_by="automated-test",
+        source_system="pytest",
+        ingestion_method="persisted-duration-progression-fixture",
+    )
+    safety_policy = SessionSafetyPolicy(
+        allowed_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        limited_readiness_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        unusual_soreness_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        sleep_disruption_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        schedule_limitation_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        evidence_claim_ids=strategy.evidence_claim_ids,
+        rationale="Synthetic duration-progression safety policy.",
+        policy_version="fixture-duration-progression-safety@1.0.0",
+    )
+    progression_policy = ProgressionPolicy(
+        reference=initial_prescription.progression_rule_reference,
+        minimum_set_completion_ratio=1,
+        minimum_dose_completion_ratio=1,
+        maximum_session_rpe=5,
+        require_technique_constraint=True,
+        adjustment=PrescriptionAdjustment(
+            dimension=ProgressionDimension.DURATION,
+            amount=60,
+            unit="seconds_per_set",
+            description="Add one minute within the reviewed duration ceiling.",
+        ),
+        maximum_prescription_value=720,
+        maximum_prescription_value_unit="seconds_per_set",
+        evidence_claim_ids=strategy.evidence_claim_ids,
+        rationale="Synthetic persisted bounded-duration progression policy.",
+        policy_version="fixture-persisted-duration-progression@1.0.0",
+    )
+    repository.add_session_safety_policy(safety_policy)
+    repository.add_progression_policy(progression_policy)
+    session.commit()
+
+    prescriptions = [initial_prescription]
+    outcomes: list[ProgressionOutcome] = []
+    session_locations = ((first_week, 0), (first_week, 1), (later_weeks[1], 0))
+    for weekly_plan, session_index in session_locations:
+        current = prescriptions[-1]
+        execution, adherence = build_and_persist_execution_for_planned_session(
+            session,
+            repository,
+            athlete_id=strategy.athlete_id,
+            weekly_plan=weekly_plan,
+            planned_session_index=session_index,
+            session_template=session_template,
+            prescription=current,
+            safety_policy=safety_policy,
+            provenance=provenance,
+            effort_rpe=5,
+        )
+        assert adherence.actual_dose_total == current.duration_seconds
+        post_safety = persist_post_session_safety(
+            session,
+            repository,
+            weekly_plan=weekly_plan,
+            execution=execution,
+            safety_policy=safety_policy,
+            provenance=provenance,
+        )
+        result = PersistedProgressionService(session).execute_automatic(
+            execution.id,
+            current.id,
+            AutomaticProgressionDecisionCommand(
+                decided_at=post_safety.decided_at + timedelta(minutes=1),
+            ),
+        )
+        outcomes.append(result.progression_decision.outcome)
+        assert repository.get_progression_decision(result.progression_decision.id) == (
+            result.progression_decision
+        )
+        if result.revised_prescription is not None:
+            prescriptions.append(result.revised_prescription)
+
+    assert [prescription.duration_seconds for prescription in prescriptions] == [600, 660, 720]
+    assert outcomes == [
+        ProgressionOutcome.PROGRESS,
+        ProgressionOutcome.PROGRESS,
+        ProgressionOutcome.HOLD,
+    ]
+    assert prescriptions[1].supersedes_prescription_id == prescriptions[0].id
+    assert prescriptions[2].supersedes_prescription_id == prescriptions[1].id
+    assert repository.get_session_prescription(prescriptions[2].id) == prescriptions[2]
+
+
 def test_current_week_projection_exposes_schedule_and_persisted_completion(
     session: Session,
 ) -> None:
@@ -2022,6 +2173,9 @@ def test_current_week_projection_exposes_schedule_and_persisted_completion(
             },
         )
         progressed_response = TestClient(app).get(path, params={"on": "2026-08-25"})
+        first_progression = ProgressionCreationResult.model_validate(progression_response.json())
+        assert first_progression.revised_prescription is not None
+        revised = first_progression.revised_prescription
         second_execution, _ = build_and_persist_execution_for_planned_session(
             session,
             repository,
@@ -2029,17 +2183,23 @@ def test_current_week_projection_exposes_schedule_and_persisted_completion(
             weekly_plan=weekly_plan,
             planned_session_index=1,
             session_template=session_template,
-            prescription=prescription,
+            prescription=revised,
             safety_policy=safety_policy,
             provenance=provenance,
         )
-        persist_post_session_safety(
+        second_post_safety = persist_post_session_safety(
             session,
             repository,
             weekly_plan=weekly_plan,
             execution=second_execution,
             safety_policy=safety_policy,
             provenance=provenance,
+        )
+        second_progression_response = TestClient(app).post(
+            f"/v1/session-executions/{second_execution.id}/prescriptions/{revised.id}/progression",
+            json={
+                "decided_at": (second_post_safety.decided_at + timedelta(minutes=1)).isoformat(),
+            },
         )
         closed_week_response = TestClient(app).get(path, params={"on": "2026-08-25"})
 
@@ -2112,11 +2272,27 @@ def test_current_week_projection_exposes_schedule_and_persisted_completion(
     progressed = CurrentWeekProjection.model_validate(progressed_response.json())
     assert progressed.week is not None
     progressed_prescription = progressed.week.sessions[0].prescriptions[0]
+    assert progressed_prescription.prescription_id == prescription.id
     assert progressed_prescription.progression is not None
     assert progressed_prescription.progression.outcome == "progress"
     assert progressed_prescription.progression_action.status == "completed"
     assert progressed_prescription.progression_action.progression_policy_id is None
+    next_session_prescription = progressed.week.sessions[1].prescriptions[0]
+    assert next_session_prescription.prescription_id == revised.id
+    assert prescription.repetitions_per_set is not None
+    assert next_session_prescription.repetitions_per_set == (prescription.repetitions_per_set + 1)
+    assert next_session_prescription.progression is None
+    assert next_session_prescription.progression_action.status == "awaiting_execution"
     assert progressed.week.review.status == "awaiting_sessions"
+    assert second_progression_response.status_code == 201
+    second_progression = ProgressionCreationResult.model_validate(
+        second_progression_response.json()
+    )
+    assert second_progression.revised_prescription is not None
+    assert second_progression.revised_prescription.supersedes_prescription_id == revised.id
+    assert second_progression.revised_prescription.repetitions_per_set == (
+        prescription.repetitions_per_set + 2
+    )
     assert closed_week_response.status_code == 200
     closed_week = CurrentWeekProjection.model_validate(closed_week_response.json())
     assert closed_week.week is not None
@@ -2124,11 +2300,11 @@ def test_current_week_projection_exposes_schedule_and_persisted_completion(
     assert closed_week.week.review.recorded_sessions == 2
     assert closed_week.week.review.post_session_closed == 2
     assert closed_week.week.review.resolved_progression_items == 2
-    assert closed_week.week.review.progression_outcomes.progress == 1
-    assert (
-        closed_week.week.sessions[1].prescriptions[0].progression_action.reason
-        == "this prescription already has an immutable revision descendant"
-    )
+    assert closed_week.week.review.progression_outcomes.progress == 2
+    assert closed_week.week.sessions[0].prescriptions[0].prescription_id == prescription.id
+    assert closed_week.week.sessions[1].prescriptions[0].prescription_id == revised.id
+    assert closed_week.week.sessions[1].prescriptions[0].progression is not None
+    assert closed_week.week.sessions[1].prescriptions[0].progression_action.status == "completed"
     assert ambiguous_response.status_code == 409
 
 
@@ -2145,8 +2321,8 @@ def test_current_week_progression_action_fails_closed_for_exposure_and_ambiguity
         _,
         prescription,
         session_template,
-        _,
-        _,
+        _weekly_availability,
+        _scheduling_policy,
         weekly_plan,
     ) = build_and_persist_weekly_chain(session)
     provenance = Provenance(
@@ -2208,7 +2384,37 @@ def test_current_week_progression_action_fails_closed_for_exposure_and_ambiguity
     manual_action = projected.week.sessions[0].prescriptions[0].progression_action
     assert manual_action.status == "manual_configuration_required"
     assert manual_action.progression_policy_id is None
-    assert "explicit reviewed exposure target" in manual_action.reason
+    assert "no reviewed exposure definitions" in manual_action.reason
+
+    definition = ExposureDefinition(
+        exercise_id=prescription.exercise_id,
+        exposure_type=ExposureType.JUMPING,
+        dose_unit="repetitions",
+        evidence_claim_ids=strategy.evidence_claim_ids,
+        rationale="Synthetic current-week exposure definition.",
+        definition_version="fixture-current-week-exposure@1.0.0",
+    )
+    cap = ExposureProgressionPolicy(
+        exposure_type=ExposureType.JUMPING,
+        dose_unit="repetitions",
+        lookback_days=14,
+        minimum_recent_entries=1,
+        maximum_initial_dose=15,
+        maximum_relative_increase=0.2,
+        maximum_absolute_increase=3,
+        evidence_claim_ids=strategy.evidence_claim_ids,
+        rationale="Synthetic current-week exposure cap.",
+        policy_version="fixture-current-week-exposure@1.0.0",
+    )
+    repository.add_exposure_definition(definition)
+    repository.add_exposure_progression_policy(cap)
+    session.commit()
+    ready = CurrentWeekProjector(session).project(strategy.athlete_id, date(2026, 8, 25))
+    assert ready.week is not None
+    ready_action = ready.week.sessions[0].prescriptions[0].progression_action
+    assert ready_action.status == "ready"
+    assert ready_action.progression_policy_id == exposure_policy.id
+    assert "exposure cap" in ready_action.reason
 
     duplicate = exposure_policy.model_copy(
         update={
@@ -2225,6 +2431,160 @@ def test_current_week_progression_action_fails_closed_for_exposure_and_ambiguity
     assert unavailable.status == "policy_unavailable"
     assert unavailable.progression_policy_id is None
     assert "multiple progression policies" in unavailable.reason
+
+
+def test_automatic_exposure_progression_records_contacts_and_applies_the_reviewed_cap(
+    session: Session,
+) -> None:
+    (
+        repository,
+        strategy,
+        _,
+        _,
+        _,
+        _,
+        _,
+        prescription,
+        session_template,
+        _,
+        _,
+        weekly_plan,
+    ) = build_and_persist_weekly_chain(session)
+    provenance = Provenance(
+        recorded_by="automated-test",
+        source_system="pytest",
+        ingestion_method="automatic-exposure-progression-fixture",
+    )
+    safety_policy = SessionSafetyPolicy(
+        allowed_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        limited_readiness_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        unusual_soreness_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        sleep_disruption_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        schedule_limitation_modifications=(PrescriptionModification.REDUCE_VOLUME,),
+        evidence_claim_ids=strategy.evidence_claim_ids,
+        rationale="Synthetic automatic-exposure safety policy.",
+        policy_version="fixture-automatic-exposure-safety@1.0.0",
+    )
+    progression_policy = ProgressionPolicy(
+        reference=prescription.progression_rule_reference,
+        minimum_set_completion_ratio=1,
+        minimum_dose_completion_ratio=1,
+        maximum_session_rpe=8,
+        require_technique_constraint=False,
+        adjustment=PrescriptionAdjustment(
+            dimension=ProgressionDimension.REPETITIONS,
+            amount=1,
+            unit="repetitions_per_set",
+            description="add one contact per set",
+        ),
+        exposure_type=ExposureType.JUMPING,
+        evidence_claim_ids=strategy.evidence_claim_ids,
+        rationale="Synthetic automatic-exposure progression policy.",
+        policy_version="fixture-automatic-exposure@1.0.0",
+    )
+    definition = ExposureDefinition(
+        exercise_id=prescription.exercise_id,
+        exposure_type=ExposureType.JUMPING,
+        dose_unit="repetitions",
+        evidence_claim_ids=strategy.evidence_claim_ids,
+        rationale="Count each completed fixture repetition as one contact.",
+        definition_version="fixture-automatic-exposure@1.0.0",
+    )
+    exposure_policy = ExposureProgressionPolicy(
+        exposure_type=ExposureType.JUMPING,
+        dose_unit="repetitions",
+        lookback_days=14,
+        minimum_recent_entries=1,
+        maximum_initial_dose=15,
+        maximum_relative_increase=0.2,
+        maximum_absolute_increase=3,
+        evidence_claim_ids=strategy.evidence_claim_ids,
+        rationale="Cap the proposed contact increase.",
+        policy_version="fixture-automatic-exposure@1.0.0",
+    )
+    unrelated_claim = evidence_claim().model_copy(
+        update={
+            "id": uuid4(),
+            "claim_version": "fixture-unrelated-exposure@1.0.0",
+        }
+    )
+    unrelated_definition = definition.model_copy(
+        update={
+            "id": uuid4(),
+            "evidence_claim_ids": (unrelated_claim.id,),
+            "definition_version": "fixture-unrelated-exposure@1.0.0",
+        }
+    )
+    unrelated_exposure_policy = exposure_policy.model_copy(
+        update={
+            "id": uuid4(),
+            "evidence_claim_ids": (unrelated_claim.id,),
+            "policy_version": "fixture-unrelated-exposure@1.0.0",
+        }
+    )
+    repository.add_evidence_claim(unrelated_claim)
+    repository.add_session_safety_policy(safety_policy)
+    repository.add_progression_policy(progression_policy)
+    repository.add_exposure_definition(definition)
+    repository.add_exposure_progression_policy(exposure_policy)
+    repository.add_exposure_definition(unrelated_definition)
+    repository.add_exposure_progression_policy(unrelated_exposure_policy)
+    session.commit()
+    execution, _ = build_and_persist_execution_for_planned_session(
+        session,
+        repository,
+        athlete_id=strategy.athlete_id,
+        weekly_plan=weekly_plan,
+        planned_session_index=0,
+        session_template=session_template,
+        prescription=prescription,
+        safety_policy=safety_policy,
+        provenance=provenance,
+    )
+    post_safety = persist_post_session_safety(
+        session,
+        repository,
+        weekly_plan=weekly_plan,
+        execution=execution,
+        safety_policy=safety_policy,
+        provenance=provenance,
+    )
+    result = PersistedProgressionService(session).execute_automatic(
+        execution.id,
+        prescription.id,
+        command=AutomaticProgressionDecisionCommand(
+            decided_at=post_safety.decided_at + timedelta(minutes=1),
+        ),
+    )
+    projected = CurrentWeekProjector(session).project(
+        strategy.athlete_id,
+        weekly_plan.week_start,
+    )
+
+    assert prescription.repetitions_per_set is not None
+    assert result.exposure_entry is not None
+    assert result.exposure_entry.dose_value == (
+        prescription.sets * prescription.repetitions_per_set
+    )
+    assert result.exposure_entry.source_observation_ids == (execution.performance_observation_id,)
+    assert result.exposure_validation is not None
+    assert result.exposure_validation.proposed_dose == (
+        prescription.sets * (prescription.repetitions_per_set + 1)
+    )
+    assert result.exposure_validation.outcome.value == "approved"
+    assert result.progression_decision.outcome is ProgressionOutcome.PROGRESS
+    assert result.revised_prescription is not None
+    assert result.revised_prescription.repetitions_per_set == (prescription.repetitions_per_set + 1)
+    assert repository.get_exposure_entry(result.exposure_entry.id) == result.exposure_entry
+    assert projected.week is not None
+    projected_progression = projected.week.sessions[0].prescriptions[0].progression
+    assert projected_progression is not None
+    assert projected_progression.exposure is not None
+    assert projected_progression.exposure.completed_dose == result.exposure_entry.dose_value
+    assert (
+        projected_progression.exposure.maximum_allowed_dose
+        == result.exposure_validation.maximum_allowed_dose
+    )
 
 
 def test_completed_block_review_requires_full_history_and_is_atomic(
@@ -2352,6 +2712,17 @@ def test_completed_block_review_requires_full_history_and_is_atomic(
     input_path.write_text(json.dumps(command.model_dump(mode="json")), encoding="utf-8")
     assert load_block_review_command(input_path) == command
 
+    unratified_authority_command = command.model_copy(
+        update={
+            "response_drafts": (
+                command.response_drafts[0].model_copy(
+                    update={"response_evaluation_authority_id": uuid4()}
+                ),
+            )
+        }
+    )
+    with pytest.raises(BlockReviewValidationError, match="exact ratified release"):
+        PersistedBlockReviewService(session).execute(block.id, unratified_authority_command)
     with pytest.raises(BlockReviewValidationError, match="exactly one persisted weekly plan"):
         PersistedBlockReviewService(session).execute(block.id, command)
     weekly_plans = persist_remaining_weekly_plans(
@@ -2408,6 +2779,29 @@ def test_completed_block_review_requires_full_history_and_is_atomic(
         safety_policy=safety_policy,
         provenance=provenance,
     )
+    response_authority = PreparedResponseEvaluationAuthority(
+        id=uuid4(),
+        adaptation_id=prescription.adaptation_id,
+        estimate_scope=baseline.estimate_scope,
+        unit_or_scale=baseline.unit_or_scale,
+        comparison_direction=ComparisonDirection.HIGHER_IS_BETTER,
+        minimum_meaningful_change=5,
+        numeric_value_origin="engineering_judgment",
+        evidence_claim_ids=strategy.evidence_claim_ids,
+        rationale="Synthetic digest-locked response authority for projection testing.",
+        uncertainty="Software fixture only; no operational threshold claim.",
+        authority_version="fixture-response-authority@1.0.0",
+    )
+    operational_authority = OperationalResponseEvaluationAuthority(
+        candidate_id=uuid4(),
+        candidate_content_digest=f"sha256:{'a' * 64}",
+        block_review_policy=review_policy,
+        authority=response_authority,
+    )
+    monkeypatch.setattr(
+        "agas_api.post_block_preparation.list_operational_response_evaluation_authorities",
+        lambda _session: (operational_authority,),
+    )
     preparation = BlockReviewPreparationProjector(session).project(
         block.id, projected_at=review_time + timedelta(minutes=1)
     )
@@ -2420,6 +2814,14 @@ def test_completed_block_review_requires_full_history_and_is_atomic(
     assert followup in preparation.followup_estimates
     assert future_followup not in preparation.followup_estimates
     assert review_policy in preparation.block_review_policies
+    assert len(preparation.prepared_response_interpretations) == 1
+    prepared_response = preparation.prepared_response_interpretations[0]
+    assert prepared_response.response_evaluation_authority_id == response_authority.id
+    assert prepared_response.prescription_ids == (prescription.id,)
+    assert prepared_response.baseline_capability_estimate_id == baseline.id
+    assert prepared_response.followup_capability_estimate_id == followup.id
+    assert prepared_response.minimum_meaningful_change == 5
+    assert preparation.prepared_response_issues == ()
     assert followup_observation in preparation.source_observations
     ready_queue = PostBlockReviewQueueProjector(session).project(review_time + timedelta(minutes=1))
     assert len(ready_queue.items) == 1
@@ -2488,8 +2890,23 @@ def test_completed_block_review_requires_full_history_and_is_atomic(
     )
     with pytest.raises(ValueError, match="Extra inputs are not permitted"):
         OperatorBlockReviewRequest.model_validate(request_body)
+    governed_request_body = {
+        **request_body,
+        "response_drafts": [
+            {
+                **response_draft,
+                "response_evaluation_authority_id": str(response_authority.id),
+            }
+        ],
+    }
+    monkeypatch.setattr(
+        "agas_api.block_review_application.get_operational_response_evaluation_authority",
+        lambda _session, authority_id: (
+            operational_authority if authority_id == response_authority.id else None
+        ),
+    )
     operator_request = OperatorBlockReviewRequest.model_validate(
-        {key: value for key, value in request_body.items() if key != "reviewed_by"}
+        {key: value for key, value in governed_request_body.items() if key != "reviewed_by"}
     )
     result = execute_operator_block_review(session, block.id, operator_request, authority)
     with pytest.raises(BlockReviewConflictError, match="already has a completed review"):
@@ -2508,6 +2925,17 @@ def test_completed_block_review_requires_full_history_and_is_atomic(
     assert result.decision_record.reason.startswith(f"Reviewed by account:{reviewer.id}.")
     assert f"block_review:{result.block_review.id}" in result.decision_record.evidence
     assert f"account_role_assignment:{assignment.id}" in result.decision_record.evidence
+    assert (
+        f"response_evaluation_authority:{response_authority.id}" in result.decision_record.evidence
+    )
+    assert (
+        f"authority_candidate:{operational_authority.candidate_id}"
+        in result.decision_record.evidence
+    )
+    assert (
+        "authority_candidate_content_digest:"
+        f"{operational_authority.candidate_content_digest}" in result.decision_record.evidence
+    )
     assert f"training_response:{result.training_responses[0].id}" in (
         result.decision_record.evidence
     )
@@ -3030,6 +3458,17 @@ def test_weekly_roll_forward_carries_progression_revision_with_immutable_lineage
         provenance=provenance,
     )
     progression_decided_at = post_safety.decided_at + timedelta(minutes=1)
+    first_progression = PersistedProgressionService(session).execute(
+        execution.id,
+        prescription.id,
+        CreateProgressionDecisionCommand(
+            progression_policy_id=progression_policy.id,
+            decided_at=progression_decided_at,
+            revision_prescribed_at=progression_decided_at,
+        ),
+    )
+    assert first_progression.revised_prescription is not None
+    revised = first_progression.revised_prescription
     second_execution, _ = build_and_persist_execution_for_planned_session(
         session,
         repository,
@@ -3037,7 +3476,7 @@ def test_weekly_roll_forward_carries_progression_revision_with_immutable_lineage
         weekly_plan=source_plan,
         planned_session_index=1,
         session_template=source_template,
-        prescription=prescription,
+        prescription=revised,
         safety_policy=safety_policy,
         provenance=provenance,
     )
@@ -3049,7 +3488,19 @@ def test_weekly_roll_forward_carries_progression_revision_with_immutable_lineage
         safety_policy=safety_policy,
         provenance=provenance,
     )
-    prepared_at = second_post_safety.decided_at + timedelta(minutes=1)
+    second_progression_decided_at = second_post_safety.decided_at + timedelta(minutes=1)
+    second_progression = PersistedProgressionService(session).execute(
+        second_execution.id,
+        revised.id,
+        CreateProgressionDecisionCommand(
+            progression_policy_id=progression_policy.id,
+            decided_at=second_progression_decided_at,
+            revision_prescribed_at=second_progression_decided_at,
+        ),
+    )
+    assert second_progression.revised_prescription is not None
+    final_revised = second_progression.revised_prescription
+    prepared_at = second_progression_decided_at + timedelta(minutes=1)
     next_week_start = source_plan.week_start + timedelta(days=7)
     environment_id = source_availability.windows[0].environment_id
     next_windows = (
@@ -3078,21 +3529,9 @@ def test_weekly_roll_forward_carries_progression_revision_with_immutable_lineage
         raise DomainIntegrityError("synthetic late roll-forward persistence failure")
 
     app.dependency_overrides[database_session_dependency] = override_session
-    progression_path = (
-        f"/v1/session-executions/{execution.id}/prescriptions/{prescription.id}/progression"
-    )
     confirmation_path = f"/v1/weekly-plans/{source_plan.id}/availability-confirmations"
     roll_forward_path = f"/v1/weekly-plans/{source_plan.id}/roll-forward"
     try:
-        progression_response = TestClient(app).post(
-            progression_path,
-            json={
-                "decided_at": progression_decided_at.isoformat(),
-            },
-        )
-        progression_result = ProgressionCreationResult.model_validate(progression_response.json())
-        assert progression_result.revised_prescription is not None
-        revised = progression_result.revised_prescription
         client_lineage_response = TestClient(app).post(
             confirmation_path,
             json={
@@ -3140,10 +3579,11 @@ def test_weekly_roll_forward_carries_progression_revision_with_immutable_lineage
     finally:
         app.dependency_overrides.pop(database_session_dependency, None)
 
-    assert progression_response.status_code == 201
     assert prescription.repetitions_per_set is not None
     assert revised.repetitions_per_set == prescription.repetitions_per_set + 1
     assert revised.execution_guidance == prescription.execution_guidance
+    assert final_revised.repetitions_per_set == prescription.repetitions_per_set + 2
+    assert final_revised.supersedes_prescription_id == revised.id
     assert client_lineage_response.status_code == 422
     assert confirmation_response.status_code == 201
     assert duplicate_confirmation_response.status_code == 409
@@ -3164,11 +3604,11 @@ def test_weekly_roll_forward_carries_progression_revision_with_immutable_lineage
         "source_weekly_plan_id": str(source_plan.id),
         "source_weekly_availability_id": str(source_availability.id),
     }
-    assert result.prescriptions == (revised,)
+    assert result.prescriptions == (final_revised,)
     assert len(result.created_session_templates) == 1
     successor_template = result.created_session_templates[0]
     assert successor_template.previous_template_id == source_template.id
-    assert successor_template.items[0].prescription_id == revised.id
+    assert successor_template.items[0].prescription_id == final_revised.id
     assert result.session_templates == (successor_template,)
     assert result.weekly_plan.previous_weekly_plan_id == source_plan.id
     assert result.weekly_plan.scheduling_policy_review_id == source_plan.scheduling_policy_review_id
@@ -3182,6 +3622,7 @@ def test_weekly_roll_forward_carries_progression_revision_with_immutable_lineage
     assert repository.get_session_template(source_template.id) == source_template
     assert repository.get_session_prescription(prescription.id) == prescription
     assert repository.get_session_prescription(revised.id) == revised
+    assert repository.get_session_prescription(final_revised.id) == final_revised
     assert repository.get_observation(confirmation_result.availability_observation.id) == (
         confirmation_result.availability_observation
     )
@@ -4192,12 +4633,12 @@ def test_progression_service_applies_governed_exposure_and_revision_atomically(
             safety_policy=safety_policy,
             provenance=provenance,
         )
+        repository.add_progression_policy(non_exposure_policy)
+        session.commit()
         automatic_exposure_response = TestClient(app).post(
             path,
             json={"decided_at": target_time.isoformat()},
         )
-        repository.add_progression_policy(non_exposure_policy)
-        session.commit()
         ambiguous_policy_response = TestClient(app).post(
             path,
             json={"decided_at": target_time.isoformat()},
@@ -4229,6 +4670,8 @@ def test_progression_service_applies_governed_exposure_and_revision_atomically(
         result = PersistedProgressionService(session).execute(
             execution.id, prescription.id, command
         )
+        assert result.revised_prescription is not None
+        revised = result.revised_prescription
         with pytest.raises(ProgressionConflictError, match="already have a progression"):
             PersistedProgressionService(session).execute(execution.id, prescription.id, command)
 
@@ -4239,7 +4682,7 @@ def test_progression_service_applies_governed_exposure_and_revision_atomically(
             weekly_plan=weekly_plan,
             planned_session_index=1,
             session_template=session_template,
-            prescription=prescription,
+            prescription=revised,
             safety_policy=safety_policy,
             provenance=provenance,
         )
@@ -4274,7 +4717,7 @@ def test_progression_service_applies_governed_exposure_and_revision_atomically(
         )
         review_result = PersistedProgressionService(session).execute(
             second_execution.id,
-            prescription.id,
+            revised.id,
             review_command,
         )
     finally:
@@ -4283,7 +4726,7 @@ def test_progression_service_applies_governed_exposure_and_revision_atomically(
     assert athlete_policy_choice_response.status_code == 422
     assert automatic_exposure_response.status_code == 422
     assert automatic_exposure_response.json() == {
-        "detail": "exposure-sensitive progression requires governed configuration"
+        "detail": "multiple progression policies match the prescription rule reference"
     }
     assert ambiguous_policy_response.status_code == 422
     assert ambiguous_policy_response.json() == {
@@ -4297,7 +4740,6 @@ def test_progression_service_applies_governed_exposure_and_revision_atomically(
     assert result.exposure_validation.outcome.value == "approved"
     assert result.progression_decision.outcome.value == "progress"
     assert result.progression_decision.post_session_safety_decision_ids == (post_decision.id,)
-    assert result.revised_prescription is not None
     assert result.revised_prescription.repetitions_per_set == 6
     assert result.revised_prescription.supersedes_prescription_id == prescription.id
     assert result.revised_prescription.progression_decision_id == result.progression_decision.id
@@ -4502,15 +4944,15 @@ def test_progression_exposure_and_revised_prescription_round_trip(
     (
         repository,
         strategy,
-        requirement,
+        _requirement,
         resolution,
         first_demand,
         allocation_policy,
         block,
         prescription,
         session_template,
-        _,
-        _,
+        _weekly_availability,
+        scheduling_policy,
         weekly_plan,
     ) = build_and_persist_weekly_chain(session)
     planned = weekly_plan.sessions[0]
@@ -4780,8 +5222,102 @@ def test_progression_exposure_and_revised_prescription_round_trip(
 
     adaptation = repository.get_adaptation(prescription.adaptation_id)
     floor = repository.get_competency_floor(strategy.competency_floor_ids[0])
+    baseline_observation = repository.get_observation(strategy.source_observation_ids[0])
     assert adaptation is not None
     assert floor is not None
+    assert baseline_observation is not None
+    replanner, assignment, _, _ = set_account_role(
+        session,
+        issuer="urn:agas:development",
+        subject="authenticated-post-block-replanner",
+        role=AccountRole.PLANNING_REVIEWER,
+        status=AccountRoleStatus.ACTIVE,
+        assigned_at=NOW - timedelta(days=1),
+        rationale="Exercise authenticated post-block replanning.",
+    )
+    floor_review = CompetencyFloorReview(
+        competency_floor_id=floor.id,
+        decision=AssessmentReviewDecision.APPROVED,
+        sequence_number=1,
+        evidence_claim_ids=claim_ids,
+        reviewed_at=NOW,
+        reviewed_by=f"account:{replanner.id}",
+        applicability_rationale="Synthetic source-context floor review.",
+        uncertainty="Software fixture only.",
+        review_version="fixture@1.0.0",
+    )
+    policy_review = PriorityPolicyReview(
+        priority_policy_id=strategy.priority_policy_id,
+        decision=AssessmentReviewDecision.APPROVED,
+        sequence_number=1,
+        evidence_claim_ids=claim_ids,
+        reviewed_at=NOW,
+        reviewed_by=f"account:{replanner.id}",
+        applicability_rationale="Synthetic source-context policy review.",
+        uncertainty="Software fixture only.",
+        review_version="fixture@1.0.0",
+    )
+    source_context = InitialPlanningCandidateContext(
+        adaptation_id=adaptation.id,
+        competency_floor_id=floor.id,
+        competency_floor_review_id=floor_review.id,
+        capability_estimate_id=baseline.id,
+        general_relevance=0.9,
+        goal_relevance=0.8,
+        prerequisite_value=0.7,
+        expected_trainability=0.7,
+        transfer_value=0.8,
+        fatigue_cost=0.3,
+        time_cost=0.3,
+        interference_cost=0.2,
+        source_observation_ids=(baseline_observation.id,),
+        evidence_claim_ids=claim_ids,
+    )
+    context_draft = InitialPlanningContextDraft(
+        athlete_id=strategy.athlete_id,
+        priority_policy_id=strategy.priority_policy_id,
+        priority_policy_review_id=policy_review.id,
+        candidate_contexts=(source_context,),
+        horizon_months=strategy.horizon_months,
+        review_after_days=42,
+        authored_by_account_id=replanner.id,
+        author_authority_assignment_id=assignment.id,
+        authored_at=NOW,
+        applicability_rationale="Synthetic approved initial context.",
+        uncertainty="Software fixture only.",
+        draft_version="fixture@1.0.0",
+    )
+    context_review = InitialPlanningContextReview(
+        draft_id=context_draft.id,
+        decision=AssessmentReviewDecision.APPROVED,
+        reviewed_by_account_id=replanner.id,
+        review_authority_assignment_id=assignment.id,
+        reviewed_at=NOW,
+        applicability_rationale="Approve the synthetic exact context.",
+        uncertainty="Software fixture only.",
+        review_version="fixture@1.0.0",
+    )
+    source_decision = DecisionRecord(
+        decision=f"Create initial long-range strategy {strategy.id} for fixture.",
+        reason="Synthetic exact source provenance.",
+        alternatives_considered=("Do not create the fixture strategy.",),
+        evidence=(
+            f"long_range_strategy:{strategy.id}",
+            f"initial_planning_context_draft:{context_draft.id}",
+            f"initial_planning_context_review:{context_review.id}",
+        ),
+        uncertainty="Software fixture only.",
+        decision_version="initial-strategy-operator-review@1.0.0",
+        decided_on=NOW.date(),
+    )
+    repository.add_competency_floor_review(floor_review)
+    repository.add_priority_policy_review(policy_review)
+    session.flush()
+    repository.add_initial_planning_context_draft(context_draft)
+    session.flush()
+    repository.add_initial_planning_context_review(context_review)
+    repository.add_decision_record(source_decision)
+    session.commit()
     context = ReplanningCandidateContext(
         adaptation_id=adaptation.id,
         competency_floor_id=floor.id,
@@ -4807,6 +5343,17 @@ def test_progression_exposure_and_revised_prescription_round_trip(
     assert replanning_preparation.adaptation_options[0].estimate_options == (followup,)
     assert floor in replanning_preparation.adaptation_options[0].compatible_competency_floors
     assert followup_observation in replanning_preparation.source_observations
+    prepared_successor = replanning_preparation.prepared_successor_context
+    assert prepared_successor is not None
+    assert replanning_preparation.prepared_successor_issues == ()
+    assert prepared_successor.source_initial_planning_context_draft_id == context_draft.id
+    assert prepared_successor.source_initial_planning_context_review_id == context_review.id
+    assert prepared_successor.review_after_days == context_draft.review_after_days
+    assert prepared_successor.candidate_contexts[0].capability_estimate_id == followup.id
+    assert prepared_successor.candidate_contexts[0].general_relevance == 0.9
+    assert prepared_successor.candidate_contexts[0].source_observation_ids == (
+        baseline_observation.id,
+    )
     assert followup.valid_until is not None
     stale_replanning_preparation = ReplanningPreparationProjector(session).project(
         review.id, projected_at=followup.valid_until + timedelta(seconds=1)
@@ -4874,15 +5421,6 @@ def test_progression_exposure_and_revised_prescription_round_trip(
             replanning_command.model_copy(update={"review_authority_assignment_id": uuid4()}),
         )
 
-    replanner, assignment, _, _ = set_account_role(
-        session,
-        issuer="urn:agas:development",
-        subject="authenticated-post-block-replanner",
-        role=AccountRole.PLANNING_REVIEWER,
-        status=AccountRoleStatus.ACTIVE,
-        assigned_at=review.reviewed_at - timedelta(days=1),
-        rationale="Exercise authenticated post-block replanning.",
-    )
     authority = AuthorizedRole(
         account_id=replanner.id,
         assignment_id=assignment.id,
@@ -4891,9 +5429,36 @@ def test_progression_exposure_and_revised_prescription_round_trip(
     )
     with pytest.raises(ValueError, match="Extra inputs are not permitted"):
         OperatorReplanningRequest.model_validate(request_body)
-    operator_request = OperatorReplanningRequest.model_validate(
-        {key: value for key, value in request_body.items() if key != "reviewed_by"}
+    operator_request = OperatorReplanningRequest(
+        candidate_contexts=prepared_successor.candidate_contexts,
+        generated_at=review.reviewed_at + timedelta(minutes=1),
+        review_after_days=prepared_successor.review_after_days,
+        source_initial_planning_context_draft_id=(
+            prepared_successor.source_initial_planning_context_draft_id
+        ),
+        source_initial_planning_context_review_id=(
+            prepared_successor.source_initial_planning_context_review_id
+        ),
+        prepared_successor_context_digest=prepared_successor.content_digest,
+        applicability_rationale=prepared_successor.applicability_rationale,
+        uncertainty=prepared_successor.uncertainty,
     )
+    with pytest.raises(ReplanningValidationError, match="exact current prepared"):
+        PersistedReplanningService(session).execute(
+            review.id,
+            PostBlockReplanningCommand.model_validate(
+                {
+                    **operator_request.model_dump(),
+                    "reviewed_by": f"account:{replanner.id}",
+                    "review_authority_assignment_id": assignment.id,
+                    "candidate_contexts": (
+                        prepared_successor.candidate_contexts[0].model_copy(
+                            update={"goal_relevance": 0.79}
+                        ),
+                    ),
+                }
+            ),
+        )
     replanning_result = execute_operator_replanning(session, review.id, operator_request, authority)
     with pytest.raises(ReplanningConflictError, match="already has a strategy revision"):
         PersistedReplanningService(session).execute(review.id, replanning_command)
@@ -4913,6 +5478,14 @@ def test_progression_exposure_and_revised_prescription_round_trip(
     assert f"long_range_strategy:{replanning_result.strategy.id}" in (
         replanning_result.decision_record.evidence
     )
+    assert (
+        f"source_initial_planning_context_draft:{context_draft.id}"
+        in replanning_result.decision_record.evidence
+    )
+    assert (
+        f"prepared_successor_context_digest:{prepared_successor.content_digest}"
+        in replanning_result.decision_record.evidence
+    )
     assert session.get(DecisionRecordRecord, replanning_result.decision_record.id) is not None
     revised_priority = replanning_result.strategy.priorities[0]
     assert block.allocations[0].priority_state.value == "develop"
@@ -4930,59 +5503,122 @@ def test_progression_exposure_and_revised_prescription_round_trip(
     assert completed_queue.items == ()
 
     next_generated_at = review.reviewed_at + timedelta(minutes=3)
-    next_requirement = StimulusRequirement.model_validate(
-        {
-            **requirement.model_dump(),
-            "id": uuid4(),
-            "long_range_strategy_id": replanning_result.strategy.id,
-            "adaptation_priority_id": revised_priority.id,
-            "priority_state": revised_priority.state,
-            "source_observation_ids": replanning_result.strategy.source_observation_ids,
-            "generated_at": next_generated_at,
+    assert resolution.selected_exercise_id is not None
+    exercise = repository.get_exercise(resolution.selected_exercise_id)
+    resolver_policy = repository.get_exercise_resolver_policy(resolution.resolver_policy_id)
+    evidence_claim = repository.get_evidence_claim(claim_ids[0])
+    assert exercise is not None
+    assert resolver_policy is not None
+    assert evidence_claim is not None
+    resource_authority = prepared_resource_governance_candidate()
+    resource_authority = resource_authority.model_copy(
+        update={
+            "presentation": resource_authority.presentation.model_copy(
+                update={"candidate_id": JUMP_MAINTENANCE_RESOURCE_CANDIDATE_ID}
+            ),
+            "release": resource_authority.release.model_copy(
+                update={
+                    "claim": evidence_claim,
+                    "equipment": None,
+                    "exercise": exercise,
+                    "resolver_policy": resolver_policy,
+                    "allocation_policy": allocation_policy,
+                }
+            ),
         }
     )
-    next_resolution = ExerciseResolution(
-        stimulus_requirement_id=next_requirement.id,
-        environment_id=resolution.environment_id,
-        resolver_policy_id=resolution.resolver_policy_id,
-        status=resolution.status,
-        selected_exercise_id=resolution.selected_exercise_id,
-        ranked_matches=tuple(
-            item.model_copy(update={"id": uuid4()}) for item in resolution.ranked_matches
+    monkeypatch.setattr(
+        prepared_resource_demand_module,
+        "prepared_resource_governance_candidate_for_scope",
+        lambda _scope, _state=None: resource_authority,
+    )
+    monkeypatch.setattr(
+        PreparedResourceDemandProjector,
+        "_authority_blockers",
+        lambda _self, _instant, _prepared: [],
+    )
+
+    def resolve_fixture_successor(
+        _self: object,
+        *,
+        requirement: StimulusRequirement,
+        environment: EnvironmentSnapshot,
+        exercises: tuple[Exercise, ...],
+        policy: ExerciseResolverPolicy,
+        resolved_at: datetime,
+        resolution_id: UUID | None = None,
+    ) -> ExerciseResolution:
+        del exercises
+        return resolution.model_copy(
+            update={
+                "id": resolution_id or uuid4(),
+                "stimulus_requirement_id": requirement.id,
+                "environment_id": environment.environment_id,
+                "resolver_policy_id": policy.id,
+                "status": ResolutionStatus.FULL,
+                "ranked_matches": tuple(
+                    item.model_copy(
+                        update={
+                            "id": uuid4(),
+                            "quality": ResolutionStatus.FULL,
+                            "issues": (),
+                        }
+                    )
+                    for item in resolution.ranked_matches
+                ),
+                "unresolved_issues": (),
+                "source_availability_ids": environment.source_availability_ids,
+                "resolved_at": resolved_at,
+            }
+        )
+
+    monkeypatch.setattr(
+        ExerciseResolver,
+        "resolve",
+        resolve_fixture_successor,
+    )
+    resource_projection = PreparedResourceDemandProjector(session).project(
+        replanning_result.strategy.id,
+        authority,
+        next_generated_at,
+    )
+    assert resource_projection.status == "available"
+    assert len(resource_projection.candidates) == 1
+    resource_candidate = resource_projection.candidates[0]
+    assert resource_candidate.candidate_version == "prepared-resource-demand@1.1.0"
+    assert resource_candidate.strategy_cycle.cycle == "successor"
+    assert resource_candidate.strategy_cycle.predecessor_strategy_id == strategy.id
+    assert resource_candidate.strategy_cycle.triggering_block_review_id == review.id
+    assert resource_candidate.strategy_cycle.predecessor_block_plan_id == block.id
+    assert resource_candidate.previous_priority_state is not None
+    assert resource_candidate.previous_priority_state.value == "develop"
+    assert resource_candidate.priority_state.value == "maintain"
+    demand_result = ratify_prepared_resource_demand(
+        session,
+        replanning_result.strategy.id,
+        resource_candidate.candidate_id,
+        RatifyPreparedResourceDemandCommand(
+            candidate_version=resource_candidate.candidate_version,
+            content_digest=resource_candidate.content_digest,
+            approval_attestation=True,
         ),
-        unresolved_issues=resolution.unresolved_issues,
-        source_availability_ids=resolution.source_availability_ids,
-        rationale="Re-resolved persisted fixture stimulus for the revised strategy.",
-        resolved_at=next_generated_at,
-        rule_version="fixture-re-resolution@1.0.0",
+        authority,
     )
-    next_demand = AdaptationResourceDemand(
-        long_range_strategy_id=replanning_result.strategy.id,
-        adaptation_priority_id=revised_priority.id,
-        adaptation_id=revised_priority.adaptation_id,
-        priority_state=revised_priority.state,
-        stimulus_requirement_id=next_requirement.id,
-        exercise_resolution_id=next_resolution.id,
-        minimum_weekly_minutes=30,
-        target_weekly_minutes=30,
-        sessions_per_week=1,
-        source_observation_ids=replanning_result.strategy.source_observation_ids,
-        evidence_claim_ids=replanning_result.strategy.evidence_claim_ids,
-        rationale="Synthetic maintained-capability demand for the dependent second block.",
-        demand_version="fixture-next-block@1.0.0",
+    next_demand = demand_result.result.resource_demand
+    assert next_demand.priority_state.value == "maintain"
+    assert next_demand.adaptation_priority_id == revised_priority.id
+    assert resource_candidate.content_digest in demand_result.result.decision_record.reason
+
+    successor_start_basis = max(datetime.now(UTC).date(), block.ends_on + timedelta(days=1))
+    successor_starts_on = successor_start_basis + timedelta(
+        days=(7 - successor_start_basis.weekday()) % 7
     )
-    repository.add_stimulus_requirement(next_requirement)
-    session.flush()
-    repository.add_exercise_resolution(next_resolution)
-    session.flush()
-    repository.add_adaptation_resource_demand(next_demand)
-    session.commit()
 
     block_request = {
         "resource_demand_ids": [str(next_demand.id)],
         "resource_allocation_policy_id": str(allocation_policy.id),
-        "weekly_budget_minutes": 30,
-        "starts_on": "2026-09-21",
+        "weekly_budget_minutes": next_demand.target_weekly_minutes,
+        "starts_on": successor_starts_on.isoformat(),
         "duration_weeks": 4,
         "constraints": ["Synthetic dependent second-block fixture"],
         "generated_at": next_generated_at.isoformat(),
@@ -4999,6 +5635,44 @@ def test_progression_exposure_and_revised_prescription_round_trip(
         encoding="utf-8",
     )
     assert load_block_plan_command(block_input_path) == block_command
+    monkeypatch.setattr(
+        prepared_first_block_module,
+        "prepared_resource_governance_candidate_for_scope",
+        lambda _scope, _state=None: resource_authority,
+    )
+    monkeypatch.setattr(
+        prepared_first_block_module,
+        "prepared_training_construction_candidate_for_scope",
+        lambda _scope, _state=None: prepared_training_construction_candidate(),
+    )
+    monkeypatch.setattr(
+        PreparedFirstBlockProjector,
+        "_authority_blockers",
+        lambda _self, _instant, _resource, _training: [],
+    )
+    continuity_blocked = PreparedFirstBlockProjector(session).project(
+        replanning_result.strategy.id,
+        block.ends_on,
+        authority,
+        datetime.now(UTC),
+    )
+    assert continuity_blocked.status == "blocked"
+    assert any("after the reviewed predecessor" in item for item in continuity_blocked.blockers)
+    prepared_block_projection = PreparedFirstBlockProjector(session).project(
+        replanning_result.strategy.id,
+        successor_starts_on,
+        authority,
+        datetime.now(UTC),
+    )
+    assert prepared_block_projection.status == "available"
+    prepared_block = prepared_block_projection.candidate
+    assert prepared_block is not None
+    assert prepared_block.candidate_version == "prepared-first-block@1.1.0"
+    assert prepared_block.strategy_cycle.cycle == "successor"
+    assert prepared_block.strategy_cycle.predecessor_block_plan_id == block.id
+    assert prepared_block.expected_allocations[0].priority_state.value == "maintain"
+    assert prepared_block.expected_allocations[0].adaptation_id == revised_priority.adaptation_id
+    assert prepared_block.resource_demand_ids == (next_demand.id,)
     record_types = (BlockPlanRecord, DecisionRecordRecord)
     counts_before_invalid = tuple(
         session.scalar(select(func.count()).select_from(record_type))
@@ -5031,12 +5705,23 @@ def test_progression_exposure_and_revised_prescription_round_trip(
     )
     assert counts_after_invalid == counts_before_invalid
 
-    block_result = PersistedBlockCreationService(session).execute(
+    block_ratification = ratify_prepared_first_block(
+        session,
         replanning_result.strategy.id,
-        block_command,
+        prepared_block.candidate_id,
+        RatifyPreparedFirstBlockCommand(
+            candidate_version=prepared_block.candidate_version,
+            content_digest=prepared_block.content_digest,
+            starts_on=successor_starts_on,
+            approval_attestation=True,
+        ),
+        authority,
     )
+    block_result = block_ratification.result
     second_block = block_result.block_plan
-    assert block_result.decision_record.reason.startswith("Reviewed by fixture block reviewer.")
+    assert block_ratification.created is True
+    assert block_result.decision_record.reason.startswith(f"Reviewed by account:{replanner.id}.")
+    assert prepared_block.content_digest in block_result.decision_record.reason
     assert f"block_plan:{second_block.id}" in block_result.decision_record.evidence
     assert f"adaptation_resource_demand:{next_demand.id}" in (block_result.decision_record.evidence)
     session.expire_all()
@@ -5047,6 +5732,540 @@ def test_progression_exposure_and_revised_prescription_round_trip(
     assert second_block.allocations[0].adaptation_priority_id == revised_priority.id
     assert second_block.allocations[0].priority_state.value == "maintain"
     assert followup_observation.id in second_block.source_observation_ids
+
+    scheduling_review_id = weekly_plan.scheduling_policy_review_id
+    assert scheduling_review_id is not None
+    scheduling_review = repository.get_weekly_scheduling_policy_review(scheduling_review_id)
+    assert scheduling_review is not None
+    successor_week_prepared_at = datetime.now(UTC)
+    maintenance_safety_policy = safety_policy.model_copy(
+        update={
+            "id": uuid4(),
+            "created_at": successor_week_prepared_at,
+            "policy_version": "fixture-maintenance-safety@1.0.0",
+        }
+    )
+    maintenance_progression_policy = progression_policy.model_copy(
+        update={
+            "id": uuid4(),
+            "reference": "fixture-maintenance-progression@1.0.0",
+            "maximum_session_rpe": 5,
+            "evidence_claim_ids": claim_ids,
+            "rationale": (
+                "Hold the completed maintenance dose at RPE 6; progress only after an "
+                "otherwise compliant session at RPE 5 or below."
+            ),
+            "policy_version": "fixture-maintenance-progression@1.0.0",
+        }
+    )
+    maintenance_exposure_definition = definition.model_copy(
+        update={
+            "id": uuid4(),
+            "evidence_claim_ids": claim_ids,
+            "rationale": "Count exact successor-cycle jump contacts.",
+            "definition_version": "fixture-maintenance-exposure@1.0.0",
+        }
+    )
+    maintenance_exposure_policy = exposure_policy.model_copy(
+        update={
+            "id": uuid4(),
+            "minimum_recent_entries": 1,
+            "maximum_initial_dose": 6,
+            "maximum_relative_increase": 0.34,
+            "maximum_absolute_increase": 2,
+            "evidence_claim_ids": claim_ids,
+            "rationale": "Bound exact successor-cycle jump-contact progression.",
+            "policy_version": "fixture-maintenance-exposure@1.0.0",
+        }
+    )
+    maintenance_review_policy = review_policy.model_copy(
+        update={
+            "id": uuid4(),
+            "evidence_claim_ids": claim_ids,
+            "rationale": "Require sufficient successor-cycle delivery before interpretation.",
+            "policy_version": "fixture-maintenance-review@1.0.0",
+        }
+    )
+    maintenance_response_authority = PreparedResponseEvaluationAuthority(
+        id=uuid4(),
+        adaptation_id=revised_priority.adaptation_id,
+        estimate_scope=followup.estimate_scope,
+        unit_or_scale=followup.unit_or_scale,
+        comparison_direction=ComparisonDirection.HIGHER_IS_BETTER,
+        minimum_meaningful_change=0,
+        numeric_value_origin="engineering_judgment",
+        evidence_claim_ids=claim_ids,
+        rationale="No measured decline is the synthetic maintenance threshold.",
+        uncertainty="A zero threshold is not a validated equivalence margin.",
+        authority_version="fixture-maintenance-response@1.0.0",
+    )
+    prior_safety_assignment = AthleteSafetyPolicyAssignment(
+        athlete_id=strategy.athlete_id,
+        safety_policy_id=safety_policy.id,
+        sequence_number=1,
+        assigned_at=successor_week_prepared_at - timedelta(minutes=10),
+        assigned_by=f"account:{replanner.id}",
+        applicability_rationale="Synthetic predecessor-cycle safety assignment.",
+        rule_version="fixture-safety-assignment@1.0.0",
+    )
+    maintenance_dose_policy = FixedRepetitionDosePolicy(
+        created_at=successor_week_prepared_at,
+        adaptation_id=revised_priority.adaptation_id,
+        estimate_scope=followup.estimate_scope,
+        priority_state=revised_priority.state,
+        sets=2,
+        repetitions_per_set=3,
+        maximum_initial_total_repetitions=6,
+        rest_seconds=120,
+        effort_rpe_minimum=4,
+        effort_rpe_maximum=6,
+        technique_constraints=("Reset fully before every synthetic repetition.",),
+        planned_duration_minutes=6,
+        progression_policy_id=maintenance_progression_policy.id,
+        evidence_claim_ids=claim_ids,
+        numeric_value_origin="engineering_judgment",
+        authority_reference="fixture-maintenance-dose@1.0.0",
+        rationale="Exercise the successor MAINTAIN dose boundary.",
+        uncertainty="Synthetic maintenance values are not operational training guidance.",
+        policy_version="fixture-maintenance-dose@1.0.0",
+    )
+    repository.add_session_safety_policy(maintenance_safety_policy)
+    repository.add_athlete_safety_policy_assignment(prior_safety_assignment)
+    repository.add_progression_policy(maintenance_progression_policy)
+    repository.add_fixed_repetition_dose_policy(maintenance_dose_policy)
+    repository.add_exposure_definition(maintenance_exposure_definition)
+    repository.add_exposure_progression_policy(maintenance_exposure_policy)
+    repository.add_block_review_policy(maintenance_review_policy)
+    session.flush()
+    base_construction = prepared_training_construction_candidate()
+    construction_candidate_id = uuid4()
+    construction_digest = f"sha256:{'c' * 64}"
+    maintenance_construction = base_construction.model_copy(
+        update={
+            "presentation": base_construction.presentation.model_copy(
+                update={
+                    "candidate_id": construction_candidate_id,
+                    "content_digest": construction_digest,
+                    "slug": "fixture_successor_maintenance_construction",
+                }
+            ),
+            "release": base_construction.release.model_copy(
+                update={
+                    "weekly_scheduling_policy": scheduling_policy,
+                    "weekly_scheduling_policy_review_id": scheduling_review.id,
+                    "progression_policy": maintenance_progression_policy,
+                    "repetition_dose_policy": None,
+                    "fixed_repetition_dose_policy": maintenance_dose_policy,
+                    "introductory_exposure_dose_policy": None,
+                    "exposure_definition": maintenance_exposure_definition,
+                    "exposure_progression_policy": maintenance_exposure_policy,
+                    "block_review_policy": maintenance_review_policy,
+                    "response_evaluation_authority": maintenance_response_authority,
+                    "session_safety_policy": maintenance_safety_policy,
+                }
+            ),
+        }
+    )
+    repository.add_decision_record(
+        DecisionRecord(
+            id=construction_candidate_id,
+            created_at=successor_week_prepared_at,
+            decision="Ratified synthetic successor maintenance construction authority.",
+            reason="Exercise exact successor-week construction.",
+            alternatives_considered=("Do not create the synthetic successor week.",),
+            evidence=(f"candidate_content_digest:{construction_digest}",),
+            uncertainty="Software fixture only.",
+            decision_version="fixture-maintenance-construction@1.0.0",
+            decided_on=successor_week_prepared_at.date(),
+        )
+    )
+    session.commit()
+    monkeypatch.setattr(
+        prepared_first_week_module,
+        "prepared_training_construction_candidate_for_scope",
+        lambda _scope, _state=None: maintenance_construction,
+    )
+    monkeypatch.setattr(
+        EvidenceAuthorityEvaluator,
+        "require_ready",
+        lambda _self, _claim_ids, _evaluated_at: (),
+    )
+    successor_environment_id = resolution.environment_id
+    successor_windows = tuple(
+        AvailabilityWindowDraft(
+            environment_id=successor_environment_id,
+            starts_at=datetime.combine(
+                successor_starts_on + timedelta(days=day), datetime.min.time(), tzinfo=UTC
+            )
+            + timedelta(hours=18),
+            ends_at=datetime.combine(
+                successor_starts_on + timedelta(days=day), datetime.min.time(), tzinfo=UTC
+            )
+            + timedelta(hours=18, minutes=30),
+        )
+        for day in (1, 4)
+    )
+    successor_week_projection = PreparedFirstWeekProjector(session).project(
+        second_block.id,
+        PrepareFirstWeekCommand(windows=successor_windows),
+        authority,
+        successor_week_prepared_at,
+    )
+    assert successor_week_projection.status == "available", successor_week_projection.blockers
+    successor_week = successor_week_projection.candidate
+    assert successor_week is not None
+    assert successor_week.candidate_version == "prepared-first-week@1.3.0"
+    assert successor_week.block_id == second_block.id
+    assert successor_week.strategy_cycle.cycle == "successor"
+    assert successor_week.strategy_cycle.predecessor_block_plan_id == block.id
+    assert successor_week.previous_priority_state is not None
+    assert successor_week.previous_priority_state.value == "develop"
+    assert successor_week.priority_state.value == "maintain"
+    assert successor_week.training_construction_candidate_id == construction_candidate_id
+    assert successor_week.sets == 2
+    assert successor_week.repetitions_per_set == 3
+    assert successor_week.planned_duration_minutes == 6
+    assert successor_week.safety_policy_assignment.sequence_number == 2
+    assert (
+        successor_week.safety_policy_assignment.supersedes_assignment_id
+        == prior_safety_assignment.id
+    )
+    successor_week_result = ratify_prepared_first_week(
+        session,
+        second_block.id,
+        successor_week.candidate_id,
+        RatifyPreparedFirstWeekCommand(
+            candidate_version=successor_week.candidate_version,
+            content_digest=successor_week.content_digest,
+            prepared_at=successor_week_prepared_at,
+            windows=successor_windows,
+            approval_attestation=True,
+        ),
+        authority,
+    )
+    assert successor_week_result.created is True
+    assert successor_week_result.result.weekly_plan.block_plan_id == second_block.id
+    assert successor_week_result.result.weekly_plan.status is WeeklyPlanStatus.FEASIBLE
+    assert successor_week_result.result.prescriptions[0].sets == 2
+    assert successor_week_result.result.prescriptions[0].repetitions_per_set == 3
+    assert successor_week_result.result.prescriptions[0].resource_allocation_id == (
+        second_block.allocations[0].id
+    )
+    assert (
+        repository.get_current_athlete_safety_policy_assignment(strategy.athlete_id)
+        == successor_week_result.safety_policy_assignment
+    )
+
+    maintenance_prescription = successor_week_result.result.prescriptions[0]
+    maintenance_plans = [successor_week_result.result.weekly_plan]
+    maintenance_executions: list[SessionExecution] = []
+    maintenance_adherences: list[SessionAdherence] = []
+    maintenance_post_safety: list[SessionSafetyDecision] = []
+    maintenance_exposure_entry_ids: list[UUID] = []
+    for block_week in range(1, second_block.duration_weeks + 1):
+        maintenance_plan = maintenance_plans[-1]
+        assert maintenance_plan.block_plan_id == second_block.id
+        assert maintenance_plan.block_week == block_week
+        for planned_session in maintenance_plan.sessions:
+            pre_safety = PersistedSessionSafetyService(session).execute(
+                maintenance_plan.id,
+                planned_session.id,
+                CreateSessionSafetyDecisionCommand(
+                    timing=SafetyGateTiming.PRE_SESSION,
+                    readiness=ReadinessLevel.READY,
+                    reported_at=planned_session.starts_at - timedelta(minutes=2),
+                    decided_at=planned_session.starts_at - timedelta(minutes=1),
+                    reliability=Confidence.HIGH,
+                    provenance=provenance,
+                ),
+            )
+            execution_result = PersistedSessionExecutionService(session).execute(
+                maintenance_plan.id,
+                planned_session.id,
+                CreateSessionExecutionCommand(
+                    pre_session_safety_decision_id=pre_safety.decision.id,
+                    status=SessionExecutionStatus.COMPLETED,
+                    started_at=planned_session.starts_at,
+                    ended_at=planned_session.ends_at,
+                    items=(
+                        SessionItemExecutionInput(
+                            prescription_id=maintenance_prescription.id,
+                            status=SessionExecutionStatus.COMPLETED,
+                            performances=tuple(
+                                SetPerformance(
+                                    set_index=set_index,
+                                    performed=True,
+                                    target_completed=True,
+                                    actual_repetitions=3,
+                                    effort_rpe=6,
+                                    technique_constraint_met=True,
+                                )
+                                for set_index in range(1, 3)
+                            ),
+                            item_rpe=6,
+                        ),
+                    ),
+                    session_rpe=6,
+                    logged_at=planned_session.ends_at + timedelta(minutes=1),
+                    adherence_calculated_at=planned_session.ends_at + timedelta(minutes=2),
+                    reliability=Confidence.HIGH,
+                    provenance=provenance,
+                ),
+            )
+            post_safety = PersistedSessionSafetyService(session).execute(
+                maintenance_plan.id,
+                planned_session.id,
+                CreateSessionSafetyDecisionCommand(
+                    timing=SafetyGateTiming.POST_SESSION,
+                    related_session_execution_id=execution_result.execution.id,
+                    reported_at=planned_session.ends_at + timedelta(minutes=3),
+                    decided_at=planned_session.ends_at + timedelta(minutes=4),
+                    reliability=Confidence.HIGH,
+                    provenance=provenance,
+                ),
+            )
+            progression_result = PersistedProgressionService(session).execute(
+                execution_result.execution.id,
+                maintenance_prescription.id,
+                CreateProgressionDecisionCommand(
+                    progression_policy_id=maintenance_progression_policy.id,
+                    exposure=ExposureProgressionDraft(
+                        exposure_definition_id=maintenance_exposure_definition.id,
+                        exposure_progression_policy_id=maintenance_exposure_policy.id,
+                        proposed_dose=8,
+                        proposed_for=planned_session.ends_at + timedelta(minutes=5),
+                    ),
+                    decided_at=planned_session.ends_at + timedelta(minutes=5),
+                ),
+            )
+            assert progression_result.progression_decision.outcome is ProgressionOutcome.REPEAT
+            assert progression_result.revised_prescription is None
+            assert progression_result.exposure_entry is not None
+            assert progression_result.exposure_entry.dose_value == 6
+            assert (
+                progression_result.exposure_entry.exposure_definition_id
+                == maintenance_exposure_definition.id
+            )
+            maintenance_executions.append(execution_result.execution)
+            maintenance_adherences.extend(execution_result.adherence)
+            maintenance_post_safety.append(post_safety.decision)
+            maintenance_exposure_entry_ids.append(progression_result.exposure_entry.id)
+
+        if block_week < second_block.duration_weeks:
+            next_week_start = maintenance_plan.week_start + timedelta(days=7)
+            next_windows = tuple(
+                AvailabilityWindowDraft(
+                    environment_id=successor_environment_id,
+                    starts_at=datetime.combine(
+                        next_week_start + timedelta(days=day),
+                        datetime.min.time(),
+                        tzinfo=UTC,
+                    )
+                    + timedelta(hours=18),
+                    ends_at=datetime.combine(
+                        next_week_start + timedelta(days=day),
+                        datetime.min.time(),
+                        tzinfo=UTC,
+                    )
+                    + timedelta(hours=18, minutes=30),
+                )
+                for day in (1, 4)
+            )
+            confirmed_at = max(item.ends_at for item in maintenance_plan.sessions) + timedelta(
+                minutes=6
+            )
+            availability_result = PersistedWeeklyAvailabilityConfirmationService(session).execute(
+                maintenance_plan.id,
+                ConfirmWeeklyAvailabilityCommand(
+                    windows=next_windows,
+                    confirmed_at=confirmed_at,
+                    reliability=Confidence.HIGH,
+                    provenance=provenance,
+                ),
+            )
+            roll_forward = PersistedWeeklyPlanRollForwardService(session).execute(
+                maintenance_plan.id,
+                RollForwardWeeklyPlanCommand(
+                    weekly_availability_id=availability_result.availability.id,
+                    prepared_at=confirmed_at + timedelta(minutes=1),
+                ),
+            )
+            assert roll_forward.weekly_plan.block_plan_id == second_block.id
+            assert roll_forward.weekly_plan.block_week == block_week + 1
+            assert roll_forward.prescriptions == (maintenance_prescription,)
+            maintenance_plans.append(roll_forward.weekly_plan)
+
+    assert len(maintenance_plans) == 4
+    assert len(maintenance_executions) == 8
+    assert len(maintenance_adherences) == 8
+    assert len(maintenance_post_safety) == 8
+    persisted_maintenance_entries = tuple(
+        item
+        for item in repository.list_exposure_entries_for_athlete(
+            strategy.athlete_id, ExposureType.JUMPING.value
+        )
+        if item.id in set(maintenance_exposure_entry_ids)
+    )
+    assert len(persisted_maintenance_entries) == 8
+    assert {item.dose_value for item in persisted_maintenance_entries} == {6}
+    for maintenance_execution in maintenance_executions:
+        execution_plan = repository.get_weekly_plan(maintenance_execution.weekly_plan_id)
+        assert execution_plan is not None
+        assert execution_plan.block_plan_id == second_block.id
+    assert execution.id not in {item.id for item in maintenance_executions}
+
+    second_block_end = second_block.starts_on + timedelta(weeks=second_block.duration_weeks)
+    second_review_time = datetime.combine(
+        second_block_end, datetime.min.time(), tzinfo=UTC
+    ) + timedelta(hours=14)
+    second_followup_observation = Observation(
+        athlete_id=strategy.athlete_id,
+        observed_at=second_review_time - timedelta(hours=2),
+        observation_type="fixture_maintenance_jump_test",
+        measurement=followup.estimate,
+        unit=followup.unit_or_scale,
+        source=ObservationSource.TEST_RESULT,
+        reliability=Confidence.MODERATE,
+        provenance=provenance,
+    )
+    repository.add_observation(second_followup_observation)
+    session.flush()
+    second_followup = CapabilityEstimate(
+        athlete_id=strategy.athlete_id,
+        domain=followup.domain,
+        estimate=followup.estimate,
+        unit_or_scale=followup.unit_or_scale,
+        estimate_scope=followup.estimate_scope,
+        confidence=Confidence.MODERATE,
+        calculation_method="fixture successor maintenance follow-up",
+        source_observation_ids=(second_followup_observation.id,),
+        estimated_at=second_review_time - timedelta(hours=1),
+        valid_until=second_review_time + timedelta(days=30),
+        rule_version="fixture-maintenance-followup@1.0.0",
+    )
+    repository.add_capability_estimate(second_followup)
+    session.commit()
+
+    operational_maintenance_authority = OperationalResponseEvaluationAuthority(
+        candidate_id=construction_candidate_id,
+        candidate_content_digest=construction_digest,
+        block_review_policy=maintenance_review_policy,
+        authority=maintenance_response_authority,
+    )
+    monkeypatch.setattr(
+        post_block_preparation_module,
+        "list_operational_response_evaluation_authorities",
+        lambda _session: (operational_maintenance_authority,),
+    )
+    monkeypatch.setattr(
+        block_review_application_module,
+        "get_operational_response_evaluation_authority",
+        lambda _session, authority_id: (
+            operational_maintenance_authority
+            if authority_id == maintenance_response_authority.id
+            else None
+        ),
+    )
+    second_review_preparation = BlockReviewPreparationProjector(session).project(
+        second_block.id, second_review_time
+    )
+    assert second_review_preparation.status == "ready_for_explicit_review"
+    assert second_review_preparation.issues == ()
+    assert len(second_review_preparation.prepared_response_interpretations) == 1
+    prepared_maintenance_response = second_review_preparation.prepared_response_interpretations[0]
+    assert prepared_maintenance_response.baseline_capability_estimate_id == followup.id
+    assert prepared_maintenance_response.baseline_capability_estimate_id != baseline.id
+    assert prepared_maintenance_response.followup_capability_estimate_id == second_followup.id
+    assert prepared_maintenance_response.minimum_meaningful_change == 0
+    maintenance_response_draft = TrainingResponseDraft(
+        adaptation_id=prepared_maintenance_response.adaptation_id,
+        prescription_ids=prepared_maintenance_response.prescription_ids,
+        baseline_capability_estimate_id=(
+            prepared_maintenance_response.baseline_capability_estimate_id
+        ),
+        followup_capability_estimate_id=(
+            prepared_maintenance_response.followup_capability_estimate_id
+        ),
+        intervention_summary=prepared_maintenance_response.intervention_summary,
+        measurement_uncertainty=prepared_maintenance_response.measurement_uncertainty,
+        contextual_factors=prepared_maintenance_response.contextual_factors,
+        comparison_direction=ComparisonDirection(
+            prepared_maintenance_response.comparison_direction
+        ),
+        minimum_meaningful_change=(prepared_maintenance_response.minimum_meaningful_change),
+        response_evaluation_authority_id=(
+            prepared_maintenance_response.response_evaluation_authority_id
+        ),
+    )
+    second_review_result = execute_operator_block_review(
+        session,
+        second_block.id,
+        OperatorBlockReviewRequest(
+            block_review_policy_id=maintenance_review_policy.id,
+            response_drafts=(maintenance_response_draft,),
+            responses_calculated_at=second_review_time,
+            reviewed_at=second_review_time + timedelta(minutes=1),
+            applicability_rationale=(
+                "Interpret only the completed successor maintenance block under its exact "
+                "ratified response authority."
+            ),
+            uncertainty="No measured decline is not proof of physiological equivalence.",
+        ),
+        authority,
+    )
+    second_response = second_review_result.training_responses[0]
+    second_review = second_review_result.block_review
+    assert second_review.outcome is BlockReviewOutcome.SUPPORTED
+    assert second_response.baseline_capability_estimate_id == followup.id
+    assert second_response.followup_capability_estimate_id == second_followup.id
+    assert set(second_response.session_execution_ids) == {
+        item.id for item in maintenance_executions
+    }
+    assert execution.id not in second_response.session_execution_ids
+    assert set(second_response.session_adherence_ids) == {
+        item.id for item in maintenance_adherences
+    }
+    assert set(second_review.post_session_safety_decision_ids) == {
+        item.id for item in maintenance_post_safety
+    }
+    assert f"block_plan:{second_block.id}" in second_review_result.decision_record.evidence
+    assert f"block_plan:{block.id}" not in second_review_result.decision_record.evidence
+
+    second_replanning_preparation = ReplanningPreparationProjector(session).project(
+        second_review.id, projected_at=second_review.reviewed_at + timedelta(minutes=1)
+    )
+    assert second_replanning_preparation.status == "ready_for_explicit_replanning"
+    second_prepared_successor = second_replanning_preparation.prepared_successor_context
+    assert second_prepared_successor is not None
+    assert second_prepared_successor.candidate_contexts[0].capability_estimate_id == (
+        second_followup.id
+    )
+    assert second_prepared_successor.candidate_contexts[0].capability_estimate_id != followup.id
+    third_strategy_result = execute_operator_replanning(
+        session,
+        second_review.id,
+        OperatorReplanningRequest(
+            candidate_contexts=second_prepared_successor.candidate_contexts,
+            generated_at=second_review.reviewed_at + timedelta(minutes=2),
+            review_after_days=second_prepared_successor.review_after_days,
+            source_initial_planning_context_draft_id=(
+                second_prepared_successor.source_initial_planning_context_draft_id
+            ),
+            source_initial_planning_context_review_id=(
+                second_prepared_successor.source_initial_planning_context_review_id
+            ),
+            prepared_successor_context_digest=second_prepared_successor.content_digest,
+            applicability_rationale=second_prepared_successor.applicability_rationale,
+            uncertainty=second_prepared_successor.uncertainty,
+        ),
+        authority,
+    )
+    assert third_strategy_result.strategy.supersedes_strategy_id == replanning_result.strategy.id
+    assert third_strategy_result.strategy.triggering_block_review_id == second_review.id
+    assert third_strategy_result.strategy.source_capability_estimate_ids == (second_followup.id,)
+    assert followup.id not in third_strategy_result.strategy.source_capability_estimate_ids
+    assert f"block_review:{second_review.id}" in third_strategy_result.decision_record.evidence
+    assert f"block_review:{review.id}" not in third_strategy_result.decision_record.evidence
 
     invalid_revision = replanning_result.strategy.model_copy(
         update={"id": uuid4(), "triggering_block_review_id": uuid4()}

@@ -7,12 +7,18 @@ from uuid import UUID
 
 from agas_domain import (
     Adaptation,
+    AdaptationPriority,
     CapabilityEstimate,
+    CapabilityNeed,
+    CompetencyStatus,
     ExposureNeed,
     ExposureNeedStatus,
+    FixedDurationDosePolicy,
+    FixedRepetitionDosePolicy,
     IntroductoryExposureDose,
     IntroductoryExposureDosePolicy,
     RepetitionDosePolicy,
+    TrainingPriorityState,
 )
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -23,6 +29,14 @@ class RepetitionDoseError(ValueError):
 
 class IntroductoryExposureDoseError(ValueError):
     """Raised when an exposure need and fixed starting-dose policy are incompatible."""
+
+
+class FixedRepetitionDoseError(ValueError):
+    """Raised when governed capability lineage cannot authorize a fixed starting dose."""
+
+
+class FixedDurationDoseError(ValueError):
+    """Raised when governed capability lineage cannot authorize fixed duration work."""
 
 
 class IntroductoryExposureDosePlanner:
@@ -115,6 +129,242 @@ class DerivedRepetitionDose(BaseModel):
     derived_at: datetime
     calculation_method: str
     rule_version: str
+
+
+class DerivedFixedRepetitionDose(BaseModel):
+    """Inspectible fixed dose whose repetitions do not come from estimate arithmetic."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    adaptation_id: UUID
+    adaptation_priority_id: UUID
+    capability_need_id: UUID
+    capability_estimate_id: UUID
+    fixed_repetition_dose_policy_id: UUID
+    progression_policy_id: UUID
+    sets: int = Field(ge=1)
+    repetitions_per_set: int = Field(ge=1)
+    rest_seconds: int = Field(ge=0)
+    effort_rpe_minimum: float = Field(ge=0, le=10)
+    effort_rpe_maximum: float = Field(ge=0, le=10)
+    technique_constraints: tuple[str, ...]
+    planned_duration_minutes: int = Field(gt=0)
+    source_observation_ids: tuple[UUID, ...]
+    evidence_claim_ids: tuple[UUID, ...]
+    numeric_value_origin: str
+    authority_reference: str
+    derived_at: datetime
+    calculation_method: str
+    rule_version: str
+
+
+class DerivedFixedDurationDose(BaseModel):
+    """Inspectible duration dose whose seconds do not come from estimate arithmetic."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    adaptation_id: UUID
+    adaptation_priority_id: UUID
+    capability_need_id: UUID
+    capability_estimate_id: UUID
+    fixed_duration_dose_policy_id: UUID
+    progression_policy_id: UUID
+    sets: int = Field(ge=1)
+    duration_seconds_per_set: int = Field(ge=1)
+    rest_seconds: int = Field(ge=0)
+    effort_rpe_minimum: float = Field(ge=0, le=10)
+    effort_rpe_maximum: float = Field(ge=0, le=10)
+    technique_constraints: tuple[str, ...]
+    planned_duration_minutes: int = Field(gt=0)
+    source_observation_ids: tuple[UUID, ...]
+    evidence_claim_ids: tuple[UUID, ...]
+    numeric_value_origin: str
+    authority_reference: str
+    derived_at: datetime
+    calculation_method: str
+    rule_version: str
+
+
+class FixedDurationDosePlanner:
+    """Apply one explicit duration dose to one exact governed priority lineage."""
+
+    def derive(
+        self,
+        *,
+        adaptation: Adaptation,
+        priority: AdaptationPriority,
+        need: CapabilityNeed,
+        estimate: CapabilityEstimate,
+        policy: FixedDurationDosePolicy,
+        derived_at: datetime,
+    ) -> DerivedFixedDurationDose:
+        self._require_aware(derived_at)
+        if priority.state is not policy.priority_state:
+            raise FixedDurationDoseError(
+                f"fixed duration requires a {policy.priority_state.value.upper()} priority under "
+                "this policy"
+            )
+        if priority.adaptation_id != adaptation.id or priority.capability_need_id != need.id:
+            raise FixedDurationDoseError("priority lineage does not match adaptation and need")
+        expected_need_statuses = {
+            TrainingPriorityState.DEVELOP: {CompetencyStatus.BELOW_FLOOR},
+            TrainingPriorityState.MAINTAIN: {
+                CompetencyStatus.MEETS_FLOOR,
+                CompetencyStatus.ABOVE_FLOOR,
+            },
+        }[policy.priority_state]
+        if need.status not in expected_need_statuses:
+            expected_label = (
+                "below-floor"
+                if policy.priority_state is TrainingPriorityState.DEVELOP
+                else "at-or-above-floor"
+            )
+            raise FixedDurationDoseError(
+                f"fixed duration requires {expected_label} capability-need lineage"
+            )
+        if need.capability_estimate_id != estimate.id:
+            raise FixedDurationDoseError("capability need does not reference the supplied estimate")
+        if need.athlete_id != estimate.athlete_id:
+            raise FixedDurationDoseError(
+                "capability need and estimate belong to different athletes"
+            )
+        if adaptation.id != policy.adaptation_id:
+            raise FixedDurationDoseError("dose policy belongs to a different adaptation")
+        if need.domain is not adaptation.domain or estimate.domain is not adaptation.domain:
+            raise FixedDurationDoseError("capability lineage does not match the adaptation domain")
+        if need.identified_at > derived_at or estimate.estimated_at > derived_at:
+            raise FixedDurationDoseError("capability lineage cannot come from the future")
+        if estimate.valid_until is not None and estimate.valid_until <= derived_at:
+            raise FixedDurationDoseError("capability estimate is stale")
+        if estimate.estimate_scope != policy.estimate_scope:
+            raise FixedDurationDoseError("capability estimate scope does not match the dose policy")
+        total_duration = policy.sets * policy.duration_seconds_per_set
+        if total_duration > policy.maximum_initial_total_duration_seconds:
+            raise FixedDurationDoseError("fixed starting duration exceeds the policy maximum")
+        return DerivedFixedDurationDose(
+            adaptation_id=adaptation.id,
+            adaptation_priority_id=priority.id,
+            capability_need_id=need.id,
+            capability_estimate_id=estimate.id,
+            fixed_duration_dose_policy_id=policy.id,
+            progression_policy_id=policy.progression_policy_id,
+            sets=policy.sets,
+            duration_seconds_per_set=policy.duration_seconds_per_set,
+            rest_seconds=policy.rest_seconds,
+            effort_rpe_minimum=policy.effort_rpe_minimum,
+            effort_rpe_maximum=policy.effort_rpe_maximum,
+            technique_constraints=policy.technique_constraints,
+            planned_duration_minutes=policy.planned_duration_minutes,
+            source_observation_ids=estimate.source_observation_ids,
+            evidence_claim_ids=policy.evidence_claim_ids,
+            numeric_value_origin=policy.numeric_value_origin,
+            authority_reference=policy.authority_reference,
+            derived_at=derived_at,
+            calculation_method=(
+                f"fixed {policy.sets}x{policy.duration_seconds_per_set} seconds under "
+                f"{policy.policy_version}; estimate value not used as dose arithmetic"
+            ),
+            rule_version=policy.policy_version,
+        )
+
+    @staticmethod
+    def _require_aware(value: datetime) -> None:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise FixedDurationDoseError("dose derivation timestamps must include a timezone")
+
+
+class FixedRepetitionDosePlanner:
+    """Apply one explicit fixed dose to one exact governed priority lineage."""
+
+    def derive(
+        self,
+        *,
+        adaptation: Adaptation,
+        priority: AdaptationPriority,
+        need: CapabilityNeed,
+        estimate: CapabilityEstimate,
+        policy: FixedRepetitionDosePolicy,
+        derived_at: datetime,
+    ) -> DerivedFixedRepetitionDose:
+        self._require_aware(derived_at)
+        if priority.state is not policy.priority_state:
+            raise FixedRepetitionDoseError(
+                f"fixed dose requires a {policy.priority_state.value.upper()} priority under "
+                "this policy"
+            )
+        if priority.adaptation_id != adaptation.id or priority.capability_need_id != need.id:
+            raise FixedRepetitionDoseError("priority lineage does not match adaptation and need")
+        expected_need_statuses = {
+            TrainingPriorityState.DEVELOP: {CompetencyStatus.BELOW_FLOOR},
+            TrainingPriorityState.MAINTAIN: {
+                CompetencyStatus.MEETS_FLOOR,
+                CompetencyStatus.ABOVE_FLOOR,
+            },
+        }[policy.priority_state]
+        if need.status not in expected_need_statuses:
+            expected_label = (
+                "below-floor"
+                if policy.priority_state is TrainingPriorityState.DEVELOP
+                else "at-or-above-floor"
+            )
+            raise FixedRepetitionDoseError(
+                f"fixed dose requires {expected_label} capability-need lineage"
+            )
+        if need.capability_estimate_id != estimate.id:
+            raise FixedRepetitionDoseError(
+                "capability need does not reference the supplied estimate"
+            )
+        if need.athlete_id != estimate.athlete_id:
+            raise FixedRepetitionDoseError(
+                "capability need and estimate belong to different athletes"
+            )
+        if adaptation.id != policy.adaptation_id:
+            raise FixedRepetitionDoseError("dose policy belongs to a different adaptation")
+        if need.domain is not adaptation.domain or estimate.domain is not adaptation.domain:
+            raise FixedRepetitionDoseError(
+                "capability lineage does not match the adaptation domain"
+            )
+        if need.identified_at > derived_at or estimate.estimated_at > derived_at:
+            raise FixedRepetitionDoseError("capability lineage cannot come from the future")
+        if estimate.valid_until is not None and estimate.valid_until <= derived_at:
+            raise FixedRepetitionDoseError("capability estimate is stale")
+        if estimate.estimate_scope != policy.estimate_scope:
+            raise FixedRepetitionDoseError(
+                "capability estimate scope does not match the dose policy"
+            )
+        total_repetitions = policy.sets * policy.repetitions_per_set
+        if total_repetitions > policy.maximum_initial_total_repetitions:
+            raise FixedRepetitionDoseError("fixed starting dose exceeds the policy maximum")
+        return DerivedFixedRepetitionDose(
+            adaptation_id=adaptation.id,
+            adaptation_priority_id=priority.id,
+            capability_need_id=need.id,
+            capability_estimate_id=estimate.id,
+            fixed_repetition_dose_policy_id=policy.id,
+            progression_policy_id=policy.progression_policy_id,
+            sets=policy.sets,
+            repetitions_per_set=policy.repetitions_per_set,
+            rest_seconds=policy.rest_seconds,
+            effort_rpe_minimum=policy.effort_rpe_minimum,
+            effort_rpe_maximum=policy.effort_rpe_maximum,
+            technique_constraints=policy.technique_constraints,
+            planned_duration_minutes=policy.planned_duration_minutes,
+            source_observation_ids=estimate.source_observation_ids,
+            evidence_claim_ids=policy.evidence_claim_ids,
+            numeric_value_origin=policy.numeric_value_origin,
+            authority_reference=policy.authority_reference,
+            derived_at=derived_at,
+            calculation_method=(
+                f"fixed {policy.sets}x{policy.repetitions_per_set} under "
+                f"{policy.policy_version}; estimate value not used as dose arithmetic"
+            ),
+            rule_version=policy.policy_version,
+        )
+
+    @staticmethod
+    def _require_aware(value: datetime) -> None:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise FixedRepetitionDoseError("dose derivation timestamps must include a timezone")
 
 
 class RepetitionDosePlanner:

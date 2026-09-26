@@ -1,0 +1,188 @@
+{
+  "document_schema_version": "competency-floor-candidate-document@1.0.0",
+  "candidate_version": "competency-floor-candidate@1.1.0",
+  "content_digest": "sha256:a4e54fef0e120a343312f9cda0bf5edc194458f08eb199aa89d5bbae61ac5b75",
+  "accepted_historical_content_digests": [],
+  "presentation": {
+    "candidate_id": "91800000-0000-4000-8000-000000000001",
+    "slug": "owner_alpha_twelve_minute_walk_run_provisional_floor",
+    "release_label": "Owner-alpha provisional 12-minute walk/run floor",
+    "prepared_at": "2026-09-25T15:00:00Z",
+    "summary": "A deliberately low, owner-only 1200 meter floor for the exact governed 12-minute walk/run test, separated from laboratory VO2 and population fitness categories.",
+    "authority_basis": {
+      "numeric_value_origin": "engineering_judgment",
+      "operational_use_origin": "engineering_judgment",
+      "numeric_value_explanation": "The 1200 meter value is an AGAS engineering prior corresponding to an average 6 km/h pace. It is not extracted from the Mayorga-Vega meta-analysis and is not a validated health, performance, or safety threshold.",
+      "operational_use_explanation": "A planning reviewer may provisionally adopt the value only for the owner-alpha athlete and the exact governed 12-minute distance estimate. The validity evidence supports the field measure, not this threshold."
+    },
+    "domain": "aerobic_capacity",
+    "estimate_scope": "assessment_specific:twelve_minute_walk_run_distance_m",
+    "unit_or_scale": "meters",
+    "threshold": 1200.0,
+    "comparison_direction": "higher_is_better",
+    "minimum_age_years": 30,
+    "maximum_age_years": 39,
+    "governs": [
+      "One owner-alpha comparison between a current estimate from the exact governed 12-minute walk/run protocol and a provisional 1200 meter floor.",
+      "A below-floor result may support an aerobic-capacity development need while retaining the observation, estimate, floor, evidence, and judgment-authority identities."
+    ],
+    "does_not_establish": [
+      "A population norm, percentile, diagnosis, cardiovascular-risk threshold, running-readiness threshold, or medical clearance.",
+      "That 1200 meters is a scientific minimum, public-health target, or optimal target for this athlete.",
+      "A training modality, weekly minutes, intensity, progression rule, or permission to exercise.",
+      "That meeting the floor proves adequate aerobic fitness or eliminates the value of maintenance and later personal calibration."
+    ],
+    "unresolved_limitations": [
+      "No reviewed scientific source validates 1200 meters as a minimum useful competency for the owner-alpha athlete.",
+      "Test performance depends on pacing, motivation, route accuracy, surface, weather, footwear, fatigue, and walking or running familiarity.",
+      "The meta-analysis supports criterion-related validity of the field test but not a universal or owner-specific cutoff.",
+      "The threshold should be replaced or withdrawn after repeatable personal baseline and response observations exist."
+    ],
+    "evidence": [
+      {
+        "title": "Mayorga-Vega et al. (2016), walk/run field-test validity meta-analysis",
+        "source_url": "https://pubmed.ncbi.nlm.nih.gov/26987118/",
+        "population": "Children, adolescents, and adults represented across 123 criterion-validity studies.",
+        "finding": "Distance in the 12-minute walk/run test had a pooled validity correlation of 0.78 with criterion cardiorespiratory-fitness measures.",
+        "limitations": [
+          "The review does not validate 1200 meters as an AGAS floor.",
+          "A field-test distance is not a direct laboratory VO2 measurement.",
+          "Heterogeneous samples and protocols limit athlete-specific transfer."
+        ],
+        "conflict_disclosure": "The authors declared no competing interests."
+      }
+    ]
+  },
+  "release": {
+    "release_id": "91800000-0000-4000-8000-000000000001",
+    "release_label": "Owner-alpha provisional 12-minute walk/run floor",
+    "prepared_at": "2026-09-25T15:00:00Z",
+    "source": {
+      "id": "91700000-0000-4000-8000-000000000001",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-25T14:00:00Z",
+      "title": "Criterion-Related Validity of the Distance- and Time-Based Walk/Run Field Tests for Estimating Cardiorespiratory Fitness: A Systematic Review and Meta-Analysis",
+      "authors": ["Daniel Mayorga-Vega", "Raúl Bocanegra-Parrilla", "Martha Ornelas", "Jesús Viciana"],
+      "journal": "PLOS ONE",
+      "publication_year": 2016,
+      "publication_date": "2016-03-17",
+      "abstract": null,
+      "publication_types": ["Systematic Review", "Meta-Analysis"],
+      "primary_identifier": {"scheme": "pmid", "value": "26987118"},
+      "source_identifiers": [
+        {"scheme": "pmid", "value": "26987118"},
+        {"scheme": "other", "value": "PMCID:PMC4795745"},
+        {"scheme": "doi", "value": "10.1371/journal.pone.0151671"}
+      ],
+      "metadata_provider": "pubmed",
+      "retrieval_uri": "https://pubmed.ncbi.nlm.nih.gov/26987118/",
+      "retrieval_query": "PMID 26987118",
+      "retrieved_at": "2026-09-25T14:00:00Z",
+      "metadata_version": "pubmed-record-snapshot@2026-09-25",
+      "provenance_notes": [
+        "Title, authors, journal, publication date, identifiers, study count, pooled correlation, and conflict statement were checked against PubMed and the full PMC article.",
+        "The abstract is intentionally not copied into the stored snapshot.",
+        "This release uses the review to support the validity of the 12-minute walk/run distance as an aerobic field measure, not to authorize a VO2 conversion, competency floor, or training dose."
+      ],
+      "sequence_number": 1,
+      "supersedes_source_id": null
+    },
+    "claim": {
+      "id": "91710000-0000-4000-8000-000000000001",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-25T14:10:00Z",
+      "claim": "Across the studies synthesized by Mayorga-Vega and colleagues, distance covered during the 12-minute walk/run test had high criterion-related validity for estimating cardiorespiratory fitness; the pooled correlation was 0.78 with a 95% confidence interval from 0.72 to 0.83.",
+      "domain": "aerobic_field_assessment_validity",
+      "population": "Children, adolescents, and adults represented across 123 included studies; the 12-minute walk/run result pooled the applicable validation samples.",
+      "intervention": "A 12-minute field test in which the participant walks or runs to cover the greatest possible distance.",
+      "comparator": "Laboratory criterion measures of cardiorespiratory fitness in the included validation studies.",
+      "outcome": "Criterion-related validity of test distance for estimating cardiorespiratory fitness.",
+      "study_design": "Systematic review and meta-analysis of criterion-related validity studies",
+      "sample_size": null,
+      "duration": null,
+      "effect_direction": "Greater valid distance generally corresponds to higher cardiorespiratory fitness.",
+      "uncertainty": "The pooled association does not make field distance a direct VO2 measurement, does not remove effort and pacing effects, and does not establish an owner-specific floor.",
+      "limitations": [
+        "The included samples, protocols, surfaces, criterion tests, and participant ages were heterogeneous.",
+        "A high correlation still leaves individual estimation error and does not establish interchangeability with laboratory testing.",
+        "The review does not validate an AGAS competency threshold, reassessment interval, or exercise prescription."
+      ],
+      "evidence_strength": "moderate",
+      "athlete_applicability": "moderate",
+      "applicability_notes": "The adult validation literature is directionally applicable to an apparently healthy owner-alpha adult, but current readiness, walking/running familiarity, environment, pacing, and repeat-test consistency remain controlling.",
+      "source_identifiers": [
+        {"scheme": "pmid", "value": "26987118"},
+        {"scheme": "other", "value": "PMCID:PMC4795745"},
+        {"scheme": "doi", "value": "10.1371/journal.pone.0151671"}
+      ],
+      "source_record_ids": ["91700000-0000-4000-8000-000000000001"],
+      "reviewer": "Codex evidence synthesis candidate; authority pending",
+      "claim_version": "mayorga-vega-twelve-minute-walk-run-validity@1.0.0"
+    },
+    "evidence_review_id": "91810000-0000-4000-8000-000000000001",
+    "evidence_review_content": {
+      "source_verification_rationale": "The PubMed record and full PMC article for PMID 26987118 were checked for source identity, eligibility, test grouping, pooled 12-minute walk/run correlation, confidence interval, and declared competing interests.",
+      "extraction_rationale": "The claim retains the validity association for the exact field-test family while explicitly excluding conversion into a floor.",
+      "evidence_strength_rationale": "Moderate reflects a systematic review and meta-analysis of validation studies, reduced from high for heterogeneous populations, comparators, protocols, and individual prediction error.",
+      "applicability_rationale": "Moderate reflects adult evidence and practical owner-alpha feasibility without assuming the pooled samples exactly match this athlete.",
+      "uncertainty": "Pacing, motivation, route accuracy, conditions, fatigue, and modality familiarity can materially affect repeatability and transfer.",
+      "conflict_disclosure": "The authors declared no competing interests.",
+      "review_version": "mayorga-vega-twelve-minute-walk-run-floor-context-review@1.0.0"
+    },
+    "authority": {
+      "id": "91820000-0000-4000-8000-000000000001",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-25T14:40:00Z",
+      "authority_kind": "engineering_judgment",
+      "statement": "For the owner-alpha athlete only, treat 1200.0 meters under the exact governed 12-minute walk/run protocol as a provisional minimum useful repeat-performance floor.",
+      "scope": "assessment_specific:twelve_minute_walk_run_distance_m",
+      "population": "Owner-only alpha; age 30 to 39; recreationally trained adult doing physical work.",
+      "rationale": "Twelve hundred meters corresponds to a six kilometer-per-hour average and is a deliberately low sentinel intended to identify a clearly limited result without turning a population association into athlete truth.",
+      "applicability_notes": "Use only with a current estimate from the matching governed protocol after its separate readiness and environment gates are satisfied. Review after repeat personal measurements exist.",
+      "uncertainty": "No scientific source validates 1200 meters as a minimum useful athletic competency, and a first personal result cannot establish whether this threshold is appropriately calibrated.",
+      "limitations": [
+        "This threshold has no population-validity claim.",
+        "It cannot establish medical safety, running readiness, injury risk, or a training dose.",
+        "Meeting it does not show that aerobic capacity is optimal or should be ignored.",
+        "Personal longitudinal calibration should replace it when enough observations exist."
+      ],
+      "authored_by": "AGAS engineering candidate prepared by Codex",
+      "qualification_context": "System engineering synthesis; not user-authored and not a claim of a licensed clinical or conditioning credential. A planning reviewer must explicitly adopt the exact judgment before operational use.",
+      "supporting_evidence_claim_ids": ["91710000-0000-4000-8000-000000000001"],
+      "content_digest": "sha256:6a78a77bea468aa758a958e792b5f3e80e1ff2938db66f84f10c5ddcc8ffcbe4",
+      "authority_version": "owner-alpha-twelve-minute-walk-run-provisional-floor-authority@1.0.0"
+    },
+    "authority_review_id": "91830000-0000-4000-8000-000000000001",
+    "authority_review_content": {
+      "attestation": "I adopt this exact owner-alpha product judgment for narrow planning use and understand that 1200 meters is not a scientific finding, population norm, safety clearance, or exercise prescription.",
+      "uncertainty": "Approval does not establish external validity; replace or withdraw this authority when personal calibration or better applicable evidence supports a different decision.",
+      "review_version": "owner-alpha-twelve-minute-walk-run-floor-authority-review@1.0.0"
+    },
+    "floor": {
+      "id": "91840000-0000-4000-8000-000000000001",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-25T14:50:00Z",
+      "domain": "aerobic_capacity",
+      "estimate_scope": "assessment_specific:twelve_minute_walk_run_distance_m",
+      "unit_or_scale": "meters",
+      "threshold": 1200.0,
+      "comparison_direction": "higher_is_better",
+      "population": "Owner-only alpha; age 30 to 39; exact governed 12-minute walk/run protocol.",
+      "minimum_age_years": 30,
+      "maximum_age_years": 39,
+      "applicability_notes": "Compare only with a current estimate from the matching governed protocol. Use the result as one planning input; never as diagnosis, safety clearance, or a universal aerobic-capacity judgment.",
+      "uncertainty": "The threshold is an explicit AGAS engineering judgment supported by assessment-validity context but no numeric scientific validation. It is provisional and replaceable after personal calibration.",
+      "evidence_claim_ids": ["91710000-0000-4000-8000-000000000001"],
+      "judgment_authority_ids": ["91820000-0000-4000-8000-000000000001"],
+      "floor_version": "owner-alpha-twelve-minute-walk-run-provisional-floor@1.0.0"
+    },
+    "floor_review_id": "91850000-0000-4000-8000-000000000001",
+    "floor_review_content": {
+      "applicability_rationale": "Approve only for the owner-alpha athlete, ages 30 to 39, after a current estimate from the exact governed 12-minute walk/run protocol. The comparison may inform development or maintenance but is not a medical or safety decision.",
+      "uncertainty": "The source supports the field measure only; the number 1200 does not come from it. Approval adopts the separate reviewed engineering authority and requires later personal calibration.",
+      "review_version": "owner-alpha-twelve-minute-walk-run-floor-review@1.0.0"
+    },
+    "release_rationale": "Provide one honest, owner-reviewable aerobic-capacity floor so the governed 12-minute distance can enter planning without a VO2 conversion or disguising a product judgment as a scientific norm.",
+    "release_uncertainty": "Ratification would authorize only this owner-alpha comparison. It creates no diagnosis, universal norm, readiness clearance, adaptation priority, exercise selection, duration dose, session, or permission to train."
+  }
+}

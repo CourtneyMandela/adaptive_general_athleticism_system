@@ -421,6 +421,7 @@ class PersistedInitialPlanningService:
         command: CreateInitialStrategyCommand, strategy: LongRangeStrategy
     ) -> tuple[str, ...]:
         values = [
+            f"long_range_strategy:{strategy.id}",
             f"priority_policy:{command.priority_policy_id}",
             f"priority_policy_review:{command.priority_policy_review_id}",
             *(f"adaptation:{item.adaptation_id}" for item in command.candidate_contexts),

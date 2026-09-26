@@ -215,6 +215,22 @@ class AssessmentEligibilityOutcome(StrEnum):
     REVIEW_REQUIRED = "review_required"
 
 
+class AssessmentAttemptStatus(StrEnum):
+    INCOMPLETE = "incomplete"
+    SAFETY_STOPPED = "safety_stopped"
+
+
+class AssessmentAttemptReason(StrEnum):
+    SETUP_OR_EQUIPMENT_ISSUE = "setup_or_equipment_issue"
+    MEASUREMENT_OR_ROUTE_ISSUE = "measurement_or_route_issue"
+    INSTRUCTIONS_UNCLEAR = "instructions_unclear"
+    EXTERNAL_INTERRUPTION = "external_interruption"
+    VOLUNTARY_NON_SAFETY_STOP = "voluntary_non_safety_stop"
+    OTHER_NON_SAFETY_REASON = "other_non_safety_reason"
+    LISTED_STOP_CONDITION = "listed_stop_condition"
+    LEGACY_UNSPECIFIED = "legacy_unspecified"
+
+
 class AssessmentMeasurementType(StrEnum):
     NUMBER = "number"
     INTEGER = "integer"

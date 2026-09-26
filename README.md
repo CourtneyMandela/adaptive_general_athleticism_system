@@ -162,6 +162,7 @@ POST /v1/onboarding/athletes
 GET  /v1/athletes/{athlete_id}/assessment-workflow
 POST /v1/athletes/{athlete_id}/assessment-readiness-reports
 POST /v1/athletes/{athlete_id}/assessment-runs
+POST /v1/athletes/{athlete_id}/assessment-runs/{run_id}/selections/{selection_id}/attempts
 POST /v1/athletes/{athlete_id}/assessment-runs/{run_id}/selections/{selection_id}/result
 POST /v1/athletes/{athlete_id}/assessment-performances/{performance_id}/capability-estimate
 GET  /v1/athletes/{athlete_id}/dashboard
@@ -475,6 +476,11 @@ and completed states and can submit a new non-medical selection context only whe
 authorizes it. It shows reviewed instructions, uncertainty, and evidence identifiers. Generic PWA
 result entry is rendered only for selected protocols with reviewed number, integer, or categorical
 measurement schemas; the server validates the same versioned contract again before persistence.
+Incomplete and safety-stopped attempts persist as separate non-result observations. A controlled
+non-diagnostic reason distinguishes setup, measurement, instruction, interruption, voluntary-stop,
+other non-safety, and listed-stop cases without accepting partial measurements or symptom text.
+A safety stop closes the selection and requires fresh readiness; the longitudinal view keeps
+attempts, completed direct observations, and derived estimates visibly distinct across runs.
 The panel shows due/not-due reassessment state and the next reviewed interval end without treating
 that schedule as a capability interpretation. It presents recorded measurement and derived
 protocol-specific estimate as separate records, including confidence, validity, method, rule
@@ -780,6 +786,17 @@ are application permissions, not credentials. Exact issuer/subject matching, wil
 append-only grants, and a no-self-reactivation rule for revoked roles keep this exception narrow.
 See [docs/deployment.md](docs/deployment.md) for the one-time hosted procedure.
 
+The reviewer console exposes a read-only live audit at
+`http://localhost:3000/review/readiness`. In session mode the same route inspects the connected
+hosted database through the authenticated gateway. It combines all five prepared-authority
+candidate inventories with the signed-in account's owned-athlete directory, each athlete's exact
+current-week projection for the selected date, and the current reviewer queue boundary. Candidate
+IDs, content digests, ratification times, conflicts, weekly-plan identity, block week, safety-policy
+assignment state, and projection versions remain visible. The page deliberately does not collapse
+that evidence into a global approval flag: not every candidate belongs to every athlete path, and
+each prepared planning boundary remains responsible for resolving its exact dependencies and
+failing closed.
+
 The assessment-governance workbench is available at
 `http://localhost:3000/review/assessments`. Configure
 `NEXT_PUBLIC_AGAS_ASSESSMENT_REVIEWER_TOKEN=dev.local-assessment-reviewer` or use the demo
@@ -913,13 +930,14 @@ IDs join downstream stimulus provenance. The
 backend owns the consecutive date and lineage and prepares exactly one successor week. Block-end,
 hold, review-required, missing-policy, and unsupported-policy states remain visibly blocked.
 
-This setup is provisional: the provider-neutral browser-login code exists, but no production
-identity provider or hosted client is selected or provisioned. Account recovery,
-consent/deletion and routine multi-record backup workflows, sensitive health intake, assessment
-correction/attempt workflow,
-qualified independent protocol-review workflow, complete scientific-governance UI, protocol-specific
-structured/duration assessment-result controls, estimation-policy authoring UI, or early-retest
-override yet. General governed competency-floor and priority-policy authoring workflows are also
+This setup remains an owner-only alpha: a hosted client, identity provider, API, and PostgreSQL
+database exist, but authenticated live-data readiness must be inspected rather than inferred from
+source or deployment success. It does not yet include account recovery, consent/deletion and
+routine multi-record backup workflows, sensitive health intake, an assessment correction workflow,
+a qualified independent protocol-review workflow, a complete scientific-governance UI,
+protocol-specific structured/duration assessment-result controls, an estimation-policy authoring
+UI, or an early-retest override. General governed competency-floor and priority-policy authoring
+workflows are also
 not implemented. The protected planning-authorities screen instead presents immutable prepared
 priority, floor, resource, and construction authorities. This includes the historical age-bounded
 chair-stand scaffold and a separate owner-relevant standard-push-up path whose provisional numeric
@@ -960,6 +978,20 @@ a standards-shaped local OIDC authority, and a private API test double. It valid
 athlete and reviewer navigation contracts plus the complete authorization-code/PKCE, signed-ID-token,
 encrypted-session, and authenticated same-origin gateway path. The authority and credentials exist
 only inside the test process; they are not a development or production identity provider.
+
+Run the production-shaped browser-to-API smoke path against a dedicated PostgreSQL database with:
+
+```bash
+AGAS_TEST_DATABASE_URL=postgresql+psycopg://agas:agas@localhost:5432/agas_browser_test \
+  pnpm --filter @agas/web test:e2e:real-stack
+```
+
+The database name must end in `_test`. This separate lane migrates that database to head, imports
+the controlled seed catalog, starts the real FastAPI service and Next.js session gateway, uses a
+local standards-shaped OIDC authority, and drives authenticated onboarding and persisted profile
+recovery without intercepting AGAS API calls. Teardown stops both applications and downgrades the
+dedicated database to base. CI provisions a disposable PostgreSQL 16 service and runs this lane
+without skipping it.
 
 Run only the required end-to-end domain demonstration with:
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import datetime
+from uuid import UUID
 
 from agas_domain import (
     Observation,
@@ -94,11 +95,23 @@ class SessionExecutionRecorder:
         prescription_by_id = {item.id: item for item in prescription_items}
         if len(prescription_by_id) != len(prescription_items):
             raise ExecutionRecordingError("session prescriptions contain duplicate ids")
-        expected_ids = tuple(item.prescription_id for item in session_template.items)
-        actual_ids = tuple(item.prescription_id for item in execution_input.items)
-        if actual_ids != expected_ids or set(prescription_by_id) != set(expected_ids):
+        if any(
+            item.athlete_id != session_template.athlete_id
+            or item.block_plan_id != session_template.block_plan_id
+            for item in prescription_items
+        ):
             raise ExecutionRecordingError(
-                "execution items must match the ordered session template prescriptions"
+                "session prescriptions belong to another athlete or block"
+            )
+        effective_prescriptions = self._resolve_effective_prescriptions(
+            session_template=session_template,
+            prescriptions=prescription_items,
+        )
+        expected_ids = tuple(item.id for item in effective_prescriptions)
+        actual_ids = tuple(item.prescription_id for item in execution_input.items)
+        if actual_ids != expected_ids:
+            raise ExecutionRecordingError(
+                "execution items must match the ordered effective template prescriptions"
             )
         for item in execution_input.items:
             self._validate_item(item, prescription_by_id[item.prescription_id])
@@ -163,6 +176,47 @@ class SessionExecutionRecorder:
             rule_version=self.rule_version,
         )
         return observation, execution
+
+    @staticmethod
+    def _resolve_effective_prescriptions(
+        *,
+        session_template: SessionTemplate,
+        prescriptions: tuple[SessionPrescription, ...],
+    ) -> tuple[SessionPrescription, ...]:
+        prescription_by_id = {item.id: item for item in prescriptions}
+        successors_by_id: dict[UUID, list[SessionPrescription]] = {}
+        for prescription in prescriptions:
+            if prescription.supersedes_prescription_id is not None:
+                successors_by_id.setdefault(
+                    prescription.supersedes_prescription_id,
+                    [],
+                ).append(prescription)
+
+        effective: list[SessionPrescription] = []
+        used_ids: set[UUID] = set()
+        for template_item in session_template.items:
+            current = prescription_by_id.get(template_item.prescription_id)
+            if current is None:
+                raise ExecutionRecordingError(
+                    "session prescriptions omit a template prescription ancestor"
+                )
+            used_ids.add(current.id)
+            while True:
+                successors = successors_by_id.get(current.id, [])
+                if not successors:
+                    break
+                if len(successors) != 1:
+                    raise ExecutionRecordingError(
+                        "session prescription lineage contains competing descendants"
+                    )
+                current = successors[0]
+                used_ids.add(current.id)
+            effective.append(current)
+        if used_ids != set(prescription_by_id):
+            raise ExecutionRecordingError(
+                "session prescriptions contain lineage unrelated to the template"
+            )
+        return tuple(effective)
 
     @staticmethod
     def _validate_item(item: SessionItemExecutionInput, prescription: SessionPrescription) -> None:

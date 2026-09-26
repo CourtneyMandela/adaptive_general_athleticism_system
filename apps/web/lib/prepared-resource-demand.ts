@@ -5,7 +5,7 @@ import type {
 } from "./resource-demand-review";
 
 export interface PreparedResourceDemandCandidate {
-  candidate_version: "prepared-resource-demand@1.0.0";
+  candidate_version: "prepared-resource-demand@1.0.0" | "prepared-resource-demand@1.1.0";
   candidate_id: string;
   content_digest: string;
   prepared_at: string;
@@ -13,6 +13,8 @@ export interface PreparedResourceDemandCandidate {
   athlete_id: string;
   strategy_id: string;
   priority_id: string;
+  priority_state: "develop" | "maintain" | "expose" | "defer";
+  previous_priority_state: "develop" | "maintain" | "expose" | "defer" | null;
   adaptation_id: string;
   adaptation_name: string;
   environment_id: string;
@@ -47,6 +49,7 @@ export interface PreparedResourceDemandCandidate {
   uncertainty: string;
   safety_boundary: string;
   dose_boundary: string;
+  strategy_cycle: PreparedStrategyCycleLineage;
   identities: {
     stimulus_requirement_id: string;
     exercise_resolution_id: string;
@@ -54,6 +57,20 @@ export interface PreparedResourceDemandCandidate {
     decision_record_id: string;
   };
   accepted_result: ResourceDemandPreparationResult | null;
+}
+
+export interface PreparedStrategyCycleLineage {
+  cycle: "initial" | "successor";
+  predecessor_strategy_id: string | null;
+  triggering_block_review_id: string | null;
+  predecessor_block_plan_id: string | null;
+  predecessor_block_ends_on: string | null;
+  prior_priorities: Array<{
+    adaptation_id: string;
+    adaptation_priority_id: string;
+    capability_need_id: string;
+    state: "develop" | "maintain" | "expose" | "defer";
+  }>;
 }
 
 export interface PreparedResourceDemandProjection {

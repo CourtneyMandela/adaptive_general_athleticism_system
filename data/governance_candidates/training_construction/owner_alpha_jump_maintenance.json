@@ -1,0 +1,179 @@
+{
+  "document_schema_version": "training-construction-candidate-document@1.0.0",
+  "candidate_version": "training-construction-candidate@1.0.0",
+  "content_digest": "sha256:4a43650c13f1478a07f1e55645841eefbf9c3210fc75dfd78954b0fac5753bbe",
+  "presentation": {
+    "candidate_id": "98900000-0000-4000-8000-000000000005",
+    "slug": "owner_alpha_explosive_power_jump_maintenance_authorities",
+    "release_label": "Owner-alpha explosive-power jump maintenance authorities",
+    "prepared_at": "2026-09-24T19:00:00Z",
+    "summary": "One separate owner-reviewable batch for an explosive-power MAINTAIN priority after the provisional jump floor is met: a fixed 2 by 3 countermovement-jump dose, explicit contact tracking, bounded progression, six-minute scheduling slots, non-diagnostic readiness reductions, and a separately governed no-measured-decline review rule.",
+    "authority_basis": {
+      "scientific_support": "Oxfeldt et al. support the broad direction that multiweek lower-body plyometric training can improve jump performance in healthy adults. The review does not establish a maintenance dose, this exercise, contact count, effort range, rest interval, progression cap, or recovery rule.",
+      "engineering_prior": "The 6-contact dose, RPE 4-6 range, RPE 5 progression gate, 120-second rest, 34% relative cap, two-contact absolute cap, 80% review adherence threshold, no-measured-decline response criterion, and modification mappings are explicit conservative engineering priors. Ratification accepts them provisionally and does not relabel them as scientific findings."
+    },
+    "exact_artifacts": [
+      "One fixed-repetition dose policy for an exact at-or-above-floor countermovement-jump-height estimate and explosive-power MAINTAIN priority.",
+      "One jump-contact exposure definition and one exposure-progression cap that must govern any progression decision.",
+      "One completion- and technique-gated progression policy, one weekly scheduling policy and approved review, one maintenance block-review policy and response interpretation, and one non-diagnostic session-safety policy."
+    ],
+    "governs": [
+      "Derivation of a fixed 2-set by 3-repetition maintenance dose without using jump-height centimeters as repetition arithmetic.",
+      "A maximum initial total of 6 jump contacts, 120 seconds rest, target effort RPE 4-6, and a six-minute scheduling duration.",
+      "Later progression only after complete, technique-compliant work and explicit validation against both relative and absolute jump-contact caps."
+    ],
+    "does_not_establish": [
+      "Medical clearance, tissue readiness, injury prediction, pain tolerance, or permission to ignore concerning symptoms.",
+      "That 2 sets, 3 contacts per set, RPE 4-6, the RPE 5 progression gate, 120 seconds rest, either progression cap, the 80% adherence threshold, or no measured decline is an Oxfeldt recommendation or scientific optimum.",
+      "That meeting the provisional floor proves the athlete needs no further explosive-power development or that this dose will maintain performance.",
+      "An athlete-specific session, scheduled week, completed exposure, guaranteed response, or permission to train."
+    ],
+    "unresolved_limitations": [
+      "The exact operational constants have not been calibrated against this athlete's repeated maintenance response.",
+      "The controlled-catalog countermovement jump is assessment-proximal and may preserve task familiarity as well as broader explosive performance.",
+      "Self-observed landing control and perceived effort cannot verify force distribution or all technique errors.",
+      "The athlete must still have a current exact estimate, at-or-above-floor capability need, MAINTAIN priority, feasible environment, current exposure history, and current safety clearance."
+    ],
+    "evidence": [
+      {
+        "claim_id": "91410000-0000-4000-8000-000000000002",
+        "title": "Oxfeldt et al. (2019): lower-body plyometric training direction for maintenance review",
+        "source_url": "https://pubmed.ncbi.nlm.nih.gov/31136014/",
+        "supported_use": "The systematic review and meta-analyses support only the broad direction that lower-body plyometric training can affect jump performance in healthy recreationally active adults or athletes.",
+        "unsupported_specifics": "The source does not validate maintenance efficacy, this exact exercise, a 6-contact dose, RPE 4-6, 120-second rest, 34% relative cap, two-contact absolute cap, or the session modification mappings."
+      }
+    ]
+  },
+  "release": {
+    "prepared_at": "2026-09-24T19:00:00Z",
+    "weekly_scheduling_policy": {
+      "id": "91610000-0000-4000-8000-000000000001",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-24T19:00:00Z",
+      "minimum_high_fatigue_recovery_hours": 48,
+      "maximum_sessions_per_day": 1,
+      "maximum_high_fatigue_sessions_per_day": 1,
+      "allow_partial_exercise_resolution": false,
+      "policy_version": "owner-alpha-explosive-power-jump-maintenance-scheduling@1.0.0"
+    },
+    "weekly_scheduling_policy_review_id": "91620000-0000-4000-8000-000000000001",
+    "weekly_scheduling_policy_review_content": {
+      "applicability_rationale": "Approve only for the owner-alpha explosive-power MAINTAIN pathway with an exact feasible countermovement-jump resolution, no partial substitution, and no same-day repeat.",
+      "uncertainty": "The one-session daily cap and 48-hour interval are conservative engineering constraints, not values extracted from the cited review. Current readiness and completed exposure history remain controlling.",
+      "review_version": "owner-alpha-explosive-power-jump-maintenance-scheduling-review@1.0.0"
+    },
+    "progression_policy": {
+      "id": "91630000-0000-4000-8000-000000000001",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-24T19:00:00Z",
+      "reference": "owner-alpha-explosive-power-jump-maintenance-progression@1.0.0",
+      "minimum_set_completion_ratio": 1.0,
+      "minimum_dose_completion_ratio": 1.0,
+      "maximum_session_rpe": 5.0,
+      "require_technique_constraint": true,
+      "adjustment": {
+        "dimension": "repetitions",
+        "amount": 1.0,
+        "unit": "repetition_per_set",
+        "description": "Add no more than one jump contact per set after full compliant completion and explicit maintenance exposure-cap validation."
+      },
+      "exposure_type": "jumping",
+      "evidence_claim_ids": ["91410000-0000-4000-8000-000000000002"],
+      "rationale": "Progress only after every planned contact was completed below the upper edge of the prescribed RPE 4-6 maintenance range, at RPE 5 or below, with the reviewed reset-and-controlled-landing constraints and no post-session safety interruption; the separate exposure validator must approve the proposed total. A completed RPE 6 session remains valid maintenance exposure but holds dose rather than escalating it.",
+      "policy_version": "owner-alpha-explosive-power-jump-maintenance-progression@1.0.0"
+    },
+    "repetition_dose_policy": null,
+    "fixed_repetition_dose_policy": {
+      "id": "91640000-0000-4000-8000-000000000001",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-24T19:00:00Z",
+      "adaptation_id": "a0000000-0000-4000-8000-000000000003",
+      "estimate_scope": "assessment_specific:countermovement_vertical_jump_height_cm",
+      "priority_state": "maintain",
+      "sets": 2,
+      "repetitions_per_set": 3,
+      "maximum_initial_total_repetitions": 6,
+      "rest_seconds": 120,
+      "effort_rpe_minimum": 4.0,
+      "effort_rpe_maximum": 6.0,
+      "technique_constraints": [
+        "Start every repetition from a stable quiet stance, use a deliberate countermovement and explosive upward intent, then land on both feet under control.",
+        "Pause and fully reset between repetitions; do not turn the set into continuous rebound jumps.",
+        "Stop the set for pain, dizziness, instability, an uncontrolled landing, or a clear loss of jump quality."
+      ],
+      "planned_duration_minutes": 6,
+      "progression_policy_id": "91630000-0000-4000-8000-000000000001",
+      "evidence_claim_ids": ["91410000-0000-4000-8000-000000000002"],
+      "numeric_value_origin": "engineering_judgment",
+      "authority_reference": "fixed-priority-repetition-dose@1.1.0; candidate:owner-alpha-explosive-power-jump-maintenance-authorities@1.0.0",
+      "rationale": "Use a lower-volume maintenance exposure with separately reset high-quality efforts and controlled landings while keeping contact volume visibly bounded and independent of the jump-height value.",
+      "uncertainty": "Every numeric value is a provisional engineering prior. The evidence supports only the broad training direction and does not establish that this dose maintains performance for this athlete.",
+      "policy_version": "owner-alpha-explosive-power-fixed-jump-maintenance-dose@1.0.0"
+    },
+    "introductory_exposure_dose_policy": null,
+    "exposure_definition": {
+      "id": "91660000-0000-4000-8000-000000000001",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-24T19:00:00Z",
+      "exercise_id": "b0000000-0000-4000-8000-000000000012",
+      "exposure_type": "jumping",
+      "dose_unit": "repetitions",
+      "evidence_claim_ids": ["91410000-0000-4000-8000-000000000002"],
+      "rationale": "Count each separately reset countermovement-jump repetition as one jumping exposure contact under the distinct maintenance authority.",
+      "definition_version": "countermovement-jump-maintenance-contact-exposure@1.0.0"
+    },
+    "exposure_progression_policy": {
+      "id": "91670000-0000-4000-8000-000000000001",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-24T19:00:00Z",
+      "exposure_type": "jumping",
+      "dose_unit": "repetitions",
+      "lookback_days": 28,
+      "minimum_recent_entries": 1,
+      "maximum_initial_dose": 6.0,
+      "maximum_relative_increase": 0.34,
+      "maximum_absolute_increase": 2.0,
+      "evidence_claim_ids": ["91410000-0000-4000-8000-000000000002"],
+      "rationale": "Refuse an unbounded first or subsequent increase: the initial maintenance exposure is capped at six contacts, and later proposals must stay within both a 34 percent relative increase and two-contact absolute increase over recent completed exposure.",
+      "policy_version": "owner-alpha-explosive-power-jump-maintenance-contact-cap@1.0.0"
+    },
+    "block_review_policy": {
+      "id": "91680000-0000-4000-8000-000000000001",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-24T19:00:00Z",
+      "minimum_adherence_ratio": 0.8,
+      "minimum_response_confidence": "low",
+      "evidence_claim_ids": ["91410000-0000-4000-8000-000000000002"],
+      "rationale": "Interpret the completed owner-alpha maintenance block only when at least 80 percent of prescribed work was delivered and the exact governed follow-up estimate retains at least low confidence. These cutoffs are conservative engineering review rules, not effect thresholds reported by Oxfeldt et al.",
+      "policy_version": "owner-alpha-explosive-power-maintenance-block-review@1.0.0"
+    },
+    "response_evaluation_authority": {
+      "id": "91690000-0000-4000-8000-000000000001",
+      "adaptation_id": "a0000000-0000-4000-8000-000000000003",
+      "estimate_scope": "assessment_specific:countermovement_vertical_jump_height_cm",
+      "unit_or_scale": "cm",
+      "comparison_direction": "higher_is_better",
+      "minimum_meaningful_change": 0.0,
+      "numeric_value_origin": "engineering_judgment",
+      "evidence_claim_ids": ["91410000-0000-4000-8000-000000000002"],
+      "rationale": "Treat an exact governed follow-up at or above the maintenance block baseline as provisionally consistent with maintenance. The zero-change threshold represents no measured decline; it is not a validated equivalence or non-inferiority margin.",
+      "uncertainty": "Self-administered wall marking can vary because of reach position, parallax, fingertip marking, setup, footwear, warm-up, and effort. An unchanged measured value can conceal real change inside measurement error, so this authority supports only a provisional maintenance interpretation and not proof of physiological equivalence or causality.",
+      "authority_version": "owner-alpha-countermovement-jump-maintenance-response@1.0.0"
+    },
+    "session_safety_policy": {
+      "id": "91650000-0000-4000-8000-000000000001",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-24T19:00:00Z",
+      "allowed_modifications": ["reduce_volume", "reduce_intensity", "shorten_session"],
+      "limited_readiness_modifications": ["reduce_volume", "reduce_intensity"],
+      "unusual_soreness_modifications": ["reduce_volume", "reduce_intensity"],
+      "sleep_disruption_modifications": ["reduce_volume", "reduce_intensity"],
+      "schedule_limitation_modifications": ["shorten_session"],
+      "evidence_claim_ids": ["91410000-0000-4000-8000-000000000002"],
+      "rationale": "Permit only conservative reductions for ordinary limited readiness, soreness, sleep disruption, or schedule limitation. Concerning symptoms, missing recent exposure, and failed landing control remain stop conditions governed outside this modification policy.",
+      "policy_version": "owner-alpha-explosive-power-jump-maintenance-session-safety@1.0.0"
+    },
+    "release_rationale": "Install a distinct maintenance authority after a reviewed jump-height need changes to MAINTAIN, keeping its dose lower than the DEVELOP starting dose and retaining exact exposure, scheduling, progression, safety, response-review, and evidence provenance.",
+    "release_uncertainty": "The broad strategy is evidence-linked, but every exact maintenance dose, cap, recovery, progression, review, and modification value is a provisional engineering prior. The zero-change response threshold is not a validated equivalence margin. Ratification creates reusable authorities only; athlete-specific derivation, environment resolution, safety review, scheduling, execution, reassessment, and causal interpretation remain separate."
+  }
+}

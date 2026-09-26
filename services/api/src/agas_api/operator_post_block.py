@@ -73,6 +73,11 @@ class OperatorReplanningRequest(BaseModel):
     candidate_contexts: Annotated[tuple[ReplanningCandidateContext, ...], Field(min_length=1)]
     generated_at: datetime
     review_after_days: int = Field(ge=1)
+    source_initial_planning_context_draft_id: UUID | None = None
+    source_initial_planning_context_review_id: UUID | None = None
+    prepared_successor_context_digest: Annotated[
+        str | None, Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    ] = None
     applicability_rationale: NonEmptyText
     uncertainty: NonEmptyText
 
@@ -90,6 +95,19 @@ class OperatorReplanningRequest(BaseModel):
         if not normalized:
             raise ValueError("operator review metadata must not be blank")
         return normalized
+
+    @model_validator(mode="after")
+    def require_complete_prepared_context_binding(self) -> OperatorReplanningRequest:
+        values = (
+            self.source_initial_planning_context_draft_id,
+            self.source_initial_planning_context_review_id,
+            self.prepared_successor_context_digest,
+        )
+        if any(item is not None for item in values) and not all(
+            item is not None for item in values
+        ):
+            raise ValueError("prepared successor context provenance must be supplied together")
+        return self
 
 
 def execute_operator_block_review(

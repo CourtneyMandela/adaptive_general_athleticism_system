@@ -3,17 +3,22 @@
 import { FormEvent, useEffect, useState } from "react";
 
 import {
+  buildAssessmentAttemptCommand,
   buildAssessmentResultCommand,
   buildAssessmentReadinessReportCommand,
   buildAssessmentRunCommand,
   buildIntroductoryExposureExecutionCommand,
   fetchAssessmentWorkflow,
   submitAssessmentCapabilityEstimate,
+  submitAssessmentAttempt,
   submitAssessmentReadinessReport,
   submitAssessmentResult,
   submitAssessmentRun,
   submitIntroductoryExposureExecution,
   type AssessmentDecisionProjection,
+  type AssessmentAttemptReason,
+  type AssessmentAttemptStatus,
+  type AssessmentHistoryRunProjection,
   type AssessmentWorkflowProjection,
   type ReadinessAnswer,
 } from "@/lib/assessment";
@@ -53,6 +58,122 @@ const readinessAnswerOptions = [
   ["no", "No"],
   ["yes", "Yes"],
 ] as const;
+
+function AssessmentAttemptHistory({
+  attempts,
+}: {
+  attempts: AssessmentDecisionProjection["attempts"];
+}) {
+  if (!attempts.length) return null;
+  return (
+    <section className="assessment-attempt-history" aria-label="Recorded incomplete attempts">
+      <strong>Incomplete attempt history</strong>
+      <ul>
+        {attempts.map((attempt) => (
+          <li key={attempt.attempt_id}>
+            <span>{statusLabel(attempt.status)}</span>
+            <time dateTime={attempt.attempted_at}>
+              {new Date(attempt.attempted_at).toLocaleString()}
+            </time>
+            <small>
+              Reason: {statusLabel(attempt.reason)} · Not eligible for capability estimation
+            </small>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function AssessmentLongitudinalHistory({
+  runs,
+}: {
+  runs: AssessmentHistoryRunProjection[];
+}) {
+  if (!runs.length) return null;
+  return (
+    <details className="assessment-longitudinal-history">
+      <summary>Assessment history across {runs.length} selection run{runs.length === 1 ? "" : "s"}</summary>
+      <p className="form-help">
+        Incomplete attempts, completed direct observations, and derived capability estimates remain
+        separate records. Newer records do not overwrite earlier runs.
+      </p>
+      <div className="assessment-history-runs">
+        {runs.map((run) => (
+          <article key={run.run_id} className="assessment-history-run">
+            <header>
+              <strong>{run.environment_name}</strong>
+              <time dateTime={run.evaluated_at}>{new Date(run.evaluated_at).toLocaleString()}</time>
+            </header>
+            {run.selections.map((selection) => (
+              <section key={selection.selection_id} className="assessment-history-selection">
+                <div>
+                  <strong>{selection.name}</strong>
+                  <span className={`status-badge status-badge--${selection.decision}`}>
+                    {statusLabel(selection.decision)}
+                  </span>
+                </div>
+                <p>{statusLabel(selection.domain)} · protocol {selection.protocol_version}</p>
+                <AssessmentAttemptHistory attempts={selection.attempts} />
+                {selection.completed_result ? (
+                  <div className="assessment-history-result">
+                    <p>
+                      <strong>Completed direct observation:</strong>{" "}
+                      {displayValue(selection.completed_result.measurement)}{" "}
+                      {selection.completed_result.unit ?? ""} · {selection.completed_result.reliability}
+                      {" "}reliability
+                    </p>
+                    <p className="form-help">
+                      Protocol completion{" "}
+                      {selection.completed_result.protocol_completion_attested
+                        ? "attested"
+                        : "not historically attested"}
+                      {" · "}no-stop condition{" "}
+                      {selection.completed_result.no_stop_condition_attested
+                        ? "attested"
+                        : "not historically attested"}
+                    </p>
+                    {selection.completed_result.capability_estimates.length ? (
+                      <ul className="assessment-history-estimates">
+                        {selection.completed_result.capability_estimates.map((estimate) => (
+                          <li key={estimate.estimate_id}>
+                            <strong>Derived estimate:</strong> {displayValue(estimate.estimate)}{" "}
+                            {estimate.unit_or_scale} · {estimate.confidence} confidence ·{" "}
+                            {estimate.valid_as_of ? "current at this view" : "not current"}
+                            <small>
+                              Method {estimate.calculation_method} · {estimate.source_observation_ids.length}
+                              {" "}source observation(s) · policy {estimate.policy_id}
+                            </small>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="form-help">No derived capability estimate is linked to this result.</p>
+                    )}
+                  </div>
+                ) : selection.attempts.length === 0 ? (
+                  <p className="form-help">No attempt or completed result was recorded.</p>
+                ) : null}
+                <details>
+                  <summary>Historical lineage</summary>
+                  <p className="form-help">
+                    Run {run.run_id} · selection {selection.selection_id} · context observation{" "}
+                    {run.context_observation_id} · eligibility review{" "}
+                    {selection.assessment_eligibility_review_id ?? run.assessment_eligibility_review_id}
+                  </p>
+                  <p className="form-help">
+                    Selection rule {selection.rule_version} · run rule {run.rule_version} · review{" "}
+                    {selection.review_version ?? "not attached"}
+                  </p>
+                </details>
+              </section>
+            ))}
+          </article>
+        ))}
+      </div>
+    </details>
+  );
+}
 
 function ReadinessSelect({
   label,
@@ -96,6 +217,10 @@ function AssessmentResultForm({
     schema?.measurement_type === "category" ? (schema.allowed_values[0] ?? "") : "",
   );
   const [reliability, setReliability] = useState<Confidence>("moderate");
+  const [outcome, setOutcome] = useState<"" | "completed" | AssessmentAttemptStatus>("");
+  const [attemptReason, setAttemptReason] = useState<
+    "" | Exclude<AssessmentAttemptReason, "legacy_unspecified">
+  >("");
   const [state, setState] = useState<"idle" | "saving" | "error">("idle");
   const [message, setMessage] = useState("");
 
@@ -108,15 +233,38 @@ function AssessmentResultForm({
     setState("saving");
     setMessage("");
     try {
-      const command = buildAssessmentResultCommand(decision, value, reliability);
-      await submitAssessmentResult(
-        apiBaseUrl,
-        athleteId,
-        runId,
-        decision.selection_id,
-        command,
-      );
+      if (outcome === "completed") {
+        const command = buildAssessmentResultCommand(decision, value, reliability, {
+          protocolCompleted: true,
+          stopConditionOccurred: false,
+        });
+        await submitAssessmentResult(
+          apiBaseUrl,
+          athleteId,
+          runId,
+          decision.selection_id,
+          command,
+        );
+      } else if (outcome === "incomplete" || outcome === "safety_stopped") {
+        const reason = outcome === "safety_stopped" ? "listed_stop_condition" : attemptReason;
+        if (!reason) {
+          throw new Error("Choose the non-safety reason this attempt was incomplete.");
+        }
+        const command = buildAssessmentAttemptCommand(outcome, reason, reliability);
+        await submitAssessmentAttempt(
+          apiBaseUrl,
+          athleteId,
+          runId,
+          decision.selection_id,
+          command,
+        );
+      } else {
+        throw new Error("Choose how this assessment attempt ended.");
+      }
       await onSaved();
+      setOutcome("");
+      setAttemptReason("");
+      setState("idle");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to record this result.");
       setState("error");
@@ -125,10 +273,96 @@ function AssessmentResultForm({
 
   return (
     <form className="assessment-result-form" onSubmit={submit}>
+      <fieldset className="assessment-protocol-confirmation">
+        <legend>Complete the exact reviewed protocol before recording a result</legend>
+        <ol className="protocol-steps">
+          {decision.protocol_instructions.map((instruction) => (
+            <li key={instruction}>{instruction}</li>
+          ))}
+        </ol>
+        <p><strong>Result entry:</strong> {decision.result_entry_instructions}</p>
+        <label>
+          <input
+            type="radio"
+            name={`assessment-outcome-${decision.selection_id}`}
+            value="completed"
+            checked={outcome === "completed"}
+            onChange={() => {
+              setOutcome("completed");
+              setAttemptReason("");
+            }}
+          />
+          I completed the exact reviewed protocol without a stop condition, and this is the direct
+          result from that completed attempt.
+        </label>
+        <label>
+          <input
+            type="radio"
+            name={`assessment-outcome-${decision.selection_id}`}
+            value="incomplete"
+            checked={outcome === "incomplete"}
+            onChange={() => {
+              setOutcome("incomplete");
+              setAttemptReason("");
+            }}
+          />
+          I did not complete the protocol, but no listed stop condition occurred.
+        </label>
+        <label>
+          <input
+            type="radio"
+            name={`assessment-outcome-${decision.selection_id}`}
+            value="safety_stopped"
+            checked={outcome === "safety_stopped"}
+            onChange={() => {
+              setOutcome("safety_stopped");
+              setAttemptReason("listed_stop_condition");
+            }}
+          />
+          I stopped because a listed stop condition occurred.
+        </label>
+        {outcome === "safety_stopped" ? (
+          <aside className="review-boundary">
+            <strong>Do not record this as a completed assessment.</strong>
+            <span>
+              A stopped attempt is not a zero result. AGAS will preserve the stop as an attempt that
+              cannot become a capability estimate. Update your readiness report if your current
+              state changed and seek appropriate guidance for concerning symptoms.
+            </span>
+          </aside>
+        ) : null}
+        {outcome === "incomplete" ? (
+          <label>
+            Why was the protocol incomplete?
+            <span>
+              Choose a factual non-safety reason. Do not enter a partial result or symptom narrative.
+            </span>
+            <select
+              required
+              value={attemptReason}
+              onChange={(event) => setAttemptReason(
+                event.target.value as Exclude<AssessmentAttemptReason, "legacy_unspecified">,
+              )}
+            >
+              <option value="">Choose a reason</option>
+              <option value="setup_or_equipment_issue">Setup or equipment issue</option>
+              <option value="measurement_or_route_issue">Measurement or route issue</option>
+              <option value="instructions_unclear">Instructions were unclear</option>
+              <option value="external_interruption">External interruption</option>
+              <option value="voluntary_non_safety_stop">Chose to stop for a non-safety reason</option>
+              <option value="other_non_safety_reason">Another non-safety reason</option>
+            </select>
+          </label>
+        ) : null}
+      </fieldset>
       <label>
         {schema.label}
         {schema.measurement_type === "category" ? (
-          <select value={value} onChange={(event) => setValue(event.target.value)}>
+          <select
+            value={value}
+            disabled={outcome === "incomplete" || outcome === "safety_stopped"}
+            onChange={(event) => setValue(event.target.value)}
+          >
             {schema.allowed_values.map((option) => (
               <option key={option} value={option}>{option}</option>
             ))}
@@ -136,7 +370,8 @@ function AssessmentResultForm({
         ) : (
           <input
             type="number"
-            required
+            required={outcome === "completed"}
+            disabled={outcome === "incomplete" || outcome === "safety_stopped"}
             min={schema.minimum ?? undefined}
             max={schema.maximum ?? undefined}
             step={schema.step ?? (schema.measurement_type === "integer" ? 1 : "any")}
@@ -155,8 +390,17 @@ function AssessmentResultForm({
           <option value="unknown">Unknown</option>
         </select>
       </label>
-      <button type="submit" disabled={state === "saving"}>
-        {state === "saving" ? "Recording…" : "Record result observation"}
+      <button
+        type="submit"
+        disabled={
+          state === "saving" || outcome === "" || (outcome === "incomplete" && !attemptReason)
+        }
+      >
+        {state === "saving"
+          ? "Recording…"
+          : outcome === "completed"
+            ? "Record result observation"
+            : "Record incomplete attempt"}
       </button>
       <p className="form-help">
         Schema {schema.measurement_schema_version}. Recording does not create or display a capability
@@ -423,6 +667,7 @@ export function AssessmentPanel({
           ) : null}
         </dl>
       ) : null}
+      <AssessmentLongitudinalHistory runs={workflow?.history_runs ?? []} />
       {workflow?.jump_exposure_need?.status === "introductory_exposure_needed" ? (
         <aside className="review-boundary">
           {workflow.introductory_jump_dose ? (
@@ -772,6 +1017,16 @@ export function AssessmentPanel({
                   }}
                 />
               ) : null}
+              {item.result_status === "safety_review_required" ? (
+                <aside className="review-boundary">
+                  <strong>Fresh readiness review required.</strong>
+                  <span>
+                    This selection ended with a listed stop condition. It cannot accept a result;
+                    submit a new current readiness report before starting another assessment run.
+                  </span>
+                </aside>
+              ) : null}
+              <AssessmentAttemptHistory attempts={item.attempts} />
               <details>
                 <summary>Instructions and provenance</summary>
                 <ol>

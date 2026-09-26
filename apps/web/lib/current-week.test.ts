@@ -7,6 +7,7 @@ import {
   buildExecutionCommand,
   createPrescriptionLogDrafts,
   CurrentWeekRequestError,
+  exposureProgressionSummary,
   fetchCurrentWeek,
   formatDose,
   isIsoDate,
@@ -110,6 +111,14 @@ describe("current-week presentation", () => {
     expect(safetyOutcomeLabel("modify")).toBe("Recovery needs attention");
     expect(progressionOutcomeLabel("repeat")).toBe("Repeat current dose");
     expect(progressionOutcomeLabel("unexpected-policy-output")).toBe("Decision recorded");
+    expect(exposureProgressionSummary({
+      exposure_type: "jumping",
+      completed_dose: 9,
+      dose_unit: "repetitions",
+      proposed_dose: 12,
+      maximum_allowed_dose: 12,
+      outcome: "approved",
+    })).toBe("9 jump contacts recorded · proposed next dose 12 · reviewed cap 12");
   });
 
   it("requests the dated projection and preserves API errors", async () => {

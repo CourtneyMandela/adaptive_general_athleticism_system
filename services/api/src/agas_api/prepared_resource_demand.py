@@ -9,9 +9,7 @@ from uuid import UUID, uuid5
 
 from agas_domain import (
     EnvironmentSnapshot,
-    Laterality,
     Loadability,
-    LoadingType,
     LongRangeStrategy,
     ResolutionStatus,
     StimulusSpecification,
@@ -28,6 +26,12 @@ from agas_api.evidence_governance import (
     EvidenceAuthorityNotReadyError,
 )
 from agas_api.identity import AuthorizedRole
+from agas_api.prepared_strategy_cycle import (
+    PreparedStrategyCycleError,
+    PreparedStrategyCycleLineage,
+    prior_state_for_adaptation,
+    resolve_strategy_cycle_lineage,
+)
 from agas_api.resource_demand_preparation import (
     ResourceDemandEnvironmentOption,
     ResourceDemandPreparationNotFoundError,
@@ -35,7 +39,16 @@ from agas_api.resource_demand_preparation import (
     ResourceDemandPriorityOption,
 )
 from agas_api.resource_governance_candidates import (
+    AEROBIC_CANDIDATE_ID as AEROBIC_RESOURCE_AUTHORITY_CANDIDATE_ID,
+)
+from agas_api.resource_governance_candidates import (
     CANDIDATE_ID as CHAIR_RESOURCE_AUTHORITY_CANDIDATE_ID,
+)
+from agas_api.resource_governance_candidates import (
+    JUMP_CANDIDATE_ID as JUMP_RESOURCE_AUTHORITY_CANDIDATE_ID,
+)
+from agas_api.resource_governance_candidates import (
+    JUMP_MAINTENANCE_CANDIDATE_ID as JUMP_MAINTENANCE_RESOURCE_AUTHORITY_CANDIDATE_ID,
 )
 from agas_api.resource_governance_candidates import (
     PUSHUP_CANDIDATE_ID as PUSHUP_RESOURCE_AUTHORITY_CANDIDATE_ID,
@@ -51,13 +64,21 @@ from agas_api.resource_preparation import (
     ResourcePreparationIdentities,
 )
 
-CANDIDATE_VERSION = "prepared-resource-demand@1.0.0"
+CANDIDATE_VERSION: Literal["prepared-resource-demand@1.0.0"] = "prepared-resource-demand@1.0.0"
+SUCCESSOR_CANDIDATE_VERSION: Literal["prepared-resource-demand@1.1.0"] = (
+    "prepared-resource-demand@1.1.0"
+)
 CANDIDATE_NAMESPACE = UUID("78ca646d-31c2-4b7b-a074-11edcdd26443")
 MINIMUM_WEEKLY_MINUTES = 10
 TARGET_WEEKLY_MINUTES = 10
 SESSIONS_PER_WEEK = 2
 CHAIR_DEMAND_VERSION = "owner-alpha-chair-stand-resource-envelope@1.0.0"
 PUSHUP_DEMAND_VERSION = "owner-alpha-standard-pushup-resource-envelope@1.0.0"
+JUMP_DEMAND_VERSION = "owner-alpha-explosive-power-jump-resource-envelope@1.0.0"
+JUMP_MAINTENANCE_DEMAND_VERSION = (
+    "owner-alpha-explosive-power-jump-maintenance-resource-envelope@1.0.0"
+)
+AEROBIC_DEMAND_VERSION = "owner-alpha-aerobic-base-resource-envelope@1.0.0"
 NonEmptyText = Annotated[str, Field(min_length=1)]
 
 
@@ -76,7 +97,7 @@ class PreparedResourceDemandIdentities(BaseModel):
 class PreparedResourceDemandCandidate(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    candidate_version: Literal["prepared-resource-demand@1.0.0"]
+    candidate_version: Literal["prepared-resource-demand@1.0.0", "prepared-resource-demand@1.1.0"]
     candidate_id: UUID
     content_digest: Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
     prepared_at: datetime
@@ -84,6 +105,8 @@ class PreparedResourceDemandCandidate(BaseModel):
     athlete_id: UUID
     strategy_id: UUID
     priority_id: UUID
+    priority_state: TrainingPriorityState
+    previous_priority_state: TrainingPriorityState | None = None
     adaptation_id: UUID
     adaptation_name: NonEmptyText
     environment_id: UUID
@@ -106,6 +129,7 @@ class PreparedResourceDemandCandidate(BaseModel):
     uncertainty: NonEmptyText
     safety_boundary: NonEmptyText
     dose_boundary: NonEmptyText
+    strategy_cycle: PreparedStrategyCycleLineage
     identities: PreparedResourceDemandIdentities
     accepted_result: ResourceDemandPreparationResult | None = None
 
@@ -120,13 +144,13 @@ class PreparedResourceDemandProjection(BaseModel):
     message: NonEmptyText
     candidates: tuple[PreparedResourceDemandCandidate, ...]
     blockers: tuple[str, ...]
-    projection_version: str = "prepared-resource-demand-projection@1.0.0"
+    projection_version: str = "prepared-resource-demand-projection@1.1.0"
 
 
 class RatifyPreparedResourceDemandCommand(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    candidate_version: Literal["prepared-resource-demand@1.0.0"]
+    candidate_version: Literal["prepared-resource-demand@1.0.0", "prepared-resource-demand@1.1.0"]
     content_digest: Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
     approval_attestation: Literal[True]
 
@@ -167,11 +191,23 @@ class PreparedResourceDemandProjector:
             raise ValueError("prepared resource-demand time must include a timezone")
         preparation = ResourceDemandPreparationProjector(self.session).project(strategy_id, instant)
         strategy = preparation.strategy
+        try:
+            strategy_cycle = resolve_strategy_cycle_lineage(self.repository, strategy)
+        except PreparedStrategyCycleError as error:
+            return PreparedResourceDemandProjection(
+                strategy_id=strategy.id,
+                athlete_id=strategy.athlete_id,
+                projected_at=instant,
+                status="blocked",
+                message="The exact strategy resource demand is not ready yet.",
+                candidates=(),
+                blockers=(str(error),),
+            )
         priority = self._eligible_priority(preparation.priorities)
         if priority is None:
             blockers: list[str] = []
             blockers.append(
-                "The strategy must contain exactly one governed muscular-endurance DEVELOP or MAINTAIN priority with an active resource policy."
+                "The strategy must contain exactly one governed DEVELOP or MAINTAIN priority with an active resource policy."
             )
             prepared_authority = None
         else:
@@ -201,7 +237,7 @@ class PreparedResourceDemandProjector:
                 athlete_id=strategy.athlete_id,
                 projected_at=instant,
                 status="blocked",
-                message="The exact first resource demand is not ready yet.",
+                message="The exact strategy resource demand is not ready yet.",
                 candidates=(),
                 blockers=tuple(dict.fromkeys(blockers)),
             )
@@ -215,6 +251,7 @@ class PreparedResourceDemandProjector:
                     priority,
                     environment,
                     prepared_authority,
+                    strategy_cycle,
                     authority,
                     instant,
                 )
@@ -346,7 +383,9 @@ class PreparedResourceDemandProjector:
             raise PreparedResourceDemandValidationError(
                 "the priority capability estimate is unavailable"
             )
-        return prepared_resource_governance_candidate_for_scope(estimate.estimate_scope)
+        return prepared_resource_governance_candidate_for_scope(
+            estimate.estimate_scope, option.priority.state
+        )
 
     def _candidate(
         self,
@@ -354,6 +393,7 @@ class PreparedResourceDemandProjector:
         option: ResourceDemandPriorityOption,
         environment: ResourceDemandEnvironmentOption,
         release: PreparedResourceGovernanceCandidate,
+        strategy_cycle: PreparedStrategyCycleLineage,
         authority: AuthorizedRole,
         instant: datetime,
     ) -> PreparedResourceDemandCandidate | None:
@@ -364,10 +404,11 @@ class PreparedResourceDemandProjector:
         minimum_weekly_minutes, target_weekly_minutes, sessions_per_week = (
             _weekly_resource_envelope(release.presentation.candidate_id)
         )
+        candidate_version = _candidate_version(strategy_cycle, release.presentation.candidate_id)
         specification = StimulusSpecification(
             movement_patterns=exercise.movement_patterns,
-            allowed_loading_types=(LoadingType.BODYWEIGHT,),
-            allowed_lateralities=(Laterality.BILATERAL,),
+            allowed_loading_types=(exercise.loading_type,),
+            allowed_lateralities=(exercise.laterality,),
             minimum_loadability=Loadability.LIMITED,
             required_velocity_characteristics=exercise.velocity_characteristics,
             maximum_skill_complexity=exercise.skill_complexity,
@@ -383,8 +424,8 @@ class PreparedResourceDemandProjector:
             ),
             evidence_claim_ids=tuple(dict.fromkeys((*strategy.evidence_claim_ids, claim.id))),
             rationale=(
-                f"Require the exact controlled, bilateral, bodyweight {exercise.name} "
-                "muscular-endurance stimulus and resolve it only when every ontology, equipment, "
+                f"Require the exact governed {exercise.name} stimulus for adaptation "
+                f"{option.adaptation.name} and resolve it only when every ontology, equipment, "
                 "and current floor-space constraint is satisfied."
             ),
         )
@@ -415,13 +456,28 @@ class PreparedResourceDemandProjector:
             "owner-alpha scheduling envelope. This is an explicit engineering starting allowance, "
             "not a literature-derived physiological dose."
         )
-        applicability_rationale = (
-            "Apply the ratified muscular-endurance resource authority to the sole active priority "
-            f"in the factual {environment.environment.name} snapshot. The ACSM claim supports "
-            "resistance-training direction and at-least-twice-weekly frequency; the "
-            f"{target_weekly_minutes}-minute "
-            "weekly reservation is a provisional scheduling choice only."
-        )
+        if candidate_version == CANDIDATE_VERSION:
+            applicability_rationale = (
+                "Apply the ratified muscular-endurance resource authority to the sole active priority "
+                f"in the factual {environment.environment.name} snapshot. The ACSM claim supports "
+                "resistance-training direction and at-least-twice-weekly frequency; the "
+                f"{target_weekly_minutes}-minute "
+                "weekly reservation is a provisional scheduling choice only."
+            )
+        else:
+            cycle_basis = (
+                "reviewed successor strategy"
+                if strategy_cycle.cycle == "successor"
+                else "reviewed initial strategy"
+            )
+            applicability_rationale = (
+                f"Apply the exact ratified {option.adaptation.name} resource authority to the "
+                f"{priority.state.value.upper()} priority in this {cycle_basis} and the factual "
+                f"{environment.environment.name} snapshot. Evidence claim {claim.id} supports "
+                "the bounded training direction recorded by that authority; the "
+                f"{target_weekly_minutes}-minute weekly reservation remains a provisional, "
+                "separately reviewed scheduling choice."
+            )
         uncertainty = (
             f"{exercise.name} is assessment-proximal and improvement may include test familiarity. "
             "No exact repetitions, sets, effort, tempo, rest, progression, current-session safety, "
@@ -436,9 +492,17 @@ class PreparedResourceDemandProjector:
             "Two weekly slots and five reserved minutes per slot are scheduling resources, not an "
             "exercise prescription. A separate reviewed dose authority must still set repetitions, "
             "sets, effort, tempo, rest, and stop rules before any workout can be performed."
+            if candidate_version == CANDIDATE_VERSION
+            else (
+                f"{sessions_per_week} weekly slots and "
+                f"{target_weekly_minutes // sessions_per_week} reserved minutes per slot are "
+                "scheduling resources, not an exercise prescription. A separate reviewed dose "
+                "authority must still set repetitions, sets, effort, tempo, rest, and stop rules "
+                "before any workout can be performed."
+            )
         )
         stable_content = {
-            "candidate_version": CANDIDATE_VERSION,
+            "candidate_version": candidate_version,
             "athlete_id": str(strategy.athlete_id),
             "strategy_id": str(strategy.id),
             "strategy_rule_version": strategy.rule_version,
@@ -478,6 +542,8 @@ class PreparedResourceDemandProjector:
             "dose_boundary": dose_boundary,
             "demand_version": _demand_version(release.presentation.candidate_id),
         }
+        if candidate_version == SUCCESSOR_CANDIDATE_VERSION:
+            stable_content["strategy_cycle"] = strategy_cycle.model_dump(mode="json")
         canonical = json.dumps(stable_content, sort_keys=True, separators=(",", ":"))
         content_digest = f"sha256:{hashlib.sha256(canonical.encode()).hexdigest()}"
         candidate_id = uuid5(CANDIDATE_NAMESPACE, content_digest)
@@ -505,7 +571,7 @@ class PreparedResourceDemandProjector:
         if history_ids and history_ids != {identities.resource_demand_id}:
             return None
         return PreparedResourceDemandCandidate(
-            candidate_version=CANDIDATE_VERSION,
+            candidate_version=candidate_version,
             candidate_id=candidate_id,
             content_digest=content_digest,
             prepared_at=instant,
@@ -513,6 +579,10 @@ class PreparedResourceDemandProjector:
             athlete_id=strategy.athlete_id,
             strategy_id=strategy.id,
             priority_id=priority.id,
+            priority_state=priority.state,
+            previous_priority_state=prior_state_for_adaptation(
+                strategy_cycle, option.adaptation.id
+            ),
             adaptation_id=option.adaptation.id,
             adaptation_name=option.adaptation.name,
             environment_id=environment.environment.id,
@@ -535,6 +605,7 @@ class PreparedResourceDemandProjector:
             uncertainty=uncertainty,
             safety_boundary=safety_boundary,
             dose_boundary=dose_boundary,
+            strategy_cycle=strategy_cycle,
             identities=identities,
             accepted_result=existing,
         )
@@ -701,6 +772,12 @@ def _demand_version(resource_candidate_id: UUID) -> str:
         return CHAIR_DEMAND_VERSION
     if resource_candidate_id == PUSHUP_RESOURCE_AUTHORITY_CANDIDATE_ID:
         return PUSHUP_DEMAND_VERSION
+    if resource_candidate_id == JUMP_RESOURCE_AUTHORITY_CANDIDATE_ID:
+        return JUMP_DEMAND_VERSION
+    if resource_candidate_id == JUMP_MAINTENANCE_RESOURCE_AUTHORITY_CANDIDATE_ID:
+        return JUMP_MAINTENANCE_DEMAND_VERSION
+    if resource_candidate_id == AEROBIC_RESOURCE_AUTHORITY_CANDIDATE_ID:
+        return AEROBIC_DEMAND_VERSION
     raise PreparedResourceDemandValidationError("resource authority has no demand version")
 
 
@@ -709,4 +786,23 @@ def _weekly_resource_envelope(resource_candidate_id: UUID) -> tuple[int, int, in
         return MINIMUM_WEEKLY_MINUTES, TARGET_WEEKLY_MINUTES, SESSIONS_PER_WEEK
     if resource_candidate_id == PUSHUP_RESOURCE_AUTHORITY_CANDIDATE_ID:
         return 12, 12, 2
+    if resource_candidate_id == JUMP_RESOURCE_AUTHORITY_CANDIDATE_ID:
+        return 24, 24, 2
+    if resource_candidate_id == JUMP_MAINTENANCE_RESOURCE_AUTHORITY_CANDIDATE_ID:
+        return 12, 12, 2
+    if resource_candidate_id == AEROBIC_RESOURCE_AUTHORITY_CANDIDATE_ID:
+        return 24, 24, 2
     raise PreparedResourceDemandValidationError("resource authority has no weekly envelope")
+
+
+def _candidate_version(
+    strategy_cycle: PreparedStrategyCycleLineage,
+    resource_candidate_id: UUID,
+) -> Literal["prepared-resource-demand@1.0.0", "prepared-resource-demand@1.1.0"]:
+    if strategy_cycle.cycle == "initial" and resource_candidate_id not in {
+        AEROBIC_RESOURCE_AUTHORITY_CANDIDATE_ID,
+        JUMP_RESOURCE_AUTHORITY_CANDIDATE_ID,
+        JUMP_MAINTENANCE_RESOURCE_AUTHORITY_CANDIDATE_ID,
+    }:
+        return CANDIDATE_VERSION
+    return SUCCESSOR_CANDIDATE_VERSION

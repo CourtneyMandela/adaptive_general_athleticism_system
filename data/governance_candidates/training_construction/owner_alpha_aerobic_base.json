@@ -1,0 +1,158 @@
+{
+  "document_schema_version": "training-construction-candidate-document@1.0.0",
+  "candidate_version": "training-construction-candidate@1.0.0",
+  "content_digest": "sha256:44382790ed0f938c576d8692d9f32cb83426247f682456b248fd839169cb8e60",
+  "presentation": {
+    "candidate_id": "98900000-0000-4000-8000-000000000006",
+    "slug": "owner_alpha_aerobic_base_duration_authorities",
+    "release_label": "Owner-alpha aerobic-base duration authorities",
+    "prepared_at": "2026-09-25T16:00:00Z",
+    "summary": "One owner-reviewable batch for an aerobic-capacity DEVELOP priority: a fixed ten-minute starting duration, a hard twelve-minute progression ceiling, two weekly scheduling slots, conservative readiness reductions, and a separately governed distance-response review.",
+    "authority_basis": {
+      "scientific_support": "The reviewed ACSM position stand supports regular individualized aerobic exercise for apparently healthy adults and notes that volumes below the full public-health target may still be beneficial. It does not establish this exact modality, duration, effort range, weekly frequency, progression increment, ceiling, or response threshold.",
+      "engineering_prior": "The 10-minute start, 12-minute session envelope, two-session frequency, RPE 4-6 range, RPE 5 progression gate, 60-second increment, 720-second ceiling, 80% review adherence threshold, 50-meter response criterion, and modification mappings are explicit conservative engineering priors. Ratification accepts them provisionally and does not relabel them as scientific findings."
+    },
+    "exact_artifacts": [
+      "One fixed-duration dose policy for an exact below-floor 12-minute walk/run-distance estimate and aerobic-capacity DEVELOP priority.",
+      "One duration progression policy that adds 60 seconds only after complete, technique-compliant work at session RPE 5 or below and never beyond 720 seconds.",
+      "One weekly scheduling policy and approved review, one block-review policy and distance-response authority, and one non-diagnostic session-safety policy."
+    ],
+    "governs": [
+      "Derivation of one 600-second continuous aerobic set without converting assessment meters into training seconds.",
+      "A 12-minute scheduling envelope with target effort RPE 4-6 and walking always permitted.",
+      "Later progression by 60 seconds only after compliant completion, with an absolute 720-second per-set ceiling."
+    ],
+    "does_not_establish": [
+      "Medical clearance, diagnosis, running readiness, injury prediction, pain tolerance, or permission to ignore concerning symptoms.",
+      "That 10 or 12 minutes, two sessions, RPE 4-6, the RPE 5 progression gate, the 60-second increment, or the 50-meter response threshold is an ACSM recommendation or scientific optimum.",
+      "A required speed, incline, running interval, heart-rate zone, calorie target, or VO2 estimate.",
+      "An athlete-specific session, scheduled week, completed training exposure, guaranteed response, or permission to train."
+    ],
+    "unresolved_limitations": [
+      "The exact operational constants have not been calibrated against this athlete's repeated aerobic response.",
+      "Treadmill walking or running is one feasible means and may not transfer identically to other aerobic modalities.",
+      "Perceived effort and conversational control cannot verify physiology, gait quality, or medical safety.",
+      "The athlete must still have a current exact estimate, below-floor capability need, DEVELOP priority, feasible environment, reviewed block, and current session-safety clearance."
+    ],
+    "evidence": [
+      {
+        "claim_id": "91920000-0000-4000-8000-000000000001",
+        "title": "ACSM position stand on exercise quantity and quality (2011)",
+        "source_url": "https://pubmed.ncbi.nlm.nih.gov/21694556/",
+        "supported_use": "Regular aerobic exercise improves cardiorespiratory fitness in apparently healthy adults, should be individualized, and can provide benefit below the full public-health target.",
+        "unsupported_specifics": "The source does not validate treadmill superiority, a 10-minute starting duration, two weekly sessions, RPE 4-6, a 60-second progression, a 720-second ceiling, or a 50-meter response threshold."
+      }
+    ]
+  },
+  "release": {
+    "prepared_at": "2026-09-25T16:00:00Z",
+    "weekly_scheduling_policy": {
+      "id": "91a10000-0000-4000-8000-000000000001",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-25T16:00:00Z",
+      "minimum_high_fatigue_recovery_hours": 24,
+      "maximum_sessions_per_day": 1,
+      "maximum_high_fatigue_sessions_per_day": 1,
+      "allow_partial_exercise_resolution": false,
+      "policy_version": "owner-alpha-aerobic-base-scheduling@1.0.0"
+    },
+    "weekly_scheduling_policy_review_id": "91a20000-0000-4000-8000-000000000001",
+    "weekly_scheduling_policy_review_content": {
+      "applicability_rationale": "Approve only for the owner-alpha aerobic-capacity DEVELOP pathway with an exact fully feasible treadmill walk/run resolution, no partial substitution, and no same-day repeat.",
+      "uncertainty": "The one-session daily cap and 24-hour high-fatigue interval are conservative engineering constraints, not values extracted from the cited position stand. The planned sessions are moderate fatigue, so the high-fatigue interval is a forward-compatible guardrail.",
+      "review_version": "owner-alpha-aerobic-base-scheduling-review@1.0.0"
+    },
+    "progression_policy": {
+      "id": "91a30000-0000-4000-8000-000000000001",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-25T16:00:00Z",
+      "reference": "owner-alpha-aerobic-duration-progression@1.0.0",
+      "minimum_set_completion_ratio": 1.0,
+      "minimum_dose_completion_ratio": 1.0,
+      "maximum_session_rpe": 5.0,
+      "require_technique_constraint": true,
+      "adjustment": {
+        "dimension": "duration",
+        "amount": 60.0,
+        "unit": "seconds_per_set",
+        "description": "Add 60 seconds to the continuous set after full compliant completion, without exceeding the reviewed 720-second ceiling."
+      },
+      "maximum_prescription_value": 720.0,
+      "maximum_prescription_value_unit": "seconds_per_set",
+      "exposure_type": null,
+      "evidence_claim_ids": ["91920000-0000-4000-8000-000000000001"],
+      "rationale": "Progress only after the entire planned duration was completed at session RPE 5 or below, the reviewed movement and intensity constraints were maintained, and no post-session safety decision interrupted progression. A completed RPE 6 session remains valid work but holds duration. The hard ceiling prevents indefinite automatic duration growth.",
+      "policy_version": "owner-alpha-aerobic-duration-progression@1.0.0"
+    },
+    "repetition_dose_policy": null,
+    "fixed_repetition_dose_policy": null,
+    "fixed_duration_dose_policy": {
+      "id": "91a40000-0000-4000-8000-000000000001",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-25T16:00:00Z",
+      "adaptation_id": "a0000000-0000-4000-8000-000000000002",
+      "estimate_scope": "assessment_specific:twelve_minute_walk_run_distance_m",
+      "priority_state": "develop",
+      "sets": 1,
+      "duration_seconds_per_set": 600,
+      "maximum_initial_total_duration_seconds": 600,
+      "rest_seconds": 0,
+      "effort_rpe_minimum": 4.0,
+      "effort_rpe_maximum": 6.0,
+      "technique_constraints": [
+        "Use a sustainable walk or familiar walk-run pace that keeps effort within RPE 4-6; walking is always permitted.",
+        "Do not introduce running solely to satisfy the prescription, and do not chase assessment pace, distance, speed, or incline.",
+        "Stop for pain, chest discomfort, dizziness, unusual shortness of breath, instability, or any concerning change in current state."
+      ],
+      "planned_duration_minutes": 12,
+      "progression_policy_id": "91a30000-0000-4000-8000-000000000001",
+      "evidence_claim_ids": ["91920000-0000-4000-8000-000000000001"],
+      "numeric_value_origin": "engineering_judgment",
+      "authority_reference": "fixed-priority-duration-dose@1.0.0; candidate:owner-alpha-aerobic-base-duration-authorities@1.0.0",
+      "rationale": "Begin with ten minutes of continuous moderate aerobic work inside a twelve-minute scheduling envelope, keeping the training dose independent of the athlete's field-test distance and allowing response to be observed before progression.",
+      "uncertainty": "Every numeric value is a provisional engineering prior. The evidence supports only the broad aerobic-training direction and does not establish that this dose is optimal, sufficient, or safe for every current state.",
+      "policy_version": "owner-alpha-aerobic-base-fixed-duration-dose@1.0.0"
+    },
+    "introductory_exposure_dose_policy": null,
+    "exposure_definition": null,
+    "exposure_progression_policy": null,
+    "block_review_policy": {
+      "id": "91a60000-0000-4000-8000-000000000001",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-25T16:00:00Z",
+      "minimum_adherence_ratio": 0.8,
+      "minimum_response_confidence": "low",
+      "evidence_claim_ids": ["91920000-0000-4000-8000-000000000001"],
+      "rationale": "Interpret the completed owner-alpha aerobic block only when at least 80 percent of prescribed work was delivered and the exact governed follow-up estimate retains at least low confidence. These cutoffs are conservative engineering review rules, not effect thresholds reported by ACSM.",
+      "policy_version": "owner-alpha-aerobic-base-block-review@1.0.0"
+    },
+    "response_evaluation_authority": {
+      "id": "91a70000-0000-4000-8000-000000000001",
+      "adaptation_id": "a0000000-0000-4000-8000-000000000002",
+      "estimate_scope": "assessment_specific:twelve_minute_walk_run_distance_m",
+      "unit_or_scale": "meters",
+      "comparison_direction": "higher_is_better",
+      "minimum_meaningful_change": 50.0,
+      "numeric_value_origin": "engineering_judgment",
+      "evidence_claim_ids": ["91920000-0000-4000-8000-000000000001"],
+      "rationale": "Use a 50-meter increase as the provisional owner-alpha response threshold, large enough to exceed the one-meter entry resolution while remaining visibly separate from the competency floor and any VO2 conversion.",
+      "uncertainty": "Route accuracy, treadmill calibration, pacing, motivation, conditions, footwear, recent fatigue, and walking or running familiarity can easily affect distance. Fifty meters is an accountable engineering prior, not a validated minimal detectable change or proof of training causality.",
+      "authority_version": "owner-alpha-twelve-minute-walk-run-response-threshold@1.0.0"
+    },
+    "session_safety_policy": {
+      "id": "91a50000-0000-4000-8000-000000000001",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-25T16:00:00Z",
+      "allowed_modifications": ["reduce_volume", "reduce_intensity", "shorten_session"],
+      "limited_readiness_modifications": ["reduce_volume", "reduce_intensity"],
+      "unusual_soreness_modifications": ["reduce_volume", "reduce_intensity"],
+      "sleep_disruption_modifications": ["reduce_volume", "reduce_intensity"],
+      "schedule_limitation_modifications": ["shorten_session"],
+      "evidence_claim_ids": ["91920000-0000-4000-8000-000000000001"],
+      "rationale": "Permit only conservative reductions for ordinary limited readiness, soreness, sleep disruption, or schedule limitation. Concerning symptoms remain stop conditions governed outside this modification policy and cannot be overridden by it.",
+      "policy_version": "owner-alpha-aerobic-base-session-safety@1.0.0"
+    },
+    "release_rationale": "Install the minimum explicit authorities needed to turn a governed aerobic-capacity deficit into a bounded duration prescription and later compare the exact reassessment against its baseline, while preventing assessment meters from becoming training-duration arithmetic.",
+    "release_uncertainty": "The broad strategy is evidence-linked, but all exact dose, ceiling, recovery, progression, modification, adherence, and meaningful-change values are provisional engineering priors. Ratification creates reusable authorities only; athlete-specific derivation, environment resolution, safety review, scheduling, execution, reassessment, and causal interpretation remain separate."
+  }
+}

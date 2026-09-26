@@ -38,7 +38,7 @@ from agas_domain.persistence.repository import DomainRepository
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-NOW = datetime(2026, 9, 15, 19, 0, tzinfo=UTC)
+NOW = datetime(2026, 9, 25, 16, 0, tzinfo=UTC)
 ACCOUNT_ID = UUID("10000000-0000-0000-0000-000000000001")
 ASSIGNMENT_ID = UUID("20000000-0000-0000-0000-000000000001")
 
@@ -69,8 +69,10 @@ def test_candidate_exposes_exact_floor_and_population_limitations(session: Sessi
     projection = list_competency_floor_candidates(session, projected_at=NOW)
 
     assert projection.projection_version == "competency-floor-candidates@1.1.0"
-    assert len(projection.items) == 2
-    assert projection.batch.candidates[0].candidate_id == projection.items[0].candidate.candidate_id
+    assert len(projection.items) == 4
+    assert {item.candidate_id for item in projection.batch.candidates} == {
+        item.candidate.candidate_id for item in projection.items
+    }
     assert projection.batch.content_digest.startswith("sha256:")
     candidate = projection.items[0].candidate
     assert projection.items[0].status == "available"
@@ -160,6 +162,78 @@ def test_judgment_backed_pushup_floor_keeps_protocol_evidence_and_number_separat
     assert authority_review is not None
     assert authority_review.decision.value == "approved"
     assert result.floor_review.judgment_authority_ids == (authority_id,)
+
+
+def test_jump_floor_keeps_descriptive_norms_and_engineering_threshold_separate(
+    session: Session,
+) -> None:
+    item = next(
+        item
+        for item in list_competency_floor_candidates(session, projected_at=NOW).items
+        if item.candidate.slug == "owner_alpha_countermovement_jump_provisional_floor"
+    )
+
+    result = ratify_competency_floor_candidate(
+        session,
+        item.candidate.candidate_id,
+        RatifyCompetencyFloorCandidateCommand(
+            candidate_version=item.candidate.candidate_version,
+            content_digest=item.candidate.content_digest,
+            approval_attestation=True,
+        ),
+        _authority(),
+        ratified_at=NOW,
+    )
+    repository = DomainRepository(session)
+    authority = repository.get_competency_floor_authority(result.floor.judgment_authority_ids[0])
+
+    assert item.candidate.domain is CapabilityDomain.EXPLOSIVE_POWER
+    assert item.candidate.estimate_scope == (
+        "assessment_specific:countermovement_vertical_jump_height_cm"
+    )
+    assert item.candidate.authority_basis.numeric_value_origin == "engineering_judgment"
+    assert "not extracted" in item.candidate.authority_basis.numeric_value_explanation
+    assert result.floor.threshold == 20
+    assert result.floor.unit_or_scale == "centimeters"
+    assert result.floor.evidence_claim_ids == (UUID("91300000-0000-4000-8000-000000000001"),)
+    assert authority is not None
+    assert "No scientific source validates 20 centimeters" in authority.uncertainty
+    assert result.created_authority is True
+    assert result.created_authority_review is True
+
+
+def test_aerobic_floor_keeps_test_validity_and_engineering_threshold_separate(
+    session: Session,
+) -> None:
+    projected_at = datetime(2026, 9, 25, 16, 0, tzinfo=UTC)
+    item = next(
+        item
+        for item in list_competency_floor_candidates(session, projected_at=projected_at).items
+        if item.candidate.slug == "owner_alpha_twelve_minute_walk_run_provisional_floor"
+    )
+
+    result = ratify_competency_floor_candidate(
+        session,
+        item.candidate.candidate_id,
+        RatifyCompetencyFloorCandidateCommand(
+            candidate_version=item.candidate.candidate_version,
+            content_digest=item.candidate.content_digest,
+            approval_attestation=True,
+        ),
+        _authority(),
+        ratified_at=projected_at,
+    )
+    authority = DomainRepository(session).get_competency_floor_authority(
+        result.floor.judgment_authority_ids[0]
+    )
+
+    assert item.candidate.domain is CapabilityDomain.AEROBIC_CAPACITY
+    assert item.candidate.authority_basis.numeric_value_origin == "engineering_judgment"
+    assert "not extracted" in item.candidate.authority_basis.numeric_value_explanation
+    assert result.floor.threshold == 1200
+    assert result.floor.unit_or_scale == "meters"
+    assert authority is not None
+    assert "No scientific source validates 1200 meters" in authority.uncertainty
 
 
 def test_pushup_floor_reuses_assessment_source_without_sharing_claim_review_identity(
@@ -436,4 +510,4 @@ def test_floor_candidate_endpoints_require_planning_reviewer_role(session: Sessi
     assert ratified.json()["floor"]["minimum_age_years"] == 30
     assert batch_ratified.status_code == 201
     assert batch_ratified.json()["batch"]["content_digest"] == batch["content_digest"]
-    assert len(batch_ratified.json()["candidate_results"]) == 2
+    assert len(batch_ratified.json()["candidate_results"]) == 4

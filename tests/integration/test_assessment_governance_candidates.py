@@ -57,7 +57,7 @@ def test_candidate_presents_narrow_meaning_protocol_and_source_limitations(
     projection = list_assessment_governance_candidates(session, projected_at=NOW)
 
     assert projection.projection_version == "assessment-governance-candidates@1.0.0"
-    assert len(projection.items) == 3
+    assert len(projection.items) == 4
     item = next(
         item for item in projection.items if item.candidate.slug == "thirty_second_chair_stand"
     )
@@ -193,6 +193,48 @@ def test_countermovement_jump_ratification_preserves_source_lineage_and_narrow_p
     assert jump_snapshot.supersedes_source_id == first_snapshot.id
     assert any("Table 3.12" in note for note in jump_snapshot.provenance_notes)
     assert repository.list_competency_floors() == ()
+
+
+def test_twelve_minute_walk_run_candidate_preserves_direct_distance_and_safety_boundaries(
+    session: Session,
+) -> None:
+    projected_at = datetime(2026, 9, 25, 15, 0, tzinfo=UTC)
+    item = next(
+        item
+        for item in list_assessment_governance_candidates(session, projected_at=projected_at).items
+        if item.candidate.slug == "twelve_minute_walk_run_distance"
+    )
+
+    assert item.status == "available"
+    assert item.candidate.capability_domain.value == "aerobic_capacity"
+    assert item.candidate.estimate_scope == (
+        "assessment_specific:twelve_minute_walk_run_distance_m"
+    )
+    assert any("does not apply a VO2" in value for value in item.candidate.operational_choices)
+    assert any(
+        "Walking is always permitted" in value for value in item.candidate.operational_choices
+    )
+    assert item.candidate.evidence[0].source_url == ("https://pubmed.ncbi.nlm.nih.gov/26987118/")
+
+    candidate_id, command = _command(session, "twelve_minute_walk_run_distance")
+    result = ratify_assessment_governance_candidate(
+        session,
+        candidate_id,
+        command,
+        _authority(),
+        ratified_at=projected_at,
+    )
+
+    assert result.assessment.definition.intensity.value == "high"
+    assert result.assessment.definition.unit_or_scale == "meters"
+    assert result.assessment.definition.required_equipment_categories == (
+        "measured_walk_run_route",
+    )
+    assert result.assessment.current_estimation_policy is not None
+    assert result.assessment.current_estimation_policy.calculation_method == (
+        "latest-matching-observation"
+    )
+    assert result.created_equipment_ids == (UUID("91740000-0000-4000-8000-000000000001"),)
 
 
 def test_textbook_snapshot_lineage_allows_pushup_ratification_after_jump(

@@ -33,6 +33,14 @@ const candidate: PreparedFirstBlockCandidate = {
   applicability_rationale: "This athlete and strategy only.",
   uncertainty: "No session is created.",
   safety_boundary: "A safety gate remains required.",
+  strategy_cycle: {
+    cycle: "initial",
+    predecessor_strategy_id: null,
+    triggering_block_review_id: null,
+    predecessor_block_plan_id: null,
+    predecessor_block_ends_on: null,
+    prior_priorities: [],
+  },
   identities: {
     block_plan_id: "77777777-7777-4777-8777-777777777777",
     resource_allocation_ids: ["88888888-8888-4888-8888-888888888888"],

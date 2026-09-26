@@ -19,6 +19,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: agas_test
+          POSTGRES_USER: agas
+          POSTGRES_PASSWORD: agas
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U agas -d agas_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      AGAS_TEST_DATABASE_URL: postgresql+psycopg://agas:agas@localhost:5432/agas_test
+
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -92,6 +110,67 @@ jobs:
 
       - name: Run browser navigation smoke tests
         run: pnpm --filter @agas/web test:e2e
+
+  browser-real-stack:
+    name: Browser + API + PostgreSQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: agas_browser_test
+          POSTGRES_USER: agas
+          POSTGRES_PASSWORD: agas
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U agas -d agas_browser_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      AGAS_TEST_DATABASE_URL: postgresql+psycopg://agas:agas@localhost:5432/agas_browser_test
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install backend runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 11.19.0
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        run: pnpm --filter @agas/web exec playwright install --with-deps chromium
+
+      - name: Run unmocked browser-to-API smoke test
+        run: pnpm --filter @agas/web test:e2e:real-stack
 
   containers:
     name: Deployment containers

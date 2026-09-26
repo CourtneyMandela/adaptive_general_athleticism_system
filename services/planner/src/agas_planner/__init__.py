@@ -9,7 +9,13 @@ from agas_planner.assessment import (
 )
 from agas_planner.block_planning import BlockPlanner, BlockPlanningError, WeeklyScheduler
 from agas_planner.dose import (
+    DerivedFixedDurationDose,
+    DerivedFixedRepetitionDose,
     DerivedRepetitionDose,
+    FixedDurationDoseError,
+    FixedDurationDosePlanner,
+    FixedRepetitionDoseError,
+    FixedRepetitionDosePlanner,
     IntroductoryExposureDoseError,
     IntroductoryExposureDosePlanner,
     RepetitionDoseError,
@@ -53,6 +59,8 @@ __all__ = [
     "ClosedLoopReplanningError",
     "CompetencyFloorDetector",
     "ConservativeCapabilityEstimator",
+    "DerivedFixedDurationDose",
+    "DerivedFixedRepetitionDose",
     "DerivedRepetitionDose",
     "EnvironmentSnapshotBuilder",
     "ExecutionRecordingError",
@@ -60,6 +68,10 @@ __all__ = [
     "ExposureEntryCalculator",
     "ExposureNeedDeriver",
     "ExposureProgressionValidator",
+    "FixedDurationDoseError",
+    "FixedDurationDosePlanner",
+    "FixedRepetitionDoseError",
+    "FixedRepetitionDosePlanner",
     "IntroductoryExposureDoseError",
     "IntroductoryExposureDosePlanner",
     "LongRangeStrategyPlanner",

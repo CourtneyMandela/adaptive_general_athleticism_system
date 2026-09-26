@@ -10,7 +10,7 @@ import {
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-export function ResourceGovernanceClient() {
+export function ResourceGovernanceClient({ onRatified }: { onRatified?: () => void }) {
   const [projection, setProjection] = useState<ResourceGovernanceCandidateProjection | null>(null);
   const [confirmed, setConfirmed] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
@@ -54,6 +54,7 @@ export function ResourceGovernanceClient() {
       setProjection(await fetchResourceGovernanceCandidates(apiBaseUrl));
       setConfirmed((current) => ({ ...current, [candidateId]: false }));
       setMessage("The exact evidence, equipment, exercise, and policy bundle was saved atomically.");
+      onRatified?.();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to approve resource authorities.");
     } finally {
@@ -80,7 +81,11 @@ export function ResourceGovernanceClient() {
       {projection?.items.map((item) => {
         const candidate = item.candidate;
         return (
-          <article className="assessment-candidate" key={candidate.candidate_id}>
+          <article
+            className="assessment-candidate"
+            id={`authority-${candidate.candidate_id}`}
+            key={candidate.candidate_id}
+          >
             <header>
               <div>
                 <p className="eyebrow">Exact resource bundle · owner alpha</p>

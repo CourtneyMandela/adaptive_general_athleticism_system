@@ -11,6 +11,7 @@ from agas_domain import (
     ProgressionDecision,
     ProgressionDimension,
     ProgressionOutcome,
+    ProgressionPolicy,
     SessionExecution,
     SessionPrescription,
 )
@@ -147,25 +148,95 @@ class PersistedProgressionService:
             )
             raise ProgressionValidationError(reason)
         policy = policies[0]
-        if policy.exposure_type is not None:
-            raise ProgressionValidationError(
-                "exposure-sensitive progression requires governed configuration"
-            )
         if policy.adjustment.dimension not in {
             ProgressionDimension.LOAD,
             ProgressionDimension.REPETITIONS,
+            ProgressionDimension.DURATION,
         }:
             raise ProgressionValidationError(
                 f"{policy.adjustment.dimension.value} progression requires governed configuration"
+            )
+        exposure = None
+        if policy.exposure_type is not None:
+            exposure = self._resolve_automatic_exposure(
+                prescription=prescription,
+                policy=policy,
+                proposed_for=command.decided_at,
             )
         return self.execute(
             session_execution_id,
             prescription_id,
             CreateProgressionDecisionCommand(
                 progression_policy_id=policy.id,
+                exposure=exposure,
                 decided_at=command.decided_at,
                 revision_prescribed_at=command.decided_at,
+                revised_planned_duration_minutes=(
+                    prescription.planned_duration_minutes
+                    if policy.adjustment.dimension is ProgressionDimension.DURATION
+                    else None
+                ),
             ),
+        )
+
+    def _resolve_automatic_exposure(
+        self,
+        *,
+        prescription: SessionPrescription,
+        policy: ProgressionPolicy,
+        proposed_for: datetime,
+    ) -> ExposureProgressionDraft:
+        if policy.exposure_type is None:
+            raise ProgressionValidationError("progression policy has no exposure type")
+        if policy.adjustment.dimension is not ProgressionDimension.REPETITIONS:
+            raise ProgressionValidationError(
+                "automatic exposure progression requires a repetition adjustment"
+            )
+        if not policy.adjustment.amount.is_integer():
+            raise ProgressionValidationError(
+                "automatic exposure progression requires an integer repetition adjustment"
+            )
+        if prescription.repetitions_per_set is None:
+            raise ProgressionValidationError(
+                "automatic exposure progression requires a repetition prescription"
+            )
+        proposed_repetitions = prescription.repetitions_per_set + int(policy.adjustment.amount)
+        if proposed_repetitions <= 0:
+            raise ProgressionValidationError(
+                "automatic exposure progression requires a positive proposed dose"
+            )
+        definitions = tuple(
+            definition
+            for definition in self.repository.list_exposure_definitions_for_exercise(
+                prescription.exercise_id,
+                policy.exposure_type.value,
+            )
+            if definition.evidence_claim_ids == policy.evidence_claim_ids
+        )
+        if len(definitions) != 1:
+            reason = "no" if not definitions else "multiple"
+            raise ProgressionValidationError(
+                f"{reason} exposure definitions match the prescription exercise and type"
+            )
+        definition = definitions[0]
+        exposure_policies = tuple(
+            exposure_policy
+            for exposure_policy in self.repository.list_exposure_progression_policies(
+                policy.exposure_type.value,
+                definition.dose_unit,
+            )
+            if exposure_policy.evidence_claim_ids == policy.evidence_claim_ids
+        )
+        if len(exposure_policies) != 1:
+            reason = "no" if not exposure_policies else "multiple"
+            raise ProgressionValidationError(
+                f"{reason} exposure progression policies match the definition"
+            )
+        return ExposureProgressionDraft(
+            exposure_definition_id=definition.id,
+            exposure_progression_policy_id=exposure_policies[0].id,
+            proposed_dose=prescription.sets * proposed_repetitions,
+            proposed_for=proposed_for,
         )
 
     def execute(

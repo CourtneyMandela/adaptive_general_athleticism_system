@@ -18,6 +18,7 @@ from agas_domain import (
     SessionExecutionInput,
     SessionExecutionStatus,
     SessionItemExecutionInput,
+    SessionPrescription,
     SessionSafetyCheckInput,
     SessionSafetyDecision,
     WeeklyPlan,
@@ -261,14 +262,18 @@ class PersistedSessionExecutionService:
         template = self.repository.get_session_template(planned_session.session_template_id)
         if template is None:
             raise SessionRecordingNotFoundError("planned session template does not exist")
-        prescriptions = []
+        prescription_lineage: list[SessionPrescription] = []
+        effective_prescriptions: list[SessionPrescription] = []
         for item in template.items:
-            prescription = self.repository.get_session_prescription(item.prescription_id)
-            if prescription is None:
+            lineage = self.repository.list_session_prescription_revision_lineage(
+                item.prescription_id
+            )
+            if not lineage:
                 raise SessionRecordingNotFoundError(
                     f"session prescription {item.prescription_id} does not exist"
                 )
-            prescriptions.append(prescription)
+            prescription_lineage.extend(lineage)
+            effective_prescriptions.append(lineage[-1])
 
         decision = self.repository.get_session_safety_decision(
             command.pre_session_safety_decision_id
@@ -304,7 +309,7 @@ class PersistedSessionExecutionService:
             weekly_plan=plan,
             planned_session=planned_session,
             session_template=template,
-            prescriptions=prescriptions,
+            prescriptions=prescription_lineage,
             pre_session_decision=decision,
         )
         adherence = tuple(
@@ -314,7 +319,7 @@ class PersistedSessionExecutionService:
                 prescription=prescription,
                 calculated_at=command.adherence_calculated_at,
             )
-            for prescription in prescriptions
+            for prescription in effective_prescriptions
         )
         return SessionExecutionCreationResult(
             observation=observation,

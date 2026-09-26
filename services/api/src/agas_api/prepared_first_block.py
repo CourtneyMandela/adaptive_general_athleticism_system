@@ -34,6 +34,11 @@ from agas_api.evidence_governance import (
     EvidenceAuthorityNotReadyError,
 )
 from agas_api.identity import AuthorizedRole
+from agas_api.prepared_strategy_cycle import (
+    PreparedStrategyCycleError,
+    PreparedStrategyCycleLineage,
+    resolve_strategy_cycle_lineage,
+)
 from agas_api.resource_governance_candidates import (
     PreparedResourceGovernanceCandidate,
     prepared_resource_governance_candidate_for_scope,
@@ -43,7 +48,8 @@ from agas_api.training_construction_candidates import (
     prepared_training_construction_candidate_for_scope,
 )
 
-CANDIDATE_VERSION = "prepared-first-block@1.0.0"
+CANDIDATE_VERSION: Literal["prepared-first-block@1.0.0"] = "prepared-first-block@1.0.0"
+SUCCESSOR_CANDIDATE_VERSION: Literal["prepared-first-block@1.1.0"] = "prepared-first-block@1.1.0"
 CANDIDATE_NAMESPACE = UUID("eb9952ad-f7d8-47af-b203-b6a5fa64aa1c")
 DURATION_WEEKS = 4
 NonEmptyText = Annotated[str, Field(min_length=1)]
@@ -73,7 +79,7 @@ class PreparedFirstBlockAllocation(BaseModel):
 class PreparedFirstBlockCandidate(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    candidate_version: Literal["prepared-first-block@1.0.0"]
+    candidate_version: Literal["prepared-first-block@1.0.0", "prepared-first-block@1.1.0"]
     candidate_id: UUID
     content_digest: Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
     prepared_at: datetime
@@ -92,6 +98,7 @@ class PreparedFirstBlockCandidate(BaseModel):
     applicability_rationale: NonEmptyText
     uncertainty: NonEmptyText
     safety_boundary: NonEmptyText
+    strategy_cycle: PreparedStrategyCycleLineage
     identities: PreparedFirstBlockIdentities
     accepted_result: BlockPlanCreationResult | None = None
 
@@ -107,13 +114,13 @@ class PreparedFirstBlockProjection(BaseModel):
     message: NonEmptyText
     candidate: PreparedFirstBlockCandidate | None = None
     blockers: tuple[str, ...] = ()
-    projection_version: str = "prepared-first-block-projection@1.0.0"
+    projection_version: str = "prepared-first-block-projection@1.1.0"
 
 
 class RatifyPreparedFirstBlockCommand(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    candidate_version: Literal["prepared-first-block@1.0.0"]
+    candidate_version: Literal["prepared-first-block@1.0.0", "prepared-first-block@1.1.0"]
     content_digest: Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
     starts_on: date
     approval_attestation: Literal[True]
@@ -138,7 +145,7 @@ class PreparedFirstBlockValidationError(RuntimeError):
 
 
 class PreparedFirstBlockProjector:
-    """Derive the first block from exact ratified owner-alpha state."""
+    """Derive one strategy's block from exact ratified owner-alpha state."""
 
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -157,8 +164,19 @@ class PreparedFirstBlockProjector:
         preparation = BlockPreparationProjector(self.session).project(strategy_id, instant)
         strategy = preparation.strategy
         blockers: list[str] = []
+        try:
+            strategy_cycle = resolve_strategy_cycle_lineage(self.repository, strategy)
+        except PreparedStrategyCycleError as error:
+            return self._blocked(strategy.id, strategy.athlete_id, starts_on, instant, [str(error)])
         if starts_on.weekday() != 0:
             blockers.append("Choose a Monday so every training week has an unambiguous boundary.")
+        if (
+            strategy_cycle.predecessor_block_ends_on is not None
+            and starts_on <= strategy_cycle.predecessor_block_ends_on
+        ):
+            blockers.append(
+                "A successor block must begin after the reviewed predecessor block ended."
+            )
 
         selected_demands = []
         selected_resolutions = []
@@ -194,16 +212,16 @@ class PreparedFirstBlockProjector:
                 selected_scopes.append(estimate.estimate_scope)
 
         if len(set(selected_scopes)) != 1:
-            blockers.append("The first block requires exactly one governed estimate scope.")
+            blockers.append("The strategy block requires exactly one governed estimate scope.")
             resource_candidate = None
             training_candidate = None
         else:
             try:
                 resource_candidate = prepared_resource_governance_candidate_for_scope(
-                    selected_scopes[0]
+                    selected_scopes[0], selected_demands[0].priority_state
                 )
                 training_candidate = prepared_training_construction_candidate_for_scope(
-                    selected_scopes[0]
+                    selected_scopes[0], selected_demands[0].priority_state
                 )
             except KeyError as error:
                 blockers.append(str(error))
@@ -234,11 +252,19 @@ class PreparedFirstBlockProjector:
 
         policy = matching_policies[0]
         weekly_budget = sum(item.target_weekly_minutes for item in selected_demands)
+        candidate_version = _candidate_version(strategy_cycle, selected_scopes[0])
         construction_basis = (
             "Use the target minutes already ratified for every strategy priority, allocate them "
             "with the exact owner-alpha policy, and hold that envelope for four weeks. Four weeks "
             "is a provisional engineering horizon for the first usable alpha, not a scientific "
             "claim that four weeks is universally optimal."
+            if candidate_version == CANDIDATE_VERSION
+            else (
+                "Use the target minutes separately ratified for the current strategy priorities, "
+                "including their current DEVELOP or MAINTAIN states and capability-need lineage; "
+                "allocate them with the exact owner-alpha policy for four weeks. Four weeks remains "
+                "a provisional engineering horizon, not a claim of universal optimality."
+            )
         )
         applicability = (
             "This block is derived only for this athlete, this strategy, and the immutable resource "
@@ -252,13 +278,9 @@ class PreparedFirstBlockProjector:
             "Accepting this block does not authorize exercise. A dated week, current availability, "
             "governed prescription, and pre-session safety gate are still required before training."
         )
-        constraints = (
-            "Use only fully resolved exercises from the selected immutable resource demands.",
-            "Do not exceed the ratified target weekly minutes during this first block.",
-            "Require current readiness and session-safety evaluation before each training session.",
-        )
+        constraints = _block_constraints(candidate_version)
         stable_content = {
-            "candidate_version": CANDIDATE_VERSION,
+            "candidate_version": candidate_version,
             "strategy": strategy.model_dump(mode="json"),
             "starts_on": starts_on.isoformat(),
             "duration_weeks": DURATION_WEEKS,
@@ -277,6 +299,8 @@ class PreparedFirstBlockProjector:
             "uncertainty": uncertainty,
             "safety_boundary": safety_boundary,
         }
+        if candidate_version == SUCCESSOR_CANDIDATE_VERSION:
+            stable_content["strategy_cycle"] = strategy_cycle.model_dump(mode="json")
         canonical = json.dumps(stable_content, sort_keys=True, separators=(",", ":"))
         content_digest = f"sha256:{hashlib.sha256(canonical.encode()).hexdigest()}"
         candidate_id = uuid5(CANDIDATE_NAMESPACE, content_digest)
@@ -316,7 +340,7 @@ class PreparedFirstBlockProjector:
                 strategy.athlete_id,
                 starts_on,
                 instant,
-                ["The first block cannot begin in the past."],
+                ["The strategy block cannot begin in the past."],
             )
 
         try:
@@ -343,7 +367,7 @@ class PreparedFirstBlockProjector:
             )
 
         candidate = PreparedFirstBlockCandidate(
-            candidate_version=CANDIDATE_VERSION,
+            candidate_version=candidate_version,
             candidate_id=candidate_id,
             content_digest=content_digest,
             prepared_at=instant,
@@ -371,6 +395,7 @@ class PreparedFirstBlockProjector:
             applicability_rationale=applicability,
             uncertainty=uncertainty,
             safety_boundary=safety_boundary,
+            strategy_cycle=strategy_cycle,
             identities=identities,
             accepted_result=existing,
         )
@@ -381,7 +406,7 @@ class PreparedFirstBlockProjector:
             projected_at=instant,
             status="accepted" if existing is not None else "available",
             message=(
-                "The exact first block is already stored with immutable provenance."
+                "The exact strategy block is already stored with immutable provenance."
                 if existing is not None
                 else "Review and accept the prepared four-week resource envelope."
             ),
@@ -405,7 +430,24 @@ class PreparedFirstBlockProjector:
         )
         training_decision = repository.get_decision_record(training.presentation.candidate_id)
         release = training.release
-        dose_policy = release.repetition_dose_policy
+        dose_policy = (
+            release.repetition_dose_policy
+            or release.fixed_repetition_dose_policy
+            or release.fixed_duration_dose_policy
+        )
+        dose_policy_exact = (
+            repository.get_repetition_dose_policy(dose_policy.id) == dose_policy
+            if release.repetition_dose_policy is not None and dose_policy is not None
+            else (
+                repository.get_fixed_repetition_dose_policy(dose_policy.id) == dose_policy
+                if release.fixed_repetition_dose_policy is not None and dose_policy is not None
+                else (
+                    repository.get_fixed_duration_dose_policy(dose_policy.id) == dose_policy
+                    if release.fixed_duration_dose_policy is not None and dose_policy is not None
+                    else False
+                )
+            )
+        )
         scheduling_review = repository.get_weekly_scheduling_policy_review(
             release.weekly_scheduling_policy_review_id
         )
@@ -429,7 +471,7 @@ class PreparedFirstBlockProjector:
             and repository.get_progression_policy(release.progression_policy.id)
             == release.progression_policy
             and dose_policy is not None
-            and repository.get_repetition_dose_policy(dose_policy.id) == dose_policy
+            and dose_policy_exact
             and repository.get_session_safety_policy(release.session_safety_policy.id)
             == release.session_safety_policy
         )
@@ -505,7 +547,7 @@ class PreparedFirstBlockProjector:
             starts_on=starts_on,
             projected_at=instant,
             status="blocked",
-            message="The exact first block is not ready yet.",
+            message="The exact strategy block is not ready yet.",
             blockers=tuple(dict.fromkeys(blockers)),
         )
 
@@ -541,11 +583,7 @@ def ratify_prepared_first_block(
             result=candidate.accepted_result,
         )
     generated_at = datetime.now(UTC)
-    constraints = (
-        "Use only fully resolved exercises from the selected immutable resource demands.",
-        "Do not exceed the ratified target weekly minutes during this first block.",
-        "Require current readiness and session-safety evaluation before each training session.",
-    )
+    constraints = _block_constraints(candidate.candidate_version)
     result = PersistedBlockCreationService(session).execute(
         strategy_id,
         CreateBlockPlanCommand(
@@ -571,4 +609,30 @@ def ratify_prepared_first_block(
         candidate_content_digest=candidate.content_digest,
         created=True,
         result=result,
+    )
+
+
+def _candidate_version(
+    strategy_cycle: PreparedStrategyCycleLineage,
+    estimate_scope: str,
+) -> Literal["prepared-first-block@1.0.0", "prepared-first-block@1.1.0"]:
+    if (
+        strategy_cycle.cycle == "initial"
+        and estimate_scope != "assessment_specific:countermovement_vertical_jump_height_cm"
+    ):
+        return CANDIDATE_VERSION
+    return SUCCESSOR_CANDIDATE_VERSION
+
+
+def _block_constraints(
+    candidate_version: Literal["prepared-first-block@1.0.0", "prepared-first-block@1.1.0"],
+) -> tuple[str, str, str]:
+    return (
+        "Use only fully resolved exercises from the selected immutable resource demands.",
+        (
+            "Do not exceed the ratified target weekly minutes during this first block."
+            if candidate_version == CANDIDATE_VERSION
+            else "Do not exceed the ratified target weekly minutes during this strategy block."
+        ),
+        "Require current readiness and session-safety evaluation before each training session.",
     )

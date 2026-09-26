@@ -18,6 +18,8 @@ import {
 
 import { CompetencyFloorGovernanceClient } from "./competency-floor-governance-client";
 import { CompetencyFloorProposalClient } from "./competency-floor-proposal-client";
+import { AerobicAuthorityReviewClient } from "./aerobic-authority-review-client";
+import { ExplosivePowerAuthorityReviewClient } from "./explosive-power-authority-review-client";
 import { ResourceGovernanceClient } from "./resource-governance-client";
 import { TrainingConstructionGovernanceClient } from "./training-construction-governance-client";
 
@@ -36,6 +38,7 @@ export function PlanningGovernanceClient({ athleteId }: { athleteId?: string }) 
   const [batchMessage, setBatchMessage] = useState("");
   const [batchMessageKind, setBatchMessageKind] = useState<"error" | "success">("error");
   const [authorityRevision, setAuthorityRevision] = useState(0);
+  const [summaryRevision, setSummaryRevision] = useState(0);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -117,6 +120,7 @@ export function PlanningGovernanceClient({ athleteId }: { athleteId?: string }) 
       setAuthorityBatch(result.remaining);
       setBatchAttestation(false);
       setAuthorityRevision((value) => value + 1);
+      setSummaryRevision((value) => value + 1);
       setBatchMessageKind("success");
       setBatchMessage(
         `Approved ${result.approved_group_count} exact authority group(s). Every group kept its own digest, review, and decision history.`,
@@ -127,6 +131,7 @@ export function PlanningGovernanceClient({ athleteId }: { athleteId?: string }) 
         : 0;
       await refreshAuthorityBatch();
       setAuthorityRevision((value) => value + 1);
+      setSummaryRevision((value) => value + 1);
       setBatchMessageKind("error");
       setBatchMessage(
         `${completed > 0 ? `${completed} exact group(s) were saved before the stop. ` : ""}`
@@ -170,6 +175,7 @@ export function PlanningGovernanceClient({ athleteId }: { athleteId?: string }) 
           </p>
         </div>
         <nav className="review-route-links" aria-label="Reviewer routes">
+          <Link href="/review/readiness" className="text-link">Live readiness</Link>
           <Link href={athleteReviewHref("/review/assessments", athleteId)} className="text-link">Assessment governance</Link>
           <Link href={athleteReviewHref("/review", athleteId)} className="text-link">Initial planning</Link>
           <Link href={athleteReviewHref("/review/queue", athleteId)} className="text-link">Planning queue</Link>
@@ -407,9 +413,32 @@ export function PlanningGovernanceClient({ athleteId }: { athleteId?: string }) 
         </div>
       ) : null}
       <CompetencyFloorProposalClient />
-      <CompetencyFloorGovernanceClient key={`floor-authorities-${authorityRevision}`} />
-      <ResourceGovernanceClient key={`resource-authorities-${authorityRevision}`} />
-      <TrainingConstructionGovernanceClient key={`construction-authorities-${authorityRevision}`} />
+      <ExplosivePowerAuthorityReviewClient key={`explosive-power-review-${summaryRevision}`} />
+      <AerobicAuthorityReviewClient
+        athleteId={athleteId}
+        key={`aerobic-review-${summaryRevision}`}
+      />
+      <CompetencyFloorGovernanceClient
+        key={`floor-authorities-${authorityRevision}`}
+        onRatified={() => {
+          setSummaryRevision((value) => value + 1);
+          void refreshAuthorityBatch();
+        }}
+      />
+      <ResourceGovernanceClient
+        key={`resource-authorities-${authorityRevision}`}
+        onRatified={() => {
+          setSummaryRevision((value) => value + 1);
+          void refreshAuthorityBatch();
+        }}
+      />
+      <TrainingConstructionGovernanceClient
+        key={`construction-authorities-${authorityRevision}`}
+        onRatified={() => {
+          setSummaryRevision((value) => value + 1);
+          void refreshAuthorityBatch();
+        }}
+      />
     </main>
   );
 }

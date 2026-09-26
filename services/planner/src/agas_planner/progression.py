@@ -296,6 +296,12 @@ class ProgressionEngine:
             elif exposure_validation.outcome is ExposureValidationOutcome.REJECTED:
                 outcome = ProgressionOutcome.HOLD
                 reasons.append("the proposed exposure increase exceeds its configured cap")
+        if outcome is ProgressionOutcome.PROGRESS and policy.maximum_prescription_value is not None:
+            current_value = self._current_adjustment_value(prescription, policy)
+            proposed_value = current_value + policy.adjustment.amount
+            if proposed_value > policy.maximum_prescription_value:
+                outcome = ProgressionOutcome.HOLD
+                reasons.append("the proposed prescription increase exceeds its configured ceiling")
         if outcome is ProgressionOutcome.PROGRESS:
             reasons.append("all configured progression criteria are satisfied")
 
@@ -326,6 +332,28 @@ class ProgressionEngine:
             decided_at=decided_at,
             rule_version=f"{self.rule_version};policy={policy.policy_version}",
         )
+
+    @staticmethod
+    def _current_adjustment_value(
+        prescription: SessionPrescription,
+        policy: ProgressionPolicy,
+    ) -> float:
+        dimension = policy.adjustment.dimension
+        if dimension is ProgressionDimension.REPETITIONS:
+            value = prescription.repetitions_per_set
+        elif dimension is ProgressionDimension.SETS:
+            value = prescription.sets
+        elif dimension is ProgressionDimension.DURATION:
+            value = prescription.duration_seconds
+        else:
+            raise ProgressionError(
+                "configured progression ceiling lacks a typed prescription value"
+            )
+        if value is None:
+            raise ProgressionError(
+                "configured progression ceiling does not match the prescription dose"
+            )
+        return float(value)
 
 
 class PrescriptionProgressionApplicator:
@@ -374,7 +402,12 @@ class PrescriptionProgressionApplicator:
                 raise ProgressionError(
                     "duration progression requires a duration prescription and revised duration"
                 )
-            updates["duration_seconds"] = prescription.duration_seconds + int(amount)
+            revised_duration = prescription.duration_seconds + int(amount)
+            if prescription.sets * revised_duration > planned_duration_minutes * 60:
+                raise ProgressionError(
+                    "duration progression exceeds the revised planned session envelope"
+                )
+            updates["duration_seconds"] = revised_duration
         elif dimension is ProgressionDimension.LOAD:
             revised_target: AbsoluteLoadTarget | RelativeLoadTarget
             load_target = next(

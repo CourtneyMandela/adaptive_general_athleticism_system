@@ -1,0 +1,218 @@
+{
+  "document_schema_version": "competency-floor-candidate-document@1.0.0",
+  "candidate_version": "competency-floor-candidate@1.1.0",
+  "content_digest": "sha256:6bac12b8c7895f13d97319c558978b1949c3b451ffed84fc4f4e18adfdcd9a8a",
+  "accepted_historical_content_digests": [],
+  "presentation": {
+    "candidate_id": "98400000-0000-4000-8000-000000000004",
+    "slug": "owner_alpha_countermovement_jump_provisional_floor",
+    "release_label": "Owner-alpha provisional countermovement-jump floor",
+    "prepared_at": "2026-09-23T14:30:00Z",
+    "summary": "A deliberately low, owner-only 20 centimeter countermovement-jump floor that can identify a clear development case without converting age- and sex-stratified descriptive norms into athlete truth.",
+    "authority_basis": {
+      "numeric_value_origin": "engineering_judgment",
+      "operational_use_origin": "engineering_judgment",
+      "numeric_value_explanation": "The 20 centimeter value is an AGAS engineering prior. It is not extracted from the Payne study, the ACSM reference table, or a validated minimum-useful-competency analysis.",
+      "operational_use_explanation": "A planning reviewer may provisionally adopt the value only for the owner-alpha athlete and the exact governed countermovement-jump-height estimate. The published reference remains descriptive context, not operational authority for the threshold."
+    },
+    "domain": "explosive_power",
+    "estimate_scope": "assessment_specific:countermovement_vertical_jump_height_cm",
+    "unit_or_scale": "centimeters",
+    "threshold": 20.0,
+    "comparison_direction": "higher_is_better",
+    "minimum_age_years": 30,
+    "maximum_age_years": 39,
+    "governs": [
+      "One owner-alpha comparison between a current estimate from the exact governed countermovement-jump protocol and a provisional 20 centimeter floor.",
+      "A below-floor result may support an explosive-power development need while retaining the estimate, observation, floor, evidence, and judgment-authority identities."
+    ],
+    "does_not_establish": [
+      "A population norm, sex category, percentile, medical threshold, injury-risk threshold, or safe-jumping clearance.",
+      "That 20 centimeters is a scientific minimum, an ACSM recommendation, or an optimal target for this athlete.",
+      "An exercise selection, number of jump contacts, weekly frequency, progression rule, or permission to train.",
+      "That meeting this floor eliminates the value of explosive-power maintenance or later personal calibration."
+    ],
+    "unresolved_limitations": [
+      "No reviewed scientific source validates 20 centimeters as a minimum useful competency for the owner-alpha athlete.",
+      "The Canadian reference sample is historical, age- and sex-stratified, and not established as comparable to a recreationally trained construction worker.",
+      "Wall marking, arm swing, countermovement depth, effort, familiarization, footwear, and surface may materially change the estimate.",
+      "The threshold should be replaced or withdrawn after repeatable personal baseline and response observations exist."
+    ],
+    "evidence": [
+      {
+        "title": "Payne et al. (2000), Canadian musculoskeletal fitness norms",
+        "source_url": "https://pubmed.ncbi.nlm.nih.gov/11098155/",
+        "population": "312 female and 259 male Canadian participants aged 15 to 69 years.",
+        "finding": "The study produced age- and sex-stratified descriptive reference values for vertical jump and four other musculoskeletal fitness measures.",
+        "limitations": [
+          "The study does not validate 20 centimeters as an AGAS floor.",
+          "Descriptive categories are not minimum useful competencies or safety thresholds.",
+          "The sample's applicability to the owner-alpha athlete is low."
+        ],
+        "conflict_disclosure": "The PubMed record does not display a conflict-of-interest statement."
+      }
+    ]
+  },
+  "release": {
+    "release_id": "98400000-0000-4000-8000-000000000004",
+    "release_label": "Owner-alpha provisional countermovement-jump floor",
+    "prepared_at": "2026-09-23T14:30:00Z",
+    "source": {
+      "id": "90000000-0000-4000-8000-000000000005",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-18T09:00:00Z",
+      "title": "Canadian musculoskeletal fitness norms",
+      "authors": [
+        "M W Payne",
+        "M J Gledhill",
+        "P T Katzmarzyk",
+        "V Jamnik",
+        "N Ferguson"
+      ],
+      "journal": "Canadian Journal of Applied Physiology",
+      "publication_year": 2000,
+      "publication_date": null,
+      "abstract": null,
+      "publication_types": [
+        "Journal article",
+        "Normative study"
+      ],
+      "primary_identifier": {
+        "scheme": "pmid",
+        "value": "11098155"
+      },
+      "source_identifiers": [
+        {
+          "scheme": "pmid",
+          "value": "11098155"
+        },
+        {
+          "scheme": "doi",
+          "value": "10.1139/h00-028"
+        }
+      ],
+      "metadata_provider": "pubmed",
+      "retrieval_uri": "https://pubmed.ncbi.nlm.nih.gov/11098155/",
+      "retrieval_query": "PMID 11098155",
+      "retrieved_at": "2026-09-18T09:00:00Z",
+      "metadata_version": "pubmed-record-snapshot@2026-09-18",
+      "provenance_notes": [
+        "Title, authors, journal, DOI, sample size, age range, and tested measures were checked against the PubMed record.",
+        "The abstract is intentionally not copied into the stored snapshot.",
+        "This release uses the paper to identify the provenance and population of the descriptive norms, not to create an AGAS competency floor."
+      ],
+      "sequence_number": 1,
+      "supersedes_source_id": null
+    },
+    "claim": {
+      "id": "91300000-0000-4000-8000-000000000001",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-23T14:00:00Z",
+      "claim": "Payne and colleagues produced age- and sex-stratified Canadian musculoskeletal fitness norms, including vertical jump, from 571 participants aged 15 to 69 years; these descriptive data do not validate a universal or owner-specific minimum competency.",
+      "domain": "assessment_reference_population",
+      "population": "312 female and 259 male Canadian participants aged 15 to 69 years.",
+      "intervention": "Musculoskeletal fitness testing that included vertical jump and four other measures.",
+      "comparator": "Age- and sex-stratified descriptive reference distributions.",
+      "outcome": "Population reference values for the included musculoskeletal fitness measures.",
+      "study_design": "Cross-sectional normative study",
+      "sample_size": 571,
+      "duration": null,
+      "effect_direction": "Not applicable; this is descriptive reference information.",
+      "uncertainty": "A Canadian sample collected more than two decades ago may not represent the current athlete, recreationally trained adults, or occupationally active adults.",
+      "limitations": [
+        "The PubMed abstract does not establish a sport- or occupation-specific competency threshold.",
+        "Age and sex categories describe a reference distribution rather than a required level for safe or effective training.",
+        "This release does not infer sex or apply a normative category to the athlete."
+      ],
+      "evidence_strength": "low",
+      "athlete_applicability": "low",
+      "applicability_notes": "The age range includes mid-thirties adults, but the sample is not established as a match for a recreationally trained construction worker.",
+      "source_identifiers": [
+        {
+          "scheme": "pmid",
+          "value": "11098155"
+        },
+        {
+          "scheme": "doi",
+          "value": "10.1139/h00-028"
+        }
+      ],
+      "source_record_ids": [
+        "90000000-0000-4000-8000-000000000005"
+      ],
+      "reviewer": "Codex floor-support evidence synthesis candidate; authority pending",
+      "claim_version": "payne-jump-floor-context@1.0.0"
+    },
+    "evidence_review_id": "91310000-0000-4000-8000-000000000001",
+    "evidence_review_content": {
+      "source_verification_rationale": "The title, authors, identifiers, sample size, sex counts, age range, tested measures, and normative purpose were checked against PMID 11098155.",
+      "extraction_rationale": "The claim records only the descriptive reference population and explicitly excludes conversion of its categories into an AGAS floor.",
+      "evidence_strength_rationale": "Low reflects one cross-sectional normative sample rather than a validated minimum for this athlete's goals or training decisions.",
+      "applicability_rationale": "Low avoids treating a broad historic Canadian reference sample as equivalent to a mid-thirties recreationally trained, physically working adult.",
+      "uncertainty": "Sampling, cohort, sex classification, and measurement context limit transfer.",
+      "conflict_disclosure": "The PubMed record does not display a conflict-of-interest statement.",
+      "review_version": "payne-jump-floor-context-review@1.0.0"
+    },
+    "authority": {
+      "id": "91320000-0000-4000-8000-000000000001",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-23T14:10:00Z",
+      "authority_kind": "engineering_judgment",
+      "statement": "For the owner-alpha athlete only, treat 20.0 centimeters under the exact governed countermovement-jump protocol as a provisional minimum useful repeat-performance floor.",
+      "scope": "assessment_specific:countermovement_vertical_jump_height_cm",
+      "population": "Owner-only alpha; age 30 to 39; recreationally trained adult doing physical work.",
+      "rationale": "Twenty centimeters is a deliberately low sentinel intended to distinguish a clearly limited result from one that should not automatically receive deficit-only development under this provisional rule. It does not encode a sex category or scientific optimum.",
+      "applicability_notes": "Use only with a current estimate from the exact governed countermovement-jump protocol after its separate readiness and recent-exposure gates are satisfied. Review after repeat personal measurements exist.",
+      "uncertainty": "No scientific source validates 20 centimeters as a minimum useful athletic competency, and a first personal result cannot establish whether this threshold is appropriately calibrated.",
+      "limitations": [
+        "This threshold has no population-validity claim.",
+        "It cannot establish medical safety, tissue readiness, injury risk, or an exercise dose.",
+        "Meeting it does not show that explosive power is optimal or should be ignored.",
+        "Personal longitudinal calibration should replace it when enough observations exist."
+      ],
+      "authored_by": "AGAS engineering candidate prepared by Codex",
+      "qualification_context": "System engineering synthesis; not user-authored and not a claim of a licensed clinical or strength credential. A planning reviewer must explicitly adopt the exact judgment before operational use.",
+      "supporting_evidence_claim_ids": [
+        "91300000-0000-4000-8000-000000000001"
+      ],
+      "content_digest": "sha256:d5cf810add354ad31d1ef98097654b29a1e6b24b1ae5f8f954d5a954aedf834a",
+      "authority_version": "owner-alpha-countermovement-jump-provisional-floor-authority@1.0.0"
+    },
+    "authority_review_id": "91330000-0000-4000-8000-000000000001",
+    "authority_review_content": {
+      "attestation": "I adopt this exact owner-alpha product judgment for narrow planning use and understand that 20 centimeters is not a scientific finding, population norm, safety clearance, or exercise prescription.",
+      "uncertainty": "Approval does not establish external validity; replace or withdraw this authority when personal calibration or better applicable evidence supports a different decision.",
+      "review_version": "owner-alpha-countermovement-jump-floor-authority-review@1.0.0"
+    },
+    "floor": {
+      "id": "91340000-0000-4000-8000-000000000001",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-23T14:20:00Z",
+      "domain": "explosive_power",
+      "estimate_scope": "assessment_specific:countermovement_vertical_jump_height_cm",
+      "unit_or_scale": "centimeters",
+      "threshold": 20.0,
+      "comparison_direction": "higher_is_better",
+      "population": "Owner-only alpha; age 30 to 39; exact governed countermovement-jump protocol.",
+      "minimum_age_years": 30,
+      "maximum_age_years": 39,
+      "applicability_notes": "Compare only with a current estimate from the matching governed protocol. Use the result as one planning input; never as diagnosis, safety clearance, or a universal explosive-power judgment.",
+      "uncertainty": "The threshold is an explicit AGAS engineering judgment with descriptive reference context but no numeric scientific validation. It is provisional and replaceable after personal calibration.",
+      "evidence_claim_ids": [
+        "91300000-0000-4000-8000-000000000001"
+      ],
+      "judgment_authority_ids": [
+        "91320000-0000-4000-8000-000000000001"
+      ],
+      "floor_version": "owner-alpha-countermovement-jump-provisional-floor@1.0.0"
+    },
+    "floor_review_id": "91350000-0000-4000-8000-000000000001",
+    "floor_review_content": {
+      "applicability_rationale": "Approve only for the owner-alpha athlete, ages 30 to 39, after a current estimate from the exact governed countermovement-jump protocol. The comparison may inform development or maintenance but is not a medical or safety decision.",
+      "uncertainty": "The source provides descriptive context only; the number 20 does not come from it. Approval adopts the separate reviewed engineering authority and requires later personal calibration.",
+      "review_version": "owner-alpha-countermovement-jump-floor-review@1.0.0"
+    },
+    "release_rationale": "Provide one honest, owner-reviewable explosive-power floor so the governed countermovement-jump estimate can enter planning without inferring sex or disguising a product judgment as a normative finding.",
+    "release_uncertainty": "Ratification would authorize only this owner-alpha comparison. It creates no diagnosis, universal norm, readiness clearance, adaptation priority, exercise selection, contact dose, session, or permission to train."
+  }
+}

@@ -1,5 +1,6 @@
 import { expect, test, type APIResponse } from "@playwright/test";
 
+import { mockAccessToken } from "./mock-services";
 import { OIDC_TRANSACTION_COOKIE_NAME } from "../lib/oidc-login";
 import { SESSION_COOKIE_NAME } from "../lib/server-session";
 
@@ -275,6 +276,214 @@ test("a phone user can safety-check and record an exact set-by-set session", asy
   ]);
 });
 
+test("in-week progression updates only the next unperformed session", async ({ page }) => {
+  const weeklyPlanId = "d2000000-0000-4000-8000-000000000001";
+  const completedSessionId = "d2000000-0000-4000-8000-000000000002";
+  const nextSessionId = "d2000000-0000-4000-8000-000000000003";
+  const originalPrescriptionId = "d2000000-0000-4000-8000-000000000004";
+  const revisedPrescriptionId = "d2000000-0000-4000-8000-000000000005";
+  const nextSafetyDecisionId = "d2000000-0000-4000-8000-000000000006";
+  let executionBody: Record<string, unknown> | null = null;
+
+  const prescription = (prescriptionId: string, repetitionsPerSet: number) => ({
+    order_index: 1,
+    section: "primary",
+    prescription_id: prescriptionId,
+    exercise_id: "d2000000-0000-4000-8000-000000000010",
+    exercise_name: "Standard push-up",
+    adaptation_id: "d2000000-0000-4000-8000-000000000011",
+    adaptation_name: "Upper-body muscular endurance",
+    reason_for_inclusion: "Scope-matched governed dose.",
+    sets: 2,
+    repetitions_per_set: repetitionsPerSet,
+    duration_seconds: null,
+    intensity_targets: ["RPE 5-7"],
+    rest_seconds: 120,
+    execution_guidance: null,
+    adherence: null,
+    progression: null,
+    progression_action: {
+      status: "awaiting_execution",
+      rule_reference: "owner-alpha-pushup@1.0.0",
+      progression_policy_id: null,
+      adjustment_dimension: null,
+      adjustment_description: null,
+      reason: "A recorded execution is required.",
+    },
+  });
+
+  await page.route("http://localhost:8000/v1/**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (url.pathname === `/v1/athletes/${athleteId}/current-week`) {
+      const original = prescription(originalPrescriptionId, 6);
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          athlete_id: athleteId,
+          athlete_display_name: "Courtney fixture",
+          as_of: "2026-09-17",
+          safety_policy_assignment: {
+            assignment_id: "d2000000-0000-4000-8000-000000000012",
+            safety_policy_id: "d2000000-0000-4000-8000-000000000013",
+            policy_version: "owner-alpha-session-safety@1.0.0",
+            sequence_number: 1,
+            assigned_at: "2026-09-14T12:00:00Z",
+            assigned_by: "owner-alpha",
+            applicability_rationale: "Owner-alpha fixture.",
+            rule_version: "safety-policy-assignment@1.0.0",
+          },
+          week: {
+            weekly_plan_id: weeklyPlanId,
+            block_plan_id: "d2000000-0000-4000-8000-000000000014",
+            week_start: "2026-09-14",
+            week_end: "2026-09-20",
+            block_week: 1,
+            status: "feasible",
+            availability: { source_observation_ids: [], rule_version: "fixture@1", windows: [] },
+            review: {
+              status: "awaiting_sessions",
+              reason: "One scheduled session remains.",
+              scheduled_sessions: 2,
+              recorded_sessions: 1,
+              completed_sessions: 1,
+              post_session_closed: 1,
+              progression_items: 2,
+              resolved_progression_items: 1,
+              progression_outcomes: { progress: 1, repeat: 0, hold: 0, review_required: 0 },
+              next_week_start: null,
+              confirmed_availability: null,
+              unresolved_environment_prescriptions: 0,
+            },
+            sessions: [
+              {
+                planned_session_id: completedSessionId,
+                session_template_id: "d2000000-0000-4000-8000-000000000015",
+                session_name: "Push-up foundation — completed",
+                starts_at: "2026-09-15T22:00:00Z",
+                ends_at: "2026-09-15T22:06:00Z",
+                planned_duration_minutes: 6,
+                environment_id: "d2000000-0000-4000-8000-000000000016",
+                environment_name: "Home",
+                status: "completed",
+                pre_session_safety: {
+                  decision_id: "d2000000-0000-4000-8000-000000000017",
+                  outcome: "proceed",
+                  required_modifications: [],
+                  decided_at: "2026-09-15T21:55:00Z",
+                },
+                execution: {
+                  execution_id: "d2000000-0000-4000-8000-000000000018",
+                  status: "completed",
+                  session_rpe: 6,
+                  logged_at: "2026-09-15T22:07:00Z",
+                  post_session_safety_outcomes: ["proceed"],
+                },
+                prescriptions: [{
+                  ...original,
+                  adherence: {
+                    adherence_id: "d2000000-0000-4000-8000-000000000019",
+                    performed_sets: 2,
+                    prescribed_sets: 2,
+                    actual_dose_total: 12,
+                    prescribed_dose_total: 12,
+                    dose_unit: "repetitions",
+                    set_completion_ratio: 1,
+                    dose_completion_ratio: 1,
+                  },
+                  progression: {
+                    decision_id: "d2000000-0000-4000-8000-000000000020",
+                    outcome: "progress",
+                    adjustment_description: "add one repetition per set",
+                    decided_at: "2026-09-15T22:10:00Z",
+                  },
+                  progression_action: {
+                    ...original.progression_action,
+                    status: "completed",
+                    reason: "An immutable progression decision already exists.",
+                  },
+                }],
+              },
+              {
+                planned_session_id: nextSessionId,
+                session_template_id: "d2000000-0000-4000-8000-000000000015",
+                session_name: "Push-up foundation — next",
+                starts_at: "2026-09-18T22:00:00Z",
+                ends_at: "2026-09-18T22:06:00Z",
+                planned_duration_minutes: 6,
+                environment_id: "d2000000-0000-4000-8000-000000000016",
+                environment_name: "Home",
+                status: "cleared",
+                pre_session_safety: {
+                  decision_id: nextSafetyDecisionId,
+                  outcome: "proceed",
+                  required_modifications: [],
+                  decided_at: "2026-09-18T21:55:00Z",
+                },
+                execution: null,
+                prescriptions: [prescription(revisedPrescriptionId, 7)],
+              },
+            ],
+          },
+        }),
+      });
+    }
+    if (
+      url.pathname === `/v1/weekly-plans/${weeklyPlanId}/sessions/${nextSessionId}/executions`
+      && request.method() === "POST"
+    ) {
+      executionBody = request.postDataJSON() as Record<string, unknown>;
+      return route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({
+          execution: {
+            id: "d2000000-0000-4000-8000-000000000021",
+            status: "completed",
+          },
+        }),
+      });
+    }
+    return route.fulfill({
+      status: 404,
+      contentType: "application/json",
+      body: JSON.stringify({ detail: "not needed by the in-week progression browser test" }),
+    });
+  });
+
+  await page.goto(`/?athleteId=${athleteId}&on=2026-09-17`);
+  const completedCard = page.locator("article.session-card").filter({
+    has: page.getByRole("heading", { name: "Push-up foundation — completed" }),
+  });
+  const nextCard = page.locator("article.session-card").filter({
+    has: page.getByRole("heading", { name: "Push-up foundation — next" }),
+  });
+
+  await expect(completedCard.getByText("2 × 6", { exact: true })).toBeVisible();
+  await expect(completedCard.getByText("2/2 sets · 100% dose")).toBeVisible();
+  await expect(nextCard.getByText("2 × 7", { exact: true })).toBeVisible();
+
+  await nextCard.getByText("Train this session").click();
+  await nextCard.getByRole("button", { name: "Start workout" }).click();
+  await expect(nextCard.getByLabel("Actual reps").first()).toHaveValue("7");
+  await nextCard.getByLabel("Set 1 done").check();
+  await nextCard.getByLabel("Set 2 done").check();
+  await nextCard.getByRole("button", { name: "Finish workout" }).click();
+  await nextCard.getByRole("button", { name: "Save final workout record" }).click();
+
+  await expect.poll(() => executionBody).not.toBeNull();
+  const items = executionBody!.items as Array<{
+    prescription_id: string;
+    performances: Array<{ actual_repetitions: number }>;
+  }>;
+  expect(items).toHaveLength(1);
+  expect(items[0].prescription_id).toBe(revisedPrescriptionId);
+  expect(items[0].performances).toMatchObject([
+    { actual_repetitions: 7 },
+    { actual_repetitions: 7 },
+  ]);
+});
+
 test("the first-session path surfaces a prepared assessment as the next owner action", async ({
   page,
 }) => {
@@ -386,6 +595,237 @@ test("the first-session path surfaces a prepared assessment as the next owner ac
     .toBeVisible();
   await expect(page.getByRole("link", { name: "Review the prepared assessment →" }))
     .toHaveAttribute("href", `/review/assessments?athleteId=${athleteId}`);
+});
+
+test("a phone user preserves a safety-stopped attempt without creating a result", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const runId = "91780000-0000-4000-8000-000000000001";
+  const selectionId = "91790000-0000-4000-8000-000000000001";
+  let submittedResult: Record<string, unknown> | null = null;
+  let submittedAttempt: Record<string, unknown> | null = null;
+  const recordedAttempts: Array<Record<string, unknown>> = [];
+
+  await page.route("http://localhost:8000/v1/**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (
+      url.pathname === `/v1/athletes/${athleteId}/assessment-runs/${runId}`
+        + `/selections/${selectionId}/attempts`
+      && request.method() === "POST"
+    ) {
+      submittedAttempt = request.postDataJSON() as Record<string, unknown>;
+      const attemptSequence = recordedAttempts.length + 1;
+      recordedAttempts.unshift({
+        attempt_id: `917c0000-0000-4000-8000-${attemptSequence.toString().padStart(12, "0")}`,
+        attempt_observation_id: `917d0000-0000-4000-8000-${attemptSequence.toString().padStart(12, "0")}`,
+        status: submittedAttempt.status,
+        reason: submittedAttempt.reason,
+        attempted_at: submittedAttempt.attempted_at,
+        reliability: submittedAttempt.reliability,
+        provenance: submittedAttempt.provenance,
+        rule_version: "assessment-attempt-recording@1.1.0",
+        eligible_for_capability_estimation: false,
+      });
+      return route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({
+          attempt: { id: recordedAttempts[0]?.attempt_id },
+          eligible_for_capability_estimation: false,
+        }),
+      });
+    }
+    if (
+      url.pathname === `/v1/athletes/${athleteId}/assessment-runs/${runId}`
+        + `/selections/${selectionId}/result`
+      && request.method() === "POST"
+    ) {
+      submittedResult = request.postDataJSON() as Record<string, unknown>;
+      return route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({ performance: { id: selectionId }, result_observation: { id: runId } }),
+      });
+    }
+    if (url.pathname === `/v1/athletes/${athleteId}/assessment-workflow`) {
+      const safetyStopped = recordedAttempts.some(
+        (attempt) => attempt.status === "safety_stopped",
+      );
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          athlete_id: athleteId,
+          athlete_display_name: "Synthetic four-day traveler",
+          as_of: "2026-09-25T17:00:00Z",
+          status: safetyStopped ? "run_blocked" : "result_entry_ready",
+          message: safetyStopped
+            ? "The latest selected assessment requires a fresh readiness review."
+            : "One selected assessment is ready to perform.",
+          can_start_run: false,
+          can_record_results: !safetyStopped,
+          approved_self_administered_protocol_count: 1,
+          due_protocol_count: 1,
+          next_reassessment_at: null,
+          reassessment_rule_version: "assessment-reassessment-schedule@1.0.0",
+          eligibility: {
+            eligibility_review_id: "917a0000-0000-4000-8000-000000000001",
+            outcome: "selection_allowed",
+            reviewed_at: "2026-09-25T16:55:00Z",
+            valid_until: "2026-09-26T16:55:00Z",
+            maximum_assessment_intensity: "high",
+            rule_version: "assessment-readiness-screen@1.0.0",
+          },
+          environments: [{
+            environment_id: "917b0000-0000-4000-8000-000000000001",
+            name: "Measured treadmill route",
+          }],
+          latest_run: {
+            run_id: runId,
+            environment_id: "917b0000-0000-4000-8000-000000000001",
+            environment_name: "Measured treadmill route",
+            evaluated_at: "2026-09-25T17:00:00Z",
+            rule_version: "assessment-selection-run@1.0.0",
+            decisions: [{
+              selection_id: selectionId,
+              decision: "selected",
+              reason_codes: ["eligible"],
+              rationale: ["The current exact review, readiness, and environment permit selection."],
+              assessment_definition_id: "91730000-0000-4000-8000-000000000001",
+              assessment_definition_review_id: "91750000-0000-4000-8000-000000000001",
+              name: "12-minute walk/run distance",
+              domain: "aerobic_capacity",
+              intensity: "high",
+              unit_or_scale: "meters",
+              protocol_version: "agas-twelve-minute-walk-run@1.0.0",
+              protocol_instructions: [
+                "Warm up with easy walking and only familiar comfortable jogging.",
+                "Cover the greatest distance sustainable for 12 minutes; walking is always permitted.",
+                "Stop for pain, chest discomfort, dizziness, instability, or unusual shortness of breath.",
+              ],
+              result_entry_instructions: "Enter direct measured meters only; do not enter a stopped attempt.",
+              measurement_schema: {
+                measurement_type: "number",
+                label: "Distance covered in 12 minutes",
+                minimum: 0,
+                maximum: null,
+                step: 1,
+                allowed_values: [],
+                measurement_schema_version: "twelve-minute-walk-run-distance-m@1.0.0",
+              },
+              applicability_notes: "Owner-alpha direct within-person tracking only.",
+              uncertainty: "Pacing and conditions affect repeatability.",
+              evidence_claim_ids: ["91710000-0000-4000-8000-000000000001"],
+              review_version: "agas-twelve-minute-walk-run-review@1.0.0",
+              result_status: safetyStopped ? "safety_review_required" : "ready",
+              attempts: recordedAttempts,
+              result: null,
+            }],
+          },
+          history_projection_version: "assessment-history-projection@1.0.0",
+          history_runs: [{
+            run_id: runId,
+            assessment_eligibility_review_id: "917a0000-0000-4000-8000-000000000001",
+            environment_id: "917b0000-0000-4000-8000-000000000001",
+            environment_name: "Measured treadmill route",
+            context_observation_id: "917e0000-0000-4000-8000-000000000001",
+            evaluated_at: "2026-09-25T17:00:00Z",
+            rule_version: "assessment-selection-run@1.0.0",
+            selections: [{
+              selection_id: selectionId,
+              decision: "selected",
+              reason_codes: ["eligible"],
+              rationale: ["The current exact review, readiness, and environment permit selection."],
+              source_observation_ids: ["917e0000-0000-4000-8000-000000000001"],
+              evaluated_at: "2026-09-25T17:00:00Z",
+              rule_version: "assessment-selection@1.0.0",
+              assessment_definition_id: "91730000-0000-4000-8000-000000000001",
+              assessment_definition_review_id: "91750000-0000-4000-8000-000000000001",
+              assessment_eligibility_review_id: "917a0000-0000-4000-8000-000000000001",
+              name: "12-minute walk/run distance",
+              domain: "aerobic_capacity",
+              unit_or_scale: "meters",
+              protocol_version: "agas-twelve-minute-walk-run@1.0.0",
+              review_version: "agas-twelve-minute-walk-run-review@1.0.0",
+              attempts: recordedAttempts,
+              completed_result: null,
+            }],
+          }],
+        }),
+      });
+    }
+    if (url.pathname === `/v1/athletes/${athleteId}/current-week`) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          athlete_id: athleteId,
+          athlete_display_name: "Synthetic four-day traveler",
+          as_of: "2026-09-25",
+          safety_policy_assignment: null,
+          week: null,
+        }),
+      });
+    }
+    return route.fulfill({
+      status: 404,
+      contentType: "application/json",
+      body: JSON.stringify({ detail: "not needed by assessment-completion browser test" }),
+    });
+  });
+
+  await page.goto(`/?athleteId=${athleteId}`);
+
+  const assessment = page.getByRole("article").filter({
+    has: page.getByRole("heading", { name: "12-minute walk/run distance" }),
+  });
+  await expect(assessment).toBeVisible();
+  await expect(assessment.getByText(/walking is always permitted/i).first()).toBeVisible();
+  const genericRecordButton = assessment.getByRole("button", { name: "Record incomplete attempt" });
+  await expect(assessment.getByRole("button")).toBeDisabled();
+
+  await assessment.getByLabel(
+    "I did not complete the protocol, but no listed stop condition occurred.",
+  ).check();
+  const incompleteReason = assessment.getByLabel("Why was the protocol incomplete?");
+  await expect(incompleteReason).toBeVisible();
+  await expect(genericRecordButton).toBeDisabled();
+  await incompleteReason.selectOption("external_interruption");
+  await expect(genericRecordButton).toBeEnabled();
+  await genericRecordButton.click();
+  await expect.poll(() => recordedAttempts.length).toBe(1);
+  expect(submittedAttempt).toMatchObject({
+    status: "incomplete",
+    reason: "external_interruption",
+    protocol_completed: false,
+    stop_condition_occurred: false,
+  });
+
+  await assessment.getByLabel("I stopped because a listed stop condition occurred.").check();
+  await expect(assessment.getByText("Do not record this as a completed assessment.")).toBeVisible();
+  await expect(assessment.getByText("A stopped attempt is not a zero result.")).toBeVisible();
+  await expect(assessment.getByLabel("Distance covered in 12 minutes")).toBeDisabled();
+  await expect(genericRecordButton).toBeEnabled();
+  await genericRecordButton.click();
+
+  await expect.poll(() => submittedAttempt).not.toBeNull();
+  expect(submittedAttempt).toMatchObject({
+    status: "safety_stopped",
+    reason: "listed_stop_condition",
+    protocol_completed: false,
+    stop_condition_occurred: true,
+  });
+  expect(submittedAttempt).not.toHaveProperty("measurement");
+  expect(submittedResult).toBeNull();
+  await expect(assessment.getByText("safety stopped")).toBeVisible();
+  await expect(assessment.getByText("Not eligible for capability estimation").first()).toBeVisible();
+  await expect(assessment.getByText("Fresh readiness review required.")).toBeVisible();
+  await expect(assessment.getByRole("button", { name: /Record/ })).toHaveCount(0);
+  await page.getByText("Assessment history across 1 selection run").click();
+  const history = page.getByRole("group").filter({
+    hasText: "Incomplete attempts, completed direct observations, and derived capability estimates",
+  });
+  await expect(history.getByText("safety stopped")).toBeVisible();
+  await expect(history.getByText("Not eligible for capability estimation").first()).toBeVisible();
+  expect(submittedResult).toBeNull();
 });
 
 test("the athlete home routes directly to the exact next planning boundary", async ({ page }) => {
@@ -1014,6 +1454,48 @@ test("owner can ratify exact prepared authorities, including a floor batch", asy
       conflict_disclosure: "The authors reported no relevant financial involvement.",
     }],
   };
+  const jumpFloorCandidate = {
+    ...floorCandidate,
+    candidate_id: "98400000-0000-4000-8000-000000000004",
+    slug: "owner_alpha_countermovement_jump_provisional_floor",
+    release_label: "Owner-alpha provisional countermovement-jump floor",
+    content_digest: `sha256:${"1".repeat(64)}`,
+    summary: "A deliberately low owner-only jump comparison.",
+    authority_basis: {
+      numeric_value_origin: "engineering_judgment",
+      operational_use_origin: "engineering_judgment",
+      numeric_value_explanation: "The 20 centimeter value is an AGAS engineering prior, not a scientific finding.",
+      operational_use_explanation: "Use is limited to the owner alpha and exact governed estimate.",
+    },
+    domain: "explosive_power",
+    estimate_scope: "assessment_specific:countermovement_vertical_jump_height_cm",
+    unit_or_scale: "centimeters",
+    threshold: 20,
+    governs: ["One exact owner-alpha jump-height comparison."],
+    does_not_establish: ["Safety clearance or a training dose."],
+    unresolved_limitations: ["Personal calibration is not yet available."],
+  };
+  const aerobicFloorCandidate = {
+    ...floorCandidate,
+    candidate_id: "91800000-0000-4000-8000-000000000001",
+    slug: "owner_alpha_twelve_minute_walk_run_provisional_floor",
+    release_label: "Owner-alpha provisional 12-minute walk/run floor",
+    content_digest: `sha256:${"4".repeat(64)}`,
+    summary: "A deliberately low owner-only 12-minute walk/run comparison.",
+    authority_basis: {
+      numeric_value_origin: "engineering_judgment",
+      operational_use_origin: "engineering_judgment",
+      numeric_value_explanation: "The 1200 meter value is an AGAS engineering prior, not a scientific finding.",
+      operational_use_explanation: "Use is limited to the owner alpha and exact governed distance estimate.",
+    },
+    domain: "aerobic_capacity",
+    estimate_scope: "assessment_specific:twelve_minute_walk_run_distance_m",
+    unit_or_scale: "meters",
+    threshold: 1200,
+    governs: ["One exact owner-alpha 12-minute distance comparison."],
+    does_not_establish: ["Medical clearance, a VO2 estimate, or a training dose."],
+    unresolved_limitations: ["No source validates 1200 meters as a competency floor."],
+  };
   await page.route("http://localhost:8000/v1/operator/competency-floor-candidates**", async (route) => {
     return route.fulfill({
       contentType: "application/json",
@@ -1025,6 +1507,16 @@ test("owner can ratify exact prepared authorities, including a floor batch", asy
           status: floorRatified ? "ratified" : "available",
           ratified_at: floorRatified ? "2026-09-10T15:00:00Z" : null,
           issues: [],
+        }, {
+          candidate: jumpFloorCandidate,
+          status: "ratified",
+          ratified_at: "2026-09-23T17:00:00Z",
+          issues: [],
+        }, {
+          candidate: aerobicFloorCandidate,
+          status: "ratified",
+          ratified_at: "2026-09-25T17:00:00Z",
+          issues: [],
         }],
         batch: {
           batch_version: "competency-floor-candidate-batch@1.0.0",
@@ -1034,6 +1526,14 @@ test("owner can ratify exact prepared authorities, including a floor batch", asy
             candidate_id: floorCandidate.candidate_id,
             candidate_version: floorCandidate.candidate_version,
             content_digest: floorCandidate.content_digest,
+          }, {
+            candidate_id: jumpFloorCandidate.candidate_id,
+            candidate_version: jumpFloorCandidate.candidate_version,
+            content_digest: jumpFloorCandidate.content_digest,
+          }, {
+            candidate_id: aerobicFloorCandidate.candidate_id,
+            candidate_version: aerobicFloorCandidate.candidate_version,
+            content_digest: aerobicFloorCandidate.content_digest,
           }],
         },
       }),
@@ -1067,6 +1567,152 @@ test("owner can ratify exact prepared authorities, including a floor batch", asy
       limitations: ["No exact dose."],
     }],
   };
+  const jumpResourceCandidate = {
+    ...resourceCandidate,
+    candidate_id: "98600000-0000-4000-8000-000000000003",
+    content_digest: `sha256:${"2".repeat(64)}`,
+    release_label: "Owner-alpha explosive-power resource authorities",
+    summary: "Evidence-linked countermovement-jump resources.",
+    exact_artifacts: ["Exercise: Countermovement jump"],
+    governs: [
+      "A reviewed broad plyometric-training direction.",
+      "The exact countermovement-jump exercise.",
+      "Full resource resolution only.",
+      "A 24-minute weekly envelope across two 12-minute sessions.",
+    ],
+    does_not_establish: ["Sets, contacts, rest, or a workout."],
+    operational_choices: ["The weekly envelope is an engineering choice."],
+    unresolved_limitations: ["Readiness and recent jumping exposure remain separate."],
+    evidence: [{
+      title: "Oxfeldt et al. (2019)",
+      source_url: "https://pubmed.ncbi.nlm.nih.gov/31136014/",
+      population: "Healthy active adults.",
+      finding: "Plyometric training improved jump performance.",
+      limitations: ["No exact starting dose."],
+    }],
+  };
+  const aerobicResourceCandidate = {
+    ...resourceCandidate,
+    candidate_id: "91900000-0000-4000-8000-000000000001",
+    content_digest: `sha256:${"5".repeat(64)}`,
+    release_label: "Owner-alpha aerobic-base resource authorities",
+    summary: "A narrow bundle linking an aerobic-capacity need to treadmill walk/run exercise.",
+    exact_artifacts: ["Exercise: Treadmill walk/run"],
+    governs: [
+      "A reviewed broad aerobic-training direction.",
+      "The exact treadmill walk/run exercise.",
+      "Full resource resolution only.",
+      "A downstream prepared-demand envelope of 24 weekly minutes across two 12-minute scheduling slots.",
+    ],
+    does_not_establish: ["A speed, grade, duration dose, or workout."],
+    operational_choices: ["Partial exercise resolutions are not allocatable."],
+    unresolved_limitations: ["Readiness, symptoms, and treadmill availability remain separate."],
+    evidence: [{
+      title: "ACSM position stand on exercise quantity and quality (2011)",
+      source_url: "https://pubmed.ncbi.nlm.nih.gov/21694556/",
+      population: "Apparently healthy adults.",
+      finding: "Regular individualized aerobic exercise improves cardiorespiratory fitness.",
+      limitations: ["No exact modality or dose."],
+    }],
+  };
+  const aerobicAssessmentCandidate = {
+    candidate_version: "assessment-governance-candidate@1.0.0",
+    candidate_id: "91770000-0000-4000-8000-000000000001",
+    slug: "twelve_minute_walk_run_distance",
+    release_label: "12-minute walk/run owner-alpha release",
+    prepared_at: "2026-09-25T14:30:00Z",
+    content_digest: `sha256:${"6".repeat(64)}`,
+    summary: "A measured field test that retains direct distance.",
+    measures: "Assessment-specific distance covered in 12 minutes, in meters.",
+    does_not_measure: ["Laboratory VO2, diagnosis, medical fitness, or injury risk."],
+    capability_domain: "aerobic_capacity",
+    estimate_scope: "assessment_specific:twelve_minute_walk_run_distance_m",
+    setup_requirements: ["A measured level, unobstructed route."],
+    protocol_steps: ["Cover the greatest sustainable distance for 12 minutes, walking whenever needed."],
+    stop_conditions: ["Stop immediately for pain, chest discomfort, dizziness, or unusual shortness of breath."],
+    operational_choices: ["The direct distance is retained without applying a VO2 prediction equation."],
+    unresolved_limitations: ["Pacing, route accuracy, and conditions affect repeatability."],
+    evidence: [{
+      title: "Mayorga-Vega et al. (2016)",
+      source_url: "https://pubmed.ncbi.nlm.nih.gov/26987118/",
+      population: "Children, adolescents, and adults across 123 validity studies.",
+      finding: "The 12-minute walk/run distance had a pooled validity correlation of 0.78 with criterion fitness measures.",
+      limitations: ["Distance is not a direct laboratory VO2 measurement."],
+      conflict_disclosure: "The authors declared no competing interests.",
+    }],
+  };
+  await page.route(
+    "http://localhost:8000/v1/operator/assessment-governance/candidates**",
+    async (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        projected_at: "2026-09-25T17:00:00Z",
+        projection_version: "assessment-governance-candidates@1.0.0",
+        items: [{
+          candidate: aerobicAssessmentCandidate,
+          status: "ratified",
+          ratified_at: "2026-09-25T17:00:00Z",
+          issues: [],
+        }],
+      }),
+    }),
+  );
+  const aerobicConstructionCandidate = {
+    candidate_version: "training-construction-candidate@1.0.0",
+    candidate_id: "98900000-0000-4000-8000-000000000006",
+    slug: "owner_alpha_aerobic_base_duration_authorities",
+    release_label: "Owner-alpha aerobic-base duration authorities",
+    prepared_at: "2026-09-25T16:00:00Z",
+    content_digest: `sha256:${"7".repeat(64)}`,
+    summary: "A fixed 600-second starting duration with a hard 720-second progression ceiling.",
+    authority_basis: {
+      scientific_support: "The reviewed position stand supports regular individualized aerobic exercise, but not these exact constants.",
+      engineering_prior: "The 600-second start, RPE 4-6, 60-second increment, and 720-second ceiling are conservative engineering priors.",
+    },
+    exact_artifacts: ["Fixed-duration dose", "Duration progression ceiling"],
+    governs: [
+      "Derivation of one 600-second continuous aerobic set without converting assessment meters into training seconds.",
+      "A 12-minute scheduling envelope with target effort RPE 4-6 and walking always permitted.",
+      "Later progression by 60 seconds only after compliant completion, with an absolute 720-second per-set ceiling.",
+    ],
+    does_not_establish: ["Medical clearance, diagnosis, running readiness, or permission to train."],
+    unresolved_limitations: ["The exact constants are not personally calibrated."],
+    evidence: [{
+      claim_id: "91920000-0000-4000-8000-000000000001",
+      title: "ACSM position stand on exercise quantity and quality (2011)",
+      source_url: "https://pubmed.ncbi.nlm.nih.gov/21694556/",
+      supported_use: "Broad individualized aerobic-training direction.",
+      unsupported_specifics: "No exact duration, effort range, increment, ceiling, or response threshold.",
+    }],
+  };
+  const jumpConstructionCandidate = {
+    candidate_version: "training-construction-candidate@1.0.0",
+    candidate_id: "98900000-0000-4000-8000-000000000004",
+    slug: "owner_alpha_explosive_power_jump_authorities",
+    release_label: "Owner-alpha explosive-power jump authorities",
+    prepared_at: "2026-09-23T16:30:00Z",
+    content_digest: `sha256:${"3".repeat(64)}`,
+    summary: "A fixed 3 by 3 starting dose with nine initial jump contacts, 120 seconds rest, and RPE 5-7.",
+    authority_basis: {
+      scientific_support: "The review supports the broad direction that plyometric training can improve jump performance.",
+      engineering_prior: "The exact contact count, RPE, rest, and progression caps are conservative engineering priors.",
+    },
+    exact_artifacts: ["Fixed dose", "Jump-contact exposure cap"],
+    governs: [
+      "Three sets of three without converting centimeters into contacts.",
+      "Nine initial contacts, 120 seconds rest, and RPE 5-7.",
+      "Exposure-validated progression only.",
+    ],
+    does_not_establish: ["Medical clearance or permission to train."],
+    unresolved_limitations: ["The constants are not personally calibrated."],
+    evidence: [{
+      claim_id: "91410000-0000-4000-8000-000000000001",
+      title: "Oxfeldt et al. (2019)",
+      source_url: "https://pubmed.ncbi.nlm.nih.gov/31136014/",
+      supported_use: "Broad plyometric-training direction.",
+      unsupported_specifics: "No exact contact count, RPE, rest, or progression cap.",
+    }],
+  };
   await page.route("http://localhost:8000/v1/operator/resource-governance/candidates**", async (route) => {
     if (route.request().method() === "POST") {
       submittedResourceBody = route.request().postDataJSON() as Record<string, unknown>;
@@ -1083,6 +1729,16 @@ test("owner can ratify exact prepared authorities, including a floor batch", asy
           status: resourceRatified ? "ratified" : "available",
           ratified_at: resourceRatified ? "2026-09-10T18:00:00Z" : null,
           issues: [],
+        }, {
+          candidate: jumpResourceCandidate,
+          status: "ratified",
+          ratified_at: "2026-09-23T17:00:00Z",
+          issues: [],
+        }, {
+          candidate: aerobicResourceCandidate,
+          status: "ratified",
+          ratified_at: "2026-09-25T17:00:00Z",
+          issues: [],
         }],
       }),
     });
@@ -1094,7 +1750,17 @@ test("owner can ratify exact prepared authorities, including a floor batch", asy
       body: JSON.stringify({
         projected_at: "2026-09-10T18:00:00Z",
         projection_version: "training-construction-candidates@1.0.0",
-        items: [],
+        items: [{
+          candidate: jumpConstructionCandidate,
+          status: "ratified",
+          ratified_at: "2026-09-23T17:00:00Z",
+          issues: [],
+        }, {
+          candidate: aerobicConstructionCandidate,
+          status: "ratified",
+          ratified_at: "2026-09-25T17:00:00Z",
+          issues: [],
+        }],
       }),
     }),
   );
@@ -1218,6 +1884,22 @@ test("owner can ratify exact prepared authorities, including a floor batch", asy
   await page.goto(`/review/planning-authorities?athleteId=${athleteId}`);
 
   await expect(page.getByRole("heading", { name: "Prepared planning authorities" })).toBeVisible();
+  const jumpReview = page.getByRole("region", { name: "Why AGAS may propose jump training" });
+  await expect(jumpReview).toBeVisible();
+  await expect(jumpReview.getByText("20 centimeters", { exact: true })).toBeVisible();
+  await expect(jumpReview.getByText(/without converting centimeters into contacts/)).toBeVisible();
+  await expect(jumpReview.getByText(/exact contact count, RPE, rest, and progression caps/))
+    .toBeVisible();
+  const aerobicReview = page.getByRole("region", { name: "Why AGAS may propose aerobic-base training" });
+  await expect(aerobicReview).toBeVisible();
+  await expect(aerobicReview.getByText("1200 meters", { exact: true })).toBeVisible();
+  await expect(aerobicReview.getByText(/No laboratory VO2 conversion/)).toBeVisible();
+  await expect(aerobicReview.getByText(/one 600-second continuous aerobic set/)).toBeVisible();
+  await expect(aerobicReview.getByText(/absolute 720-second per-set ceiling/)).toBeVisible();
+  await expect(aerobicReview.getByRole("link", { name: "Review exact assessment" })).toHaveAttribute(
+    "href",
+    `/review/assessments?athleteId=${athleteId}#candidate-${aerobicAssessmentCandidate.candidate_id}`,
+  );
   await expect(page.getByRole("heading", { name: "Approve the prepared authority set once" }))
     .toBeVisible();
   await expect(page.getByRole("button", { name: "Approve prepared authority set" }))
@@ -1269,8 +1951,8 @@ test("owner can ratify exact prepared authorities, including a floor batch", asy
   await page.getByLabel(/I reviewed all currently available exact authority cards below/).check();
   await page.getByRole("button", { name: "Approve prepared authority set" }).click();
   await expect(page.getByText(/Approved 2 exact authority group/)).toBeVisible();
-  await expect(page.getByText(/The floor can now be applied only/)).toBeVisible();
-  await expect(page.getByText(/support a prepared resource demand/)).toBeVisible();
+  await expect(page.getByText(/The floor can now be applied only/).first()).toBeVisible();
+  await expect(page.getByText(/support a prepared resource demand/).first()).toBeVisible();
   expect(submittedFloorBatchBody).toEqual({
     batch_version: "competency-floor-candidate-batch@1.0.0",
     batch_id: "98400000-0000-4000-8000-000000000100",
@@ -1279,6 +1961,14 @@ test("owner can ratify exact prepared authorities, including a floor batch", asy
       candidate_id: floorCandidate.candidate_id,
       candidate_version: floorCandidate.candidate_version,
       content_digest: floorCandidate.content_digest,
+    }, {
+      candidate_id: jumpFloorCandidate.candidate_id,
+      candidate_version: jumpFloorCandidate.candidate_version,
+      content_digest: jumpFloorCandidate.content_digest,
+    }, {
+      candidate_id: aerobicFloorCandidate.candidate_id,
+      candidate_version: aerobicFloorCandidate.candidate_version,
+      content_digest: aerobicFloorCandidate.content_digest,
     }],
     approval_attestation: true,
   });
@@ -1489,6 +2179,8 @@ test("owner can accept a prepared resource envelope without authoring a dose", a
     athlete_id: athleteId,
     strategy_id: strategyId,
     priority_id: priorityId,
+    priority_state: "develop",
+    previous_priority_state: null,
     adaptation_id: adaptationId,
     adaptation_name: "Muscular endurance",
     environment_id: environmentId,
@@ -1518,6 +2210,14 @@ test("owner can accept a prepared resource envelope without authoring a dose", a
     uncertainty: "No repetitions, sets, effort, tempo, rest, or progression is established.",
     safety_boundary: "Every session still requires its safety gate.",
     dose_boundary: "Two slots are scheduling resources, not an exercise prescription.",
+    strategy_cycle: {
+      cycle: "initial",
+      predecessor_strategy_id: null,
+      triggering_block_review_id: null,
+      predecessor_block_plan_id: null,
+      predecessor_block_ends_on: null,
+      prior_priorities: [],
+    },
     identities: {
       stimulus_requirement_id: result.stimulus_requirement.id,
       exercise_resolution_id: result.exercise_resolution.id,
@@ -1692,7 +2392,7 @@ test("browser login establishes an encrypted session that reaches the private AP
   expect(callback.status()).toBe(303);
   expect(callback.headers().location).toBe("http://127.0.0.1:3100/");
   const sessionCookie = responseCookie(callback, SESSION_COOKIE_NAME);
-  expect(sessionCookie).not.toContain("agas-e2e-access-token");
+  expect(sessionCookie).not.toContain(mockAccessToken);
 
   const privateResponse = await request.get("/api/agas/v1/conformance/session", {
     headers: { cookie: sessionCookie },

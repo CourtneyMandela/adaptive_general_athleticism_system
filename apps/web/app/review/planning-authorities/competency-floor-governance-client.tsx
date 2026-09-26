@@ -11,7 +11,7 @@ import {
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-export function CompetencyFloorGovernanceClient() {
+export function CompetencyFloorGovernanceClient({ onRatified }: { onRatified?: () => void }) {
   const [projection, setProjection] = useState<CompetencyFloorCandidateProjection | null>(null);
   const [loading, setLoading] = useState(true);
   const [ratifying, setRatifying] = useState<string | null>(null);
@@ -66,6 +66,7 @@ export function CompetencyFloorGovernanceClient() {
       setMessage(
         "The exact supporting evidence, any explicit judgment authority, floor, reviews, and decision history were saved atomically.",
       );
+      onRatified?.();
     } catch (error) {
       setMessageKind("error");
       setMessage(error instanceof Error ? error.message : "Unable to ratify the candidate.");
@@ -87,6 +88,7 @@ export function CompetencyFloorGovernanceClient() {
       setMessage(
         "The exact batch and every artifact-specific evidence, judgment authority, floor, review, and decision record were saved in one transaction.",
       );
+      onRatified?.();
     } catch (error) {
       setMessageKind("error");
       setMessage(error instanceof Error ? error.message : "Unable to ratify the candidate batch.");
@@ -154,6 +156,7 @@ export function CompetencyFloorGovernanceClient() {
           <section
             className="assessment-candidate"
             aria-labelledby={`floor-candidate-${candidate.candidate_id}`}
+            id={`authority-${candidate.slug}`}
             key={candidate.candidate_id}
           >
             <header>

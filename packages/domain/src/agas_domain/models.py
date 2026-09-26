@@ -16,6 +16,8 @@ from agas_domain.enums import (
     AccountRoleStatus,
     AdaptationRelationshipType,
     Applicability,
+    AssessmentAttemptReason,
+    AssessmentAttemptStatus,
     AssessmentDecision,
     AssessmentEligibilityOutcome,
     AssessmentIntensity,
@@ -787,6 +789,34 @@ class AssessmentPerformance(VersionedRecord):
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("assessment performance time must include a timezone")
         return value
+
+
+class AssessmentAttempt(VersionedRecord):
+    athlete_id: UUID
+    assessment_selection_run_id: UUID
+    assessment_selection_id: UUID
+    assessment_definition_id: UUID
+    assessment_definition_review_id: UUID
+    assessment_eligibility_review_id: UUID
+    attempt_observation_id: UUID
+    status: AssessmentAttemptStatus
+    reason: AssessmentAttemptReason
+    attempted_at: datetime
+    rule_version: NonEmptyText
+
+    @field_validator("attempted_at")
+    @classmethod
+    def require_aware_attempted_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("assessment attempt time must include a timezone")
+        return value
+
+    @model_validator(mode="after")
+    def require_status_reason_consistency(self) -> AssessmentAttempt:
+        listed_stop = self.reason is AssessmentAttemptReason.LISTED_STOP_CONDITION
+        if listed_stop is not (self.status is AssessmentAttemptStatus.SAFETY_STOPPED):
+            raise ValueError("assessment attempt reason must match its safety-stop status")
+        return self
 
 
 class AssessmentResultInput(DomainModel):
@@ -2511,6 +2541,8 @@ class ProgressionPolicy(VersionedRecord):
     maximum_session_rpe: float = Field(ge=0, le=10)
     require_technique_constraint: bool = True
     adjustment: PrescriptionAdjustment
+    maximum_prescription_value: Annotated[float, Field(gt=0)] | None = None
+    maximum_prescription_value_unit: NonEmptyText | None = None
     exposure_type: ExposureType | None = None
     evidence_claim_ids: Annotated[tuple[UUID, ...], Field(min_length=1)]
     rationale: NonEmptyText
@@ -2518,6 +2550,25 @@ class ProgressionPolicy(VersionedRecord):
 
     @model_validator(mode="after")
     def validate_progression_policy(self) -> ProgressionPolicy:
+        ceiling_parts = (
+            self.maximum_prescription_value,
+            self.maximum_prescription_value_unit,
+        )
+        if any(item is not None for item in ceiling_parts) and not all(
+            item is not None for item in ceiling_parts
+        ):
+            raise ValueError("progression ceiling value and unit must be supplied together")
+        if (
+            self.maximum_prescription_value_unit is not None
+            and self.maximum_prescription_value_unit != self.adjustment.unit
+        ):
+            raise ValueError("progression ceiling unit must match the adjustment unit")
+        if self.maximum_prescription_value is not None and self.adjustment.dimension not in {
+            ProgressionDimension.REPETITIONS,
+            ProgressionDimension.SETS,
+            ProgressionDimension.DURATION,
+        }:
+            raise ValueError("progression ceiling is not supported for this adjustment dimension")
         if len(set(self.evidence_claim_ids)) != len(self.evidence_claim_ids):
             raise ValueError("evidence_claim_ids must not contain duplicates")
         return self
@@ -2556,6 +2607,99 @@ class RepetitionDosePolicy(VersionedRecord):
             raise ValueError("technique constraints must not contain duplicates")
         if len(set(self.evidence_claim_ids)) != len(self.evidence_claim_ids):
             raise ValueError("evidence_claim_ids must not contain duplicates")
+        return self
+
+
+class FixedRepetitionDosePolicy(VersionedRecord):
+    """Governed fixed starting dose for one explicit priority state.
+
+    The matching capability estimate establishes planning lineage and current applicability. Its
+    numeric value is deliberately not transformed into a repetition count.
+    """
+
+    adaptation_id: UUID
+    estimate_scope: NonEmptyText
+    priority_state: Literal[TrainingPriorityState.DEVELOP, TrainingPriorityState.MAINTAIN] = (
+        TrainingPriorityState.DEVELOP
+    )
+    sets: int = Field(ge=1)
+    repetitions_per_set: int = Field(ge=1)
+    maximum_initial_total_repetitions: int = Field(ge=1)
+    rest_seconds: int = Field(ge=0)
+    effort_rpe_minimum: float = Field(ge=0, le=10)
+    effort_rpe_maximum: float = Field(ge=0, le=10)
+    technique_constraints: Annotated[tuple[NonEmptyText, ...], Field(min_length=1)]
+    planned_duration_minutes: int = Field(gt=0)
+    progression_policy_id: UUID
+    evidence_claim_ids: tuple[UUID, ...] = ()
+    numeric_value_origin: Literal[
+        "engineering_judgment", "professional_judgment", "scientific_evidence"
+    ]
+    authority_reference: NonEmptyText
+    rationale: NonEmptyText
+    uncertainty: NonEmptyText
+    policy_version: NonEmptyText
+
+    @model_validator(mode="after")
+    def validate_fixed_repetition_dose_policy(self) -> FixedRepetitionDosePolicy:
+        if self.sets * self.repetitions_per_set > self.maximum_initial_total_repetitions:
+            raise ValueError("configured repetitions exceed the maximum initial total")
+        if self.effort_rpe_maximum < self.effort_rpe_minimum:
+            raise ValueError("RPE maximum cannot be below RPE minimum")
+        if len(set(self.technique_constraints)) != len(self.technique_constraints):
+            raise ValueError("technique constraints must not contain duplicates")
+        if len(set(self.evidence_claim_ids)) != len(self.evidence_claim_ids):
+            raise ValueError("evidence_claim_ids must not contain duplicates")
+        if self.numeric_value_origin == "scientific_evidence" and not self.evidence_claim_ids:
+            raise ValueError("scientific numeric origin requires at least one evidence claim")
+        return self
+
+
+class FixedDurationDosePolicy(VersionedRecord):
+    """Governed fixed starting duration for one explicit priority state.
+
+    The estimate establishes capability lineage and current applicability. Its numeric value is
+    not converted into seconds, which keeps a field-test result separate from training dose.
+    """
+
+    adaptation_id: UUID
+    estimate_scope: NonEmptyText
+    priority_state: Literal[TrainingPriorityState.DEVELOP, TrainingPriorityState.MAINTAIN] = (
+        TrainingPriorityState.DEVELOP
+    )
+    sets: int = Field(ge=1)
+    duration_seconds_per_set: int = Field(ge=1)
+    maximum_initial_total_duration_seconds: int = Field(ge=1)
+    rest_seconds: int = Field(ge=0)
+    effort_rpe_minimum: float = Field(ge=0, le=10)
+    effort_rpe_maximum: float = Field(ge=0, le=10)
+    technique_constraints: Annotated[tuple[NonEmptyText, ...], Field(min_length=1)]
+    planned_duration_minutes: int = Field(gt=0)
+    progression_policy_id: UUID
+    evidence_claim_ids: tuple[UUID, ...] = ()
+    numeric_value_origin: Literal[
+        "engineering_judgment", "professional_judgment", "scientific_evidence"
+    ]
+    authority_reference: NonEmptyText
+    rationale: NonEmptyText
+    uncertainty: NonEmptyText
+    policy_version: NonEmptyText
+
+    @model_validator(mode="after")
+    def validate_fixed_duration_dose_policy(self) -> FixedDurationDosePolicy:
+        configured_seconds = self.sets * self.duration_seconds_per_set
+        if configured_seconds > self.maximum_initial_total_duration_seconds:
+            raise ValueError("configured duration exceeds the maximum initial total")
+        if configured_seconds > self.planned_duration_minutes * 60:
+            raise ValueError("configured duration cannot exceed the planned session envelope")
+        if self.effort_rpe_maximum < self.effort_rpe_minimum:
+            raise ValueError("RPE maximum cannot be below RPE minimum")
+        if len(set(self.technique_constraints)) != len(self.technique_constraints):
+            raise ValueError("technique constraints must not contain duplicates")
+        if len(set(self.evidence_claim_ids)) != len(self.evidence_claim_ids):
+            raise ValueError("evidence_claim_ids must not contain duplicates")
+        if self.numeric_value_origin == "scientific_evidence" and not self.evidence_claim_ids:
+            raise ValueError("scientific numeric origin requires at least one evidence claim")
         return self
 
 

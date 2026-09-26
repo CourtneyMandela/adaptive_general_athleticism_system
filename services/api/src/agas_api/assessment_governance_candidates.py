@@ -287,6 +287,10 @@ def _candidate_registry() -> dict[UUID, PreparedAssessmentGovernanceCandidate]:
             _countermovement_vertical_jump_release(),
             _countermovement_vertical_jump_presentation_fields(),
         ),
+        (
+            _twelve_minute_walk_run_release(),
+            _twelve_minute_walk_run_presentation_fields(),
+        ),
     ):
         content_digest = _candidate_digest(prepared, presentation_fields)
         presentation = AssessmentGovernanceCandidate(
@@ -1324,6 +1328,282 @@ def _countermovement_vertical_jump_presentation_fields() -> dict[str, object]:
                     "A reference distribution does not establish an athlete-specific competency threshold.",
                 ),
                 conflict_disclosure="The PubMed record does not display a conflict-of-interest statement.",
+            ),
+        ),
+    }
+
+
+def _twelve_minute_walk_run_release() -> PreparedAssessmentGovernanceRelease:
+    source_created_at = datetime(2026, 9, 25, 14, 0, tzinfo=UTC)
+    claim_created_at = datetime(2026, 9, 25, 14, 10, tzinfo=UTC)
+    definition_created_at = datetime(2026, 9, 25, 14, 20, tzinfo=UTC)
+    prepared_at = datetime(2026, 9, 25, 14, 30, tzinfo=UTC)
+    pmid = EvidenceSourceIdentifier(scheme="pmid", value="26987118")
+    pmcid = EvidenceSourceIdentifier(scheme="other", value="PMCID:PMC4795745")
+    doi = EvidenceSourceIdentifier(scheme="doi", value="10.1371/journal.pone.0151671")
+    source = EvidenceSource(
+        id=UUID("91700000-0000-4000-8000-000000000001"),
+        created_at=source_created_at,
+        title=(
+            "Criterion-Related Validity of the Distance- and Time-Based Walk/Run Field "
+            "Tests for Estimating Cardiorespiratory Fitness: A Systematic Review and "
+            "Meta-Analysis"
+        ),
+        authors=(
+            "Daniel Mayorga-Vega",
+            "Raúl Bocanegra-Parrilla",
+            "Martha Ornelas",
+            "Jesús Viciana",
+        ),
+        journal="PLOS ONE",
+        publication_year=2016,
+        publication_date=date(2016, 3, 17),
+        publication_types=("Systematic Review", "Meta-Analysis"),
+        primary_identifier=pmid,
+        source_identifiers=(pmid, pmcid, doi),
+        metadata_provider="pubmed",
+        retrieval_uri="https://pubmed.ncbi.nlm.nih.gov/26987118/",
+        retrieval_query="PMID 26987118",
+        retrieved_at=source_created_at,
+        metadata_version="pubmed-record-snapshot@2026-09-25",
+        provenance_notes=(
+            "Title, authors, journal, publication date, identifiers, study count, pooled correlation, and conflict statement were checked against PubMed and the full PMC article.",
+            "The abstract is intentionally not copied into the stored snapshot.",
+            "This release uses the review to support the validity of the 12-minute walk/run distance as an aerobic field measure, not to authorize a VO2 conversion, competency floor, or training dose.",
+        ),
+    )
+    claim = EvidenceClaim(
+        id=UUID("91710000-0000-4000-8000-000000000001"),
+        created_at=claim_created_at,
+        claim=(
+            "Across the studies synthesized by Mayorga-Vega and colleagues, distance covered "
+            "during the 12-minute walk/run test had high criterion-related validity for estimating "
+            "cardiorespiratory fitness; the pooled correlation was 0.78 with a 95% confidence "
+            "interval from 0.72 to 0.83."
+        ),
+        domain="aerobic_field_assessment_validity",
+        population=(
+            "Children, adolescents, and adults represented across 123 included studies; the "
+            "12-minute walk/run result pooled the applicable validation samples."
+        ),
+        intervention=(
+            "A 12-minute field test in which the participant walks or runs to cover the greatest "
+            "possible distance."
+        ),
+        comparator="Laboratory criterion measures of cardiorespiratory fitness in the included validation studies.",
+        outcome="Criterion-related validity of test distance for estimating cardiorespiratory fitness.",
+        study_design="Systematic review and meta-analysis of criterion-related validity studies",
+        effect_direction="Greater valid distance generally corresponds to higher cardiorespiratory fitness.",
+        uncertainty=(
+            "The pooled association does not make field distance a direct VO2 measurement, does "
+            "not remove effort and pacing effects, and does not establish an owner-specific floor."
+        ),
+        limitations=(
+            "The included samples, protocols, surfaces, criterion tests, and participant ages were heterogeneous.",
+            "A high correlation still leaves individual estimation error and does not establish interchangeability with laboratory testing.",
+            "The review does not validate an AGAS competency threshold, reassessment interval, or exercise prescription.",
+        ),
+        evidence_strength=EvidenceStrength.MODERATE,
+        athlete_applicability=Applicability.MODERATE,
+        applicability_notes=(
+            "The adult validation literature is directionally applicable to an apparently healthy "
+            "owner-alpha adult, but current readiness, walking/running familiarity, environment, "
+            "pacing, and repeat-test consistency remain controlling."
+        ),
+        source_identifiers=source.source_identifiers,
+        source_record_ids=(source.id,),
+        reviewer="Codex evidence synthesis candidate; authority pending",
+        claim_version="mayorga-vega-twelve-minute-walk-run-validity@1.0.0",
+    )
+    definition = AssessmentDefinition(
+        id=UUID("91730000-0000-4000-8000-000000000001"),
+        created_at=definition_created_at,
+        slug="twelve_minute_walk_run_distance",
+        name="12-minute walk/run distance",
+        domain=CapabilityDomain.AEROBIC_CAPACITY,
+        observation_type="twelve_minute_walk_run_distance_m",
+        intensity=AssessmentIntensity.HIGH,
+        unit_or_scale="meters",
+        protocol_version="agas-twelve-minute-walk-run@1.0.0",
+        required_equipment_categories=("measured_walk_run_route",),
+        blocked_by_health_screening_flags=("lower_body_or_balance_concern",),
+    )
+    route = Equipment(
+        id=UUID("91740000-0000-4000-8000-000000000001"),
+        created_at=definition_created_at,
+        name="Measured level walk/run route",
+        category="measured_walk_run_route",
+        capabilities={
+            "distance_measured_in_meters": True,
+            "level_surface": True,
+            "unobstructed": True,
+            "permits_walking": True,
+            "permits_running_when_accustomed": True,
+        },
+    )
+    review_id = UUID("91750000-0000-4000-8000-000000000001")
+    evidence_claim_ids = (claim.id,)
+    return PreparedAssessmentGovernanceRelease(
+        release_id=UUID("91770000-0000-4000-8000-000000000001"),
+        release_label="12-minute walk/run owner-alpha release",
+        prepared_at=prepared_at,
+        sources=(source,),
+        supporting_equipment=(route,),
+        claims=(claim,),
+        evidence_reviews=(
+            EvidenceClaimReviewDraft(
+                id=UUID("91720000-0000-4000-8000-000000000001"),
+                evidence_claim_id=claim.id,
+                sequence_number=1,
+                source_verification_rationale=(
+                    "The PubMed record and full PMC article for PMID 26987118 were checked for source identity, eligibility, test grouping, pooled 12-minute walk/run correlation, confidence interval, and declared competing interests."
+                ),
+                extraction_rationale=(
+                    "The claim retains the pooled association for the exact field-test family while excluding a VO2 conversion equation, performance category, competency floor, and training prescription."
+                ),
+                evidence_strength_rationale=(
+                    "Moderate reflects a systematic review and meta-analysis of validation studies, reduced from high because of heterogeneous populations, criterion measures, protocols, and individual prediction error."
+                ),
+                applicability_rationale=(
+                    "Moderate reflects adult evidence and practical owner-alpha feasibility without assuming the pooled samples or test conditions exactly match this athlete."
+                ),
+                uncertainty=(
+                    "Pacing, motivation, route accuracy, weather, footwear, recent fatigue, walking or running familiarity, and criterion-test differences can materially affect transfer and repeatability."
+                ),
+                conflict_disclosure="The authors declared no competing interests in the full article.",
+                review_version="mayorga-vega-twelve-minute-walk-run-review@1.0.0",
+            ),
+        ),
+        definition=definition,
+        protocol_review=AssessmentDefinitionReviewDraft(
+            id=review_id,
+            assessment_definition_id=definition.id,
+            sequence_number=1,
+            protocol_instructions=(
+                "Use a measured level, unobstructed route or accurately measured treadmill distance. Keep the same setup for later reassessments and avoid unsafe weather or surface conditions.",
+                "Warm up for 5 to 10 minutes with easy walking and, only if already accustomed to running, brief comfortable jogs. Rest until breathing is comfortable before the recorded test.",
+                "Start the 12-minute timer and cover the greatest distance you can sustain safely for the full period. Walking is always permitted; run only if running is already familiar and the setup safely permits it.",
+                "Use a steady opening pace rather than sprinting. At 12 minutes, stop the test and record total distance to the nearest whole meter from the measured route or machine display.",
+                "Repeat future tests under similar route, surface, footwear, warm-up, and environmental conditions. Do not convert the entered distance to VO2 or a population category in this workflow.",
+            ),
+            result_entry_instructions=(
+                "Enter the total measured distance in meters at exactly 12 minutes. Enter the direct "
+                "distance, not pace, speed, predicted VO2, a percentile, or a training dose. Do not "
+                "enter a completed result if a safety stop ended the test early."
+            ),
+            measurement_schema=AssessmentMeasurementSchema(
+                measurement_type=AssessmentMeasurementType.NUMBER,
+                label="Distance covered in 12 minutes",
+                minimum=0,
+                step=1,
+                measurement_schema_version="twelve-minute-walk-run-distance-m@1.0.0",
+            ),
+            recommended_reassessment_days=28,
+            self_administered=True,
+            evidence_claim_ids=evidence_claim_ids,
+            applicability_notes=(
+                "Owner-alpha use is limited to direct within-person tracking after current readiness "
+                "screening and confirmation of a measured, safe route. Walking remains valid; running "
+                "requires prior familiarity rather than being introduced by the assessment."
+            ),
+            uncertainty=(
+                "The direct distance is affected by pacing, motivation, conditions, and route accuracy. "
+                "The 28-day interval and high-intensity classification are conservative AGAS operating "
+                "choices, not thresholds established by the meta-analysis."
+            ),
+            review_version="agas-twelve-minute-walk-run-review@1.0.0",
+        ),
+        estimation_policy=CapabilityEstimationPolicyDraft(
+            id=UUID("91760000-0000-4000-8000-000000000001"),
+            assessment_definition_id=definition.id,
+            assessment_definition_review_id=review_id,
+            sequence_number=1,
+            domain=definition.domain,
+            observation_type=definition.observation_type,
+            unit_or_scale=definition.unit_or_scale,
+            calculation_method="latest-matching-observation",
+            valid_for_days=28,
+            multi_observation_window_days=28,
+            evidence_claim_ids=evidence_claim_ids,
+            applicability_notes=(
+                "Preserve the direct 12-minute distance as a low-confidence, assessment-specific "
+                "aerobic-capacity estimate for within-person tracking only."
+            ),
+            uncertainty=(
+                "No VO2 conversion, population category, general aerobic score, competency floor, "
+                "or exercise prescription is authorized by this estimate."
+            ),
+            rule_version="twelve-minute-walk-run-latest-matching-observation@1.0.0",
+        ),
+        release_rationale=(
+            "Add a practical aerobic field measure while keeping the observed distance distinct "
+            "from laboratory VO2, derived estimates, competency judgments, and training prescriptions."
+        ),
+        release_uncertainty=(
+            "This owner-alpha release has not received independent domain-expert review. Approval "
+            "would authorize only the exact high-effort assessment and narrow distance estimate."
+        ),
+    )
+
+
+def _twelve_minute_walk_run_presentation_fields() -> dict[str, object]:
+    return {
+        "candidate_id": UUID("91770000-0000-4000-8000-000000000001"),
+        "slug": "twelve_minute_walk_run_distance",
+        "release_label": "12-minute walk/run owner-alpha release",
+        "prepared_at": datetime(2026, 9, 25, 14, 30, tzinfo=UTC),
+        "summary": (
+            "A measured 12-minute walk/run field test that stores direct distance for repeat "
+            "owner comparison without presenting it as laboratory VO2 or a universal fitness grade."
+        ),
+        "measures": "Assessment-specific distance covered in 12 minutes, in meters.",
+        "does_not_measure": (
+            "Direct oxygen consumption, a diagnosis, medical fitness, or injury risk.",
+            "A universal aerobic-capacity score, percentile, or validated minimum competency.",
+            "Whether aerobic training belongs in a workout or what dose should be prescribed.",
+        ),
+        "capability_domain": CapabilityDomain.AEROBIC_CAPACITY,
+        "estimate_scope": "assessment_specific:twelve_minute_walk_run_distance_m",
+        "setup_requirements": (
+            "A measured level, unobstructed walking route or accurately measured treadmill distance.",
+            "Conditions that permit safe walking for the full test and running only when already familiar.",
+            "The same route, surface, footwear, warm-up, and comparable conditions on later attempts.",
+        ),
+        "protocol_steps": (
+            "Warm up with easy walking and only familiar comfortable jogging, then recover to comfortable breathing.",
+            "Cover the greatest distance sustainable for 12 minutes, walking whenever needed and avoiding an opening sprint.",
+            "At exactly 12 minutes, stop and record the measured total distance to the nearest whole meter.",
+        ),
+        "stop_conditions": (
+            "Do not start when readiness is missing, expired, or does not authorize high-intensity assessment.",
+            "Do not start with a current lower-body or balance concern, an unsafe surface, or an unmeasured route.",
+            "Stop immediately for pain, chest discomfort, dizziness, unusual shortness of breath, instability, or any concerning change in current state.",
+        ),
+        "operational_choices": (
+            "The assessment retains direct distance and does not apply a VO2 prediction equation.",
+            "Walking is always permitted; the protocol does not introduce running to an unaccustomed athlete.",
+            "A dedicated measured-route equipment category prevents selection without an appropriate setup.",
+            "The estimate remains assessment-specific, low confidence after one test, and valid for 28 days.",
+        ),
+        "unresolved_limitations": (
+            "Pacing, motivation, route accuracy, weather, footwear, recent fatigue, and modality familiarity may materially change the result.",
+            "The meta-analysis combines heterogeneous ages, protocols, and laboratory comparators.",
+            "The 28-day interval and high-intensity classification are conservative product choices rather than source-derived thresholds.",
+            "No governed competency floor or training dose currently consumes this estimate until separately reviewed candidates are ratified.",
+            "No independent domain expert has reviewed this owner-alpha candidate.",
+        ),
+        "evidence": (
+            AssessmentCandidateEvidenceSummary(
+                title="Mayorga-Vega et al. (2016): walk/run field-test validity meta-analysis",
+                source_url="https://pubmed.ncbi.nlm.nih.gov/26987118/",
+                population="Children, adolescents, and adults represented across 123 criterion-validity studies.",
+                finding="The pooled 12-minute walk/run validity correlation was 0.78 (95% CI 0.72 to 0.83).",
+                limitations=(
+                    "A field-test distance is not a direct laboratory VO2 measurement.",
+                    "Population, criterion test, protocol, pacing, and individual prediction error limit transfer.",
+                    "The review does not establish an owner-specific floor or training dose.",
+                ),
+                conflict_disclosure="The authors declared no competing interests.",
             ),
         ),
     }

@@ -11,10 +11,13 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 from agas_domain.enums import (
     AccountRole,
     AccountRoleStatus,
+    AssessmentAttemptReason,
+    AssessmentAttemptStatus,
     AssessmentDecision,
     AssessmentEligibilityOutcome,
     AssessmentReviewDecision,
     CompetencyFloorProposalDecision,
+    TrainingPriorityState,
 )
 from agas_domain.evidence import EvidenceClaimAuthorityState
 from agas_domain.evidence import (
@@ -27,6 +30,7 @@ from agas_domain.models import (
     AdaptationPriority,
     AdaptationRelationship,
     AdaptationResourceDemand,
+    AssessmentAttempt,
     AssessmentDefinition,
     AssessmentDefinitionReview,
     AssessmentEligibilityReview,
@@ -67,6 +71,8 @@ from agas_domain.models import (
     ExposureNeed,
     ExposureProgressionPolicy,
     ExposureValidationDecision,
+    FixedDurationDosePolicy,
+    FixedRepetitionDosePolicy,
     InitialPlanningCandidateContext,
     InitialPlanningContextDraft,
     InitialPlanningContextReview,
@@ -113,6 +119,7 @@ from agas_domain.persistence.models import (
     AdaptationRelationshipEvidenceRecord,
     AdaptationRelationshipRecord,
     AdaptationResourceDemandRecord,
+    AssessmentAttemptRecord,
     AssessmentDefinitionRecord,
     AssessmentDefinitionReviewEvidenceClaimRecord,
     AssessmentDefinitionReviewRecord,
@@ -185,6 +192,10 @@ from agas_domain.persistence.models import (
     ExposureProgressionPolicyRecord,
     ExposureValidationDecisionRecord,
     ExposureValidationEntryRecord,
+    FixedDurationDosePolicyEvidenceRecord,
+    FixedDurationDosePolicyRecord,
+    FixedRepetitionDosePolicyEvidenceRecord,
+    FixedRepetitionDosePolicyRecord,
     InitialPlanningCandidateContextRecord,
     InitialPlanningContextDraftRecord,
     InitialPlanningContextEvidenceRecord,
@@ -1001,6 +1012,30 @@ class DomainRepository:
             uncertainty=record.uncertainty,
             decision_version=record.decision_version,
             decided_on=record.decided_on,
+        )
+
+    def list_decision_records(self) -> tuple[DecisionRecord, ...]:
+        records = self.session.scalars(
+            select(DecisionRecordRecord).order_by(
+                DecisionRecordRecord.decided_on,
+                DecisionRecordRecord.created_at,
+                DecisionRecordRecord.id,
+            )
+        ).all()
+        return tuple(
+            DecisionRecord(
+                id=record.id,
+                schema_version=record.schema_version,
+                created_at=record.created_at,
+                decision=record.decision,
+                reason=record.reason,
+                alternatives_considered=tuple(record.alternatives_considered),
+                evidence=tuple(record.evidence),
+                uncertainty=record.uncertainty,
+                decision_version=record.decision_version,
+                decided_on=record.decided_on,
+            )
+            for record in records
         )
 
     def add_catalog_import(self, catalog_import: CatalogImport) -> None:
@@ -2412,9 +2447,24 @@ class DomainRepository:
         *,
         at_or_before: datetime | None = None,
     ) -> SessionPrescription | None:
+        lineage = self.list_session_prescription_revision_lineage(
+            prescription_id,
+            at_or_before=at_or_before,
+        )
+        return lineage[-1] if lineage else None
+
+    def list_session_prescription_revision_lineage(
+        self,
+        prescription_id: UUID,
+        *,
+        at_or_before: datetime | None = None,
+    ) -> tuple[SessionPrescription, ...]:
+        """Return one immutable prescription chain from the requested ancestor onward."""
+
         current = self.get_session_prescription(prescription_id)
         if current is None:
-            return None
+            return ()
+        lineage = [current]
         visited = {current.id}
         while True:
             statement = (
@@ -2430,7 +2480,7 @@ class DomainRepository:
                 statement = statement.where(SessionPrescriptionRecord.prescribed_at <= at_or_before)
             revised_id = self.session.scalar(statement)
             if revised_id is None:
-                return current
+                return tuple(lineage)
             if revised_id in visited:
                 raise DomainIntegrityError("prescription revision lineage contains a cycle")
             visited.add(revised_id)
@@ -2438,6 +2488,7 @@ class DomainRepository:
             if revised is None:
                 raise DomainIntegrityError("prescription revision lineage is incomplete")
             current = revised
+            lineage.append(current)
 
     def session_prescription_descends_from(
         self, prescription_id: UUID, ancestor_prescription_id: UUID
@@ -3299,8 +3350,19 @@ class DomainRepository:
         ):
             raise DomainIntegrityError("session execution template does not match its plan")
         expected_prescription_ids = tuple(item.prescription_id for item in template.items)
-        if tuple(item.prescription_id for item in execution.items) != expected_prescription_ids:
-            raise DomainIntegrityError("execution items do not match the ordered template")
+        actual_prescription_ids = tuple(item.prescription_id for item in execution.items)
+        effective_prescription_ids = tuple(
+            latest.id
+            for expected_id in expected_prescription_ids
+            if (latest := self.get_latest_session_prescription_revision(expected_id)) is not None
+        )
+        if (
+            len(effective_prescription_ids) != len(expected_prescription_ids)
+            or actual_prescription_ids != effective_prescription_ids
+        ):
+            raise DomainIntegrityError(
+                "execution items must match the current ordered template prescription leaves"
+            )
         if safety_decision is None:
             raise DomainIntegrityError("pre-session safety decision does not exist")
         if (
@@ -3562,6 +3624,8 @@ class DomainRepository:
             maximum_session_rpe=policy.maximum_session_rpe,
             require_technique_constraint=policy.require_technique_constraint,
             adjustment=policy.adjustment.model_dump(mode="json"),
+            maximum_prescription_value=policy.maximum_prescription_value,
+            maximum_prescription_value_unit=policy.maximum_prescription_value_unit,
             exposure_type=policy.exposure_type.value if policy.exposure_type else None,
             rationale=policy.rationale,
             policy_version=policy.policy_version,
@@ -3589,6 +3653,8 @@ class DomainRepository:
                 maximum_session_rpe=record.maximum_session_rpe,
                 require_technique_constraint=record.require_technique_constraint,
                 adjustment=record.adjustment,
+                maximum_prescription_value=record.maximum_prescription_value,
+                maximum_prescription_value_unit=record.maximum_prescription_value_unit,
                 exposure_type=record.exposure_type,
                 evidence_claim_ids=tuple(item.evidence_claim_id for item in record.evidence_links),
                 rationale=record.rationale,
@@ -3703,6 +3769,214 @@ class DomainRepository:
             policy
             for record_id in record_ids
             if (policy := self.get_repetition_dose_policy(record_id)) is not None
+        )
+
+    def add_fixed_duration_dose_policy(self, policy: FixedDurationDosePolicy) -> None:
+        if self.session.get(AdaptationRecord, policy.adaptation_id) is None:
+            raise DomainIntegrityError("fixed duration dose policy adaptation does not exist")
+        if self.session.get(ProgressionPolicyRecord, policy.progression_policy_id) is None:
+            raise DomainIntegrityError(
+                "fixed duration dose policy progression policy does not exist"
+            )
+        self._require_ids_exist(
+            EvidenceClaimRecord.id,
+            policy.evidence_claim_ids,
+            "fixed duration dose policy evidence claims",
+        )
+        record = FixedDurationDosePolicyRecord(
+            id=policy.id,
+            schema_version=policy.schema_version,
+            created_at=policy.created_at,
+            adaptation_id=policy.adaptation_id,
+            estimate_scope=policy.estimate_scope,
+            priority_state=policy.priority_state.value,
+            sets=policy.sets,
+            duration_seconds_per_set=policy.duration_seconds_per_set,
+            maximum_initial_total_duration_seconds=(policy.maximum_initial_total_duration_seconds),
+            rest_seconds=policy.rest_seconds,
+            effort_rpe_minimum=policy.effort_rpe_minimum,
+            effort_rpe_maximum=policy.effort_rpe_maximum,
+            technique_constraints=list(policy.technique_constraints),
+            planned_duration_minutes=policy.planned_duration_minutes,
+            progression_policy_id=policy.progression_policy_id,
+            numeric_value_origin=policy.numeric_value_origin,
+            authority_reference=policy.authority_reference,
+            rationale=policy.rationale,
+            uncertainty=policy.uncertainty,
+            policy_version=policy.policy_version,
+        )
+        record.evidence_links = [
+            FixedDurationDosePolicyEvidenceRecord(
+                policy_id=policy.id,
+                evidence_claim_id=evidence_claim_id,
+                position=position,
+            )
+            for position, evidence_claim_id in enumerate(policy.evidence_claim_ids)
+        ]
+        self.session.add(record)
+
+    def get_fixed_duration_dose_policy(self, policy_id: UUID) -> FixedDurationDosePolicy | None:
+        record = self.session.get(FixedDurationDosePolicyRecord, policy_id)
+        if record is None:
+            return None
+        return FixedDurationDosePolicy(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            adaptation_id=record.adaptation_id,
+            estimate_scope=record.estimate_scope,
+            priority_state=TrainingPriorityState(record.priority_state),
+            sets=record.sets,
+            duration_seconds_per_set=record.duration_seconds_per_set,
+            maximum_initial_total_duration_seconds=(record.maximum_initial_total_duration_seconds),
+            rest_seconds=record.rest_seconds,
+            effort_rpe_minimum=record.effort_rpe_minimum,
+            effort_rpe_maximum=record.effort_rpe_maximum,
+            technique_constraints=tuple(record.technique_constraints),
+            planned_duration_minutes=record.planned_duration_minutes,
+            progression_policy_id=record.progression_policy_id,
+            evidence_claim_ids=tuple(link.evidence_claim_id for link in record.evidence_links),
+            numeric_value_origin=record.numeric_value_origin,
+            authority_reference=record.authority_reference,
+            rationale=record.rationale,
+            uncertainty=record.uncertainty,
+            policy_version=record.policy_version,
+        )
+
+    def list_fixed_duration_dose_policies(
+        self,
+        *,
+        adaptation_id: UUID | None = None,
+        estimate_scope: str | None = None,
+        priority_state: TrainingPriorityState | None = None,
+    ) -> tuple[FixedDurationDosePolicy, ...]:
+        statement = select(FixedDurationDosePolicyRecord.id)
+        if adaptation_id is not None:
+            statement = statement.where(
+                FixedDurationDosePolicyRecord.adaptation_id == adaptation_id
+            )
+        if estimate_scope is not None:
+            statement = statement.where(
+                FixedDurationDosePolicyRecord.estimate_scope == estimate_scope
+            )
+        if priority_state is not None:
+            statement = statement.where(
+                FixedDurationDosePolicyRecord.priority_state == priority_state.value
+            )
+        record_ids = self.session.scalars(
+            statement.order_by(
+                FixedDurationDosePolicyRecord.created_at,
+                FixedDurationDosePolicyRecord.id,
+            )
+        ).all()
+        return tuple(
+            policy
+            for record_id in record_ids
+            if (policy := self.get_fixed_duration_dose_policy(record_id)) is not None
+        )
+
+    def add_fixed_repetition_dose_policy(self, policy: FixedRepetitionDosePolicy) -> None:
+        if self.session.get(AdaptationRecord, policy.adaptation_id) is None:
+            raise DomainIntegrityError("fixed repetition dose policy adaptation does not exist")
+        if self.session.get(ProgressionPolicyRecord, policy.progression_policy_id) is None:
+            raise DomainIntegrityError(
+                "fixed repetition dose policy progression policy does not exist"
+            )
+        self._require_ids_exist(
+            EvidenceClaimRecord.id,
+            policy.evidence_claim_ids,
+            "fixed repetition dose policy evidence claims",
+        )
+        record = FixedRepetitionDosePolicyRecord(
+            id=policy.id,
+            schema_version=policy.schema_version,
+            created_at=policy.created_at,
+            adaptation_id=policy.adaptation_id,
+            estimate_scope=policy.estimate_scope,
+            priority_state=policy.priority_state.value,
+            sets=policy.sets,
+            repetitions_per_set=policy.repetitions_per_set,
+            maximum_initial_total_repetitions=policy.maximum_initial_total_repetitions,
+            rest_seconds=policy.rest_seconds,
+            effort_rpe_minimum=policy.effort_rpe_minimum,
+            effort_rpe_maximum=policy.effort_rpe_maximum,
+            technique_constraints=list(policy.technique_constraints),
+            planned_duration_minutes=policy.planned_duration_minutes,
+            progression_policy_id=policy.progression_policy_id,
+            numeric_value_origin=policy.numeric_value_origin,
+            authority_reference=policy.authority_reference,
+            rationale=policy.rationale,
+            uncertainty=policy.uncertainty,
+            policy_version=policy.policy_version,
+        )
+        record.evidence_links = [
+            FixedRepetitionDosePolicyEvidenceRecord(
+                policy_id=policy.id,
+                evidence_claim_id=evidence_claim_id,
+                position=position,
+            )
+            for position, evidence_claim_id in enumerate(policy.evidence_claim_ids)
+        ]
+        self.session.add(record)
+
+    def get_fixed_repetition_dose_policy(self, policy_id: UUID) -> FixedRepetitionDosePolicy | None:
+        record = self.session.get(FixedRepetitionDosePolicyRecord, policy_id)
+        if record is None:
+            return None
+        return FixedRepetitionDosePolicy(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            adaptation_id=record.adaptation_id,
+            estimate_scope=record.estimate_scope,
+            priority_state=TrainingPriorityState(record.priority_state),
+            sets=record.sets,
+            repetitions_per_set=record.repetitions_per_set,
+            maximum_initial_total_repetitions=record.maximum_initial_total_repetitions,
+            rest_seconds=record.rest_seconds,
+            effort_rpe_minimum=record.effort_rpe_minimum,
+            effort_rpe_maximum=record.effort_rpe_maximum,
+            technique_constraints=tuple(record.technique_constraints),
+            planned_duration_minutes=record.planned_duration_minutes,
+            progression_policy_id=record.progression_policy_id,
+            evidence_claim_ids=tuple(link.evidence_claim_id for link in record.evidence_links),
+            numeric_value_origin=record.numeric_value_origin,
+            authority_reference=record.authority_reference,
+            rationale=record.rationale,
+            uncertainty=record.uncertainty,
+            policy_version=record.policy_version,
+        )
+
+    def list_fixed_repetition_dose_policies(
+        self,
+        *,
+        adaptation_id: UUID | None = None,
+        estimate_scope: str | None = None,
+        priority_state: TrainingPriorityState | None = None,
+    ) -> tuple[FixedRepetitionDosePolicy, ...]:
+        statement = select(FixedRepetitionDosePolicyRecord.id)
+        if adaptation_id is not None:
+            statement = statement.where(
+                FixedRepetitionDosePolicyRecord.adaptation_id == adaptation_id
+            )
+        if estimate_scope is not None:
+            statement = statement.where(
+                FixedRepetitionDosePolicyRecord.estimate_scope == estimate_scope
+            )
+        if priority_state is not None:
+            statement = statement.where(
+                FixedRepetitionDosePolicyRecord.priority_state == priority_state.value
+            )
+        record_ids = self.session.scalars(
+            statement.order_by(
+                FixedRepetitionDosePolicyRecord.created_at,
+                FixedRepetitionDosePolicyRecord.id,
+            )
+        ).all()
+        return tuple(
+            policy
+            for record_id in record_ids
+            if (policy := self.get_fixed_repetition_dose_policy(record_id)) is not None
         )
 
     def add_introductory_exposure_dose_policy(self, policy: IntroductoryExposureDosePolicy) -> None:
@@ -4073,6 +4347,25 @@ class DomainRepository:
             )
         )
 
+    def list_exposure_definitions_for_exercise(
+        self,
+        exercise_id: UUID,
+        exposure_type: str,
+    ) -> tuple[ExposureDefinition, ...]:
+        record_ids = self.session.scalars(
+            select(ExposureDefinitionRecord.id)
+            .where(
+                ExposureDefinitionRecord.exercise_id == exercise_id,
+                ExposureDefinitionRecord.exposure_type == exposure_type,
+            )
+            .order_by(ExposureDefinitionRecord.created_at, ExposureDefinitionRecord.id)
+        ).all()
+        return tuple(
+            definition
+            for record_id in record_ids
+            if (definition := self.get_exposure_definition(record_id)) is not None
+        )
+
     def add_exposure_need(self, need: ExposureNeed) -> None:
         self._require_athlete(need.athlete_id)
         observations = self._observations_by_id(need.source_observation_ids)
@@ -4436,6 +4729,28 @@ class DomainRepository:
             evidence_claim_ids=tuple(item.evidence_claim_id for item in record.evidence_links),
             rationale=record.rationale,
             policy_version=record.policy_version,
+        )
+
+    def list_exposure_progression_policies(
+        self,
+        exposure_type: str,
+        dose_unit: str,
+    ) -> tuple[ExposureProgressionPolicy, ...]:
+        record_ids = self.session.scalars(
+            select(ExposureProgressionPolicyRecord.id)
+            .where(
+                ExposureProgressionPolicyRecord.exposure_type == exposure_type,
+                ExposureProgressionPolicyRecord.dose_unit == dose_unit,
+            )
+            .order_by(
+                ExposureProgressionPolicyRecord.created_at,
+                ExposureProgressionPolicyRecord.id,
+            )
+        ).all()
+        return tuple(
+            policy
+            for record_id in record_ids
+            if (policy := self.get_exposure_progression_policy(record_id)) is not None
         )
 
     def get_exposure_validation_decision(
@@ -5998,6 +6313,13 @@ class DomainRepository:
             raise DomainIntegrityError("assessment performance selection belongs elsewhere")
         if selection.decision is not AssessmentDecision.SELECTED:
             raise DomainIntegrityError("only a selected assessment can record performance")
+        if any(
+            attempt.status is AssessmentAttemptStatus.SAFETY_STOPPED
+            for attempt in self.list_assessment_attempts_for_selection(selection.id)
+        ):
+            raise DomainIntegrityError(
+                "a safety-stopped attempt requires a new readiness review and selection"
+            )
         if (
             performance.assessment_definition_id != selection.assessment_definition_id
             or performance.assessment_definition_review_id
@@ -6077,6 +6399,150 @@ class DomainRepository:
                 performed_at=performance.performed_at,
                 rule_version=performance.rule_version,
             )
+        )
+
+    def add_assessment_attempt(self, attempt: AssessmentAttempt) -> None:
+        self._require_athlete(attempt.athlete_id)
+        run = self.get_assessment_selection_run(attempt.assessment_selection_run_id)
+        if run is None or run.athlete_id != attempt.athlete_id:
+            raise DomainIntegrityError("assessment attempt run belongs elsewhere")
+        if attempt.assessment_selection_id not in run.selection_ids:
+            raise DomainIntegrityError("assessment attempt selection is not in its run")
+        selection = self.get_assessment_selection(attempt.assessment_selection_id)
+        if selection is None or selection.athlete_id != attempt.athlete_id:
+            raise DomainIntegrityError("assessment attempt selection belongs elsewhere")
+        if selection.decision is not AssessmentDecision.SELECTED:
+            raise DomainIntegrityError("only a selected assessment can record an attempt")
+        if any(
+            existing.status is AssessmentAttemptStatus.SAFETY_STOPPED
+            for existing in self.list_assessment_attempts_for_selection(selection.id)
+        ):
+            raise DomainIntegrityError(
+                "a safety-stopped attempt requires a new readiness review and selection"
+            )
+        if self.get_assessment_performance_for_selection(selection.id) is not None:
+            raise DomainIntegrityError("a completed assessment cannot record another attempt")
+        if (
+            attempt.assessment_definition_id != selection.assessment_definition_id
+            or attempt.assessment_definition_review_id != selection.assessment_definition_review_id
+            or attempt.assessment_eligibility_review_id
+            != selection.assessment_eligibility_review_id
+        ):
+            raise DomainIntegrityError("assessment attempt authority differs from its selection")
+        if attempt.attempted_at < selection.evaluated_at:
+            raise DomainIntegrityError("assessment attempt cannot predate selection")
+
+        review = self.get_current_assessment_definition_review(attempt.assessment_definition_id)
+        if (
+            review is None
+            or review.id != attempt.assessment_definition_review_id
+            or review.decision is not AssessmentReviewDecision.APPROVED
+            or not review.self_administered
+        ):
+            raise DomainIntegrityError(
+                "assessment attempt requires the current approved self-administered review"
+            )
+        self._require_evidence_authority_ready(
+            review.evidence_claim_ids,
+            review.reviewed_at,
+            "assessment attempt protocol review",
+        )
+        eligibility = self.get_current_assessment_eligibility_review(attempt.athlete_id)
+        if (
+            eligibility is None
+            or eligibility.id != attempt.assessment_eligibility_review_id
+            or eligibility.outcome is not AssessmentEligibilityOutcome.SELECTION_ALLOWED
+            or not eligibility.reviewed_at <= attempt.attempted_at < eligibility.valid_until
+        ):
+            raise DomainIntegrityError(
+                "assessment attempt requires the current active eligibility review"
+            )
+
+        observation = self.get_observation(attempt.attempt_observation_id)
+        expected_context = {
+            "assessment_selection_run_id": str(run.id),
+            "assessment_selection_id": str(selection.id),
+            "assessment_definition_id": str(selection.assessment_definition_id),
+            "assessment_definition_review_id": str(attempt.assessment_definition_review_id),
+            "assessment_eligibility_review_id": str(attempt.assessment_eligibility_review_id),
+            "recording_rule_version": attempt.rule_version,
+        }
+        expected_measurement = {
+            "status": attempt.status.value,
+            "reason": attempt.reason.value,
+            "protocol_completed": False,
+            "stop_condition_occurred": (attempt.status is AssessmentAttemptStatus.SAFETY_STOPPED),
+            "eligible_for_capability_estimation": False,
+        }
+        if (
+            observation is None
+            or observation.athlete_id != attempt.athlete_id
+            or observation.source.value != "user_report"
+            or observation.observed_at != attempt.attempted_at
+            or observation.observation_type != "assessment_attempt"
+            or observation.unit != "attempt_status"
+            or observation.measurement != expected_measurement
+            or any(observation.context.get(key) != value for key, value in expected_context.items())
+        ):
+            raise DomainIntegrityError(
+                "assessment attempt observation does not match its governed lineage"
+            )
+        self.session.add(
+            AssessmentAttemptRecord(
+                id=attempt.id,
+                schema_version=attempt.schema_version,
+                created_at=attempt.created_at,
+                athlete_id=attempt.athlete_id,
+                assessment_selection_run_id=attempt.assessment_selection_run_id,
+                assessment_selection_id=attempt.assessment_selection_id,
+                assessment_definition_id=attempt.assessment_definition_id,
+                assessment_definition_review_id=attempt.assessment_definition_review_id,
+                assessment_eligibility_review_id=attempt.assessment_eligibility_review_id,
+                attempt_observation_id=attempt.attempt_observation_id,
+                status=attempt.status.value,
+                reason=attempt.reason.value,
+                attempted_at=attempt.attempted_at,
+                rule_version=attempt.rule_version,
+            )
+        )
+
+    def get_assessment_attempt(self, attempt_id: UUID) -> AssessmentAttempt | None:
+        record = self.session.get(AssessmentAttemptRecord, attempt_id)
+        if record is None:
+            return None
+        return AssessmentAttempt(
+            id=record.id,
+            schema_version=record.schema_version,
+            created_at=record.created_at,
+            athlete_id=record.athlete_id,
+            assessment_selection_run_id=record.assessment_selection_run_id,
+            assessment_selection_id=record.assessment_selection_id,
+            assessment_definition_id=record.assessment_definition_id,
+            assessment_definition_review_id=record.assessment_definition_review_id,
+            assessment_eligibility_review_id=record.assessment_eligibility_review_id,
+            attempt_observation_id=record.attempt_observation_id,
+            status=AssessmentAttemptStatus(record.status),
+            reason=AssessmentAttemptReason(record.reason),
+            attempted_at=record.attempted_at,
+            rule_version=record.rule_version,
+        )
+
+    def list_assessment_attempts_for_selection(
+        self, selection_id: UUID
+    ) -> tuple[AssessmentAttempt, ...]:
+        attempt_ids = self.session.scalars(
+            select(AssessmentAttemptRecord.id)
+            .where(AssessmentAttemptRecord.assessment_selection_id == selection_id)
+            .order_by(
+                AssessmentAttemptRecord.attempted_at.desc(),
+                AssessmentAttemptRecord.created_at.desc(),
+                AssessmentAttemptRecord.id.desc(),
+            )
+        )
+        return tuple(
+            attempt
+            for attempt_id in attempt_ids
+            if (attempt := self.get_assessment_attempt(attempt_id)) is not None
         )
 
     def get_assessment_performance(self, performance_id: UUID) -> AssessmentPerformance | None:

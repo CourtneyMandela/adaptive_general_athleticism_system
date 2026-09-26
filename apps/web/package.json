@@ -9,6 +9,7 @@
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "test:e2e:real-stack": "playwright test --config=playwright.real-stack.config.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

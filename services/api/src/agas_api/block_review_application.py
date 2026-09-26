@@ -25,6 +25,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from agas_api.post_block_preparation import BlockReviewPreparationProjector
+from agas_api.training_construction_candidates import (
+    get_operational_response_evaluation_authority,
+)
+
 NonEmptyText = Annotated[str, Field(min_length=1)]
 
 
@@ -40,6 +45,7 @@ class TrainingResponseDraft(BaseModel):
     contextual_factors: tuple[str, ...] = ()
     comparison_direction: ComparisonDirection
     minimum_meaningful_change: float = Field(ge=0)
+    response_evaluation_authority_id: UUID | None = None
 
     @model_validator(mode="after")
     def require_unique_nonempty_values(self) -> TrainingResponseDraft:
@@ -158,6 +164,7 @@ class PersistedBlockReviewService:
         policy = self.repository.get_block_review_policy(command.block_review_policy_id)
         if policy is None:
             raise BlockReviewNotFoundError("block review policy does not exist")
+        self._validate_response_authorities(block.id, command)
 
         block_end = block.starts_on + timedelta(weeks=block.duration_weeks)
         if command.reviewed_at.date() < block_end:
@@ -258,6 +265,70 @@ class PersistedBlockReviewService:
             ),
         )
 
+    def _validate_response_authorities(
+        self, block_plan_id: UUID, command: CreateBlockReviewCommand
+    ) -> None:
+        preparation = None
+        for draft in command.response_drafts:
+            authority_id = draft.response_evaluation_authority_id
+            if authority_id is None:
+                continue
+            operational = get_operational_response_evaluation_authority(self.session, authority_id)
+            if operational is None:
+                raise BlockReviewValidationError(
+                    "response-evaluation authority is not an exact ratified release"
+                )
+            authority = operational.authority
+            if operational.block_review_policy.id != command.block_review_policy_id:
+                raise BlockReviewValidationError(
+                    "response-evaluation authority requires its bundled block-review policy"
+                )
+            if preparation is None:
+                preparation = BlockReviewPreparationProjector(self.session).project(
+                    block_plan_id, command.responses_calculated_at
+                )
+            prepared_matches = tuple(
+                item
+                for item in preparation.prepared_response_interpretations
+                if item.response_evaluation_authority_id == authority_id
+            )
+            if len(prepared_matches) != 1:
+                raise BlockReviewValidationError(
+                    "response-evaluation authority cannot resolve one exact prepared interpretation"
+                )
+            prepared = prepared_matches[0]
+            if (
+                draft.adaptation_id != authority.adaptation_id
+                or draft.comparison_direction is not authority.comparison_direction
+                or draft.minimum_meaningful_change != authority.minimum_meaningful_change
+                or draft.prescription_ids != prepared.prescription_ids
+                or draft.baseline_capability_estimate_id != prepared.baseline_capability_estimate_id
+                or draft.followup_capability_estimate_id != prepared.followup_capability_estimate_id
+            ):
+                raise BlockReviewValidationError(
+                    "response draft differs from the ratified response-evaluation authority"
+                )
+            baseline = self.repository.get_capability_estimate(
+                draft.baseline_capability_estimate_id
+            )
+            followup = self.repository.get_capability_estimate(
+                draft.followup_capability_estimate_id
+            )
+            adaptation = self.repository.get_adaptation(draft.adaptation_id)
+            if baseline is None or followup is None or adaptation is None:
+                raise BlockReviewValidationError(
+                    "response-evaluation authority requires existing estimates and adaptation"
+                )
+            if any(
+                estimate.domain is not adaptation.domain
+                or estimate.estimate_scope != authority.estimate_scope
+                or estimate.unit_or_scale != authority.unit_or_scale
+                for estimate in (baseline, followup)
+            ):
+                raise BlockReviewValidationError(
+                    "response estimates do not match the ratified response-evaluation authority"
+                )
+
     def _validate_review_authority(self, command: CreateBlockReviewCommand) -> None:
         assignment_id = command.review_authority_assignment_id
         if assignment_id is None:
@@ -286,14 +357,25 @@ class PersistedBlockReviewService:
                 "block review cannot predate the reviewer role assignment"
             )
 
-    @staticmethod
     def _decision_record(
+        self,
         *,
         block: BlockPlan,
         command: CreateBlockReviewCommand,
         responses: tuple[TrainingResponse, ...],
         review: BlockReview,
     ) -> DecisionRecord:
+        operational_authorities = tuple(
+            authority
+            for draft in command.response_drafts
+            if draft.response_evaluation_authority_id is not None
+            and (
+                authority := get_operational_response_evaluation_authority(
+                    self.session, draft.response_evaluation_authority_id
+                )
+            )
+            is not None
+        )
         values = [
             f"block_plan:{block.id}",
             f"block_review_policy:{command.block_review_policy_id}",
@@ -302,6 +384,16 @@ class PersistedBlockReviewService:
                 f"direction={draft.comparison_direction.value}:"
                 f"minimum_meaningful_change={draft.minimum_meaningful_change}"
                 for response, draft in zip(responses, command.response_drafts, strict=True)
+            ),
+            *(
+                f"response_evaluation_authority:{draft.response_evaluation_authority_id}"
+                for draft in command.response_drafts
+                if draft.response_evaluation_authority_id is not None
+            ),
+            *(f"authority_candidate:{item.candidate_id}" for item in operational_authorities),
+            *(
+                f"authority_candidate_content_digest:{item.candidate_content_digest}"
+                for item in operational_authorities
             ),
             *(f"adaptation:{response.adaptation_id}" for response in responses),
             *(f"training_response:{response.id}" for response in responses),

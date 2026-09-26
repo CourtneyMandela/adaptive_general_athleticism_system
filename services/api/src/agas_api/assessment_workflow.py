@@ -5,13 +5,17 @@ from typing import Literal
 from uuid import UUID
 
 from agas_domain import (
+    AssessmentAttemptReason,
+    AssessmentAttemptStatus,
     AssessmentDecision,
     AssessmentEligibilityOutcome,
     AssessmentIntensity,
     AssessmentMeasurementSchema,
     AssessmentReviewDecision,
+    AssessmentSelectionRun,
     CapabilityDomain,
     Confidence,
+    Environment,
     ExposureNeed,
     ExposureNeedStatus,
     ExposureType,
@@ -51,6 +55,7 @@ AssessmentResultStatus = Literal[
     "not_selected",
     "protocol_unavailable",
     "eligibility_unavailable",
+    "safety_review_required",
 ]
 AssessmentCapabilityEstimateStatus = Literal[
     "completed",
@@ -65,6 +70,13 @@ ASSESSMENT_INTENSITY_RANK = {
     AssessmentIntensity.HIGH: 2,
     AssessmentIntensity.MAXIMAL: 3,
 }
+ASSESSMENT_HISTORY_PROJECTION_VERSION: Literal["assessment-history-projection@1.0.0"] = (
+    "assessment-history-projection@1.0.0"
+)
+
+
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
 
 
 class AssessmentWorkflowNotFoundError(LookupError):
@@ -154,6 +166,20 @@ class AssessmentResultProjection(BaseModel):
     capability_estimate: AssessmentCapabilityEstimateProjection | None
 
 
+class AssessmentAttemptProjection(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    attempt_id: UUID
+    attempt_observation_id: UUID
+    status: AssessmentAttemptStatus
+    reason: AssessmentAttemptReason
+    attempted_at: datetime
+    reliability: Confidence
+    provenance: dict[str, JsonValue]
+    rule_version: str
+    eligible_for_capability_estimation: Literal[False] = False
+
+
 class AssessmentCapabilityEstimateProjection(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -197,6 +223,7 @@ class AssessmentDecisionProjection(BaseModel):
     evidence_claim_ids: tuple[UUID, ...]
     review_version: str
     result_status: AssessmentResultStatus
+    attempts: tuple[AssessmentAttemptProjection, ...]
     result: AssessmentResultProjection | None
 
 
@@ -209,6 +236,76 @@ class AssessmentRunProjection(BaseModel):
     evaluated_at: datetime
     rule_version: str
     decisions: tuple[AssessmentDecisionProjection, ...]
+
+
+class AssessmentHistoryEstimateProjection(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    estimate_id: UUID
+    kind: Literal["derived"] = "derived"
+    estimate: JsonValue
+    unit_or_scale: str
+    estimate_scope: str
+    confidence: Confidence
+    calculation_method: str
+    source_observation_ids: tuple[UUID, ...]
+    estimated_at: datetime
+    valid_until: datetime | None
+    valid_as_of: bool
+    rule_version: str
+    policy_id: UUID
+
+
+class AssessmentHistoryResultProjection(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    performance_id: UUID
+    result_observation_id: UUID
+    performed_at: datetime
+    measurement: JsonValue
+    unit: str | None
+    reliability: Confidence
+    provenance: dict[str, JsonValue]
+    rule_version: str
+    protocol_completion_attested: bool
+    no_stop_condition_attested: bool
+    eligible_for_capability_estimation: Literal[True] = True
+    capability_estimates: tuple[AssessmentHistoryEstimateProjection, ...]
+
+
+class AssessmentHistorySelectionProjection(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    selection_id: UUID
+    decision: AssessmentDecision
+    reason_codes: tuple[str, ...]
+    rationale: tuple[str, ...]
+    source_observation_ids: tuple[UUID, ...]
+    evaluated_at: datetime
+    rule_version: str
+    assessment_definition_id: UUID
+    assessment_definition_review_id: UUID | None
+    assessment_eligibility_review_id: UUID | None
+    name: str
+    domain: CapabilityDomain
+    unit_or_scale: str
+    protocol_version: str
+    review_version: str | None
+    attempts: tuple[AssessmentAttemptProjection, ...]
+    completed_result: AssessmentHistoryResultProjection | None
+
+
+class AssessmentHistoryRunProjection(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    run_id: UUID
+    assessment_eligibility_review_id: UUID
+    environment_id: UUID
+    environment_name: str
+    context_observation_id: UUID
+    evaluated_at: datetime
+    rule_version: str
+    selections: tuple[AssessmentHistorySelectionProjection, ...]
 
 
 class AssessmentWorkflowProjection(BaseModel):
@@ -231,6 +328,145 @@ class AssessmentWorkflowProjection(BaseModel):
     introductory_jump_history: IntroductoryExposureHistoryProjection | None
     environments: tuple[AssessmentEnvironmentProjection, ...]
     latest_run: AssessmentRunProjection | None
+    history_projection_version: Literal["assessment-history-projection@1.0.0"] = (
+        ASSESSMENT_HISTORY_PROJECTION_VERSION
+    )
+    history_runs: tuple[AssessmentHistoryRunProjection, ...]
+
+
+def _project_attempts(
+    repository: DomainRepository, selection_id: UUID
+) -> tuple[AssessmentAttemptProjection, ...]:
+    projected: list[AssessmentAttemptProjection] = []
+    for attempt in repository.list_assessment_attempts_for_selection(selection_id):
+        observation = repository.get_observation(attempt.attempt_observation_id)
+        if observation is None:
+            raise ValueError("assessment attempt references a missing observation")
+        projected.append(
+            AssessmentAttemptProjection(
+                attempt_id=attempt.id,
+                attempt_observation_id=observation.id,
+                status=attempt.status,
+                reason=attempt.reason,
+                attempted_at=attempt.attempted_at,
+                reliability=observation.reliability,
+                provenance=observation.provenance.model_dump(mode="json"),
+                rule_version=attempt.rule_version,
+            )
+        )
+    return tuple(projected)
+
+
+def _project_assessment_history(
+    repository: DomainRepository,
+    athlete_id: UUID,
+    runs: tuple[AssessmentSelectionRun, ...],
+    environment_by_id: dict[UUID, Environment],
+    instant: datetime,
+) -> tuple[AssessmentHistoryRunProjection, ...]:
+    estimates_by_performance: dict[UUID, list[AssessmentHistoryEstimateProjection]] = {}
+    for estimate in repository.list_capability_estimates(athlete_id):
+        performance_id = estimate.triggering_assessment_performance_id
+        policy_id = estimate.capability_estimation_policy_id
+        if performance_id is None or policy_id is None:
+            continue
+        estimates_by_performance.setdefault(performance_id, []).append(
+            AssessmentHistoryEstimateProjection(
+                estimate_id=estimate.id,
+                estimate=estimate.estimate,
+                unit_or_scale=estimate.unit_or_scale,
+                estimate_scope=estimate.estimate_scope,
+                confidence=estimate.confidence,
+                calculation_method=estimate.calculation_method,
+                source_observation_ids=estimate.source_observation_ids,
+                estimated_at=estimate.estimated_at,
+                valid_until=estimate.valid_until,
+                valid_as_of=(
+                    estimate.estimated_at <= instant
+                    and (estimate.valid_until is None or instant < estimate.valid_until)
+                ),
+                rule_version=estimate.rule_version,
+                policy_id=policy_id,
+            )
+        )
+
+    history: list[AssessmentHistoryRunProjection] = []
+    for run in runs:
+        selections: list[AssessmentHistorySelectionProjection] = []
+        for selection_id in run.selection_ids:
+            selection = repository.get_assessment_selection(selection_id)
+            if selection is None:
+                raise ValueError("assessment run references a missing selection")
+            definition = repository.get_assessment_definition(selection.assessment_definition_id)
+            review = (
+                repository.get_assessment_definition_review(
+                    selection.assessment_definition_review_id
+                )
+                if selection.assessment_definition_review_id
+                else None
+            )
+            if definition is None:
+                raise ValueError("assessment selection references a missing definition")
+            performance = repository.get_assessment_performance_for_selection(selection.id)
+            completed_result = None
+            if performance is not None:
+                observation = repository.get_observation(performance.result_observation_id)
+                if observation is None:
+                    raise ValueError("assessment performance references a missing observation")
+                completed_result = AssessmentHistoryResultProjection(
+                    performance_id=performance.id,
+                    result_observation_id=observation.id,
+                    performed_at=performance.performed_at,
+                    measurement=observation.measurement,
+                    unit=observation.unit,
+                    reliability=observation.reliability,
+                    provenance=observation.provenance.model_dump(mode="json"),
+                    rule_version=performance.rule_version,
+                    protocol_completion_attested=(
+                        observation.context.get("protocol_completed") is True
+                    ),
+                    no_stop_condition_attested=(
+                        observation.context.get("stop_condition_occurred") is False
+                    ),
+                    capability_estimates=tuple(estimates_by_performance.get(performance.id, ())),
+                )
+            selections.append(
+                AssessmentHistorySelectionProjection(
+                    selection_id=selection.id,
+                    decision=selection.decision,
+                    reason_codes=tuple(item.value for item in selection.reason_codes),
+                    rationale=selection.rationale,
+                    source_observation_ids=selection.source_observation_ids,
+                    evaluated_at=selection.evaluated_at,
+                    rule_version=selection.rule_version,
+                    assessment_definition_id=definition.id,
+                    assessment_definition_review_id=selection.assessment_definition_review_id,
+                    assessment_eligibility_review_id=selection.assessment_eligibility_review_id,
+                    name=definition.name,
+                    domain=definition.domain,
+                    unit_or_scale=definition.unit_or_scale,
+                    protocol_version=definition.protocol_version,
+                    review_version=review.review_version if review else None,
+                    attempts=_project_attempts(repository, selection.id),
+                    completed_result=completed_result,
+                )
+            )
+        environment = environment_by_id.get(run.environment_id)
+        history.append(
+            AssessmentHistoryRunProjection(
+                run_id=run.id,
+                assessment_eligibility_review_id=run.assessment_eligibility_review_id,
+                environment_id=run.environment_id,
+                environment_name=(
+                    environment.name if environment is not None else "Historical environment"
+                ),
+                context_observation_id=run.context_observation_id,
+                evaluated_at=run.evaluated_at,
+                rule_version=run.rule_version,
+                selections=tuple(selections),
+            )
+        )
+    return tuple(history)
 
 
 def get_assessment_workflow_projection(
@@ -240,7 +476,7 @@ def get_assessment_workflow_projection(
     athlete = repository.get_athlete(athlete_id)
     if athlete is None:
         raise AssessmentWorkflowNotFoundError("athlete does not exist")
-    instant = as_of or datetime.now(UTC)
+    instant = as_of or _utc_now()
     if instant.tzinfo is None or instant.utcoffset() is None:
         raise ValueError("assessment workflow time must include a timezone")
 
@@ -306,6 +542,7 @@ def get_assessment_workflow_projection(
             if definition is None or review is None:
                 raise ValueError("assessment selection references missing protocol authority")
             current_review = repository.get_current_assessment_definition_review(definition.id)
+            attempt_projections = _project_attempts(repository, selection.id)
             performance = repository.get_assessment_performance_for_selection(selection.id)
             result = None
             if performance is not None:
@@ -406,6 +643,11 @@ def get_assessment_workflow_projection(
                 result_status: AssessmentResultStatus = "completed"
             elif selection.decision is not AssessmentDecision.SELECTED:
                 result_status = "not_selected"
+            elif any(
+                item.status is AssessmentAttemptStatus.SAFETY_STOPPED
+                for item in attempt_projections
+            ):
+                result_status = "safety_review_required"
             elif (
                 current_review is None
                 or current_review.id != selection.assessment_definition_review_id
@@ -447,6 +689,7 @@ def get_assessment_workflow_projection(
                     evidence_claim_ids=review.evidence_claim_ids,
                     review_version=review.review_version,
                     result_status=result_status,
+                    attempts=attempt_projections,
                     result=result,
                 )
             )
@@ -574,6 +817,13 @@ def get_assessment_workflow_projection(
             for item in environments
         ),
         latest_run=run_projection,
+        history_runs=_project_assessment_history(
+            repository,
+            athlete.id,
+            runs,
+            environment_by_id,
+            instant,
+        ),
     )
 
 

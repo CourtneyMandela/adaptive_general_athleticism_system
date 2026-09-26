@@ -239,10 +239,30 @@ def test_cross_account_athlete_access_is_hidden_as_not_found(session: Session) -
                 "measurement": 1,
                 "unit": "fixture_unit",
                 "reliability": "low",
+                "protocol_completed": True,
+                "stop_condition_occurred": False,
                 "provenance": {
                     "recorded_by": "owner-one",
                     "source_system": "agas-web",
                     "ingestion_method": "assessment-result-form",
+                },
+            },
+            headers=development_header("owner-one"),
+        )
+        forbidden_attempt = TestClient(app).post(
+            f"/v1/athletes/{second_athlete_id}/assessment-runs/{uuid4()}"
+            f"/selections/{uuid4()}/attempts",
+            json={
+                "attempted_at": "2026-08-22T20:03:00Z",
+                "status": "incomplete",
+                "reason": "external_interruption",
+                "protocol_completed": False,
+                "stop_condition_occurred": False,
+                "reliability": "low",
+                "provenance": {
+                    "recorded_by": "owner-one",
+                    "source_system": "agas-web",
+                    "ingestion_method": "assessment-attempt-form",
                 },
             },
             headers=development_header("owner-one"),
@@ -269,6 +289,8 @@ def test_cross_account_athlete_access_is_hidden_as_not_found(session: Session) -
     assert forbidden_assessment.json() == {"detail": "athlete does not exist"}
     assert forbidden_result.status_code == 404
     assert forbidden_result.json() == {"detail": "athlete does not exist"}
+    assert forbidden_attempt.status_code == 404
+    assert forbidden_attempt.json() == {"detail": "athlete does not exist"}
     assert own.status_code == 200
     assert athlete_owner_operator_write.status_code == 403
 

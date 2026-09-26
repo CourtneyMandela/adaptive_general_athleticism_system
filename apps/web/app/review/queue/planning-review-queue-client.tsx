@@ -74,6 +74,7 @@ export function PlanningReviewQueueClient({ athleteId }: { athleteId?: string })
           <p>Continue each athlete from the next explicit, provenance-preserving planning boundary.</p>
         </div>
         <nav className="review-route-links" aria-label="Reviewer routes">
+          <Link href="/review/readiness" className="text-link">Live readiness</Link>
           <Link href="/review/assessments" className="text-link">Assessment governance</Link>
           <Link href="/review/evidence" className="text-link">Evidence governance</Link>
           <Link href="/review/post-block" className="text-link">Post-block queue</Link>

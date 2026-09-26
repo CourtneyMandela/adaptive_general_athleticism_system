@@ -11,6 +11,14 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from agas_api import __version__
+from agas_api.assessment_attempt import (
+    AssessmentAttemptConflictError,
+    AssessmentAttemptNotFoundError,
+    AssessmentAttemptResult,
+    AssessmentAttemptValidationError,
+    PersistedAssessmentAttemptService,
+    RecordAssessmentAttemptCommand,
+)
 from agas_api.assessment_catalog import (
     ReviewedAssessmentCatalogItem,
     list_reviewed_assessment_catalog,
@@ -1751,6 +1759,35 @@ def create_assessment_selection_run(
     except AssessmentSelectionRunConflictError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     except AssessmentSelectionRunValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+
+
+@app.post(
+    "/v1/athletes/{athlete_id}/assessment-runs/{run_id}/selections/{selection_id}/attempts",
+    tags=["assessment"],
+    response_model=AssessmentAttemptResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def record_assessment_attempt(
+    athlete_id: UUID,
+    run_id: UUID,
+    selection_id: UUID,
+    command: RecordAssessmentAttemptCommand,
+    session: Annotated[Session, Depends(database_session_dependency)],
+    authorizer: Annotated[OwnershipAuthorizer, Depends(ownership_authorizer_dependency)],
+) -> AssessmentAttemptResult:
+    authorizer.require_athlete(athlete_id)
+    try:
+        return PersistedAssessmentAttemptService(session).execute(
+            athlete_id, run_id, selection_id, command
+        )
+    except AssessmentAttemptNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except AssessmentAttemptConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except AssessmentAttemptValidationError as error:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
         ) from error

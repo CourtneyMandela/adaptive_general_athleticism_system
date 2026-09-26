@@ -6,7 +6,7 @@ from agas_api.settings import get_settings
 from agas_domain.persistence.models import Base
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import create_engine, inspect, text
 
 
 def test_baseline_migration_matches_current_metadata(
@@ -42,6 +42,19 @@ def test_baseline_migration_matches_current_metadata(
             column["name"] for column in inspector.get_columns("weekly_plans")
         }
         assert "session_item_executions" in actual_tables
+        assert "fixed_repetition_dose_policies" in actual_tables
+        assert "fixed_repetition_dose_policy_evidence_claims" in actual_tables
+        progression_columns = {
+            column["name"] for column in inspector.get_columns("progression_policies")
+        }
+        assert {
+            "maximum_prescription_value",
+            "maximum_prescription_value_unit",
+        }.issubset(progression_columns)
+        fixed_dose_columns = {
+            column["name"] for column in inspector.get_columns("fixed_repetition_dose_policies")
+        }
+        assert {"numeric_value_origin", "priority_state"}.issubset(fixed_dose_columns)
         assert "laterality" in {column["name"] for column in inspector.get_columns("exercises")}
         assert "allowed_lateralities" in {
             column["name"] for column in inspector.get_columns("stimulus_requirements")
@@ -82,6 +95,7 @@ def test_baseline_migration_matches_current_metadata(
         assert "assessment_selection_runs" in actual_tables
         assert "assessment_selection_run_items" in actual_tables
         assert "assessment_performances" in actual_tables
+        assert "assessment_attempts" in actual_tables
         assert "capability_estimation_policies" in actual_tables
         assert "capability_estimation_policy_evidence_claims" in actual_tables
         assert "competency_floor_reviews" in actual_tables
@@ -227,6 +241,30 @@ def test_baseline_migration_matches_current_metadata(
             constraint["name"] == "uq_assessment_performance_observation"
             for constraint in performance_constraints
         )
+        attempt_constraints = inspector.get_unique_constraints("assessment_attempts")
+        assert any(
+            constraint["name"] == "uq_assessment_attempt_observation"
+            for constraint in attempt_constraints
+        )
+        assert any(
+            constraint["name"] == "ck_assessment_attempt_status"
+            for constraint in inspector.get_check_constraints("assessment_attempts")
+        )
+        attempt_columns = {
+            column["name"]: column for column in inspector.get_columns("assessment_attempts")
+        }
+        assert attempt_columns["reason"]["nullable"] is False
+        attempt_checks = inspector.get_check_constraints("assessment_attempts")
+        assert any(
+            constraint["name"] == "ck_assessment_attempt_reason" for constraint in attempt_checks
+        )
+        assert any(
+            constraint["name"] == "ck_assessment_attempt_status_reason"
+            for constraint in attempt_checks
+        )
+        assert "ix_assessment_attempts_reason" in {
+            index["name"] for index in inspector.get_indexes("assessment_attempts")
+        }
         policy_constraints = inspector.get_unique_constraints("capability_estimation_policies")
         assert any(
             constraint["name"] == "uq_capability_estimation_policy_definition_sequence"
@@ -309,6 +347,72 @@ def test_baseline_migration_matches_current_metadata(
 
         command.downgrade(config, "base")
         assert set(inspect(engine).get_table_names()) == {"alembic_version"}
+    finally:
+        engine.dispose()
+        get_settings.cache_clear()
+        database_path.unlink(missing_ok=True)
+
+
+def test_attempt_reason_migration_backfills_existing_status_without_inventing_detail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_path = Path(f".test-attempt-reason-migration-{uuid4().hex}.db").resolve()
+    database_url = f"sqlite:///{database_path.as_posix()}"
+    monkeypatch.setenv("AGAS_DATABASE_URL", database_url)
+    get_settings.cache_clear()
+    config = Config("alembic.ini")
+    engine = create_engine(database_url)
+    insert_sql = text(
+        """
+        INSERT INTO assessment_attempts (
+            athlete_id, assessment_selection_run_id, assessment_selection_id,
+            assessment_definition_id, assessment_definition_review_id,
+            assessment_eligibility_review_id, attempt_observation_id, status,
+            attempted_at, rule_version, id, schema_version, created_at
+        ) VALUES (
+            :athlete_id, :run_id, :selection_id, :definition_id, :review_id,
+            :eligibility_id, :observation_id, :status,
+            :attempted_at, :rule_version, :id, :schema_version, :created_at
+        )
+        """
+    )
+    try:
+        command.upgrade(config, "5a6b7c8d9e0f")
+        rows = []
+        for status in ("incomplete", "safety_stopped"):
+            rows.append(
+                {
+                    "athlete_id": uuid4().hex,
+                    "run_id": uuid4().hex,
+                    "selection_id": uuid4().hex,
+                    "definition_id": uuid4().hex,
+                    "review_id": uuid4().hex,
+                    "eligibility_id": uuid4().hex,
+                    "observation_id": uuid4().hex,
+                    "status": status,
+                    "attempted_at": "2026-09-25 22:00:00.000000",
+                    "rule_version": "assessment-attempt-recording@1.0.0",
+                    "id": uuid4().hex,
+                    "schema_version": "1.0.0",
+                    "created_at": "2026-09-25 22:00:00.000000",
+                }
+            )
+        with engine.begin() as connection:
+            connection.execute(insert_sql, rows)
+
+        command.upgrade(config, "head")
+        with engine.connect() as connection:
+            migrated = tuple(
+                tuple(row)
+                for row in connection.execute(
+                    text("SELECT status, reason FROM assessment_attempts ORDER BY status")
+                )
+            )
+
+        assert migrated == (
+            ("incomplete", "legacy_unspecified"),
+            ("safety_stopped", "listed_stop_condition"),
+        )
     finally:
         engine.dispose()
         get_settings.cache_clear()

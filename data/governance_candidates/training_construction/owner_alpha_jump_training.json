@@ -1,0 +1,211 @@
+{
+  "document_schema_version": "training-construction-candidate-document@1.0.0",
+  "candidate_version": "training-construction-candidate@1.0.0",
+  "content_digest": "sha256:1467aa03bf0cb269b656db31f489a6c455040521d4f26985c42d9e3b575e74f5",
+  "presentation": {
+    "candidate_id": "98900000-0000-4000-8000-000000000004",
+    "slug": "owner_alpha_explosive_power_jump_authorities",
+    "release_label": "Owner-alpha explosive-power jump authorities",
+    "prepared_at": "2026-09-23T16:30:00Z",
+    "summary": "One atomic, owner-reviewable batch for a below-floor explosive-power DEVELOP priority: a fixed 3 by 3 countermovement-jump starting dose, explicit contact tracking, capped progression, scheduling, non-diagnostic readiness reductions, and an engineering response-comparison threshold.",
+    "authority_basis": {
+      "scientific_support": "Oxfeldt et al. support the broad direction that multiweek lower-body plyometric training can improve jump performance in healthy adults. The review does not establish this batch's exercise selection, contact count, effort range, rest interval, progression cap, or recovery rule.",
+      "engineering_prior": "The 9-contact starting dose, RPE 5-7 range, 120-second rest, 34% relative cap, three-contact absolute cap, and modification mappings are explicit conservative engineering priors. Ratification accepts them provisionally and does not relabel them as scientific findings."
+    },
+    "exact_artifacts": [
+      "One fixed-repetition dose policy for an exact below-floor countermovement-jump-height estimate and explosive-power DEVELOP priority.",
+      "One jump-contact exposure definition and one exposure-progression cap that must govern any progression decision.",
+      "One completion- and technique-gated progression policy, one weekly scheduling policy and approved review, and one non-diagnostic session-safety policy.",
+      "One block-review policy and one digest-locked response-evaluation authority for comparing like-for-like countermovement-jump estimates after a completed block."
+    ],
+    "governs": [
+      "Derivation of a fixed 3-set by 3-repetition starting dose without using jump-height centimeters as repetition arithmetic.",
+      "A maximum initial total of 9 jump contacts, 120 seconds rest, and target effort RPE 5-7.",
+      "Later progression only after complete, technique-compliant work and explicit validation against both relative and absolute jump-contact caps.",
+      "Owner-reviewed comparison of exact pre- and post-block jump-height estimates using higher-is-better direction and a provisional 2 centimeter meaningful-change threshold."
+    ],
+    "does_not_establish": [
+      "Medical clearance, tissue readiness, injury prediction, pain tolerance, or permission to ignore concerning symptoms.",
+      "That 3 sets, 3 contacts per set, RPE 5-7, 120 seconds rest, or either progression cap is an Oxfeldt recommendation or scientific optimum.",
+      "That jump-height centimeters can be converted into contacts or that the provisional 20 centimeter floor is scientifically validated.",
+      "That 2 centimeters is a published minimal detectable change, a universal responder threshold, or proof that training caused an observed change.",
+      "An athlete-specific session, scheduled week, completed exposure, guaranteed response, or permission to train."
+    ],
+    "unresolved_limitations": [
+      "The exact operational constants have not been calibrated against this athlete's response.",
+      "The 2 centimeter response threshold is a provisional engineering separation from the protocol's 0.5 centimeter entry resolution, not a validated reliability statistic for self-administered wall marking.",
+      "The controlled-catalog countermovement jump is assessment-proximal and may improve task familiarity as well as broader explosive performance.",
+      "Self-observed landing control and perceived effort cannot verify force distribution or all technique errors.",
+      "The athlete must still have a current exact estimate, below-floor capability need, DEVELOP priority, feasible environment, and current safety clearance."
+    ],
+    "evidence": [
+      {
+        "claim_id": "91410000-0000-4000-8000-000000000001",
+        "title": "Oxfeldt et al. (2019): lower-body plyometric training in healthy adults",
+        "source_url": "https://pubmed.ncbi.nlm.nih.gov/31136014/",
+        "supported_use": "The systematic review and meta-analyses support the broad strategy that 4-to-12-week lower-body plyometric training can improve jump performance in healthy recreationally active adults or athletes.",
+        "unsupported_specifics": "The source does not validate this exact exercise, a 9-contact starting dose, RPE 5-7, 120-second rest, 34% relative cap, three-contact absolute cap, or the session modification mappings."
+      }
+    ]
+  },
+  "release": {
+    "prepared_at": "2026-09-23T16:30:00Z",
+    "weekly_scheduling_policy": {
+      "id": "91510000-0000-4000-8000-000000000001",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-23T16:30:00Z",
+      "minimum_high_fatigue_recovery_hours": 48,
+      "maximum_sessions_per_day": 1,
+      "maximum_high_fatigue_sessions_per_day": 1,
+      "allow_partial_exercise_resolution": false,
+      "policy_version": "owner-alpha-explosive-power-jump-scheduling@1.0.0"
+    },
+    "weekly_scheduling_policy_review_id": "91520000-0000-4000-8000-000000000001",
+    "weekly_scheduling_policy_review_content": {
+      "applicability_rationale": "Approve only for the owner-alpha explosive-power DEVELOP pathway with an exact feasible countermovement-jump resolution, no partial substitution, and no same-day repeat.",
+      "uncertainty": "The one-session daily cap and 48-hour high-fatigue interval are conservative engineering constraints, not values extracted from the cited review. Current readiness and completed exposure history remain controlling.",
+      "review_version": "owner-alpha-explosive-power-jump-scheduling-review@1.0.0"
+    },
+    "progression_policy": {
+      "id": "91530000-0000-4000-8000-000000000001",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-23T16:30:00Z",
+      "reference": "owner-alpha-explosive-power-jump-progression@1.0.0",
+      "minimum_set_completion_ratio": 1.0,
+      "minimum_dose_completion_ratio": 1.0,
+      "maximum_session_rpe": 7.0,
+      "require_technique_constraint": true,
+      "adjustment": {
+        "dimension": "repetitions",
+        "amount": 1.0,
+        "unit": "repetition_per_set",
+        "description": "Add no more than one jump contact per set after full compliant completion and explicit exposure-cap validation."
+      },
+      "exposure_type": "jumping",
+      "evidence_claim_ids": [
+        "91410000-0000-4000-8000-000000000001"
+      ],
+      "rationale": "Progress only after every planned contact was completed at RPE 7 or below with the reviewed reset-and-controlled-landing constraints and no post-session safety interruption; the separate exposure validator must approve the proposed total.",
+      "policy_version": "owner-alpha-explosive-power-jump-progression@1.0.0"
+    },
+    "repetition_dose_policy": null,
+    "fixed_repetition_dose_policy": {
+      "id": "91540000-0000-4000-8000-000000000001",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-23T16:30:00Z",
+      "adaptation_id": "a0000000-0000-4000-8000-000000000003",
+      "estimate_scope": "assessment_specific:countermovement_vertical_jump_height_cm",
+      "sets": 3,
+      "repetitions_per_set": 3,
+      "maximum_initial_total_repetitions": 9,
+      "rest_seconds": 120,
+      "effort_rpe_minimum": 5.0,
+      "effort_rpe_maximum": 7.0,
+      "technique_constraints": [
+        "Start every repetition from a stable quiet stance, use a deliberate countermovement and explosive upward intent, then land on both feet under control.",
+        "Pause and fully reset between repetitions; do not turn the set into continuous rebound jumps.",
+        "Stop the set for pain, dizziness, instability, an uncontrolled landing, or a clear loss of jump quality."
+      ],
+      "planned_duration_minutes": 12,
+      "progression_policy_id": "91530000-0000-4000-8000-000000000001",
+      "evidence_claim_ids": [
+        "91410000-0000-4000-8000-000000000001"
+      ],
+      "numeric_value_origin": "engineering_judgment",
+      "authority_reference": "fixed-capability-repetition-dose@1.0.0; candidate:owner-alpha-explosive-power-jump-authorities@1.0.0",
+      "rationale": "Use a small multi-set starting exposure that preserves separate high-quality efforts and controlled landings while keeping contact volume visibly bounded and independent of the jump-height value.",
+      "uncertainty": "Every numeric value is a provisional engineering prior. The evidence supports the broad training direction but does not establish this dose, guarantee individual benefit, or make jumping appropriate under adverse readiness or environmental conditions.",
+      "policy_version": "owner-alpha-explosive-power-fixed-jump-dose@1.0.0"
+    },
+    "introductory_exposure_dose_policy": null,
+    "exposure_definition": {
+      "id": "91560000-0000-4000-8000-000000000001",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-23T16:30:00Z",
+      "exercise_id": "b0000000-0000-4000-8000-000000000012",
+      "exposure_type": "jumping",
+      "dose_unit": "repetitions",
+      "evidence_claim_ids": [
+        "91410000-0000-4000-8000-000000000001"
+      ],
+      "rationale": "Count each separately reset countermovement-jump repetition as one jumping exposure contact; effort and landing quality remain prescription constraints rather than a different exercise identity.",
+      "definition_version": "countermovement-jump-training-contact-exposure@1.0.0"
+    },
+    "exposure_progression_policy": {
+      "id": "91570000-0000-4000-8000-000000000001",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-23T16:30:00Z",
+      "exposure_type": "jumping",
+      "dose_unit": "repetitions",
+      "lookback_days": 28,
+      "minimum_recent_entries": 1,
+      "maximum_initial_dose": 9.0,
+      "maximum_relative_increase": 0.34,
+      "maximum_absolute_increase": 3.0,
+      "evidence_claim_ids": [
+        "91410000-0000-4000-8000-000000000001"
+      ],
+      "rationale": "Refuse an unbounded first or subsequent increase: the initial training exposure is capped at nine contacts, and later proposals must stay within both a 34 percent relative increase and three-contact absolute increase over recent completed exposure.",
+      "policy_version": "owner-alpha-explosive-power-jump-contact-cap@1.0.0"
+    },
+    "block_review_policy": {
+      "id": "91580000-0000-4000-8000-000000000001",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-23T16:30:00Z",
+      "minimum_adherence_ratio": 0.8,
+      "minimum_response_confidence": "low",
+      "evidence_claim_ids": [
+        "91410000-0000-4000-8000-000000000001"
+      ],
+      "rationale": "Interpret the completed owner-alpha jump block only when at least 80 percent of prescribed work was delivered and the exact governed follow-up estimate retains at least low confidence. These cutoffs are conservative engineering review rules, not effect thresholds reported by Oxfeldt et al.",
+      "policy_version": "owner-alpha-explosive-power-block-review@1.0.0"
+    },
+    "response_evaluation_authority": {
+      "id": "91590000-0000-4000-8000-000000000001",
+      "adaptation_id": "a0000000-0000-4000-8000-000000000003",
+      "estimate_scope": "assessment_specific:countermovement_vertical_jump_height_cm",
+      "unit_or_scale": "cm",
+      "comparison_direction": "higher_is_better",
+      "minimum_meaningful_change": 2.0,
+      "numeric_value_origin": "engineering_judgment",
+      "evidence_claim_ids": [
+        "91410000-0000-4000-8000-000000000001"
+      ],
+      "rationale": "Use a 2 centimeter change as the provisional owner-alpha response threshold: four increments of the governed 0.5 centimeter entry resolution. This visibly separates the operating threshold from a single entry increment without claiming a validated minimal detectable change.",
+      "uncertainty": "Self-administered wall marking can vary because of reach position, parallax, fingertip marking, setup, footwear, warm-up, and effort. Two centimeters is an accountable engineering prior, not a source-derived reliability statistic or proof of training causality.",
+      "authority_version": "owner-alpha-countermovement-jump-response-threshold@1.0.0"
+    },
+    "session_safety_policy": {
+      "id": "91550000-0000-4000-8000-000000000001",
+      "schema_version": "1.0.0",
+      "created_at": "2026-09-23T16:30:00Z",
+      "allowed_modifications": [
+        "reduce_volume",
+        "reduce_intensity",
+        "shorten_session"
+      ],
+      "limited_readiness_modifications": [
+        "reduce_volume",
+        "reduce_intensity"
+      ],
+      "unusual_soreness_modifications": [
+        "reduce_volume",
+        "reduce_intensity"
+      ],
+      "sleep_disruption_modifications": [
+        "reduce_volume",
+        "reduce_intensity"
+      ],
+      "schedule_limitation_modifications": [
+        "shorten_session"
+      ],
+      "evidence_claim_ids": [
+        "91410000-0000-4000-8000-000000000001"
+      ],
+      "rationale": "Permit only conservative reductions for ordinary limited readiness, soreness, sleep disruption, or schedule limitation. Concerning symptoms, missing recent exposure, and failed landing control remain stop conditions governed outside this modification policy.",
+      "policy_version": "owner-alpha-explosive-power-jump-session-safety@1.0.0"
+    },
+    "release_rationale": "Install the minimum explicit authorities needed to turn a governed explosive-power deficit into a bounded jump prescription and later compare the exact reassessment against its baseline, while keeping contact progression exposure-sensitive and preventing jump-height centimeters from becoming repetition arithmetic.",
+    "release_uncertainty": "The broad strategy is evidence-linked, but all exact dose, cap, recovery, progression, modification, adherence, and meaningful-change values are provisional engineering priors. Ratification creates reusable authorities only; athlete-specific derivation, environment resolution, safety review, scheduling, execution, reassessment, and causal interpretation remain separate."
+  }
+}

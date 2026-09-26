@@ -303,6 +303,7 @@ def test_operator_initial_planning_persists_need_strategy_and_decision_once(
     assert str(result.strategy.id) in result.decision_record.decision
     assert command.reviewed_by in result.decision_record.reason
     assert result.decision_record.uncertainty == command.uncertainty
+    assert f"long_range_strategy:{result.strategy.id}" in result.decision_record.evidence
     assert f"priority_policy:{policy.id}" in result.decision_record.evidence
     assert f"priority_policy_review:{policy_review.id}" in result.decision_record.evidence
     assert f"competency_floor_review:{floor_review.id}" in result.decision_record.evidence

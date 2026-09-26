@@ -1,165 +1,207 @@
 # AGAS development handoff
 
-Status date: 2026-09-22
+Status date: 2026-09-26
 
-This document is a concise starting point for a new engineering conversation. Verified facts below
-come from the repository at commit `40c928ddcdf64f7256696ec9400ae0c62ac6d301` unless explicitly
-marked otherwise. Read `AGENTS.md` and `docs/MASTER_BLUEPRINT.md` before changing behavior, then
-consult the relevant records in `docs/decision-log/`.
+This is the single repository-local ledger for current development state and tickets. Stable
+product requirements belong in `docs/MASTER_BLUEPRINT.md`; safety and evidence rules belong in
+their policy files; material decisions belong in `docs/decision-log/`; implemented structure
+belongs in `docs/architecture.md`. Do not duplicate those sources here.
 
-## Product intent and current objective
+## Fresh-chat start
 
-AGAS is intended to develop broad general athleticism through an inspectable, evidence-grounded,
-adaptive loop. It is not an LLM workout generator. It must preserve the chain from observation to
-athlete state, need, adaptation, strategy, stimulus, feasible exercise, dose, performance, and a new
-observation. The long-term product should learn from an athlete's measured response without
-inventing capability scores, scientific support, safety conclusions, or genetic explanations.
+1. Read `AGENTS.md` and this file in full.
+2. Inspect Git status and confirm it matches the repository state below.
+3. Work only the `Active ticket`.
+4. Read that ticket's referenced decisions, policies, code, and tests before changing anything.
+5. Update this handoff before stopping. Do not begin a queued ticket in the same conversation.
 
-The current objective is the first usable owner-only training loop on a phone: onboard, assess,
-derive a capability estimate, construct a governed plan, perform and record sessions, progress from
-actual performance, reassess, and make the next block depend on the observed response. Prefer
-finishing this loop over expanding infrastructure or adding polished but nonfunctional breadth.
+If the active ticket is complete and this file is current, the conversation should report
+`Context boundary: GOOD BREAK` and provide the copy/paste prompt required by `AGENTS.md`.
 
-## Verified architecture and technologies
+## Product invariant
 
-AGAS is a modular monorepo with one deployable backend and one web application, not a collection of
-microservices.
+AGAS is an inspectable, evidence-grounded adaptive system, not an LLM workout generator. Preserve:
 
-- `apps/web`: Next.js 16, React 19, TypeScript 6 responsive PWA; Vitest and Playwright.
-- `services/api`: FastAPI application and use-case orchestration.
-- `services/planner`: deterministic assessment, planning, execution, progression, and review rules.
-- `services/evidence`: source-metadata retrieval/parsing; it does not approve scientific claims.
-- `packages/domain`: Pydantic domain contracts plus SQLAlchemy persistence and repositories.
-- `packages/safety`: deterministic structured safety gates.
-- `packages/evaluation`: counterfactual and anti-sludge evaluation.
-- `packages/seed_data`, `data/`: small validated catalogs, synthetic athletes, and reviewed candidate
-  data. Candidate data is not automatically operational authority.
-- `migrations`: Alembic migrations targeting PostgreSQL.
-- `tests`: unit, integration, counterfactual, and anti-sludge suites.
+```text
+observation -> athlete state -> identified need -> adaptation target
+-> evidence-grounded strategy -> stimulus -> available exercise -> dose
+-> performance -> new observation
+```
 
-Python is 3.12+. Backend dependencies include FastAPI, Pydantic, SQLAlchemy, Alembic, psycopg,
-PostgreSQL, and Uvicorn. The JavaScript workspace uses pnpm 11.19. Exact setup and validation
-commands are in `README.md` and summarized in `AGENTS.md`.
+Observations, derived estimates, evidence claims, planning decisions, prescriptions, and
+user-facing explanations remain distinct. Safety, scientific provenance, uncertainty,
+append-only history, and owner review fail closed.
 
-The verified deployment design uses a same-origin Next.js gateway and encrypted `HttpOnly` session;
-browser code never receives the API bearer token. OIDC uses authorization code flow with PKCE. The
-owner-only no-card alpha topology is Vercel Hobby (PWA), Render Free (authenticated FastAPI), Neon
-Free (PostgreSQL), and Auth0 Free (OIDC). `docs/deployment.md` is authoritative. Free services may
-sleep or pause at quota. Do not add a payment method or silently move to paid infrastructure.
+## Repository state
 
-## Decisions future work must preserve
-
-### Verified repository decisions
-
-- Observations are append-only facts. Capability estimates are derived, versioned, confidence- and
-  staleness-aware records that retain their source observations.
-- History is immutable. Material rules, evidence, professional/engineering judgments, reviews,
-  digests, decisions, prescriptions, executions, and revisions retain explicit lineage.
-- Evidence strength and athlete applicability are separate. Never attach a general citation to a
-  numeric threshold it does not support.
-- Scientific evidence, professional judgment, engineering judgment, and personal calibration are
-  visibly distinct authority kinds. Professional or engineering choices must not masquerade as
-  published findings.
-- ACSM and NSCA textbooks are citable for the exact tables and procedures they contain. They are
-  not the exclusive evidence sources and do not make a descriptive norm an AGAS competency floor.
-- Adaptations and exercises are separate. Equipment changes should re-resolve the means while
-  preserving the goal where feasible; inadequate substitutions must be labeled partial or
-  infeasible.
-- Planning has explicit strategy, block, week, session, safety, execution, progression,
-  reassessment, and review boundaries. Do not replace them with generic workout generation.
-- Prepared governance content may be reviewed in batches, but every artifact remains versioned,
-  content-addressed, authorized, immutable, and fail-closed. Deployment is not ratification.
-- Introductory jump exposure is assessment preparation, not proof of a capability deficit and not
-  an ordinary training block.
-- Exercise instructions are versioned snapshots on immutable prescriptions. Presentation aids such
-  as the rest timer are device-local and do not become fabricated performance observations.
-
-### Conversation-established operating decisions
-
-- The product owner is the stakeholder and reviewer, not the technical author. AGAS/Codex should
-  research and prepare inspectable candidates; the owner reviews or ratifies exact prepared
-  content. Do not ask the owner to invent scores, doses, thresholds, or scientific arguments merely
-  to advance the workflow.
-- External consultant reviews are advisory input, not project instructions. Reconcile them against
-  the blueprint, code, evidence policy, and engineering judgment.
-- The supplied ACSM and NSCA PDFs were a strong starting source, not a restriction on future
-  research. Their original local PDF files are not stored in this repository; do not assume a new
-  environment can access them. Repository records preserve the source identifiers and cited
-  locators used so far.
-- The app must be usable remotely on a phone; requiring the phone and development computer to share
-  Wi-Fi is not an acceptable operating model.
-- Cost sensitivity is material for the single-user alpha. The selected free topology is deliberate,
-  and avoiding surprise billing is more important than always-on performance at this stage.
-
-## Functional status
-
-| Workflow area | Status | Verified boundary |
-| --- | --- | --- |
-| Athlete onboarding | Implemented and tested | Profile, environment, equipment, provenance, ownership, and corrections exist. |
-| Assessments | Partially implemented and tested | Reviewed chair-stand, standard-push-up, and countermovement-jump paths exist, including readiness and dedicated introductory jump exposure. This is not a broad assessment battery. |
-| Capability estimation | Partially implemented and tested | Reviewed assessment-specific observations can create traceable, expiring estimates. Most general capability domains do not yet have operational measurement paths. |
-| Initial planning | Partially implemented and tested | Standard push-up can proceed through a provisional judgment-backed floor, priority, resource demand, block, dose, and first week after explicit reviews. This is a narrow training slice, not a general-athleticism program. |
-| Phone session execution | Implemented and tested | Current-week display, safety check, reviewed instructions, set-by-set logging, local draft recovery, rest countdown, and final submission exist. |
-| Performance recording | Implemented and tested | Actual set performance, effort, technique, timestamps, adherence, safety feedback, and performance observation persist atomically. |
-| Progression and next week | Partially implemented and tested | Deterministic performance evaluation creates immutable prescription revisions, and weekly roll-forward consumes the latest revision. The next unperformed session in the same week still uses the original prescription. |
-| Reassessment and successor block | Implemented as a synthetic acceptance contract; partially operational | `tests/integration/test_required_vertical_slice.py` proves the full four-week feedback loop with explicit synthetic rules. Those thresholds and doses are test fixtures, not production defaults. |
-| Hosted owner alpha | Deployment foundation implemented | Repository deployment configuration and session auth exist. Conversation history reports successful hosted sign-in, but this handoff did not inspect live service health or the current hosted database state. |
-
-Backend integration tests cover the major persistence boundaries, and browser tests cover the phone
-UI with mocked service responses. There is not yet one unmocked browser test that traverses the
-entire owner path against a real PostgreSQL-backed API.
-
-## Current product task and unresolved problem
-
-The latest read-only workflow audit identified the smallest material gap as **in-week progression
-handoff**. Implementation has not started.
-
-Today, completing a session can create an immutable revised prescription, but
-`CurrentWeekProjector` reads the original prescription referenced by the shared session template.
-`WeeklyPlanRollForwardService` correctly selects the latest revision only when preparing the next
-week. Consequently, session 1 can recommend progression while session 2 in the same week still
-shows and records the old dose.
-
-The intended next change is to make the newest eligible immutable prescription revision effective
-for the next unperformed planned session while preserving completed-session history exactly. It
-must also allow execution and further progression from that effective descendant without rewriting
-the original weekly plan or template. The exact design remains tentative until the relevant domain
-invariants and tests are re-read.
-
-Other known limitations:
-
-- The owner-relevant operational plan is essentially a small standard-push-up slice. Jump testing
-  does not yet produce a governed jump-training priority or dose.
-- Most capability domains still require assessment, applicability, floor, exercise-resolution, and
-  construction authority before they can enter real planning.
-- Owner-alpha governance still requires deliberate review/ratification; convenience must not turn
-  that into automatic approval.
-- Live hosted data may still be missing some ratifications or a persisted week; verify through the
-  authenticated UI/API rather than inferring it from source code.
-
-## Next concrete steps
-
-1. Implement the in-week progression handoff with the smallest change compatible with immutable
-   prescription lineage. Add integration coverage for: session 1 execution -> post-session safety
-   -> progression -> revised session 2 -> second execution/progression -> weekly roll-forward.
-2. Add or extend PWA regression coverage so the next unperformed session displays the revised dose
-   while completed sessions retain what the athlete actually performed.
-3. Add one real-stack golden-path test using PostgreSQL and the API, then keep Playwright focused on
-   user-facing transitions rather than duplicating every domain rule.
-4. After the narrow loop is reliable, add the next complete capability vertical slice. Select it by
-   practical owner value and evidence/applicability quality; do not add disconnected norms or a
-   large generic exercise catalog.
-5. Continue toward an operational reassessment, response comparison, and successor-block workflow
-   using real governed content rather than the synthetic acceptance fixture.
-
-## Git baseline at handoff creation
-
-- Working directory: `C:\Users\Courtney\Documents\Codex\2026-08-19\i\work\adaptive_general_athleticism_system`
+- Working directory:
+  `C:\Users\Courtney\Documents\Codex\2026-08-19\i\work\adaptive_general_athleticism_system`
 - Branch: `main`
-- Baseline HEAD: `40c928ddcdf64f7256696ec9400ae0c62ac6d301`
-- Remote: `https://github.com/CourtneyMandela/adaptive_general_athleticism_system.git`
-- Before this documentation edit, the tree was clean, `main` was 0 ahead / 0 behind
-  `origin/main`, and a live read-only GitHub check confirmed the same SHA on `refs/heads/main`.
-- This handoff document and the small `AGENTS.md` operational update are intentionally left
-  uncommitted pending owner approval.
+- Committed HEAD: `f41516830f61d1c5f6d40b376fdc42b289a8de6f`
+- `origin/main`: `f41516830f61d1c5f6d40b376fdc42b289a8de6f`
+- Worktree: intentionally dirty. At the workflow transition, it contained 71 tracked change
+  entries and 49 untracked entries.
+- Decisions `0133` through `0151` and their associated implementation are present but not yet
+  committed.
 
+Do not reset, check out, stash, clean, delete, or partially discard this worktree. The active
+ticket exists to preserve it as a reviewable committed baseline.
+
+## Last verified validation
+
+The current product implementation, before the ticket-workflow-only documentation edit, passed on
+2026-09-26:
+
+- full Python test suite, with one intentional skip;
+- Ruff check and format check;
+- mypy across 172 source files;
+- 175 Vitest tests;
+- 18 Playwright browser tests;
+- ESLint and TypeScript checks;
+- Next.js production build;
+- isolated Python package build;
+- Alembic head check at `6b7c8d9e0f1a`;
+- `git diff --check`.
+
+The production-shaped real-stack Playwright lane exists and is mandatory in CI, but it was not
+rerun in the last local validation pass because it requires its dedicated PostgreSQL test database.
+
+## Current product state
+
+| Workflow area | Current boundary |
+| --- | --- |
+| Onboarding | Profile, ownership, environment, equipment, provenance, and append-only corrections are implemented and tested. |
+| Assessment | Reviewable chair-stand, standard-push-up, countermovement-jump, and 12-minute walk/run paths exist. Completed results require exact-protocol and no-stop attestations. Incomplete and safety-stopped attempts remain separate non-results with controlled non-diagnostic reasons. |
+| Capability estimation | Reviewed protocol-specific observations can create traceable, expiring derived estimates. Most capability domains still lack operational measurement paths. |
+| Initial planning | Narrow standard-push-up, provisional explosive-power, and provisional aerobic-capacity paths have typed, review-gated floor, resource, dose, and progression authorities. They are not a general program. |
+| Phone execution | Current-week display, deterministic safety check, reviewed instructions, set logging, local draft recovery, rest timer, submission, and immutable performance history exist. |
+| Progression | The next unperformed occurrence consumes the latest eligible prescription descendant; completed sessions retain their executed dose and weekly roll-forward consumes the final leaf. |
+| Closed loop | Persisted regressions cover two training cycles, reassessment, block review, successor planning, maintenance, and a third strategy dependent on the second-cycle response. |
+| Hosted owner alpha | Vercel, Render, Neon, and Auth0 foundations exist. Public API health was observed on 2026-09-25, but current authenticated athlete, ratification, and week state remain unverified. |
+
+## Recent decision index
+
+The detailed record is the decision log. The current uncommitted slice is:
+
+- `0133`–`0134`: in-week immutable progression handoff and PostgreSQL API golden path;
+- `0135`–`0144`: fixed repetition dose, owner-reviewable jump development and maintenance,
+  two-cycle successor feedback, production-shaped browser/API/PostgreSQL coverage, and the
+  read-only hosted readiness audit;
+- `0145`–`0147`: fixed duration dose, owner-reviewable aerobic-base authority, and persisted
+  duration ceiling;
+- `0148`–`0151`: explicit assessment completion, append-only incomplete/safety-stopped attempts,
+  longitudinal assessment history, and controlled attempt reasons.
+
+These records preserve the evidence boundary, numeric-origin labels, safety constraints,
+uncertainty, alternatives, consequences, and owner-review requirements. Do not re-express those
+details in tickets.
+
+## Active ticket
+
+### AGAS-0001 — Establish the committed fresh-context baseline
+
+- Status: `ACTIVE`
+- Type: repository continuity; no product behavior change
+
+#### Objective
+
+Preserve the complete intentional working tree—including decisions `0133`–`0151`, their code,
+migrations, tests, data, and the ticket-workflow documentation—as a reviewable local Git baseline
+from which fresh Codex conversations can work safely.
+
+#### Why this is next
+
+The committed branch stops before nineteen material decisions. A fresh conversation could mistake
+Git history for current product state or accidentally discard untracked institutional knowledge.
+No new product work should start until the repository has an exact committed checkpoint.
+
+#### In scope
+
+- inspect every changed and untracked path;
+- verify that no secret, local environment file, generated build output, or transient test output
+  would enter the checkpoint;
+- confirm decisions `0133`–`0151` correspond to the included implementation and tests;
+- run final documentation/diff checks, relying on the recorded full validation only if product code
+  has not changed since that pass;
+- create one or more local commits that preserve the intentional worktree;
+- update this handoff with the resulting commit SHA and exact clean-worktree state;
+- mark this ticket complete and promote `AGAS-0002` without starting it.
+
+#### Out of scope
+
+- new product features or refactors;
+- changing scientific, safety, planning, or governance behavior;
+- owner ratification;
+- deployment or live-data writes;
+- pushing commits to a remote;
+- rewriting or normalizing earlier decision records.
+
+#### Authoritative references
+
+- `AGENTS.md`
+- `docs/MASTER_BLUEPRINT.md`
+- `docs/decision-log/0133-in-week-prescription-progression-handoff.md` through
+  `docs/decision-log/0151-controlled-assessment-attempt-reasons.md`
+- the `Last verified validation` section above
+- current `git status`, `git diff`, and untracked-file inventory
+
+#### Acceptance criteria
+
+- Every intended source, migration, test, data, policy, decision, and workflow document is tracked.
+- No secret or ignored/generated artifact is included.
+- Local commit history preserves the current implementation and ticket workflow.
+- This handoff names the exact new baseline commit and reports a clean worktree.
+- `AGAS-0002` is active but unstarted.
+- Nothing is pushed, deployed, or ratified.
+
+#### Validation
+
+- inspect `git status --short` and the complete staged path list;
+- run `git diff --check` before committing;
+- verify the resulting commit contents and clean worktree;
+- rerun product checks only if product code changes after the validation recorded above.
+
+#### Blockers or owner decisions
+
+None. The owner authorized the transition to the ticket-based fresh-context workflow. The ticket
+authorizes local checkpoint commits only; it does not authorize pushing or deployment.
+
+## Ordered queue
+
+### AGAS-0002 — Verify hosted owner-alpha readiness
+
+- Status: `READY`
+- Objective: deploy the committed source if necessary, sign in as the owner, and inspect the
+  read-only `/review/readiness` route against the hosted database.
+- Boundaries: do not automatically ratify candidates, manufacture a current week, bypass Auth0,
+  or infer readiness from source, CI, health, or connectivity alone.
+- Expected output: exact observed hosted state, blockers, and the next bounded ticket.
+
+### AGAS-0003 — Reconcile descriptive documentation
+
+- Status: `QUEUED`
+- Depends on: `AGAS-0001` and the observed result of `AGAS-0002`
+- Objective: bring `docs/architecture.md` and the stale package/service boundary READMEs through
+  the committed decisions without changing product behavior or policy.
+- Boundaries: do not rewrite the blueprint, policies, or historical decision records; keep the
+  root README operational rather than turning it into another status ledger.
+
+## Known risks and limitations
+
+- The owner-relevant operational paths remain narrow and depend on deliberate ratification.
+- Most athletic capability domains still lack complete governed measurement and construction paths.
+- The longitudinal assessment projection is intentionally unpaginated for the bounded owner alpha.
+- Live hosted ratifications, athlete history, and current-week state have not been authenticated and
+  inspected in this repository session.
+- Provider free-tier behavior and availability can change; `docs/deployment.md` remains the
+  deployment runbook, but live dashboards are the source for current provider state.
+
+## Fresh-chat prompt
+
+When this file reports a stable checkpoint, use:
+
+```text
+Read AGENTS.md and docs/DEVELOPMENT_HANDOFF.md in full. Inspect Git status before changing
+anything. Work only the Active ticket in the handoff, follow its referenced authorities and
+acceptance criteria, update the handoff before stopping, and do not begin another ticket.
+```

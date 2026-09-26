@@ -16,8 +16,11 @@ from agas_api.planning_governance_candidates import (
     ratify_planning_governance_candidate,
 )
 from agas_api.resource_governance_candidates import (
+    AEROBIC_CANDIDATE_ID,
     CANDIDATE_ID,
     CANDIDATE_VERSION,
+    JUMP_CANDIDATE_ID,
+    JUMP_MAINTENANCE_CANDIDATE_ID,
     PUSHUP_CANDIDATE_ID,
     RatifyResourceGovernanceCandidateCommand,
     ResourceGovernanceCandidateConflictError,
@@ -99,6 +102,22 @@ def test_candidate_is_blocked_until_exact_shared_source_exists(session: Session)
     )
 
 
+def test_bundled_jump_source_does_not_rewrite_historical_resource_digests(
+    session: Session,
+) -> None:
+    candidates = {
+        item.candidate.candidate_id: item.candidate
+        for item in list_resource_governance_candidates(session, projected_at=NOW).items
+    }
+
+    assert candidates[CANDIDATE_ID].content_digest == (
+        "sha256:460bb674bd1919a4570adfae8f089b6464114d80c6b69d3a1f5633ff6a5f9d16"
+    )
+    assert candidates[PUSHUP_CANDIDATE_ID].content_digest == (
+        "sha256:f4f9e7aafb108acf26e3b8c9838d41c9aa0f65ce7e2ecdc1d1b7a7daa11ec08e"
+    )
+
+
 def test_exact_bundle_ratification_is_atomic_and_idempotent(session: Session) -> None:
     authority = _authority()
     _persist_source_prerequisite(session, authority)
@@ -113,6 +132,7 @@ def test_exact_bundle_ratification_is_atomic_and_idempotent(session: Session) ->
     repository = DomainRepository(session)
 
     assert first.created_claim is True
+    assert first.created_source is False
     assert first.created_evidence_review is True
     assert first.created_equipment is True
     assert first.created_exercise is True
@@ -158,6 +178,7 @@ def test_pushup_bundle_requires_no_equipment_and_preserves_maintenance(session: 
     )
 
     assert result.created_equipment is False
+    assert result.created_source is False
     assert result.equipment is None
     assert result.exercise.name == "Standard push-up"
     assert result.exercise.equipment_requirement_ids == ()
@@ -165,6 +186,122 @@ def test_pushup_bundle_requires_no_equipment_and_preserves_maintenance(session: 
     assert result.allocation_policy.maintain_weight == 1
     assert "MAINTAIN" in " ".join(item.candidate.governs)
     assert DomainRepository(session).get_exercise(result.exercise.id) == result.exercise
+
+
+def test_jump_bundle_persists_source_and_reuses_controlled_catalog_exercise(
+    session: Session,
+) -> None:
+    authority = _authority()
+    _persist_source_prerequisite(session, authority)
+    projected_at = datetime(2026, 9, 23, 16, 0, tzinfo=UTC)
+    item = next(
+        item
+        for item in list_resource_governance_candidates(session, projected_at=projected_at).items
+        if item.candidate.candidate_id == JUMP_CANDIDATE_ID
+    )
+    command = RatifyResourceGovernanceCandidateCommand(
+        candidate_version=CANDIDATE_VERSION,
+        content_digest=item.candidate.content_digest,
+        approval_attestation=True,
+    )
+
+    first = ratify_resource_governance_candidate(
+        session,
+        JUMP_CANDIDATE_ID,
+        command,
+        authority,
+        ratified_at=projected_at,
+    )
+    second = ratify_resource_governance_candidate(
+        session,
+        JUMP_CANDIDATE_ID,
+        command,
+        authority,
+        ratified_at=projected_at + timedelta(minutes=1),
+    )
+    repository = DomainRepository(session)
+
+    assert item.status == "available"
+    assert any("Sets, contacts" in value for value in item.candidate.does_not_establish)
+    assert first.created_source is True
+    assert first.created_claim is True
+    assert first.created_evidence_review is True
+    assert first.created_exercise is False
+    assert first.exercise.id == UUID("b0000000-0000-4000-8000-000000000012")
+    assert first.exercise.primary_adaptation_ids == (UUID("a0000000-0000-4000-8000-000000000003"),)
+    assert first.allocation_policy.maintain_weight == 0
+    assert repository.get_evidence_source(UUID("91400000-0000-4000-8000-000000000001")) is not None
+    assert second.created_source is False
+    assert second.decision_record_created is False
+
+
+def test_jump_maintenance_bundle_is_separate_reviewable_authority(
+    session: Session,
+) -> None:
+    authority = _authority()
+    _persist_source_prerequisite(session, authority)
+    projected_at = datetime(2026, 9, 23, 16, 0, tzinfo=UTC)
+    item = next(
+        item
+        for item in list_resource_governance_candidates(session, projected_at=projected_at).items
+        if item.candidate.candidate_id == JUMP_MAINTENANCE_CANDIDATE_ID
+    )
+
+    result = ratify_resource_governance_candidate(
+        session,
+        JUMP_MAINTENANCE_CANDIDATE_ID,
+        RatifyResourceGovernanceCandidateCommand(
+            candidate_version=CANDIDATE_VERSION,
+            content_digest=item.candidate.content_digest,
+            approval_attestation=True,
+        ),
+        authority,
+        ratified_at=projected_at,
+    )
+
+    assert item.status == "available"
+    assert result.allocation_policy.maintain_weight == 1
+    assert result.allocation_policy.policy_version == (
+        "owner-alpha-single-maintain-jump-allocation@1.0.0"
+    )
+    assert any("12-minute" in value for value in item.candidate.governs)
+    assert any("maintenance-dose" in value for value in item.candidate.unresolved_limitations)
+
+
+def test_aerobic_bundle_reuses_treadmill_ontology_and_preserves_dose_boundary(
+    session: Session,
+) -> None:
+    authority = _authority()
+    SeedCatalogImporter(DomainRepository(session)).import_catalog(
+        load_seed_catalog(), imported_at=datetime(2026, 9, 25, 15, 0, tzinfo=UTC)
+    )
+    session.commit()
+    projected_at = datetime(2026, 9, 25, 16, 0, tzinfo=UTC)
+    item = next(
+        item
+        for item in list_resource_governance_candidates(session, projected_at=projected_at).items
+        if item.candidate.candidate_id == AEROBIC_CANDIDATE_ID
+    )
+
+    result = ratify_resource_governance_candidate(
+        session,
+        AEROBIC_CANDIDATE_ID,
+        RatifyResourceGovernanceCandidateCommand(
+            candidate_version=CANDIDATE_VERSION,
+            content_digest=item.candidate.content_digest,
+            approval_attestation=True,
+        ),
+        authority,
+        ratified_at=projected_at,
+    )
+
+    assert item.status == "available"
+    assert result.exercise.id == UUID("b0000000-0000-4000-8000-000000000009")
+    assert result.exercise.name == "Treadmill walk or run"
+    assert result.exercise.laterality.value == "alternating"
+    assert result.created_exercise is False
+    assert any("24 weekly minutes" in value for value in item.candidate.governs)
+    assert any("A speed" in value for value in item.candidate.does_not_establish)
 
 
 def test_stale_digest_does_not_persist_bundle(session: Session) -> None:

@@ -1,7 +1,8 @@
 from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
-from uuid import UUID
+from uuid import UUID, uuid4
 
+import agas_api.training_construction_candidates as construction_candidates
 import pytest
 from agas_api.database import database_session_dependency
 from agas_api.environment_management import (
@@ -12,9 +13,6 @@ from agas_api.identity import AuthorizedRole, authenticated_principal_dependency
 from agas_api.identity_admin import set_account_role
 from agas_api.main import app
 from agas_api.planning_governance_candidates import prepared_acsm_resistance_training_source
-from agas_api.prepared_first_block import (
-    CANDIDATE_VERSION as FIRST_BLOCK_CANDIDATE_VERSION,
-)
 from agas_api.prepared_first_block import (
     PreparedFirstBlockConflictError,
     PreparedFirstBlockProjector,
@@ -31,14 +29,17 @@ from agas_api.prepared_first_week import (
     ratify_prepared_first_week,
 )
 from agas_api.prepared_resource_demand import (
-    CANDIDATE_VERSION,
     PreparedResourceDemandConflictError,
     PreparedResourceDemandProjector,
     RatifyPreparedResourceDemandCommand,
     ratify_prepared_resource_demand,
 )
 from agas_api.resource_governance_candidates import (
+    JUMP_MAINTENANCE_CANDIDATE_ID,
     prepared_resource_governance_candidate_for_scope,
+)
+from agas_api.training_construction_candidates import (
+    JUMP_MAINTENANCE_CANDIDATE_ID as JUMP_MAINTENANCE_CONSTRUCTION_CANDIDATE_ID,
 )
 from agas_api.training_construction_candidates import (
     RatifyTrainingConstructionCandidateCommand,
@@ -68,6 +69,8 @@ from agas_domain import (
     EvidenceReviewDecision,
     EvidenceSourceIdentifier,
     EvidenceStrength,
+    FixedDurationDosePolicy,
+    FixedRepetitionDosePolicy,
     LongRangeStrategy,
     Observation,
     ObservationSource,
@@ -83,6 +86,7 @@ from agas_domain.persistence.models import (
 )
 from agas_domain.persistence.repository import DomainRepository
 from agas_planner import CompetencyFloorDetector, LongRangeStrategyPlanner
+from agas_seed_data import load_seed_catalog
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -101,6 +105,12 @@ def _persist_ready_strategy(
     floor_value: int = 11,
 ) -> tuple[LongRangeStrategy, AuthorizedRole]:
     repository = DomainRepository(session)
+    is_jump = estimate_scope == "assessment_specific:countermovement_vertical_jump_height_cm"
+    capability_domain = (
+        CapabilityDomain.EXPLOSIVE_POWER if is_jump else CapabilityDomain.MUSCULAR_ENDURANCE
+    )
+    adaptation_id = UUID("a0000000-0000-4000-8000-000000000003") if is_jump else ADAPTATION_ID
+    unit_or_scale = "centimeters" if is_jump else "repetitions"
     athlete = Athlete(
         created_at=NOW - timedelta(days=2),
         display_name="Prepared resource athlete",
@@ -131,7 +141,7 @@ def _persist_ready_strategy(
         observed_at=NOW - timedelta(hours=2),
         observation_type=estimate_scope.removeprefix("assessment_specific:"),
         measurement=estimate_value,
-        unit="repetitions",
+        unit=unit_or_scale,
         source=ObservationSource.TEST_RESULT,
         reliability=Confidence.LOW,
         context={"fixture": True},
@@ -144,9 +154,9 @@ def _persist_ready_strategy(
     estimate = CapabilityEstimate(
         created_at=NOW - timedelta(hours=1),
         athlete_id=athlete.id,
-        domain=CapabilityDomain.MUSCULAR_ENDURANCE,
+        domain=capability_domain,
         estimate=estimate_value,
-        unit_or_scale="repetitions",
+        unit_or_scale=unit_or_scale,
         estimate_scope=estimate_scope,
         confidence=Confidence.LOW,
         calculation_method="latest-matching-observation",
@@ -157,9 +167,9 @@ def _persist_ready_strategy(
     )
     floor = CompetencyFloor(
         created_at=NOW - timedelta(days=1),
-        domain=CapabilityDomain.MUSCULAR_ENDURANCE,
+        domain=capability_domain,
         estimate_scope=estimate.estimate_scope,
-        unit_or_scale="repetitions",
+        unit_or_scale=unit_or_scale,
         threshold=floor_value,
         comparison_direction=ComparisonDirection.HIGHER_IS_BETTER,
         population="Synthetic fixture.",
@@ -169,10 +179,10 @@ def _persist_ready_strategy(
         floor_version="fixture-floor@1.0.0",
     )
     adaptation = Adaptation(
-        id=ADAPTATION_ID,
+        id=adaptation_id,
         created_at=NOW - timedelta(days=2),
-        name="Muscular endurance",
-        domain=CapabilityDomain.MUSCULAR_ENDURANCE,
+        name="Explosive power" if is_jump else "Muscular endurance",
+        domain=capability_domain,
     )
     policy = PriorityPolicy(
         created_at=NOW - timedelta(days=1),
@@ -243,9 +253,11 @@ def _persist_ready_strategy(
     session.flush()
     repository.add_long_range_strategy(strategy)
 
-    resource = prepared_resource_governance_candidate_for_scope(estimate_scope)
+    resource = prepared_resource_governance_candidate_for_scope(
+        estimate_scope, strategy.priorities[0].state
+    )
     release = resource.release
-    repository.add_evidence_source(prepared_acsm_resistance_training_source())
+    repository.add_evidence_source(release.source or prepared_acsm_resistance_training_source())
     repository.add_evidence_claim(release.claim)
     session.flush()
     repository.add_evidence_claim_review(
@@ -259,8 +271,18 @@ def _persist_ready_strategy(
             **release.evidence_review_content,
         )
     )
-    if release.equipment is not None:
-        repository.add_equipment(release.equipment)
+    required_equipment = (
+        (release.equipment,)
+        if release.equipment is not None
+        else tuple(
+            equipment
+            for equipment in load_seed_catalog().equipment
+            if equipment.id in release.exercise.equipment_requirement_ids
+        )
+    )
+    for equipment in required_equipment:
+        repository.add_equipment(equipment)
+    if required_equipment:
         session.flush()
     repository.add_exercise(release.exercise)
     repository.add_exercise_resolver_policy(release.resolver_policy)
@@ -286,12 +308,12 @@ def _persist_ready_strategy(
     )
     repository.add_environment(environment)
     session.flush()
-    if release.equipment is not None:
+    for equipment in required_equipment:
         repository.add_equipment_availability(
             EquipmentAvailability(
                 created_at=NOW - timedelta(minutes=10),
                 environment_id=environment.id,
-                equipment_id=release.equipment.id,
+                equipment_id=equipment.id,
                 is_available=chair_available,
                 effective_from=NOW - timedelta(minutes=10),
                 reason="Synthetic current availability.",
@@ -348,6 +370,31 @@ def test_candidate_is_exact_content_addressed_and_not_a_dose(session: Session) -
     assert "session still requires" in candidate.safety_boundary
 
 
+def test_jump_maintain_candidate_uses_separate_reviewed_resource_envelope(
+    session: Session,
+) -> None:
+    strategy, authority = _persist_ready_strategy(
+        session,
+        estimate_scope="assessment_specific:countermovement_vertical_jump_height_cm",
+        estimate_value=22,
+        floor_value=20,
+        floor_area_m2=6,
+    )
+
+    projection = PreparedResourceDemandProjector(session).project(strategy.id, authority, NOW)
+
+    assert projection.status == "available"
+    candidate = projection.candidates[0]
+    assert candidate.candidate_version == "prepared-resource-demand@1.1.0"
+    assert candidate.priority_state.value == "maintain"
+    assert candidate.resource_authority_candidate_id == JUMP_MAINTENANCE_CANDIDATE_ID
+    assert candidate.minimum_weekly_minutes == 12
+    assert candidate.target_weekly_minutes == 12
+    assert candidate.sessions_per_week == 2
+    assert candidate.per_session_scheduling_minutes == 6
+    assert "2 weekly slots and 6 reserved minutes" in candidate.dose_boundary
+
+
 def test_floor_area_observation_unblocks_candidate_and_joins_provenance(
     session: Session,
 ) -> None:
@@ -388,7 +435,7 @@ def test_ratification_is_idempotent_and_preserves_exact_lineage(session: Session
         PreparedResourceDemandProjector(session).project(strategy.id, authority, NOW).candidates[0]
     )
     command = RatifyPreparedResourceDemandCommand(
-        candidate_version=CANDIDATE_VERSION,
+        candidate_version=candidate.candidate_version,
         content_digest=candidate.content_digest,
         approval_attestation=True,
     )
@@ -423,7 +470,7 @@ def test_stale_digest_cannot_create_resource_history(session: Session) -> None:
             strategy.id,
             candidate.candidate_id,
             RatifyPreparedResourceDemandCommand(
-                candidate_version=CANDIDATE_VERSION,
+                candidate_version=candidate.candidate_version,
                 content_digest=f"sha256:{'0' * 64}",
                 approval_attestation=True,
             ),
@@ -477,14 +524,18 @@ def _persist_ready_first_block(
     estimate_scope: str = "assessment_specific:thirty_second_chair_stand_repetitions",
     estimate_value: int = 10,
     floor_value: int = 11,
+    floor_area_m2: float = 4,
 ) -> tuple[LongRangeStrategy, AuthorizedRole]:
     strategy, authority = _persist_ready_strategy(
         session,
+        floor_area_m2=floor_area_m2,
         estimate_scope=estimate_scope,
         estimate_value=estimate_value,
         floor_value=floor_value,
     )
-    training = prepared_training_construction_candidate_for_scope(estimate_scope)
+    training = prepared_training_construction_candidate_for_scope(
+        estimate_scope, strategy.priorities[0].state
+    )
     ratify_training_construction_candidate(
         session,
         training.presentation.candidate_id,
@@ -504,7 +555,7 @@ def _persist_ready_first_block(
         strategy.id,
         resource_candidate.candidate_id,
         RatifyPreparedResourceDemandCommand(
-            candidate_version=CANDIDATE_VERSION,
+            candidate_version=resource_candidate.candidate_version,
             content_digest=resource_candidate.content_digest,
             approval_attestation=True,
         ),
@@ -551,7 +602,7 @@ def test_prepared_first_block_ratification_is_idempotent(session: Session) -> No
     )
     assert candidate is not None
     command = RatifyPreparedFirstBlockCommand(
-        candidate_version=FIRST_BLOCK_CANDIDATE_VERSION,
+        candidate_version=candidate.candidate_version,
         content_digest=candidate.content_digest,
         starts_on=starts_on,
         approval_attestation=True,
@@ -597,7 +648,7 @@ def test_prepared_first_block_rejects_non_monday_and_stale_digest(session: Sessi
             strategy.id,
             candidate.candidate_id,
             RatifyPreparedFirstBlockCommand(
-                candidate_version=FIRST_BLOCK_CANDIDATE_VERSION,
+                candidate_version=candidate.candidate_version,
                 content_digest=f"sha256:{'0' * 64}",
                 starts_on=starts_on,
                 approval_attestation=True,
@@ -659,7 +710,7 @@ def _persist_ready_first_week(
         strategy.id,
         block_candidate.candidate_id,
         RatifyPreparedFirstBlockCommand(
-            candidate_version=FIRST_BLOCK_CANDIDATE_VERSION,
+            candidate_version=block_candidate.candidate_version,
             content_digest=block_candidate.content_digest,
             starts_on=starts_on,
             approval_attestation=True,
@@ -723,6 +774,379 @@ def test_prepared_first_week_derives_dose_and_schedules_only_reported_times(
     assert "does not clear" in candidate.safety_boundary
 
 
+def test_prepared_first_week_uses_fixed_dose_without_converting_estimate_value(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    block, authority, windows = _persist_ready_first_week(session)
+    base = prepared_training_construction_candidate()
+    repetition_policy = base.release.repetition_dose_policy
+    assert repetition_policy is not None
+    fixed_policy = FixedRepetitionDosePolicy(
+        created_at=base.release.prepared_at,
+        adaptation_id=repetition_policy.adaptation_id,
+        estimate_scope=repetition_policy.estimate_scope,
+        sets=2,
+        repetitions_per_set=3,
+        maximum_initial_total_repetitions=6,
+        rest_seconds=120,
+        effort_rpe_minimum=4,
+        effort_rpe_maximum=6,
+        technique_constraints=("Reset fully before every repetition.",),
+        planned_duration_minutes=repetition_policy.planned_duration_minutes,
+        progression_policy_id=repetition_policy.progression_policy_id,
+        evidence_claim_ids=repetition_policy.evidence_claim_ids,
+        numeric_value_origin="engineering_judgment",
+        authority_reference="synthetic-prepared-week-fixed-dose@1.0.0",
+        rationale="Verify fixed-dose first-week construction.",
+        uncertainty="Synthetic values are not operational training guidance.",
+        policy_version="synthetic-prepared-week-fixed-dose@1.0.0",
+    )
+    candidate_id = uuid4()
+    fixed_candidate = base.model_copy(
+        update={
+            "presentation": base.presentation.model_copy(
+                update={
+                    "candidate_id": candidate_id,
+                    "content_digest": f"sha256:{'b' * 64}",
+                    "slug": "synthetic_prepared_week_fixed_dose",
+                }
+            ),
+            "release": base.release.model_copy(
+                update={
+                    "repetition_dose_policy": None,
+                    "fixed_repetition_dose_policy": fixed_policy,
+                }
+            ),
+        }
+    )
+    monkeypatch.setattr(
+        construction_candidates,
+        "prepared_training_construction_candidates",
+        lambda: (fixed_candidate,),
+    )
+    repository = DomainRepository(session)
+    repository.add_fixed_repetition_dose_policy(fixed_policy)
+    original_decision = repository.get_decision_record(base.presentation.candidate_id)
+    assert original_decision is not None
+    repository.add_decision_record(
+        original_decision.model_copy(
+            update={
+                "id": candidate_id,
+                "evidence": (
+                    f"candidate_content_digest:{fixed_candidate.presentation.content_digest}",
+                    *tuple(
+                        value
+                        for value in original_decision.evidence
+                        if not value.startswith("candidate_content_digest:")
+                    ),
+                    f"fixed_repetition_dose_policy_id:{fixed_policy.id}",
+                ),
+            }
+        )
+    )
+    session.commit()
+    prepared_at = datetime.now(UTC)
+    projection = PreparedFirstWeekProjector(session).project(
+        block.id,
+        PrepareFirstWeekCommand(windows=windows),
+        authority,
+        prepared_at,
+    )
+
+    assert projection.status == "available"
+    assert projection.candidate is not None
+    assert projection.candidate.sets == 2
+    assert projection.candidate.repetitions_per_set == 3
+    assert "estimate value not used as dose arithmetic" in projection.candidate.dose_calculation
+
+    result = ratify_prepared_first_week(
+        session,
+        block.id,
+        projection.candidate.candidate_id,
+        RatifyPreparedFirstWeekCommand(
+            candidate_version=FIRST_WEEK_CANDIDATE_VERSION,
+            content_digest=projection.candidate.content_digest,
+            prepared_at=prepared_at,
+            windows=windows,
+            approval_attestation=True,
+        ),
+        authority,
+    )
+    assert result.result.prescriptions[0].sets == 2
+    assert result.result.prescriptions[0].repetitions_per_set == 3
+    assert result.result.prescriptions[0].source_observation_ids
+
+
+def test_prepared_first_week_uses_fixed_duration_without_converting_estimate_value(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    block, authority, windows = _persist_ready_first_week(session)
+    base = prepared_training_construction_candidate()
+    repetition_policy = base.release.repetition_dose_policy
+    assert repetition_policy is not None
+    duration_policy = FixedDurationDosePolicy(
+        created_at=base.release.prepared_at,
+        adaptation_id=repetition_policy.adaptation_id,
+        estimate_scope=repetition_policy.estimate_scope,
+        sets=1,
+        duration_seconds_per_set=repetition_policy.planned_duration_minutes * 60,
+        maximum_initial_total_duration_seconds=repetition_policy.planned_duration_minutes * 60,
+        rest_seconds=0,
+        effort_rpe_minimum=3,
+        effort_rpe_maximum=5,
+        technique_constraints=("Maintain continuous controlled cyclic work.",),
+        planned_duration_minutes=repetition_policy.planned_duration_minutes,
+        progression_policy_id=repetition_policy.progression_policy_id,
+        evidence_claim_ids=repetition_policy.evidence_claim_ids,
+        numeric_value_origin="engineering_judgment",
+        authority_reference="synthetic-prepared-week-duration@1.0.0",
+        rationale="Verify fixed-duration first-week construction.",
+        uncertainty="Synthetic values are not operational training guidance.",
+        policy_version="synthetic-prepared-week-duration@1.0.0",
+    )
+    candidate_id = uuid4()
+    duration_candidate = base.model_copy(
+        update={
+            "presentation": base.presentation.model_copy(
+                update={
+                    "candidate_id": candidate_id,
+                    "content_digest": f"sha256:{'d' * 64}",
+                    "slug": "synthetic_prepared_week_duration",
+                }
+            ),
+            "release": base.release.model_copy(
+                update={
+                    "repetition_dose_policy": None,
+                    "fixed_duration_dose_policy": duration_policy,
+                }
+            ),
+        }
+    )
+    monkeypatch.setattr(
+        construction_candidates,
+        "prepared_training_construction_candidates",
+        lambda: (duration_candidate,),
+    )
+    repository = DomainRepository(session)
+    repository.add_fixed_duration_dose_policy(duration_policy)
+    original_decision = repository.get_decision_record(base.presentation.candidate_id)
+    assert original_decision is not None
+    repository.add_decision_record(
+        original_decision.model_copy(
+            update={
+                "id": candidate_id,
+                "evidence": (
+                    f"candidate_content_digest:{duration_candidate.presentation.content_digest}",
+                    *tuple(
+                        value
+                        for value in original_decision.evidence
+                        if not value.startswith("candidate_content_digest:")
+                    ),
+                    f"fixed_duration_dose_policy_id:{duration_policy.id}",
+                ),
+            }
+        )
+    )
+    session.commit()
+    prepared_at = datetime.now(UTC)
+    projection = PreparedFirstWeekProjector(session).project(
+        block.id,
+        PrepareFirstWeekCommand(windows=windows),
+        authority,
+        prepared_at,
+    )
+
+    assert projection.status == "available"
+    assert projection.candidate is not None
+    assert projection.candidate.sets == 1
+    assert projection.candidate.repetitions_per_set is None
+    expected_seconds = repetition_policy.planned_duration_minutes * 60
+    assert projection.candidate.duration_seconds_per_set == expected_seconds
+    assert "estimate value not used as dose arithmetic" in projection.candidate.dose_calculation
+
+    result = ratify_prepared_first_week(
+        session,
+        block.id,
+        projection.candidate.candidate_id,
+        RatifyPreparedFirstWeekCommand(
+            candidate_version=FIRST_WEEK_CANDIDATE_VERSION,
+            content_digest=projection.candidate.content_digest,
+            prepared_at=prepared_at,
+            windows=windows,
+            approval_attestation=True,
+        ),
+        authority,
+    )
+    prescription = result.result.prescriptions[0]
+    assert prescription.sets == 1
+    assert prescription.repetitions_per_set is None
+    assert prescription.duration_seconds == expected_seconds
+    assert prescription.source_observation_ids
+
+
+def test_governed_jump_deficit_builds_a_fixed_contact_first_week(
+    session: Session,
+) -> None:
+    scope = "assessment_specific:countermovement_vertical_jump_height_cm"
+    strategy, authority = _persist_ready_first_block(
+        session,
+        estimate_scope=scope,
+        estimate_value=18,
+        floor_value=20,
+        floor_area_m2=6,
+    )
+    assert strategy.priorities[0].state.value == "develop"
+    starts_on = _next_monday(datetime.now(UTC).date())
+    block_candidate = (
+        PreparedFirstBlockProjector(session).project(strategy.id, starts_on, authority).candidate
+    )
+    assert block_candidate is not None
+    block = ratify_prepared_first_block(
+        session,
+        strategy.id,
+        block_candidate.candidate_id,
+        RatifyPreparedFirstBlockCommand(
+            candidate_version=block_candidate.candidate_version,
+            content_digest=block_candidate.content_digest,
+            starts_on=starts_on,
+            approval_attestation=True,
+        ),
+        authority,
+    ).result.block_plan
+    environment_id = DomainRepository(session).list_environments(strategy.athlete_id)[0].id
+    windows = tuple(
+        AvailabilityWindowDraft(
+            environment_id=environment_id,
+            starts_at=datetime.combine(
+                starts_on + timedelta(days=day), datetime.min.time(), tzinfo=UTC
+            )
+            + timedelta(hours=18),
+            ends_at=datetime.combine(
+                starts_on + timedelta(days=day), datetime.min.time(), tzinfo=UTC
+            )
+            + timedelta(hours=18, minutes=30),
+        )
+        for day in (1, 4)
+    )
+    prepared_at = datetime.now(UTC)
+    projection = PreparedFirstWeekProjector(session).project(
+        block.id,
+        PrepareFirstWeekCommand(windows=windows),
+        authority,
+        prepared_at,
+    )
+
+    assert projection.status == "available"
+    assert projection.candidate is not None
+    candidate = projection.candidate
+    assert candidate.exercise_name == "Countermovement jump"
+    assert candidate.sets == 3
+    assert candidate.repetitions_per_set == 3
+    assert candidate.rest_seconds == 120
+    assert "estimate value not used as dose arithmetic" in candidate.dose_calculation
+    result = ratify_prepared_first_week(
+        session,
+        block.id,
+        candidate.candidate_id,
+        RatifyPreparedFirstWeekCommand(
+            candidate_version=FIRST_WEEK_CANDIDATE_VERSION,
+            content_digest=candidate.content_digest,
+            prepared_at=prepared_at,
+            windows=windows,
+            approval_attestation=True,
+        ),
+        authority,
+    )
+    prescription = result.result.prescriptions[0]
+    assert prescription.exercise_id == UUID("b0000000-0000-4000-8000-000000000012")
+    assert prescription.sets * (prescription.repetitions_per_set or 0) == 9
+    assert prescription.progression_rule_reference == (
+        "owner-alpha-explosive-power-jump-progression@1.0.0"
+    )
+
+
+def test_governed_jump_maintain_path_builds_separate_low_dose_first_week(
+    session: Session,
+) -> None:
+    scope = "assessment_specific:countermovement_vertical_jump_height_cm"
+    strategy, authority = _persist_ready_first_block(
+        session,
+        estimate_scope=scope,
+        estimate_value=22,
+        floor_value=20,
+        floor_area_m2=6,
+    )
+    assert strategy.priorities[0].state.value == "maintain"
+    starts_on = _next_monday(datetime.now(UTC).date())
+    block_candidate = (
+        PreparedFirstBlockProjector(session).project(strategy.id, starts_on, authority).candidate
+    )
+    assert block_candidate is not None
+    assert block_candidate.expected_allocations[0].allocated_weekly_minutes == 12
+    block = ratify_prepared_first_block(
+        session,
+        strategy.id,
+        block_candidate.candidate_id,
+        RatifyPreparedFirstBlockCommand(
+            candidate_version=block_candidate.candidate_version,
+            content_digest=block_candidate.content_digest,
+            starts_on=starts_on,
+            approval_attestation=True,
+        ),
+        authority,
+    ).result.block_plan
+    environment_id = DomainRepository(session).list_environments(strategy.athlete_id)[0].id
+    windows = tuple(
+        AvailabilityWindowDraft(
+            environment_id=environment_id,
+            starts_at=datetime.combine(
+                starts_on + timedelta(days=day), datetime.min.time(), tzinfo=UTC
+            )
+            + timedelta(hours=18),
+            ends_at=datetime.combine(
+                starts_on + timedelta(days=day), datetime.min.time(), tzinfo=UTC
+            )
+            + timedelta(hours=18, minutes=30),
+        )
+        for day in (1, 4)
+    )
+    prepared_at = datetime.now(UTC)
+    projection = PreparedFirstWeekProjector(session).project(
+        block.id,
+        PrepareFirstWeekCommand(windows=windows),
+        authority,
+        prepared_at,
+    )
+
+    assert projection.status == "available", projection.blockers
+    candidate = projection.candidate
+    assert candidate is not None
+    assert candidate.priority_state.value == "maintain"
+    assert candidate.training_construction_candidate_id == (
+        JUMP_MAINTENANCE_CONSTRUCTION_CANDIDATE_ID
+    )
+    assert candidate.sets == 2
+    assert candidate.repetitions_per_set == 3
+    assert candidate.planned_duration_minutes == 6
+    result = ratify_prepared_first_week(
+        session,
+        block.id,
+        candidate.candidate_id,
+        RatifyPreparedFirstWeekCommand(
+            candidate_version=candidate.candidate_version,
+            content_digest=candidate.content_digest,
+            prepared_at=prepared_at,
+            windows=windows,
+            approval_attestation=True,
+        ),
+        authority,
+    )
+    prescription = result.result.prescriptions[0]
+    assert prescription.sets == 2
+    assert prescription.repetitions_per_set == 3
+    assert prescription.planned_duration_minutes == 6
+
+
 def test_pushup_maintain_path_builds_an_exact_no_equipment_first_week(
     session: Session,
     monkeypatch: pytest.MonkeyPatch,
@@ -746,7 +1170,7 @@ def test_pushup_maintain_path_builds_an_exact_no_equipment_first_week(
         strategy.id,
         block_candidate.candidate_id,
         RatifyPreparedFirstBlockCommand(
-            candidate_version=FIRST_BLOCK_CANDIDATE_VERSION,
+            candidate_version=block_candidate.candidate_version,
             content_digest=block_candidate.content_digest,
             starts_on=starts_on,
             approval_attestation=True,
