@@ -42,8 +42,9 @@ append-only history, and owner review fail closed.
 - Pushed ticket-workflow baseline: `6e8dbaf03490644f1e244ba62c024b6cb8a2fcd2`
 - `origin/main`: `6e8dbaf03490644f1e244ba62c024b6cb8a2fcd2`
 - Local branch state: after the documentation-only AGAS-0002 completion commit, `main` is expected
-  to be one commit ahead of `origin/main`. That completion commit has not been authorized or pushed;
-  inspect Git for its exact revision.
+  to contain the documentation-only AGAS-0003 completion commit on top of AGAS-0002 and to be two
+  commits ahead of `origin/main`. Neither completion commit has been authorized or pushed; inspect
+  Git for the exact local revisions.
 - Worktree expectation at conversation boundary: clean.
 - Decisions `0133` through `0151` and their associated implementation are tracked in the baseline
   commit above.
@@ -77,7 +78,8 @@ GitHub CI run `36233115399` exercised it against pushed commit
 - Deployment containers: passed;
 - Browser + API + PostgreSQL: failed because `apps/web/e2e/real-stack.spec.ts:9` used an ambiguous
   `getByRole("link", { name: "Sign in securely" })` locator after the page exposed two matching
-  links. The failure remains visible and was not rerun, bypassed, or repaired in AGAS-0002.
+  links. The failure remains visible and was not rerun, bypassed, or repaired in AGAS-0002 or
+  AGAS-0003.
 
 ## Current product state
 
@@ -90,7 +92,7 @@ GitHub CI run `36233115399` exercised it against pushed commit
 | Phone execution | Current-week display, deterministic safety check, reviewed instructions, set logging, local draft recovery, rest timer, submission, and immutable performance history exist. |
 | Progression | The next unperformed occurrence consumes the latest eligible prescription descendant; completed sessions retain their executed dose and weekly roll-forward consumes the final leaf. |
 | Closed loop | Persisted regressions cover two training cycles, reassessment, block review, successor planning, maintenance, and a third strategy dependent on the second-cycle response. |
-| Hosted owner alpha | Vercel Production records commit `6e8dbaf03490644f1e244ba62c024b6cb8a2fcd2` as successfully deployed. The Render API is healthy and ready, but the failed required CI gate prevented proof that it advanced to that commit; its exact served SHA remains unexposed. Current authenticated athlete, ratification, and week state remain unverified. |
+| Hosted owner alpha | The normal Auth0 flow succeeded on the stable Vercel production origin and `/review/readiness` was inspected on 2026-09-26. Reviewer access is active. The connected live state contains 12 unratified candidates, 2 owned athlete records, and no persisted current week or safety-policy assignment for either athlete on the audit date. Vercel records exact commit `6e8dbaf03490644f1e244ba62c024b6cb8a2fcd2` for its successful deployment; the stable alias served the same hashed Next.js asset set. Render is healthy and ready but exposes no SHA, so PWA/API revision alignment remains unproven. |
 
 ## Recent decision index
 
@@ -111,95 +113,153 @@ details in tickets.
 
 ## Active ticket
 
-### AGAS-0003 — Perform authenticated owner-readiness audit
+### AGAS-0004 — Reconcile descriptive documentation
 
 - Status: `ACTIVE`
-- Type: deployment and read-only live-state verification
+- Type: documentation-only implemented-state reconciliation
 
 #### Objective
 
-Use the owner-controlled Auth0 flow to inspect the read-only `/review/readiness` route against the
-hosted database. Record the exact candidate, ratification, athlete, current-week,
-safety-assignment, and reviewer-boundary facts without automatically changing them, while keeping
-the known hosted-revision uncertainty explicit.
+Bring `docs/architecture.md` and stale package/service boundary READMEs through the committed
+decisions and implemented repository shape without changing product behavior, policy, scientific
+authority, or ticket workflow.
 
 #### Why this is next
 
-The source baseline now exists on `origin/main`, and Vercel records the exact PWA commit. Public API
-health and database readiness still do not prove authenticated live-data readiness. Render did not
-expose its exact served SHA after the required real-stack CI job failed, so the audit must not imply
-that the PWA and API are revision-aligned.
+The authenticated owner-readiness audit established the actual hosted-state boundary. Descriptive
+architecture and package/service READMEs still lag the committed decisions and implementation,
+making fresh-context navigation less reliable even though the authoritative blueprint, policies,
+decision history, and handoff are current.
 
 #### In scope
 
-- inspect Git status and preserve the exact pushed/local/deployed revision caveat;
-- use the normal owner-controlled Auth0 sign-in flow, requesting interactive owner action when
-  credentials, MFA, or consent are required rather than automating or exposing them;
-- inspect `/review/readiness` and its underlying read-only projections;
-- record exact prepared candidate IDs and digests, ratification states, owned-athlete visibility,
-  current-week identity/state, safety-assignment state, and the planning-review boundary;
-- distinguish unavailable, unauthorized, missing, conflicting, stale-revision, and genuinely
-  absent state;
-- update this handoff with observed evidence and define the next bounded ticket.
+- compare `docs/architecture.md` with the implemented boundaries represented by decisions `0133`
+  through `0151` and the current repository map;
+- inspect package/service READMEs and update only stale descriptions of implemented responsibilities,
+  workflows, or validation entry points;
+- preserve the explicit separation among observation, estimate, evidence, planning, prescription,
+  performance, safety, and user-facing explanation;
+- keep deployment and live-state facts in this handoff or `docs/deployment.md`, not in descriptive
+  package READMEs;
+- update this handoff with exact files changed, validation, and the next bounded ticket or owner
+  decision.
 
 #### Out of scope
 
-- automatic candidate ratification or approval;
-- manufacturing an athlete, plan, week, or readiness state to make the screen look complete;
-- bypassing Auth0 or handling owner credentials outside the provider flow;
-- changing provider plans, adding payment details, or moving to paid infrastructure;
-- product code changes unless a separately approved follow-up ticket is created;
-- treating deployment success, HTTP health, or database connectivity as live-data readiness;
-- repairing or bypassing the known real-stack CI failure inside this audit ticket.
+- changes to `docs/MASTER_BLUEPRINT.md`, `docs/safety-policy.md`, or `docs/evidence-policy.md`;
+- rewriting or amending historical decision records;
+- product code, migration, governed-data, test-behavior, deployment, or provider changes;
+- turning the root `README.md` into a second status ledger or duplicating the volatile hosted-state
+  facts recorded here;
+- repairing the known real-stack CI failure or changing the authenticated hosted state.
 
 #### Authoritative references
 
 - `AGENTS.md`
-- `docs/deployment.md`
-- `docs/decision-log/0086-no-card-single-user-alpha-hosting.md`
-- `docs/decision-log/0108-allowlisted-owner-alpha-operator-access.md`
-- `docs/decision-log/0144-owner-alpha-live-readiness-audit.md`
-- `apps/web/app/review/readiness/`
-- current Git/deployment evidence and actual hosted UI/API responses
+- `docs/MASTER_BLUEPRINT.md`
+- `docs/architecture.md`
+- `docs/decision-log/0133-in-week-prescription-progression-handoff.md` through
+  `docs/decision-log/0151-controlled-assessment-attempt-reasons.md`
+- repository package/service READMEs and the code paths they describe
+- this handoff's current product and hosted-state boundaries
 
 #### Acceptance criteria
 
-- The exact source revision serving each observable hosted surface is recorded, and the Render SHA
-  uncertainty is not mislabeled as alignment.
-- Owner authentication succeeds through the normal provider flow, or the exact owner-action
-  blocker is recorded without exposing credentials.
-- `/review/readiness` is inspected while authenticated.
-- Candidate, ratification, athlete, week, safety-assignment, and reviewer-boundary results are
-  recorded as observed facts with failures kept distinct from empty state.
-- No candidate is ratified and no athlete/training state is written merely to satisfy this ticket.
-- The worktree ends clean and this handoff defines the next bounded ticket.
+- Descriptive architecture matches the committed implementation without inventing future behavior.
+- Every changed package/service README is verified against its current code boundary and does not
+  duplicate the handoff, blueprint, policy files, or decision log.
+- Stable authorities remain untouched and no product behavior changes.
+- Documentation links and formatting checks pass for the changed scope.
+- The worktree ends clean and this handoff records the completion state and next bounded ticket or
+  exact owner decision.
 
 #### Validation
 
-- capture current local, remote, Vercel, and observable Render revision evidence;
-- verify authenticated navigation to `/review/readiness`;
-- compare visible state with the route's fail-closed semantics from decision `0144`;
-- perform no write-based validation unless a new owner-approved ticket explicitly authorizes it.
+- inspect every changed statement against the referenced implementation or accepted decision;
+- run `git diff --check`;
+- run proportional documentation/link checks already present in the repository, if any;
+- confirm Git status and that only ticket-scoped documentation changed.
 
 #### Blockers or owner decisions
 
-Interactive Auth0 sign-in may require the owner. The PWA is proven at `6e8dbaf03490644f1e244ba62c024b6cb8a2fcd2`,
-but the Render API's exact served revision is not exposed and CI run `36233115399` failed. Record
-that limitation in every readiness interpretation; do not repair code or trigger deployment from
-this ticket.
+None known. If documentation and implementation materially disagree in a way that requires a new
+product or policy decision, stop and record the discrepancy rather than silently selecting a new
+behavior.
 
 ## Ordered queue
 
-### AGAS-0004 — Reconcile descriptive documentation
-
-- Status: `QUEUED`
-- Depends on: `AGAS-0003`
-- Objective: bring `docs/architecture.md` and the stale package/service boundary READMEs through
-  the committed decisions without changing product behavior or policy.
-- Boundaries: do not rewrite the blueprint, policies, or historical decision records; keep the
-  root README operational rather than turning it into another status ledger.
+No owner-approved ticket follows AGAS-0004 yet.
 
 ## Recently completed tickets
+
+### AGAS-0003 — Perform authenticated owner-readiness audit
+
+- Status: `COMPLETE`
+- Completed: 2026-09-26
+- Source/deployment boundary: local `main` started at
+  `d46c8aff4c97dab56ea0e7a059469c73e22f6644`. After this ticket's documentation-only completion
+  commit, `main` is expected to be two local commits ahead of `origin/main`; neither local
+  completion commit was pushed or authorized for push. `origin/main` remained
+  `6e8dbaf03490644f1e244ba62c024b6cb8a2fcd2`. GitHub deployment `6677204808` and status
+  `18871521222` still recorded that exact pushed SHA as a successful Vercel Production deployment
+  at the deployment-specific URL. The authenticated audit used the configured stable origin
+  `https://adaptive-general-athleticism-system.vercel.app`; it served the same nine hashed Next.js
+  chunk paths as the exact deployment URL, but the stable alias does not independently expose a Git
+  SHA. Render `/health` and `/ready` returned HTTP 200 on 2026-09-26, with API version `0.1.0`, but
+  neither exposed a SHA. Required CI run `36233115399` still had the known real-stack job failure,
+  so Render's served revision and PWA/API alignment remain unproven.
+- Authentication and authorization: the normal stable-origin Auth0 flow completed without
+  credential automation. `owner-alpha-operator-access@1.0.0` reported `active`; both
+  `assessment_reviewer` (`e26c2d14-b782-4758-8a48-6b49896b28f6`) and `planning_reviewer`
+  (`91dcda5d-07dd-45c9-bb52-4c249ea4f6d4`) were already active, and `can_activate` was false. No
+  subject, credential, token, or provider secret was recorded. Starting the flow from Vercel's
+  deployment-specific hostname returned to the configured stable callback and therefore lacked the
+  origin-bound login transaction; restarting from the stable production origin succeeded without
+  bypassing Auth0.
+- Candidate inventory: the authenticated route reported 0 ratified, 12 available or blocked, and
+  0 conflicting candidates. Projection versions were `assessment-governance-candidates@1.0.0`,
+  `planning-governance-candidates@1.0.0`, `competency-floor-candidates@1.1.0`,
+  `resource-governance-candidates@1.0.0`, and
+  `training-construction-candidates@1.0.0`. Exact point-in-time records were:
+
+  | Family | Release label | Candidate | Digest | State |
+  | --- | --- | --- | --- | --- |
+  | Assessment | Countermovement vertical jump owner-alpha release | `94000000-0000-4000-8000-000000000003` | `sha256:8405a84056c34b478b2566bdc8fe4079eefaed7534af24eee03117b0b28cbfec` | available; not ratified |
+  | Assessment | Maximum consecutive standard push-ups owner-alpha release | `94000000-0000-4000-8000-000000000002` | `sha256:65d78f85b93e8d855a0b70d2f18e18f3c9667757e40a58d161cdf892fa5734e7` | available; not ratified |
+  | Assessment | 30-second chair stand owner-alpha release | `94000000-0000-4000-8000-000000000001` | `sha256:1fe8fc5ea92e079aa06717c174ead51c99dcf442216b1bcebbfbaf375ed389bb` | available; not ratified |
+  | Planning policy | Conservative owner-alpha priority policy | `98400000-0000-4000-8000-000000000001` | `sha256:98642ffa342304f6b79f062469adc928c9f9f570142c66202ba5ba46d6fade89` | available; not ratified |
+  | Planning policy | Deficit-only owner-alpha initial policy | `98400000-0000-4000-8000-000000000002` | `sha256:4c0054de09dd785988a5736044673b1ac711c18ca1ac4986d100f156c5268774` | available; not ratified |
+  | Competency floor | Age 30-39 chair-stand lower-reference floor | `98310000-0000-4000-8000-000000000001` | `sha256:6315b6bba929a16c6fc1a6ab031b5ef5fc17394f5869e2d4c1ee78c8167e2caa` | available; not ratified |
+  | Competency floor | Owner-alpha provisional standard-push-up floor | `98400000-0000-4000-8000-000000000003` | `sha256:a9b28f8a4c6139481c63c00cc9992ca378c9431b6f1242afb8f41cff0b917f7e` | available; not ratified |
+  | Resource | First owner-alpha resource authorities | `98600000-0000-4000-8000-000000000001` | `sha256:460bb674bd1919a4570adfae8f089b6464114d80c6b69d3a1f5633ff6a5f9d16` | blocked; not ratified |
+  | Resource | Owner-alpha push-up resource authorities | `98600000-0000-4000-8000-000000000002` | `sha256:f4f9e7aafb108acf26e3b8c9838d41c9aa0f65ce7e2ecdc1d1b7a7daa11ec08e` | blocked; not ratified |
+  | Training construction | Owner-alpha chair-stand construction authorities | `98900000-0000-4000-8000-000000000001` | `sha256:8129420addb153ac5b1f120235323c45cec5ab2ec66305bc473593cf75add5f6` | blocked; not ratified |
+  | Training construction | Owner-alpha push-up construction authorities | `98900000-0000-4000-8000-000000000002` | `sha256:23e01899f37590a70040e4f6d6bc2255c851ba062738bf45a6103da944855c63` | blocked; not ratified |
+  | Training construction | Owner-alpha introductory jump-exposure authorities | `98900000-0000-4000-8000-000000000003` | `sha256:74d4610b112ea14f0142b19b1cecf977c2b410665deb5366ad41a654fa9cee19` | blocked; not ratified |
+
+- Candidate blockers: both resource bundles required the deficit-only planning-policy snapshot and
+  controlled seed catalog. Chair-stand and push-up construction each additionally required its
+  matching resource bundle, the controlled adaptation, and the exact reviewed evidence claim. The
+  introductory jump-exposure construction required the controlled exposure exercise, controlled
+  adaptation, and exact reviewed evidence claim. Available assessment, planning-policy, and floor
+  candidates reported no conflict or prerequisite issue. No candidate was ratified.
+- Athlete and planning state: `account-athlete-directory@1.0.0` returned two owned athlete records,
+  IDs `0fe4fa6f-d3de-49f8-8d95-239854fb0ecb` and
+  `11ed73df-6e13-412e-9d6a-0b9c67d067da`, sharing the same display name. Direct authenticated
+  current-week projections for `on=2026-09-26` returned HTTP 200 for both with exact matching
+  athlete IDs, `week: null`, and `safety_policy_assignment: null`. These are genuine absent states,
+  not unauthorized, unavailable, or conflicting responses; consequently there is no weekly-plan
+  identity or review state to record.
+- Reviewer boundary: `planning-review-queue@1.0.0` returned one item per owned athlete. Both were
+  `workflow_stage=initial_planning`, `status=capability_estimate_required`, `readiness=blocked`,
+  with no strategy or block ID and the exact issue/message “No current capability estimate is
+  available for initial planning.”
+- Safety/write boundary: no candidate ratification, reviewer activation, athlete mutation, plan
+  creation, safety assignment, or other live-data write occurred. Validation was entirely
+  read-only through the hosted UI, its authenticated projections, Git/GitHub deployment evidence,
+  and public Render health/readiness endpoints.
+- Local validation: `git diff --check` passed; the ticket changed only this handoff. Product tests
+  were not rerun because AGAS-0003 made no product-code, governed-data, or behavior change.
 
 ### AGAS-0002 — Align remote and hosted revision
 
@@ -239,12 +299,15 @@ this ticket.
 - The owner-relevant operational paths remain narrow and depend on deliberate ratification.
 - Most athletic capability domains still lack complete governed measurement and construction paths.
 - The longitudinal assessment projection is intentionally unpaginated for the bounded owner alpha.
-- Live hosted ratifications, athlete history, and current-week state have not been authenticated and
-  inspected in this repository session.
+- The authenticated audit found all 12 prepared candidates unratified, two owned athlete records
+  with the same display name, and no current week or safety-policy assignment for either athlete on
+  2026-09-26. Both planning-queue items fail closed because no current capability estimate exists.
 - Required CI currently fails in the real-stack browser lane because one sign-in locator is
   ambiguous; do not bypass the check or assume Render advanced past its prior accepted revision.
-- Vercel is proven at `6e8dbaf03490644f1e244ba62c024b6cb8a2fcd2`; the exact Render API SHA is
-  unproven, so hosted surfaces must not be described as revision-aligned.
+- Vercel's deployment-specific production record is proven at
+  `6e8dbaf03490644f1e244ba62c024b6cb8a2fcd2`, and the stable alias served the same hashed client
+  chunks during the audit, but the alias does not independently expose its Git SHA. The exact
+  Render API SHA is unproven, so hosted surfaces must not be described as revision-aligned.
 - Provider free-tier behavior and availability can change; `docs/deployment.md` remains the
   deployment runbook, but live dashboards are the source for current provider state.
 
@@ -254,6 +317,7 @@ When this file reports a stable checkpoint, use:
 
 ```text
 Read AGENTS.md and docs/DEVELOPMENT_HANDOFF.md in full. Inspect Git status before changing
-anything. Work only the Active ticket in the handoff, follow its referenced authorities and
-acceptance criteria, update the handoff before stopping, and do not begin another ticket.
+anything. Work only Active ticket AGAS-0004 — Reconcile descriptive documentation. Follow its
+referenced authorities and acceptance criteria, update the handoff before stopping, and do not
+begin another ticket.
 ```
