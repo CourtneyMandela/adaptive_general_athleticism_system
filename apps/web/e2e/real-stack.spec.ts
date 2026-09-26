@@ -6,7 +6,13 @@ test("a signed-in owner creates and recovers a persisted profile through the rea
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Sign in to open your training." })).toBeVisible();
 
-  await page.getByRole("link", { name: "Sign in securely" }).click();
+  const signInLinks = page.getByRole("link", { name: "Sign in securely" });
+  await expect(signInLinks).toHaveCount(2);
+  const trainingSignIn = page
+    .getByLabel("Sign in to open your training.")
+    .getByRole("link", { name: "Sign in securely" });
+  await expect(trainingSignIn).toHaveAttribute("href", "/auth/login?return_to=%2F");
+  await trainingSignIn.click();
   await expect(page).toHaveURL("http://127.0.0.1:3101/");
   await expect(page.getByText("Secure session active")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Start with what you know." })).toBeVisible();
